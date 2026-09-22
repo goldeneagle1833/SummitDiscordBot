@@ -44,11 +44,13 @@ def resolve_match_voice(pref_a, pref_b):
     return VOICE in (pref_a, pref_b)
 
 
+def voice_match_tag(is_voice_match):
+    """Match-found title suffix saying whether the match is on voice."""
+    return "(🔊 Voice match)" if is_voice_match else "(🔇 No-voice match)"
+
+
 def voice_match_text(queue_type, is_voice_match):
-    """Match-found DM line for voice-enabled queues."""
+    """Match-found DM line for voice-enabled queues: the room link, voice matches only."""
     if is_voice_match:
-        return (
-            f"\n\n🔊 **Voice match** — join voice to play: "
-            f"[Join To Make a Room]({SUMMIT_VOICE_URL})"
-        )
+        return f"\n\n🔊 **Voice chat:** [Join To Make a Room]({SUMMIT_VOICE_URL})"
     return ""

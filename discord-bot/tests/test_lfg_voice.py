@@ -3,7 +3,7 @@
 import datetime
 import sqlite3
 import sys
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import discord
 import pytest
@@ -116,17 +116,56 @@ class TestVoiceMatching:
 
 class TestVoiceMessages:
     def test_voice_match_always_gets_voice_link(self):
-        assert "Voice match" in match_delivery_extras({}, 1, 2, "ranked", True)[4]
+        assert "Join To Make a Room" in match_delivery_extras({}, 1, 2, "ranked", True)[4]
 
-    def test_no_voice_ranked_match_says_nothing(self):
-        assert match_delivery_extras({}, 1, 2, "ranked", False)[4] == ""
-
-    def test_no_voice_casual_match_says_nothing(self):
-        assert match_delivery_extras({}, 1, 2, "testing", False)[4] == ""
+    def test_no_voice_match_has_no_room_link_even_with_seats(self):
+        seats = {1: "a", 2: "b"}
+        for queue_type in ("ranked", "testing"):
+            assert match_delivery_extras(seats, 1, 2, queue_type, False)[4] == ""
 
     def test_other_queues_keep_legacy_voice_reminder(self):
         extras = match_delivery_extras({1: "a", 2: "b"}, 1, 2, "rumble", False)
         assert "Join To Make a Room" in extras[4]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("voice, tag, has_link", [
+        (True, "(🔊 Voice match)", True),
+        (False, "(🔇 No-voice match)", False),
+    ])
+    async def test_both_players_dm_says_voice_or_no_voice(self, voice, tag, has_link):
+        from cogs.lfg.pairing_messages import PairingPlayer, send_pairing_messages
+
+        def player(user_id):
+            user = MagicMock()
+            user.mention = f"<@{user_id}>"
+            user.send = AsyncMock(return_value=MagicMock())
+            return PairingPlayer(user_id, f"P{user_id}", user)
+
+        reporter, other = player(1), player(2)
+        with patch("cogs.lfg.pairing_messages.update_match_card_message_ref"):
+            await send_pairing_messages(
+                MagicMock(), reporter=reporter, other=other,
+                match_card_view=MagicMock(), match_type="ranked", voice=voice,
+            )
+        for p in (reporter, other):
+            text = p.user.send.await_args.args[0]
+            assert f"**Ranked Match Found!** {tag}" in text
+            assert ("Join To Make a Room" in text) is has_link
+
+    @pytest.mark.asyncio
+    async def test_direct_challenges_get_no_voice_tag(self):
+        from cogs.lfg.pairing_messages import PairingPlayer, send_pairing_messages
+
+        user = MagicMock()
+        user.send = AsyncMock(return_value=MagicMock())
+        reporter, other = PairingPlayer(1, "A", user), PairingPlayer(2, "B", user)
+        with patch("cogs.lfg.pairing_messages.update_match_card_message_ref"):
+            await send_pairing_messages(
+                MagicMock(), reporter=reporter, other=other,
+                match_card_view=MagicMock(), headline="Challenge Accepted!",
+            )
+        text = user.send.await_args.args[0]
+        assert "Voice match" not in text and "No-voice match" not in text
 
 
 class TestVoicePersistence:

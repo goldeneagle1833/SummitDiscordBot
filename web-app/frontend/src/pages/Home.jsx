@@ -4,7 +4,6 @@ import { get } from '@/api/client'
 import { getEventLeaderboard, getPaperEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
 import PostseasonName, { PostseasonLegend } from '@/components/player/BracketMarks'
-import { VoiceGamesCell } from '@/components/leaderboard/VoiceGames'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -495,7 +494,7 @@ function EloToggle({ source, onChange }) {
 
 const RANK_LABELS = { 1: 'I', 2: 'II', 3: 'III' }
 
-function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', voiceRequirement = null }) {
+function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo' }) {
   if (!leaderboard.length) {
     return <p className="text-center text-text-muted py-8">No matches played yet</p>
   }
@@ -507,9 +506,6 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', voiceRequire
           <tr className="border-b border-border text-left">
             <th className="py-2 px-3 w-14 text-text-muted font-semibold">Rank</th>
             <th className="py-2 px-3 text-text-muted font-semibold">Player</th>
-            {voiceRequirement && (
-              <th className="py-2 px-3 text-right text-text-muted font-semibold" title="Ranked voice games this season">Voice</th>
-            )}
             <th className="py-2 px-3 text-right text-text-muted font-semibold">ELO</th>
           </tr>
         </thead>
@@ -538,11 +534,6 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', voiceRequire
                     </Link>
                   </PostseasonName>
                 </td>
-                {voiceRequirement && (
-                  <td className="py-2 px-3 text-right">
-                    <VoiceGamesCell count={player.voice_games} requirement={voiceRequirement} />
-                  </td>
-                )}
                 <td className="py-2 px-3 text-right">{player[eloKey]}</td>
               </tr>
             )
@@ -666,7 +657,7 @@ export default function Home() {
           ) : (
             <>
               <StatBar leaderboard={leaderboard} />
-              <EventLeaderboardTable leaderboard={leaderboard} voiceRequirement={eventData.voice_requirement} />
+              <EventLeaderboardTable leaderboard={leaderboard} />
             </>
           )}
         </section>

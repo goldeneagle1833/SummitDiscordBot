@@ -19,7 +19,7 @@ from cogs.lfg.helpers import (
     scrub_urls,
 )
 from cogs.lfg.persistent_confirm import update_match_card_message_ref
-from cogs.lfg.voice import SUMMIT_VOICE_URL, queue_supports_voice, voice_match_text
+from cogs.lfg.voice import SUMMIT_VOICE_URL, queue_supports_voice, voice_match_tag, voice_match_text
 
 logger = logging.getLogger("discord_bot")
 
@@ -340,19 +340,24 @@ async def send_pairing_messages(
     match_type="ranked",
     provisioned_links=None,
     headline=None,
-    voice=False,
+    voice=None,
 ):
     """Send both players their match message.
 
     ``reporter`` and ``other`` are :class:`PairingPlayer` instances; the
     reporter is the one who received ``match_card_view``.  ``headline``
-    overrides the default "<Label> Match Found!" title.  ``voice`` marks a
-    Ranked/Casual voice match so both messages say so.  Returns a
+    overrides the default "<Label> Match Found!" title.  ``voice`` is True/False
+    for Ranked/Casual queue matches: the title says voice or no voice, and only
+    voice matches get the room link.  None (direct challenges) leaves both out
+    unless Sorcery Online seats were provisioned.  Returns a
     :class:`PairingDelivery` saying which players had to be reached through
     the DM-disabled channel.
     """
     emoji, label = match_type_presentation(match_type)
     title = f"{emoji} **{headline or f'{label} Match Found!'}**"
+    voice_queue = voice is not None and queue_supports_voice(match_type)
+    if voice_queue:
+        title = f"{title} {voice_match_tag(voice)}"
     (
         reporter_game_url,
         other_game_url,
@@ -363,8 +368,8 @@ async def send_pairing_messages(
         provisioned_links or {},
         reporter.user_id,
         other.user_id,
-        queue_type=match_type,
-        is_voice_match=voice,
+        queue_type=match_type if voice_queue else None,
+        is_voice_match=bool(voice),
     )
 
     reporter_fell_back = await _send_reporter(

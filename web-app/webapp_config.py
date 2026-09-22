@@ -192,6 +192,11 @@ TOP_CUT_VOICE_REQUIREMENT_ENFORCED = os.environ.get(
     "TOP_CUT_VOICE_REQUIREMENT_ENFORCED", ""
 ).strip().lower() in ("1", "true", "yes")
 
+# When the bot started flagging voice matches (the voice queue preference
+# deploy, server time). Every Discord match before this was played in voice,
+# so match history shows those as Voice even though their flag is 0.
+VOICE_TRACKING_STARTED = os.environ.get("VOICE_TRACKING_STARTED", "2026-09-21T14:22:34")
+
 SEASON_FILTERS = [
     {
         "id": "season_gothic_1",

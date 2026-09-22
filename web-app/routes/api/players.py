@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, session, request
 
 import re
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, VALID_API_KEYS, SEASON_FILTERS
+from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, VALID_API_KEYS, SEASON_FILTERS, VOICE_TRACKING_STARTED
 from services.match import MatchService
 from repositories.external_matches import ExternalMatchRepository
 from repositories.user_profiles import UserProfileRepository
@@ -2103,6 +2103,16 @@ def player_api(player_id):
     profile_repo_vis = UserProfileRepository()
     visibility = profile_repo_vis.get_profile_visibility(player_id_normalized)
 
+    def _match_voice(row):
+        """Voice flag for a Discord match; every one before tracking began was a voice game."""
+        if source != "bot" or len(row) <= 19:
+            return None  # Web-reported and solo matches carry no voice flag
+        if len(row) > 24 and row[24]:
+            return True
+        if row[6] and str(row[6]) < VOICE_TRACKING_STARTED:
+            return True
+        return False if len(row) > 24 and row[24] is not None else None
+
     def _build_match_entry(row):
         """Convert a raw DB row into a match history dict."""
         did_win = row[0]
@@ -2200,7 +2210,7 @@ def player_api(player_id):
                 query_player_id,
             ) if is_owner else None,
             "match_source": source if is_owner else None,
-            "voice": bool(row[24]) if len(row) > 24 and row[24] is not None else None,
+            "voice": _match_voice(row),
         }
 
     for row in paginated_rows:

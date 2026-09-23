@@ -1600,11 +1600,24 @@ def player_api(player_id):
     if not player_name:
         player_name = "Unknown Player"
 
-    # Filter out matches before profile_reset_at (if set)
+    # Fresh Start hides matches from before the reset, but never matches from
+    # the current season (they back the player's live rank). Admins always see
+    # the full history.
     profile_reset_at = profile.get("profile_reset_at") if profile else None
-    if profile_reset_at:
-        rows = [r for r in rows if r[6] and str(r[6]) >= profile_reset_at]
-        solo_rows = [r for r in solo_rows if r[6] and str(r[6]) >= profile_reset_at]
+    if profile_reset_at and not is_admin():
+        reset_cutoff = profile_reset_at
+        try:
+            elo_conn_tmp = sqlite3.connect(str(ELO_DB_PATH))
+            season_row = elo_conn_tmp.execute(
+                "SELECT start_date FROM events WHERE is_active = 1 LIMIT 1"
+            ).fetchone()
+            elo_conn_tmp.close()
+            if season_row and season_row[0]:
+                reset_cutoff = min(reset_cutoff, str(season_row[0]))
+        except sqlite3.OperationalError:
+            pass
+        rows = [r for r in rows if r[6] and str(r[6]) >= reset_cutoff]
+        solo_rows = [r for r in solo_rows if r[6] and str(r[6]) >= reset_cutoff]
         all_rows = rows + solo_rows
 
     # Split all_rows into ranked and casual for stats computation

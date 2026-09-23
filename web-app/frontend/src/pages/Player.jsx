@@ -389,7 +389,7 @@ const [editDeck, setEditDeck] = useState(null)
               <>
                 <h3 className="text-lg font-semibold text-text-primary mb-3">Fresh Start</h3>
                 <p className="text-sm text-text-muted mb-2">
-                  This will hide all your previous match history and stats from your profile.
+                  This will hide your match history and stats from previous seasons on your profile. Games from the current season always stay visible.
                 </p>
                 <p className="text-sm text-text-muted mb-4">
                   Your ELO rating will stay the same. No matches are deleted — they just won't be shown on your profile. You can undo this at any time.

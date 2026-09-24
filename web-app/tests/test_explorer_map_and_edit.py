@@ -200,9 +200,19 @@ class TestApplicantEdit:
         ).status_code == 200
 
     @pytest.mark.parametrize("status", ["approved", "rejected"])
-    def test_a_decided_application_is_locked(self, applicant_session, status):
+    def test_a_decided_application_is_editable_until_published(self, applicant_session, status):
         application = self._apply(applicant_session)
         ExplorerApplicationRepository().update_status(application["id"], status)
+        assert applicant_session.put(
+            "/api/explorer/applications/mine", json={"city": "Richmond"}
+        ).status_code == 200
+
+    @pytest.mark.parametrize("status", ["approved", "rejected"])
+    def test_a_published_decision_is_locked(self, applicant_session, status):
+        application = self._apply(applicant_session)
+        repo = ExplorerApplicationRepository()
+        repo.update_status(application["id"], status)
+        repo.mark_published(application["id"], status)
         res = applicant_session.put(
             "/api/explorer/applications/mine", json={"city": "Richmond"}
         )

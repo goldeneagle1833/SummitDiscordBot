@@ -7,6 +7,8 @@ vi.mock('@/api/explorerApplications', () => ({
   voteOnApplication: vi.fn(),
   setApplicationStatus: vi.fn(),
   addApplicationComment: vi.fn(),
+  getPublishPreview: vi.fn(),
+  publishDecisions: vi.fn(),
   addCandidate: vi.fn(),
   deleteApplication: vi.fn(),
   regeocodeApplication: vi.fn(),
@@ -30,6 +32,8 @@ import {
   voteOnApplication,
   setApplicationStatus,
   addApplicationComment,
+  getPublishPreview,
+  publishDecisions,
   addCandidate,
   regeocodeApplication,
 } from '@/api/explorerApplications'
@@ -94,6 +98,15 @@ describe('ExplorerApplications admin page', () => {
     addApplicationComment.mockResolvedValue({ comments: [] })
     addCandidate.mockResolvedValue({ application_id: 3 })
     regeocodeApplication.mockResolvedValue({ latitude: 1, longitude: 2 })
+    getPublishPreview.mockResolvedValue({
+      pending: { approved: 2, rejected: 1, withdrawn: 0, no_account: 0, total: 3 },
+    })
+    publishDecisions.mockResolvedValue({
+      published: {
+        approved: 2, rejected: 1, withdrawn: 0, no_account: 0, total: 3,
+        dms_queued: 3, web_notifications: 3,
+      },
+    })
   })
 
   it('shows a card per application with its score', async () => {
@@ -225,6 +238,59 @@ describe('ExplorerApplications admin page', () => {
     renderWithRouter(<ExplorerApplications />)
     const link = await screen.findByRole('link', { name: 'Export CSV' })
     expect(link).toHaveAttribute('href', '/api/explorer/applications/export.csv')
+  })
+
+  it('flags a decision that has not been published', async () => {
+    getApplications.mockResolvedValue({
+      applications: [{ ...application, status: 'approved', published_status: null }, unmapped],
+    })
+    renderWithRouter(<ExplorerApplications />)
+    expect(await screen.findByText('Not published')).toBeInTheDocument()
+  })
+
+  it('shows how many decisions are waiting to publish', async () => {
+    renderWithRouter(<ExplorerApplications />)
+    expect(await screen.findByRole('button', { name: 'Publish (3)' })).toBeEnabled()
+  })
+
+  it('disables Publish when there is nothing new', async () => {
+    getPublishPreview.mockResolvedValue({
+      pending: { approved: 0, rejected: 0, withdrawn: 0, no_account: 0, total: 0 },
+    })
+    renderWithRouter(<ExplorerApplications />)
+    await waitFor(() => expect(getPublishPreview).toHaveBeenCalled())
+    expect(await screen.findByRole('button', { name: 'Publish' })).toBeDisabled()
+  })
+
+  it('only publishes once "publish" is typed', async () => {
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerApplications />)
+    await user.click(await screen.findByRole('button', { name: 'Publish (3)' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Publish decisions' })
+    const confirm = within(dialog).getByRole('button', { name: 'Publish' })
+    expect(within(dialog).getByText(/3 applicants will be messaged/))
+      .toBeInTheDocument()
+    expect(confirm).toBeDisabled()
+
+    await user.type(within(dialog).getByLabelText('Type publish to confirm'), 'publis')
+    expect(confirm).toBeDisabled()
+    await user.type(within(dialog).getByLabelText('Type publish to confirm'), 'h')
+    expect(confirm).toBeEnabled()
+
+    await user.click(confirm)
+    await waitFor(() => expect(publishDecisions).toHaveBeenCalledWith('publish'))
+    expect(await screen.findByText(/Published 3 decisions/)).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Publish decisions' })).toBeNull()
+  })
+
+  it('cancelling the publish sends nothing', async () => {
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerApplications />)
+    await user.click(await screen.findByRole('button', { name: 'Publish (3)' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog', { name: 'Publish decisions' })).toBeNull()
+    expect(publishDecisions).not.toHaveBeenCalled()
   })
 
   it('shows an error if loading fails', async () => {

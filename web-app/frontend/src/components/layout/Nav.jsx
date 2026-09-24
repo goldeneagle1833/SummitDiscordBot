@@ -263,11 +263,13 @@ function NotificationBell({ user }) {
         </button>
         {open && (
           <div className="absolute right-0 top-full mt-2 w-80 max-h-96 bg-bg-elevated shadow-xl rounded-lg overflow-hidden z-[1001] border border-secondary/30">
-            {/* Store order notifications */}
+            {/* Site notifications: store orders and Explorer application decisions */}
             {storeNotifs.length > 0 && (
               <>
                 <div className="bg-primary/20 px-4 py-3 border-b border-white/10">
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wide">Orders</h3>
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wide">
+                    {storeNotifs.every((n) => n.type?.startsWith('order_')) ? 'Orders' : 'Updates'}
+                  </h3>
                 </div>
                 <div>
                   {storeNotifs.map((n) => (
@@ -275,6 +277,15 @@ function NotificationBell({ user }) {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-white">{n.title}</p>
                         <p className="text-xs text-text-muted mt-0.5">{n.body}</p>
+                        {n.type === 'explorer_application' && (
+                          <Link
+                            to="/explorer/apply"
+                            onClick={() => setOpen(false)}
+                            className="inline-block text-xs text-primary hover:underline mt-1"
+                          >
+                            View your application
+                          </Link>
+                        )}
                       </div>
                       <button
                         onClick={async () => {

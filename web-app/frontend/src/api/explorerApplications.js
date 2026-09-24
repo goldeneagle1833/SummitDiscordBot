@@ -21,6 +21,11 @@ export const voteOnApplication = (id, scores) =>
 export const setApplicationStatus = (id, status) =>
   post(`/api/explorer/applications/${id}/status`, { status })
 
+export const getPublishPreview = () => get('/api/explorer/applications/publish')
+
+export const publishDecisions = (confirm) =>
+  post('/api/explorer/applications/publish', { confirm })
+
 export const addApplicationComment = (id, body) =>
   post(`/api/explorer/applications/${id}/comments`, { body })
 

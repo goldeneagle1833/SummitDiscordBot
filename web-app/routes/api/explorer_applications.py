@@ -14,6 +14,7 @@ from flask import Blueprint, Response, jsonify, request, session
 
 from repositories.explorer_applications import (
     APPLICATION_FIELDS,
+    DECIDED_STATUSES,
     SCORE_FIELDS,
     STATUSES,
     ExplorerApplicationRepository,
@@ -22,6 +23,7 @@ from services.geocoding import geocode_location
 from services.explorer_notifications import (
     notify_new_application_in_background,
 )
+from services.explorer_publish import publish_decisions, summarize
 from services.lgs_attendance import lookup_attendance_in_background
 from utils.auth import require_auth, require_explorer_admin
 
@@ -138,17 +140,35 @@ def my_application():
         return jsonify({"success": True, "application": None}), 200
 
     application = ExplorerApplicationRepository().get_by_discord_user(user_id)
-    return jsonify({"success": True, "application": application}), 200
+    return jsonify({"success": True, "application": _applicant_view(application)}), 200
 
 
-# Once the Council has decided, the answers are the record of that decision.
-EDITABLE_STATUSES = ("pending", "pre_approved")
+# Applicants can keep editing until a decision is published: the Council may
+# ask them for updates while it reviews.
+def _is_editable(application: dict) -> bool:
+    return application.get("published_status") not in DECIDED_STATUSES
+
+
+def _applicant_view(application: dict | None) -> dict | None:
+    """What an applicant may see of their own application.
+
+    The Council's working status stays hidden until an admin publishes it, so
+    the applicant sees their last published decision, or "pending".
+    """
+    if not application:
+        return None
+    view = dict(application)
+    published = view.pop("published_status", None)
+    view.pop("published_at", None)
+    view["editable"] = _is_editable(application)
+    view["status"] = published if published in DECIDED_STATUSES else "pending"
+    return view
 
 
 @explorer_applications_bp.route("/mine", methods=["PUT"])
 @require_auth
 def update_my_application():
-    """Let an applicant correct their own application before it's decided."""
+    """Let an applicant correct their own application until a decision is published."""
     user_id, _ = _current_user()
     if not user_id:
         return jsonify({"success": False, "error": "You must be logged in"}), 401
@@ -158,7 +178,7 @@ def update_my_application():
     if not existing:
         return jsonify({"success": False, "error": "You have not applied yet"}), 404
 
-    if existing["status"] not in EDITABLE_STATUSES:
+    if not _is_editable(existing):
         return jsonify({
             "success": False,
             "error": "This application has already been decided and can no longer be edited.",
@@ -189,7 +209,10 @@ def update_my_application():
             fields.get("country", existing.get("country")),
         )
 
-    return jsonify({"success": True, "application": repo.get_application(existing["id"])}), 200
+    return jsonify({
+        "success": True,
+        "application": _applicant_view(repo.get_application(existing["id"])),
+    }), 200
 
 
 # ── Explorer admin review ─────────────────────────────────────────────────────
@@ -275,6 +298,36 @@ def set_status(application_id):
     _, admin_name = _current_user()
     logger.info("Explorer application %s set to %s by %s", application_id, status, admin_name)
     return jsonify({"success": True, "status": status}), 200
+
+
+@explorer_applications_bp.route("/publish", methods=["GET"])
+@require_explorer_admin
+def publish_preview():
+    """Count the decisions a publish would send out."""
+    changes = ExplorerApplicationRepository().list_unpublished()
+    return jsonify({"success": True, "pending": summarize(changes)}), 200
+
+
+# Typed by the admin in the confirmation modal, and checked here too so a
+# stray request can't message every applicant.
+PUBLISH_CONFIRMATION = "publish"
+
+
+@explorer_applications_bp.route("/publish", methods=["POST"])
+@require_explorer_admin
+def publish():
+    """Reveal new decisions to applicants and DM each of them."""
+    data = request.get_json(silent=True) or {}
+    if _clean(data.get("confirm")).lower() != PUBLISH_CONFIRMATION:
+        return jsonify({
+            "success": False,
+            "error": f"Type '{PUBLISH_CONFIRMATION}' to confirm.",
+        }), 400
+
+    result = publish_decisions()
+    _, admin_name = _current_user()
+    logger.info("Explorer decisions published by %s: %s", admin_name, result)
+    return jsonify({"success": True, "published": result}), 200
 
 
 @explorer_applications_bp.route("/<int:application_id>/comments", methods=["POST"])

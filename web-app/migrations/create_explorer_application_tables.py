@@ -127,6 +127,10 @@ def create_explorer_application_tables(db_path=None):
         "lgs_history": "TEXT",
         "lgs_checked_at": "TEXT",
         "lgs_lookup_error": "TEXT",
+        # The decision the applicant has been told about. Status changes stay
+        # internal to the Council until an admin publishes them.
+        "published_status": "TEXT",
+        "published_at": "TEXT",
     }
     cursor.execute("PRAGMA table_info(explorer_applications)")
     existing = {row[1] for row in cursor.fetchall()}

@@ -9,6 +9,9 @@ logger = logging.getLogger(__name__)
 
 STATUSES = ("pending", "pre_approved", "approved", "rejected")
 
+# The statuses an applicant can be told about. The rest are Council-internal.
+DECIDED_STATUSES = ("approved", "rejected")
+
 SCORE_FIELDS = ("enthusiasm", "track_record", "local_activity")
 
 # Columns an applicant supplies. Kept in one place so the create path, the CSV
@@ -135,6 +138,36 @@ class ExplorerApplicationRepository:
             cur = conn.execute(
                 """UPDATE explorer_applications
                    SET status = ?, updated_at = datetime('now')
+                   WHERE id = ?""",
+                (status, application_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def list_unpublished(self) -> list[dict]:
+        """Applications whose published decision is out of step with status.
+
+        That is a decision nobody has been told about yet, or a published
+        decision the Council has since taken back to pending/pre-approved.
+        """
+        placeholders = ", ".join("?" for _ in DECIDED_STATUSES)
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"""SELECT * FROM explorer_applications
+                    WHERE (status IN ({placeholders})
+                           AND COALESCE(published_status, '') != status)
+                       OR (status NOT IN ({placeholders})
+                           AND published_status IS NOT NULL)
+                    ORDER BY id""",
+                (*DECIDED_STATUSES, *DECIDED_STATUSES),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def mark_published(self, application_id: int, status: str | None) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """UPDATE explorer_applications
+                   SET published_status = ?, published_at = datetime('now')
                    WHERE id = ?""",
                 (status, application_id),
             )

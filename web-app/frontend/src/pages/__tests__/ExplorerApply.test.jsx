@@ -97,13 +97,15 @@ describe('ExplorerApply page', () => {
 
   it('reopens the answers for editing when an application is still open', async () => {
     getMyApplication.mockResolvedValue({
-      application: { id: 1, status: 'pre_approved', first_name: 'Ruben', city: 'Mechanicsville' },
+      application: {
+        id: 1, status: 'pending', editable: true, first_name: 'Ruben', city: 'Mechanicsville',
+      },
     })
     renderWithRouter(<ExplorerApply />)
 
     expect(await screen.findByText(/You have already applied/)).toBeInTheDocument()
     // Prefilled from what they sent, not a blank form.
-    expect(screen.getByLabelText(/First name/)).toHaveValue('Ruben')
+    await waitFor(() => expect(screen.getByLabelText(/First name/)).toHaveValue('Ruben'))
     expect(screen.getByLabelText(/City or town/)).toHaveValue('Mechanicsville')
     expect(screen.getByRole('button', { name: /Update Application/ })).toBeInTheDocument()
   })
@@ -132,14 +134,26 @@ describe('ExplorerApply page', () => {
     expect(await screen.findByText(/application has been updated/)).toBeInTheDocument()
   })
 
-  it('locks a decided application to a read-only notice', async () => {
+  it('shows a published decision read-only', async () => {
     getMyApplication.mockResolvedValue({
-      application: { id: 1, status: 'approved', first_name: 'Ruben' },
+      application: { id: 1, status: 'approved', editable: false, first_name: 'Ruben' },
     })
     renderWithRouter(<ExplorerApply />)
 
-    expect(await screen.findByText(/has been reviewed/)).toBeInTheDocument()
+    expect(await screen.findByText(/has made its decision/)).toBeInTheDocument()
+    expect(screen.getByText('Approved')).toBeInTheDocument()
+    expect(screen.getByText(/Congratulations/)).toBeInTheDocument()
     expect(screen.queryByLabelText(/First name/)).toBeNull()
+  })
+
+  it('shows a rejection kindly', async () => {
+    getMyApplication.mockResolvedValue({
+      application: { id: 1, status: 'rejected', editable: false, first_name: 'Ruben' },
+    })
+    renderWithRouter(<ExplorerApply />)
+
+    expect(await screen.findByText('Not accepted')).toBeInTheDocument()
+    expect(screen.getByText(/weren't able to accept/)).toBeInTheDocument()
   })
 
   it('surfaces a submission error', async () => {

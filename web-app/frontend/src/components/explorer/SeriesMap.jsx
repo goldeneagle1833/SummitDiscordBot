@@ -2,33 +2,44 @@ import { useState } from 'react'
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 
-const OSM = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-const CARTO = '&copy; <a href="https://carto.com/attributions">CARTO</a>'
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services'
+const ESRI_ATTRIBUTION = 'Tiles &copy; <a href="https://www.esri.com">Esri</a>'
+const esriTiles = (service) => `${ESRI}/${service}/MapServer/tile/{z}/{y}/{x}`
 
 /**
- * Basemaps that suit a dark site. All are free and need no API key.
- * Dark is the default because the plain OSM tiles glare against the theme.
+ * Basemaps that suit a dark site, from Esri's public tile services, which
+ * need no API key. (CARTO's basemaps, used before, started requiring one and
+ * served an "API KEY REQUIRED" placeholder in place of every tile.)
+ *
+ * The Canvas styles ship their place names as a separate transparent layer,
+ * drawn over the base as `labels`.
  */
 export const MAP_STYLES = {
   dark: {
     label: 'Dark',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: `${OSM} ${CARTO}`,
+    url: esriTiles('Canvas/World_Dark_Gray_Base'),
+    labels: esriTiles('Canvas/World_Dark_Gray_Reference'),
+    attribution: `${ESRI_ATTRIBUTION} &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors`,
+    maxZoom: 16,
   },
   midnight: {
     label: 'Midnight',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
-    attribution: `${OSM} ${CARTO}`,
+    url: esriTiles('Canvas/World_Dark_Gray_Base'),
+    attribution: `${ESRI_ATTRIBUTION} &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors`,
+    maxZoom: 16,
   },
-  voyager: {
-    label: 'Voyager',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    attribution: `${OSM} ${CARTO}`,
+  street: {
+    label: 'Street',
+    url: esriTiles('World_Street_Map'),
+    attribution: `${ESRI_ATTRIBUTION} &mdash; Esri, HERE, Garmin, USGS, &copy; OpenStreetMap contributors`,
+    maxZoom: 19,
   },
   light: {
     label: 'Light',
-    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    attribution: `${OSM} ${CARTO}`,
+    url: esriTiles('Canvas/World_Light_Gray_Base'),
+    labels: esriTiles('Canvas/World_Light_Gray_Reference'),
+    attribution: `${ESRI_ATTRIBUTION} &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors`,
+    maxZoom: 16,
   },
 }
 
@@ -91,7 +102,15 @@ export default function SeriesMap({
           scrollWheelZoom={false}
           style={{ height: '100%', width: '100%', background: 'transparent' }}
         >
-          <TileLayer key={style} attribution={tiles.attribution} url={tiles.url} />
+          <TileLayer
+            key={style}
+            attribution={tiles.attribution}
+            url={tiles.url}
+            maxZoom={tiles.maxZoom}
+          />
+          {tiles.labels && (
+            <TileLayer key={`${style}-labels`} url={tiles.labels} maxZoom={tiles.maxZoom} />
+          )}
           {points.map((point) => (
             <CircleMarker
               key={point.id}

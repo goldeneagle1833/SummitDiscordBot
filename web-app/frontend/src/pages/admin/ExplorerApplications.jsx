@@ -7,6 +7,8 @@ import {
   voteOnApplication,
   setApplicationStatus,
   addApplicationComment,
+  getPublishPreview,
+  publishDecisions,
   addCandidate,
   deleteApplication,
   regeocodeApplication,
@@ -48,6 +50,110 @@ function statusLabel(status) {
   return STATUS_OPTIONS.find((o) => o.value === status)?.label || status
 }
 
+const DECIDED = ['approved', 'rejected']
+
+// Status changes stay with the Council until someone publishes them.
+function isUnpublished(application) {
+  const published = application.published_status || null
+  return DECIDED.includes(application.status)
+    ? published !== application.status
+    : published !== null
+}
+
+const CONFIRM_WORD = 'publish'
+
+function PublishModal({ preview, onClose, onPublished }) {
+  const [typed, setTyped] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  const confirmed = typed.trim().toLowerCase() === CONFIRM_WORD
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (!confirmed) return
+    setBusy(true)
+    setError(null)
+    try {
+      const data = await publishDecisions(typed.trim())
+      onPublished(data.published)
+    } catch (err) {
+      setError(err.message || 'Publishing failed')
+      setBusy(false)
+    }
+  }
+
+  const messaged = preview.approved + preview.rejected - preview.no_account
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <form
+        role="dialog"
+        aria-label="Publish decisions"
+        onSubmit={submit}
+        className="bg-bg-base border border-border rounded-lg w-full max-w-md p-5 space-y-4"
+      >
+        <h2 className="text-lg font-display text-secondary">Publish decisions</h2>
+        <div className="text-sm text-text-muted space-y-2">
+          <p>
+            Each applicant will see their decision on their application page and get a
+            Discord DM and a site notification.
+          </p>
+          <ul className="list-disc pl-5 text-text-primary">
+            <li>{preview.approved} approved</li>
+            <li>{preview.rejected} rejected</li>
+            {preview.withdrawn > 0 && (
+              <li>
+                {preview.withdrawn} earlier decision{preview.withdrawn === 1 ? '' : 's'} moved
+                back to review (hidden again, no message sent)
+              </li>
+            )}
+          </ul>
+          {preview.no_account > 0 && (
+            <p>
+              {preview.no_account} of these {preview.no_account === 1 ? 'is a candidate' : 'are candidates'}{' '}
+              added by an admin, with no account to message.
+            </p>
+          )}
+          <p>
+            {messaged} applicant{messaged === 1 ? '' : 's'} will be messaged. This can&apos;t be undone.
+          </p>
+        </div>
+        <label className="block space-y-1">
+          <span className="block text-sm text-text-primary">
+            Type <span className="font-mono text-secondary">{CONFIRM_WORD}</span> to confirm
+          </span>
+          <input
+            autoFocus
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            aria-label="Type publish to confirm"
+            className={inputClass}
+          />
+        </label>
+        {error && <p className="text-xs text-accent-red">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="px-4 py-2 text-sm bg-bg-elevated border border-border rounded hover:border-secondary disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!confirmed || busy}
+            className="px-4 py-2 text-sm bg-secondary text-black font-medium rounded hover:opacity-90 disabled:opacity-40"
+          >
+            {busy ? 'Publishing…' : 'Publish'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 function ScoreSelect({ value, onChange, label }) {
   return (
     <label className="flex items-center justify-between gap-3 text-sm">
@@ -83,9 +189,14 @@ function ApplicationCard({ application, onOpen }) {
             <div className="text-xs text-text-muted">{application.discord_handle}</div>
           )}
         </div>
-        <span className={`text-xs px-2 py-0.5 rounded border ${STATUS_STYLES[application.status] || ''}`}>
-          {statusLabel(application.status)}
-        </span>
+        <div className="flex flex-col items-end gap-1">
+          <span className={`text-xs px-2 py-0.5 rounded border ${STATUS_STYLES[application.status] || ''}`}>
+            {statusLabel(application.status)}
+          </span>
+          {isUnpublished(application) && (
+            <span className="text-[11px] text-amber-400">Not published</span>
+          )}
+        </div>
       </div>
 
       <div className="text-sm text-text-muted">{place || 'Location unknown'}</div>
@@ -435,6 +546,9 @@ export default function ExplorerApplications() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
+  const [preview, setPreview] = useState(null)
+  const [publishOpen, setPublishOpen] = useState(false)
+  const [publishResult, setPublishResult] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -447,6 +561,10 @@ export default function ExplorerApplications() {
       setApplications([])
     }
     setLoading(false)
+    // Counted across every status, whatever the filter shows.
+    getPublishPreview()
+      .then((data) => setPreview(data.pending))
+      .catch(() => setPreview(null))
   }, [statusFilter])
 
   useEffect(() => { load() }, [load])
@@ -481,8 +599,28 @@ export default function ExplorerApplications() {
             Export CSV
           </a>
           <AddCandidateForm onAdded={load} />
+          <button
+            onClick={() => { setPublishResult(null); setPublishOpen(true) }}
+            disabled={!preview || preview.total === 0}
+            title={preview?.total === 0 ? 'No new decisions to publish' : undefined}
+            className="px-3 py-1.5 text-sm bg-secondary text-black font-medium rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
+          >
+            Publish{preview?.total ? ` (${preview.total})` : ''}
+          </button>
         </div>
       </div>
+
+      {publishResult && (
+        <div
+          role="status"
+          className="text-sm rounded p-3 border bg-accent-green/10 border-accent-green/30 text-accent-green"
+        >
+          Published {publishResult.approved + publishResult.rejected} decision
+          {publishResult.approved + publishResult.rejected === 1 ? '' : 's'}.{' '}
+          {publishResult.dms_queued} Discord DM{publishResult.dms_queued === 1 ? '' : 's'} queued;
+          the bot sends them within a minute.
+        </div>
+      )}
 
       {error && (
         <div className="text-sm rounded p-3 border bg-accent-red/10 border-accent-red/30 text-accent-red">
@@ -519,6 +657,18 @@ export default function ExplorerApplications() {
             />
           ))}
         </div>
+      )}
+
+      {publishOpen && preview && (
+        <PublishModal
+          preview={preview}
+          onClose={() => setPublishOpen(false)}
+          onPublished={(result) => {
+            setPublishOpen(false)
+            setPublishResult(result)
+            load()
+          }}
+        />
       )}
 
       {selectedId && (

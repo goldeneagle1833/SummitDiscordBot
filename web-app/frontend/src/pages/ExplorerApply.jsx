@@ -21,12 +21,15 @@ const ATTENDANCE_OPTIONS = [
   'More than 48',
 ]
 
+// The API only ever shows an applicant a published decision; anything the
+// Council hasn't published yet comes back as "pending".
 const STATUS_LABELS = {
   pending: 'Under review',
-  pre_approved: 'Pre-approved',
   approved: 'Approved',
   rejected: 'Not accepted',
 }
+
+const DECIDED = ['approved', 'rejected']
 
 // The control is nested inside the <label> so it is implicitly associated with
 // it — no id plumbing, and screen readers announce the label correctly.
@@ -56,9 +59,6 @@ export default function ExplorerApply() {
   const [error, setError] = useState(null)
   const [submitted, setSubmitted] = useState(false)
   const [saved, setSaved] = useState(false)
-  // Once the Council decides, the answers become the record of that decision.
-  const EDITABLE = ['pending', 'pre_approved']
-
   const [form, setForm] = useState({
     first_name: '',
     last_name: '',
@@ -119,8 +119,9 @@ export default function ExplorerApply() {
     setForm((f) => ({ ...f, [name]: value }))
   }
 
-  const editing = Boolean(existing) && EDITABLE.includes(existing.status)
-  const decided = Boolean(existing) && !EDITABLE.includes(existing.status)
+  // Answers stay editable until the Council publishes a decision.
+  const editing = Boolean(existing) && existing.editable !== false
+  const locked = Boolean(existing) && !editing
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -171,8 +172,9 @@ export default function ExplorerApply() {
     )
   }
 
-  if (submitted || decided) {
+  if (submitted || locked) {
     const status = existing?.status || 'pending'
+    const decided = DECIDED.includes(status)
     return (
       <div className="max-w-content mx-auto px-4 py-8 space-y-4">
         <h1 className="text-2xl font-display text-text-primary">
@@ -180,14 +182,22 @@ export default function ExplorerApply() {
         </h1>
         <div className="bg-bg-surface border border-border rounded-lg p-6 space-y-2">
           <p className="text-text-primary font-medium">
-            {submitted ? 'Thanks — your application is in.' : 'Your application has been reviewed.'}
+            {submitted
+              ? 'Thanks — your application is in.'
+              : decided
+                ? 'The Council has made its decision.'
+                : 'Your application is with the Council.'}
           </p>
           <p className="text-sm text-text-muted">
             Status: <span className="text-text-primary">{STATUS_LABELS[status] || status}</span>
           </p>
           <p className="text-sm text-text-muted">
-            The Explorer Series Council reviews applications in batches and will get back to
-            you in late November. If you need to change anything, join the{' '}
+            {status === 'approved'
+              ? "Congratulations! We'll be in touch with next steps."
+              : status === 'rejected'
+                ? "Thank you for applying. We weren't able to accept your application this time."
+                : 'The Explorer Series Council reviews applications in batches.'}{' '}
+            If you have questions or need to change anything, join the{' '}
             <a
               href={EXPLORER_DISCORD_INVITE}
               target="_blank"
@@ -244,7 +254,7 @@ export default function ExplorerApply() {
             {STATUS_LABELS[existing.status] || existing.status}
           </p>
           <p className="text-xs text-text-muted">
-            You can change your answers below until the Council makes a decision.
+            You can change your answers below until the Council publishes its decision.
           </p>
         </div>
       )}

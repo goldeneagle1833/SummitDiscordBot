@@ -20,15 +20,27 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from webapp_config import (
+    ANALYTICS_DB_PATH,
     COMMUNITY_DB_PATH,
     ELO_DB_PATH,
     FART_SCORES_DB_PATH,
     MATCH_RECORDS_DB_PATH,
+    MONITORING_DB_PATH,
 )
 
 logger = logging.getLogger(__name__)
 
-WAL_DB_PATHS = (MATCH_RECORDS_DB_PATH, ELO_DB_PATH, COMMUNITY_DB_PATH, FART_SCORES_DB_PATH)
+# analytics.db is written on every page view by both gunicorn workers and the
+# bot's content monitor; monitoring.db by the metrics flusher. Same contention
+# story as the shared bot databases, so they get WAL too.
+WAL_DB_PATHS = (
+    MATCH_RECORDS_DB_PATH,
+    ELO_DB_PATH,
+    COMMUNITY_DB_PATH,
+    FART_SCORES_DB_PATH,
+    ANALYTICS_DB_PATH,
+    MONITORING_DB_PATH,
+)
 
 
 def enable_wal_mode(db_paths=WAL_DB_PATHS):

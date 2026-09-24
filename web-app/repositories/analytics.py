@@ -19,7 +19,9 @@ class AnalyticsRepository:
     """Data access for page views and banner clicks."""
 
     def _connect(self):
-        return sqlite3.connect(str(ANALYTICS_DB_PATH))
+        # Two gunicorn workers plus the bot write here; wait for a lock instead
+        # of failing the insert immediately.
+        return sqlite3.connect(str(ANALYTICS_DB_PATH), timeout=5)
 
     def log_page_view(self, path: str, user_agent: str | None, referrer: str | None):
         """Record a page view."""

@@ -16,7 +16,7 @@ EnvironmentFile=/root/Summit/SummitDiscordBot/discord-bot/.env
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 
 # Start gunicorn with the configuration file
-ExecStart=/usr/local/bin/gunicorn --config gunicorn_config.py app:app
+ExecStart=/root/Summit/SummitDiscordBot/web-app/venv/bin/gunicorn --config gunicorn_config.py app:app
 
 # Restart policy
 Restart=always

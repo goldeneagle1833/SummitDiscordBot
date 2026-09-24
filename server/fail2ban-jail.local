@@ -1,0 +1,11 @@
+# Install to /etc/fail2ban/jail.local
+[DEFAULT]
+# never ban loopback or the operator's home IP
+ignoreip = 127.0.0.1/8 ::1 96.28.245.236
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled = true
+backend = systemd

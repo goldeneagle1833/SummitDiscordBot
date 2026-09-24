@@ -26,7 +26,11 @@ async function fillRequiredFields(user) {
   await user.type(screen.getByLabelText(/City or town/), 'Mechanicsville')
   await user.type(screen.getByLabelText(/State or province/), 'Virginia')
   await user.type(screen.getByLabelText(/Name of the LGS/), 'Waterloo Games')
-  await user.click(screen.getByRole('checkbox'))
+  await user.type(
+    screen.getByLabelText(/store's page on sorcerytcg.com/),
+    'https://sorcerytcg.com/stores/abc123',
+  )
+  await user.click(screen.getByRole('checkbox', { name: /I have read the summary/ }))
 }
 
 describe('ExplorerApply page', () => {
@@ -36,6 +40,43 @@ describe('ExplorerApply page', () => {
     getMyApplication.mockResolvedValue({ application: null })
     submitApplication.mockResolvedValue({ application_id: 1 })
     updateMyApplication.mockResolvedValue({ application: { id: 1, status: 'pending' } })
+  })
+
+  it('asks for the store page on sorcerytcg.com and links the directory', async () => {
+    renderWithRouter(<ExplorerApply />)
+    expect(await screen.findByLabelText(/store's page on sorcerytcg.com/)).toBeRequired()
+    expect(screen.getByRole('link', { name: /store directory/ }))
+      .toHaveAttribute('href', 'https://sorcerytcg.com/stores')
+  })
+
+  it('refuses a store link that is not a sorcerytcg.com store page', async () => {
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerApply />)
+    await screen.findByLabelText(/First name/)
+    await fillRequiredFields(user)
+    const link = screen.getByLabelText(/store's page on sorcerytcg.com/)
+    await user.clear(link)
+    await user.type(link, 'https://www.facebook.com/waterloogames')
+
+    expect(screen.getByText(/doesn’t look like a sorcerytcg.com store page/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Submit Application/ }))
+    expect(submitApplication).not.toHaveBeenCalled()
+  })
+
+  it('lets them say the store is not listed instead', async () => {
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerApply />)
+    await screen.findByLabelText(/First name/)
+    await fillRequiredFields(user)
+    await user.click(screen.getByRole('checkbox', { name: /isn't listed on sorcerytcg.com/ }))
+
+    const link = screen.getByLabelText(/store's page on sorcerytcg.com/)
+    expect(link).toBeDisabled()
+    expect(link).not.toBeRequired()
+
+    await user.click(screen.getByRole('button', { name: /Submit Application/ }))
+    await waitFor(() => expect(submitApplication).toHaveBeenCalled())
+    expect(submitApplication.mock.calls[0][0].lgs_url).toBe('not registered')
   })
 
   it('asks anonymous visitors to log in with Discord', async () => {
@@ -115,7 +156,8 @@ describe('ExplorerApply page', () => {
       application: {
         id: 1, status: 'pending', first_name: 'Ruben', last_name: 'Sanchez',
         email: 'r@example.com', city: 'Mechanicsville', state: 'Virginia',
-        lgs_name: 'Waterloo Games', read_navigator_role: true,
+        lgs_name: 'Waterloo Games', lgs_url: 'https://sorcerytcg.com/stores/abc123',
+        read_navigator_role: true,
       },
     })
     const user = userEvent.setup()

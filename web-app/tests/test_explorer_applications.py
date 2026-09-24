@@ -92,6 +92,31 @@ class TestSubmitApplication:
         assert res.status_code == 400
         assert field in res.get_json()["error"]
 
+    @pytest.mark.parametrize("lgs_url", [
+        "https://sorcerytcg.com/stores/abc123",
+        "https://play.sorcerytcg.com/stores/abc-123?tab=events",
+        "not registered",
+        "Not Registered",
+    ])
+    def test_accepted_store_links(self, applicant_session, lgs_url):
+        res = applicant_session.post(
+            "/api/explorer/applications", json=valid_application(lgs_url=lgs_url)
+        )
+        assert res.status_code == 201
+
+    @pytest.mark.parametrize("lgs_url", [
+        "",
+        "https://www.facebook.com/waterloogames",
+        "https://sorcerytcg.com/events/xyz",
+        "waterloo games",
+    ])
+    def test_store_link_must_be_a_sorcerytcg_store_page(self, applicant_session, lgs_url):
+        res = applicant_session.post(
+            "/api/explorer/applications", json=valid_application(lgs_url=lgs_url)
+        )
+        assert res.status_code == 400
+        assert "sorcerytcg.com" in res.get_json()["error"]
+
     def test_navigator_role_must_be_confirmed(self, applicant_session):
         res = applicant_session.post(
             "/api/explorer/applications",

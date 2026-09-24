@@ -32,6 +32,7 @@ def valid_application(**overrides):
         "city": "Mechanicsville",
         "state": "Virginia",
         "lgs_name": "Waterloo Games",
+        "lgs_url": "https://sorcerytcg.com/stores/abc123",
         "read_navigator_role": True,
     }
     payload.update(overrides)

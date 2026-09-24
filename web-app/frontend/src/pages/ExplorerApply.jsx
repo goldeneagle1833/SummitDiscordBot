@@ -31,6 +31,12 @@ const STATUS_LABELS = {
 
 const DECIDED = ['approved', 'rejected']
 
+const SORCERY_STORES_URL = 'https://sorcerytcg.com/stores'
+// Kept in step with SORCERY_STORE_URL_RE on the server.
+const STORE_URL_RE = /^https?:\/\/(play\.)?sorcerytcg\.com\/stores\/[A-Za-z0-9_-]+/i
+// Stored in lgs_url when the store has no sorcerytcg.com page.
+const NOT_LISTED = 'not registered'
+
 // The control is nested inside the <label> so it is implicitly associated with
 // it — no id plumbing, and screen readers announce the label correctly.
 function Field({ label, hint, children, required }) {
@@ -120,11 +126,21 @@ export default function ExplorerApply() {
   }
 
   // Answers stay editable until the Council publishes a decision.
+  const storeNotListed = form.lgs_url.trim().toLowerCase() === NOT_LISTED
+  const storeUrlError =
+    !storeNotListed && form.lgs_url.trim() && !STORE_URL_RE.test(form.lgs_url.trim())
+      ? 'That doesn’t look like a sorcerytcg.com store page. It should start with https://sorcerytcg.com/stores/'
+      : null
+
   const editing = Boolean(existing) && existing.editable !== false
   const locked = Boolean(existing) && !editing
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (storeUrlError) {
+      setError(storeUrlError)
+      return
+    }
     setSubmitting(true)
     setError(null)
     setSaved(false)
@@ -308,11 +324,44 @@ export default function ExplorerApply() {
             <input required value={form.lgs_name} onChange={update('lgs_name')} className={inputClass} />
           </Field>
           <Field
-            label="LGS page on SorceryTCG.com"
-            hint={'Paste their store URL. If they are not registered, type "not registered".'}
+            label="Link to the store's page on sorcerytcg.com"
+            required={!storeNotListed}
+            hint={
+              <>
+                Find the store in the{' '}
+                <a
+                  href={SORCERY_STORES_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  sorcerytcg.com store directory
+                </a>{' '}
+                and paste the link to its page. We use it to look up the store&apos;s recent
+                event attendance.
+              </>
+            }
           >
-            <input value={form.lgs_url} onChange={update('lgs_url')} className={inputClass} />
+            <input
+              type="url"
+              required={!storeNotListed}
+              disabled={storeNotListed}
+              value={storeNotListed ? '' : form.lgs_url}
+              onChange={update('lgs_url')}
+              placeholder="https://sorcerytcg.com/stores/..."
+              aria-invalid={Boolean(storeUrlError)}
+              className={`${inputClass} disabled:opacity-50`}
+            />
           </Field>
+          {storeUrlError && <p className="text-xs text-accent-red -mt-2">{storeUrlError}</p>}
+          <label className="flex items-center gap-2 text-sm text-text-muted">
+            <input
+              type="checkbox"
+              checked={storeNotListed}
+              onChange={(e) => setForm((f) => ({ ...f, lgs_url: e.target.checked ? NOT_LISTED : '' }))}
+            />
+            The store isn&apos;t listed on sorcerytcg.com
+          </label>
           <Field label="Has the LGS owner already confirmed they'd like to host this with you?">
             <select value={form.lgs_confirmed} onChange={update('lgs_confirmed')} className={inputClass}>
               <option value="Yes">Yes</option>

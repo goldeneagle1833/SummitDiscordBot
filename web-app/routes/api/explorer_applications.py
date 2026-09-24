@@ -19,6 +19,7 @@ from repositories.explorer_applications import (
     STATUSES,
     ExplorerApplicationRepository,
 )
+from services.explorer import SORCERY_STORE_URL_RE
 from services.geocoding import geocode_location
 from services.explorer_notifications import (
     notify_new_application_in_background,
@@ -64,6 +65,24 @@ def _collect_fields(data: dict) -> dict:
     return fields
 
 
+# What the form stores when the applicant ticks "the store isn't listed".
+STORE_NOT_LISTED = "not registered"
+
+
+def _store_url_error(lgs_url: str) -> str | None:
+    """Check the store link is a sorcerytcg.com store page (or "not listed")."""
+    if lgs_url.lower() == STORE_NOT_LISTED:
+        return None
+    if not lgs_url:
+        return "Please link the store's page on sorcerytcg.com, or say it isn't listed."
+    if not SORCERY_STORE_URL_RE.match(lgs_url):
+        return (
+            "The store link must be its sorcerytcg.com page, "
+            "like https://sorcerytcg.com/stores/abc123."
+        )
+    return None
+
+
 def _geocode_in_background(application_id: int, city, state, country):
     """Resolve coordinates off the request path.
 
@@ -103,6 +122,10 @@ def submit_application():
             "success": False,
             "error": f"Missing required field(s): {', '.join(missing)}",
         }), 400
+
+    store_error = _store_url_error(fields.get("lgs_url", ""))
+    if store_error:
+        return jsonify({"success": False, "error": store_error}), 400
 
     if not fields.get("read_navigator_role"):
         return jsonify({
@@ -193,6 +216,11 @@ def update_my_application():
             "success": False,
             "error": f"These cannot be blank: {', '.join(missing)}",
         }), 400
+
+    if "lgs_url" in fields:
+        store_error = _store_url_error(fields["lgs_url"])
+        if store_error:
+            return jsonify({"success": False, "error": store_error}), 400
 
     repo.update_application(existing["id"], fields)
 

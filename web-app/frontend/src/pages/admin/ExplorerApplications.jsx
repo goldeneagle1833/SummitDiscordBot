@@ -343,7 +343,7 @@ function ApplicationDetail({ applicationId, currentUserId, onClose, onChanged })
                     .filter(Boolean).join(', ')}
                 />
                 <DetailRow label="Local game store" value={application.lgs_name} />
-                <DetailRow label="LGS page" value={application.lgs_url} />
+                <DetailRow label="Store on sorcerytcg.com" value={application.lgs_url} />
                 <DetailRow label="Owner confirmed?" value={application.lgs_confirmed} />
                 <DetailRow label="Expected attendance" value={application.expected_attendance} />
                 <DetailRow label="Proposed dates" value={application.proposed_dates} />

@@ -56,6 +56,7 @@ def valid_application(**overrides):
     payload = {
         "first_name": "Ruben", "last_name": "Sanchez", "email": "r@example.com",
         "city": "Mechanicsville", "state": "Virginia", "lgs_name": "Waterloo Games",
+        "lgs_url": "https://sorcerytcg.com/stores/abc123",
         "read_navigator_role": True,
     }
     payload.update(overrides)
@@ -218,6 +219,15 @@ class TestApplicantEdit:
         )
         assert res.status_code == 409
 
+    def test_an_edit_cannot_swap_in_a_non_store_link(self, applicant_session):
+        self._apply(applicant_session)
+        res = applicant_session.put(
+            "/api/explorer/applications/mine", json={"lgs_url": "https://example.com"}
+        )
+        assert res.status_code == 400
+        stored = ExplorerApplicationRepository().get_by_discord_user("555000111222333444")
+        assert stored["lgs_url"] == "https://sorcerytcg.com/stores/abc123"
+
     def test_moving_town_re_places_the_pin(self, applicant_session):
         self._apply(applicant_session)
         with patch("routes.api.explorer_applications._geocode_in_background") as geocode:
@@ -333,7 +343,7 @@ class TestLgsAttendance:
         assert res.get_json()["application"]["lgs_median_players"] == 25
 
     def test_rechecking_without_a_store_link_is_rejected(self, applicant_session):
-        applicant_session.post("/api/explorer/applications", json=valid_application())
+        applicant_session.post("/api/explorer/applications", json=valid_application(lgs_url="not registered"))
         application = ExplorerApplicationRepository().get_by_discord_user("555000111222333444")
         admin_session = applicant_session
         login_as(admin_session, "admin_user_1", "AdminUser")

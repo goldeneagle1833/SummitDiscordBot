@@ -614,6 +614,37 @@ def _tally_avatar_stats(rows, use_new_columns=True):
     return avatar_stats
 
 
+TOP_PLAYER_MIN_GAMES = 10
+
+
+def _pick_top_player(players, min_games=TOP_PLAYER_MIN_GAMES, strict=False):
+    """Pick the top player for one avatar by Avatar Score.
+
+    ``players`` is ``{player_id: {"wins", "losses", "name"}}``. Players with at
+    least ``min_games`` games are preferred; if nobody qualifies, everyone is
+    considered (or ``None`` is returned when ``strict``). Ties break on win rate, then wins. Returns
+    ``(player_id, stats)`` or ``None`` when there are no players.
+    """
+    if not players:
+        return None
+    qualified = [
+        (pid, p) for pid, p in players.items()
+        if p["wins"] + p["losses"] >= min_games
+    ]
+    if not qualified and strict:
+        return None
+    candidates = qualified or list(players.items())
+    return max(
+        candidates,
+        key=lambda item: (
+            calculate_avatar_score(item[1]["wins"], item[1]["losses"]),
+            item[1]["wins"] / (item[1]["wins"] + item[1]["losses"])
+            if item[1]["wins"] + item[1]["losses"] > 0 else 0,
+            item[1]["wins"],
+        ),
+    )
+
+
 @avatars_bp.route("/avatars")
 def get_all_avatars():
     """API endpoint for global avatar stats from all matches with deck data.
@@ -678,24 +709,12 @@ def get_all_avatars():
                 "avatar_score": calculate_avatar_score(stats["wins"], stats["losses"]),
             }
             # Find top player by Avatar Score with this avatar
-            players = avatar_player_stats.get(name, {})
-            if players:
-                min_games = 10
-                qualified_players = [
-                    p for p in players.values()
-                    if p["wins"] + p["losses"] >= min_games
-                ]
-                top_candidates = qualified_players or list(players.values())
-                top = max(
-                    top_candidates,
-                    key=lambda p: (
-                        calculate_avatar_score(p["wins"], p["losses"]),
-                        p["wins"] / (p["wins"] + p["losses"]) if p["wins"] + p["losses"] > 0 else 0,
-                        p["wins"],
-                    ),
-                )
+            picked = _pick_top_player(avatar_player_stats.get(name, {}))
+            if picked:
+                top_id, top = picked
                 top_total = top["wins"] + top["losses"]
                 entry["top_player"] = {
+                    "player_id": top_id,
                     "name": top["name"],
                     "wins": top["wins"],
                     "losses": top["losses"],
@@ -707,6 +726,71 @@ def get_all_avatars():
 
     avatar_list.sort(key=lambda x: x["total"], reverse=True)
     return jsonify(avatar_list)
+
+
+def _has_active_event():
+    """True when elo.db has an active (current) season."""
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1 FROM events WHERE is_active = 1 LIMIT 1")
+            return cur.fetchone() is not None
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        return False
+
+
+@avatars_bp.route("/avatars/season-top-players")
+def get_season_avatar_badges():
+    """Top player per avatar for the current season, for leaderboard badges.
+
+    Public on purpose: it only names the single best player per avatar (the
+    same "Top Player" the Avatar Win Rates page shows), without the per-avatar
+    win rates that stay admin-only while a season is running.
+
+    Only players with at least TOP_PLAYER_MIN_GAMES games on an avatar are
+    eligible. Returns ``{"badges": [{"avatar", "player_id", "player_name",
+    "wins", "losses", "avatar_score"}, ...]}``. A player can hold several.
+    """
+    if not MATCH_RECORDS_DB_PATH.exists() or not _has_active_event():
+        return jsonify({"badges": []})
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        try:
+            cur = conn.cursor()
+            avatar_stats = {}
+            avatar_player_stats = {}
+            # Same data the Avatar Win Rates page uses by default
+            # (online/Discord-reported matches, current season).
+            rows, use_new_columns = _collect_discord_rows_with_players(cur, "current")
+            _tally_avatar_stats_with_players(rows, use_new_columns, avatar_stats, avatar_player_stats)
+        finally:
+            conn.close()
+    except sqlite3.OperationalError as e:
+        logger.error(f"Database error in get_season_avatar_badges: {e}")
+        return jsonify({"badges": []})
+
+    badges = []
+    for avatar_name, players in avatar_player_stats.items():
+        # Strict: a badge needs a real sample, not a lone 1-0 game.
+        picked = _pick_top_player(players, strict=True)
+        if not picked:
+            continue
+        player_id, stats = picked
+        badges.append({
+            "avatar": avatar_name,
+            "player_id": player_id,
+            "player_name": stats["name"],
+            "wins": stats["wins"],
+            "losses": stats["losses"],
+            "avatar_score": calculate_avatar_score(stats["wins"], stats["losses"]),
+        })
+
+    badges.sort(key=lambda b: (-b["avatar_score"], b["avatar"]))
+    return jsonify({"badges": badges})
 
 
 @avatars_bp.route("/avatars/top-players")

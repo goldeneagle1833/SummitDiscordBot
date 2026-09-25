@@ -4,6 +4,9 @@ import { get } from '@/api/client'
 import { getEventLeaderboard, getPaperEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
 import PostseasonName, { PostseasonLegend } from '@/components/player/BracketMarks'
+import AvatarBadges from '@/components/leaderboard/AvatarBadges'
+import { getAvatarImageFiles, getSeasonAvatarBadges } from '@/api/cards'
+import { badgesByPlayer } from '@/utils/avatarBadges'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -494,7 +497,7 @@ function EloToggle({ source, onChange }) {
 
 const RANK_LABELS = { 1: 'I', 2: 'II', 3: 'III' }
 
-function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo' }) {
+function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges = {} }) {
   if (!leaderboard.length) {
     return <p className="text-center text-text-muted py-8">No matches played yet</p>
   }
@@ -533,6 +536,7 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo' }) {
                       {player.name}
                     </Link>
                   </PostseasonName>
+                  <AvatarBadges badges={avatarBadges[String(player.id)]} />
                 </td>
                 <td className="py-2 px-3 text-right">{player[eloKey]}</td>
               </tr>
@@ -581,6 +585,18 @@ export default function Home() {
   useEffect(() => {
     fetchLeaderboard(source)
   }, [source, fetchLeaderboard])
+
+  // Current-season "top player with this avatar" badges (online leaderboard)
+  const [avatarBadges, setAvatarBadges] = useState({})
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([getSeasonAvatarBadges(), getAvatarImageFiles()])
+      .then(([data, files]) => {
+        if (!cancelled) setAvatarBadges(badgesByPlayer(data?.badges, files))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const handleSourceChange = (src) => {
     setSource(src)
@@ -657,7 +673,7 @@ export default function Home() {
           ) : (
             <>
               <StatBar leaderboard={leaderboard} />
-              <EventLeaderboardTable leaderboard={leaderboard} />
+              <EventLeaderboardTable leaderboard={leaderboard} avatarBadges={source === 'online' ? avatarBadges : undefined} />
             </>
           )}
         </section>

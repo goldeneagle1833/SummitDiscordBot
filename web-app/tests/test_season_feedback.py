@@ -27,25 +27,20 @@ def admin_client(client):
 def full_answers(**overrides):
     answers = {
         "seasons_played": "This is my first",
-        "games_played": "6-15",
-        "region": "Europe",
-        "english_first_language": "No",
-        "discord_name": "newbie#1",
         "welcome_rating": 4,
         "hardest_to_learn": ["Voice rules", "Other: Which channel to be in"],
         "match_balance": 3,
         "voice_mode": "A mix",
-        "voice_games_rating": 5,
-        "no_voice_games_rating": None,
-        "voice_awkward": "Yes",
-        "voice_awkward_detail": "Opponent spoke very quickly.",
+        "voice_rule": "Encouraged but optional",
+        "voice_thoughts": "Voice games were friendlier.",
         "negative_interactions": "Yes, minor",
-        "negative_kinds": ["Slow play or stalling"],
-        "reported_it": "Didn't know how",
-        "bot_uses": ["Queueing for games", "Reporting results"],
+        "negative_detail": "Opponent stalled on a losing board.",
+        "bot_ease": 5,
+        "elo_rating": 4,
         "enjoyment": 9,
-        "recommend": 10,
-        "final_thoughts": "Great season.",
+        "play_next_season": 5,
+        "improvements": "Great season.",
+        "discord_name": "newbie#1",
     }
     answers.update(overrides)
     return answers
@@ -70,7 +65,6 @@ class TestValidateAnswers:
         cleaned = validate_answers(full_answers())
         assert cleaned["enjoyment"] == 9
         assert cleaned["hardest_to_learn"] == ["Voice rules", "Other: Which channel to be in"]
-        assert cleaned["play_times"] is None
         assert set(cleaned) == {q["key"] for q in season_feedback.QUESTIONS}
 
     def test_drops_unknown_keys(self):
@@ -80,8 +74,8 @@ class TestValidateAnswers:
     def test_hidden_questions_are_nulled(self):
         cleaned = validate_answers(full_answers(seasons_played="4+", welcome_rating=2))
         assert cleaned["welcome_rating"] is None
-        cleaned = validate_answers(full_answers(voice_awkward="No"))
-        assert cleaned["voice_awkward_detail"] is None
+        cleaned = validate_answers(full_answers(negative_interactions="No"))
+        assert cleaned["negative_detail"] is None
 
     def test_required_questions(self):
         with pytest.raises(ValueError, match="enjoy"):
@@ -98,19 +92,19 @@ class TestValidateAnswers:
 
     def test_choice_must_be_an_option(self):
         with pytest.raises(ValueError):
-            validate_answers(full_answers(region="Mars"))
+            validate_answers(full_answers(voice_mode="Telepathy"))
         with pytest.raises(ValueError):
-            validate_answers(full_answers(bot_uses=["Hacking"]))
+            validate_answers(full_answers(hardest_to_learn=["Hacking"]))
 
     def test_other_only_where_allowed(self):
         with pytest.raises(ValueError):
-            validate_answers(full_answers(play_times=["Other: never"]))
-        cleaned = validate_answers(full_answers(bot_uses=["Other:   "]))
-        assert cleaned["bot_uses"] is None
+            validate_answers(full_answers(voice_mode="Other: never"))
+        cleaned = validate_answers(full_answers(hardest_to_learn=["Other:   "]))
+        assert cleaned["hardest_to_learn"] is None
 
     def test_text_limits(self):
         with pytest.raises(ValueError):
-            validate_answers(full_answers(final_thoughts="x" * 2001))
+            validate_answers(full_answers(improvements="x" * 2001))
         with pytest.raises(ValueError):
             validate_answers(full_answers(discord_name="x" * 201))
         assert validate_answers(full_answers(discord_name="   "))["discord_name"] is None
@@ -158,7 +152,7 @@ class TestAdminReview:
         admin_client.post("/api/feedback/season", json={"answers": full_answers()})
         admin_client.post(
             "/api/feedback/season",
-            json={"answers": full_answers(seasons_played="4+", enjoyment=5, bot_uses=["The shop"])},
+            json={"answers": full_answers(seasons_played="4+", enjoyment=5, voice_mode="Mostly voice")},
         )
 
         res = admin_client.get("/api/feedback/season/responses")
@@ -174,10 +168,10 @@ class TestAdminReview:
             "type": "scale", "count": 2, "average": 7.0, "min": 1, "max": 10,
         }
         assert summary["seasons_played"]["counts"] == {"This is my first": 1, "2-3": 0, "4+": 1}
-        assert summary["bot_uses"]["counts"]["Queueing for games"] == 1
-        assert summary["bot_uses"]["counts"]["The shop"] == 1
+        assert summary["voice_mode"]["counts"] == {"Mostly voice": 1, "Mostly no voice": 0, "A mix": 1}
         assert summary["hardest_to_learn"]["counts"]["Other"] == 1
-        assert summary["final_thoughts"] == {"type": "text", "count": 2}
+        assert summary["hardest_to_learn"]["count"] == 1  # hidden for the 4+ player
+        assert summary["improvements"] == {"type": "text", "count": 2}
 
     def test_filter_by_season(self, admin_client):
         admin_client.post("/api/feedback/season", json={"answers": full_answers()})
@@ -198,7 +192,8 @@ class TestAdminReview:
         assert row["season"] == season_feedback.CURRENT_SEASON
         assert row["enjoyment"] == "9"
         assert row["hardest_to_learn"] == "Voice rules; Other: Which channel to be in"
-        assert row["play_times"] == ""
+        assert row["negative_detail"] == "Opponent stalled on a losing board."
+        assert row["welcome_rating"] == "4"
         assert list(row) == season_feedback.csv_columns()
 
     def test_csv_export_filtered_by_season(self, admin_client):

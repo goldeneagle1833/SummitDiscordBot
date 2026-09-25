@@ -28,12 +28,13 @@ SHORT_TEXT_MAX = 200
 LONG_TEXT_MAX = 2000
 OTHER_PREFIX = "Other: "
 
-YES_NO = ["Yes", "No"]
+FIRST_SEASON = {"key": "seasons_played", "values": ["This is my first"]}
+HAD_ISSUE = {"key": "negative_interactions", "values": ["Yes, minor", "Yes, serious"]}
 
+# Kept short on purpose: about two minutes, mostly taps, three text boxes.
 SECTIONS: list[dict] = [
     {
         "title": "About you",
-        "description": "Helps us split answers between new and returning players.",
         "questions": [
             {
                 "key": "seasons_played",
@@ -42,38 +43,10 @@ SECTIONS: list[dict] = [
                 "options": ["This is my first", "2-3", "4+"],
                 "required": True,
             },
-            {
-                "key": "games_played",
-                "label": "Roughly how many ranked games did you play this season?",
-                "type": "radio",
-                "options": ["0", "1-5", "6-15", "16-30", "30+"],
-            },
-            {
-                "key": "region",
-                "label": "What region or timezone do you usually play from?",
-                "type": "select",
-                "options": [
-                    "NA East", "NA West", "South America", "Europe",
-                    "Asia-Pacific", "Other",
-                ],
-            },
-            {
-                "key": "english_first_language",
-                "label": "Is English your first language?",
-                "type": "radio",
-                "options": YES_NO,
-            },
-            {
-                "key": "discord_name",
-                "label": "Discord name (optional)",
-                "hint": "Only used if we need to follow up on something you wrote.",
-                "type": "text",
-            },
         ],
     },
     {
         "title": "New players",
-        "description": "Only shown if this was your first season.",
         "questions": [
             {
                 "key": "welcome_rating",
@@ -82,7 +55,7 @@ SECTIONS: list[dict] = [
                 "min": 1,
                 "max": 5,
                 "labels": ["Not welcome", "Very welcome"],
-                "show_if": {"key": "seasons_played", "values": ["This is my first"]},
+                "show_if": FIRST_SEASON,
             },
             {
                 "key": "hardest_to_learn",
@@ -94,26 +67,12 @@ SECTIONS: list[dict] = [
                     "Finding games at my times",
                 ],
                 "allow_other": True,
-                "show_if": {"key": "seasons_played", "values": ["This is my first"]},
-            },
-            {
-                "key": "knew_where_to_ask",
-                "label": "Did you know where to ask for help?",
-                "type": "radio",
-                "options": ["Yes", "Somewhat", "No"],
-                "show_if": {"key": "seasons_played", "values": ["This is my first"]},
-            },
-            {
-                "key": "casual_games_first",
-                "label": "Would a few casual games before ranked have helped you get comfortable?",
-                "type": "radio",
-                "options": ["Yes", "No", "Not sure"],
-                "show_if": {"key": "seasons_played", "values": ["This is my first"]},
+                "show_if": FIRST_SEASON,
             },
         ],
     },
     {
-        "title": "Match quality and matchmaking",
+        "title": "Games and voice",
         "questions": [
             {
                 "key": "match_balance",
@@ -124,67 +83,10 @@ SECTIONS: list[dict] = [
                 "labels": ["Very one-sided", "Very even"],
             },
             {
-                "key": "skill_mismatch",
-                "label": "How often were you matched with someone far above or below your level?",
-                "type": "radio",
-                "options": ["Never", "Sometimes", "Often", "Almost every game"],
-            },
-            {
-                "key": "wait_time",
-                "label": "How long did you usually wait for a match?",
-                "type": "radio",
-                "options": [
-                    "Under 5 minutes", "5-15 minutes", "15-30 minutes",
-                    "Over 30 minutes", "I often gave up waiting",
-                ],
-            },
-            {
-                "key": "matchmaking_ideas",
-                "label": "Would you support any of these?",
-                "type": "checkbox",
-                "options": [
-                    "Casual games required before ranked",
-                    "A \"provisional\" tag for new players",
-                    "Option to set a minimum opponent ELO or games played",
-                    "Separate new-player queue",
-                    "A reward for playing against new players",
-                    "None of these",
-                ],
-            },
-            {
-                "key": "wait_for_closer_match",
-                "label": "Would you wait longer for a closer-skilled match?",
-                "type": "radio",
-                "options": ["Yes", "Only a little", "No"],
-            },
-        ],
-    },
-    {
-        "title": "Voice",
-        "questions": [
-            {
                 "key": "voice_mode",
                 "label": "Did you play mostly with voice or without?",
                 "type": "radio",
                 "options": ["Mostly voice", "Mostly no voice", "A mix"],
-            },
-            {
-                "key": "voice_games_rating",
-                "label": "How did games with voice feel?",
-                "type": "scale",
-                "min": 1,
-                "max": 5,
-                "labels": ["Bad", "Great"],
-                "allow_na": True,
-            },
-            {
-                "key": "no_voice_games_rating",
-                "label": "How did games without voice feel?",
-                "type": "scale",
-                "min": 1,
-                "max": 5,
-                "labels": ["Bad", "Great"],
-                "allow_na": True,
             },
             {
                 "key": "voice_rule",
@@ -196,35 +98,16 @@ SECTIONS: list[dict] = [
                 ],
             },
             {
-                "key": "voice_awkward",
-                "label": "Did language or voice ever make a game harder or awkward?",
-                "type": "radio",
-                "options": YES_NO,
-            },
-            {
-                "key": "voice_awkward_detail",
-                "label": "What happened?",
-                "type": "textarea",
-                "show_if": {"key": "voice_awkward", "values": ["Yes"]},
-            },
-            {
                 "key": "voice_thoughts",
-                "label": "What do you like or dislike about playing with voice?",
+                "label": "How did games with and without voice feel?",
+                "hint": "Anything you liked, disliked, or found awkward.",
                 "type": "textarea",
             },
         ],
     },
     {
-        "title": "Sportsmanship and interactions",
+        "title": "Sportsmanship",
         "questions": [
-            {
-                "key": "opponents_rating",
-                "label": "Overall, how were your opponents to play against?",
-                "type": "scale",
-                "min": 1,
-                "max": 5,
-                "labels": ["Unpleasant", "Great"],
-            },
             {
                 "key": "negative_interactions",
                 "label": "Did you have any negative interactions this season?",
@@ -232,78 +115,19 @@ SECTIONS: list[dict] = [
                 "options": ["No", "Yes, minor", "Yes, serious"],
             },
             {
-                "key": "negative_kinds",
-                "label": "What kind?",
-                "type": "checkbox",
-                "options": [
-                    "Rude or toxic chat", "Slow play or stalling",
-                    "Leaving mid-game", "Disputed results",
-                    "Rules disagreements",
-                ],
-                "allow_other": True,
-                "show_if": {
-                    "key": "negative_interactions",
-                    "values": ["Yes, minor", "Yes, serious"],
-                },
-            },
-            {
-                "key": "reported_it",
-                "label": "Did you report it?",
-                "type": "radio",
-                "options": [
-                    "Yes", "Didn't know how", "Didn't think it would help",
-                    "Didn't feel it was worth it",
-                ],
-                "show_if": {
-                    "key": "negative_interactions",
-                    "values": ["Yes, minor", "Yes, serious"],
-                },
-            },
-            {
-                "key": "private_note",
-                "label": "Anything you'd like the organizers to know privately?",
+                "key": "negative_detail",
+                "label": "What happened?",
                 "hint": (
-                    "Form answers aren't read in real time. Please also message "
-                    "a mod directly about anything serious."
+                    "Only the organizers see this. For anything serious, "
+                    "please also message a mod directly."
                 ),
                 "type": "textarea",
-            },
-            {
-                "key": "shoutout",
-                "label": "Is there a player who made your season better?",
-                "type": "text",
+                "show_if": HAD_ISSUE,
             },
         ],
     },
     {
-        "title": "Top Cut and scheduling",
-        "questions": [
-            {
-                "key": "top_cut",
-                "label": "Did you qualify for, or try to qualify for, Top Cut?",
-                "type": "radio",
-                "options": ["Qualified", "Tried", "Didn't try"],
-            },
-            {
-                "key": "top_cut_times",
-                "label": "Were Top Cut times workable for your timezone?",
-                "type": "radio",
-                "options": ["Yes", "Somewhat", "No", "Didn't try"],
-            },
-            {
-                "key": "play_times",
-                "label": "When do you usually play?",
-                "type": "checkbox",
-                "options": [
-                    "Weekday mornings", "Weekday afternoons", "Weekday evenings",
-                    "Weekday late night", "Weekend mornings", "Weekend afternoons",
-                    "Weekend evenings", "Weekend late night",
-                ],
-            },
-        ],
-    },
-    {
-        "title": "Bot, ELO, and tools",
+        "title": "Bot and ELO",
         "questions": [
             {
                 "key": "bot_ease",
@@ -314,16 +138,6 @@ SECTIONS: list[dict] = [
                 "labels": ["Very difficult", "Very easy"],
             },
             {
-                "key": "bot_uses",
-                "label": "What did you use the bot for?",
-                "type": "checkbox",
-                "options": [
-                    "Queueing for games", "Reporting results",
-                    "Checking stats or ELO", "The shop", "The fart game",
-                ],
-                "allow_other": True,
-            },
-            {
                 "key": "elo_rating",
                 "label": "How much did you like the ELO system?",
                 "type": "scale",
@@ -331,35 +145,10 @@ SECTIONS: list[dict] = [
                 "max": 5,
                 "labels": ["Disliked it", "Loved it"],
             },
-            {
-                "key": "elo_motivated",
-                "label": "Did the ELO system motivate you to play more games?",
-                "type": "radio",
-                "options": ["Yes", "Somewhat", "No"],
-            },
-            {
-                "key": "elo_feedback",
-                "label": "Would you change anything about ELO?",
-                "type": "textarea",
-            },
-            {
-                "key": "so_reliability",
-                "label": "How reliable were Sorcery Online table setup and result reporting?",
-                "type": "scale",
-                "min": 1,
-                "max": 5,
-                "labels": ["Constant problems", "Flawless"],
-                "allow_na": True,
-            },
-            {
-                "key": "website_ideas",
-                "label": "What would make the website more useful?",
-                "type": "textarea",
-            },
         ],
     },
     {
-        "title": "Overall",
+        "title": "Wrap-up",
         "questions": [
             {
                 "key": "enjoyment",
@@ -371,27 +160,6 @@ SECTIONS: list[dict] = [
                 "required": True,
             },
             {
-                "key": "why_played",
-                "label": "What made you want to play in the Summit?",
-                "type": "checkbox",
-                "options": [
-                    "Ranked competition", "Prizes", "Meeting other players",
-                    "Practicing for events", "A friend invited me",
-                    "Regular games at set times",
-                ],
-                "allow_other": True,
-            },
-            {
-                "key": "improvements",
-                "label": "What would you like to see added or improved in future Summits?",
-                "type": "textarea",
-            },
-            {
-                "key": "confusing",
-                "label": "Was there anything confusing or frustrating during the season?",
-                "type": "textarea",
-            },
-            {
                 "key": "play_next_season",
                 "label": "How likely are you to play next season?",
                 "type": "scale",
@@ -400,17 +168,15 @@ SECTIONS: list[dict] = [
                 "labels": ["Very unlikely", "Definitely"],
             },
             {
-                "key": "recommend",
-                "label": "How likely are you to recommend the Summit to a friend?",
-                "type": "scale",
-                "min": 1,
-                "max": 10,
-                "labels": ["Not likely", "Very likely"],
+                "key": "improvements",
+                "label": "What should we add, change, or fix for next season?",
+                "type": "textarea",
             },
             {
-                "key": "final_thoughts",
-                "label": "Any final thoughts or feedback?",
-                "type": "textarea",
+                "key": "discord_name",
+                "label": "Discord name (optional)",
+                "hint": "Only used if we need to follow up on something you wrote.",
+                "type": "text",
             },
         ],
     },

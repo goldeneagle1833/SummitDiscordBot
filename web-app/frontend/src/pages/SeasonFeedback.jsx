@@ -354,9 +354,9 @@ export default function SeasonFeedback() {
       <div>
         <h1 className="text-2xl font-display text-secondary">{form.season} Feedback</h1>
         <p className="text-sm text-text-muted mt-1">
-          Thanks for playing this season. Every question is optional except the two
-          marked with <span className="text-accent-red">*</span>, so answer as much or as little as you like.
-          It takes about five minutes. Answers are only seen by the organizers.
+          Thanks for playing this season. This takes about two minutes. Only the two
+          questions marked <span className="text-accent-red">*</span> are required, so skip
+          anything you like. Answers are only seen by the organizers.
         </p>
       </div>
 

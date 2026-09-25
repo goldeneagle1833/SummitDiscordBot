@@ -28,6 +28,8 @@ from cogs.card_catalog_sync import CardCatalogSyncCog, ensure_card_catalog_table
 from cogs.dynamic_voice import DynamicVoiceCog
 from cogs.content_monitor import ContentMonitorCog
 from cogs.health_monitor import HealthMonitorCog
+from cogs.pairing_bans import PairingBanCog
+from repositories.pairing_bans_repo import create_pairing_bans_table
 from cogs.lfg.persistent_confirm import (
     PersistentConfirmButton,
     PersistentDisputeButton,
@@ -187,6 +189,7 @@ async def setup_cogs():
     await bot.add_cog(DynamicVoiceCog(bot))  # Auto-create temporary voice rooms
     await bot.add_cog(ContentMonitorCog(bot))  # Auto-create promo banners from sorcery-content links
     await bot.add_cog(HealthMonitorCog(bot))  # Periodic API health checks, DMs owner on degradation
+    await bot.add_cog(PairingBanCog(bot))  # !ban / !unban: block players from the pairing service
 
 
 async def main():
@@ -198,6 +201,7 @@ async def main():
         ensure_match_cards_table()
         _migrate_match_cards_columns()
         ensure_card_catalog_table()
+        create_pairing_bans_table()
         # Register DynamicItem buttons so Confirm/Dispute survive bot restarts
         bot.add_dynamic_items(
             PersistentConfirmButton, PersistentDisputeButton,

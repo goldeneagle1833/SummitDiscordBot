@@ -20,6 +20,7 @@ from cogs.lfg.voice import (
 )
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
 from repositories.limited_repo import get_active_arena_run
+from repositories.pairing_bans_repo import get_pairing_ban, pairing_ban_message
 from services.card_points_service import validate_deck_points
 from services.summit_result_reporting import record_sorcery_online_result
 from cogs.lfg.voice import SUMMIT_VOICE_URL
@@ -207,6 +208,9 @@ async def start_matchmaking_api(bot):
         guild, member = await _summit_member(bot, user_id)
         if not member:
             raise web.HTTPForbidden(text="Summit membership is required")
+        ban = get_pairing_ban(user_id)
+        if ban:
+            raise web.HTTPForbidden(text=pairing_ban_message(ban))
         payload = await request.json()
         queue_type = str(payload.get("queue_type", ""))
         definition = queue_definition(queue_type)

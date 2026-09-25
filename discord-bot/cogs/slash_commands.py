@@ -324,6 +324,57 @@ class SlashCommandsCog(commands.Cog):
 
         await community_cog.list_community_cmd(ctx)
 
+    # ==================== PAIRING BANS (ADMIN ONLY) ====================
+
+    @app_commands.command(
+        name="ban",
+        description="🔧 [ADMIN] Block a player from the pairing service (opens a form)",
+    )
+    @app_commands.describe(member="The player to block")
+    @app_commands.default_permissions(administrator=True)
+    async def ban_slash(self, interaction: discord.Interaction, member: discord.Member):
+        """Opens the ban modal directly (slash commands can respond with a modal)."""
+        from cogs.pairing_bans import member_is_admin
+
+        if not member_is_admin(interaction.user):
+            await interaction.response.send_message(
+                "You need administrator permissions to use this command.", ephemeral=True
+            )
+            return
+        ban_cog = self.bot.get_cog("PairingBanCog")
+        if not ban_cog:
+            await interaction.response.send_message(
+                "Pairing bans are not available.", ephemeral=True
+            )
+            return
+        error = ban_cog.validate_target(interaction.user, member)
+        if error:
+            await interaction.response.send_message(error, ephemeral=True)
+            return
+        await interaction.response.send_modal(ban_cog.build_ban_modal(member, interaction.user))
+
+    @app_commands.command(
+        name="unban",
+        description="🔧 [ADMIN] Lift a player's pairing service block",
+    )
+    @app_commands.describe(member="The player to unblock")
+    @app_commands.default_permissions(administrator=True)
+    async def unban_slash(self, interaction: discord.Interaction, member: discord.Member):
+        from cogs.pairing_bans import member_is_admin
+
+        await interaction.response.defer(ephemeral=True)
+        if not member_is_admin(interaction.user):
+            await interaction.followup.send(
+                "You need administrator permissions to use this command.", ephemeral=True
+            )
+            return
+        ban_cog = self.bot.get_cog("PairingBanCog")
+        if not ban_cog:
+            await interaction.followup.send("Pairing bans are not available.", ephemeral=True)
+            return
+        embed = await ban_cog.apply_unban(member, interaction.user)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
 
 async def setup(bot):
     await bot.add_cog(SlashCommandsCog(bot))

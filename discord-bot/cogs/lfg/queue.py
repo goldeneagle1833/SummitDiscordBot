@@ -29,7 +29,7 @@ from cogs.lfg.pairing_messages import (
     send_pairing_messages,
 )
 from utils.constants import SORCERY_NICKNAMES
-from utils.database import save_pairing
+from utils.database import save_pairing, get_pairing_ban, pairing_ban_message
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
 from services.card_points_service import validate_deck_points
 from services.limited_service import auto_start_arena_run
@@ -426,6 +426,12 @@ async def _process_queue_join(
         )
         return
 
+    # Admin pairing ban (covers modals opened before the ban landed, and the website)
+    ban = get_pairing_ban(interaction.user.id)
+    if ban:
+        await interaction.followup.send(pairing_ban_message(ban), ephemeral=True)
+        return
+
     async with lfg_queue_lock:
         # Check if already in this specific queue type
         user_queues = lfg_queue.get(interaction.user.id, {}).get("queues", {})
@@ -770,6 +776,11 @@ class JoinQueueButtons(discord.ui.View):
 
     async def _handle_join(self, interaction: discord.Interaction, queue_type: str):
         """Shared handler for all join buttons"""
+        # Admin pairing ban: tell them why and how long is left, don't open the modal
+        ban = get_pairing_ban(interaction.user.id)
+        if ban:
+            await interaction.response.send_message(pairing_ban_message(ban), ephemeral=True)
+            return
         # Check if already in this specific queue type
         user_queues = lfg_queue.get(interaction.user.id, {}).get("queues", {})
         if queue_type in user_queues:

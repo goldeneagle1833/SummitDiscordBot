@@ -107,3 +107,16 @@ from repositories.community_repo import (  # noqa: F401
     get_all_youtube_channels,
     get_all_websites,
 )
+
+# Pairing-service bans (admin !ban / !unban)
+from repositories.pairing_bans_repo import (  # noqa: F401
+    create_pairing_bans_table,
+    set_pairing_ban,
+    get_pairing_ban,
+    is_pairing_banned,
+    remove_pairing_ban,
+    get_active_pairing_bans,
+    pairing_ban_message,
+    format_time_remaining,
+    BAN_DURATIONS,
+)

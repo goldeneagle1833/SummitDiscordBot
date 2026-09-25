@@ -11,7 +11,7 @@ from cogs.lfg.pairing_messages import (
     announce_pairing,
     send_pairing_messages,
 )
-from utils.database import save_pairing
+from utils.database import save_pairing, get_pairing_ban, pairing_ban_message
 from utils.deck_checker import clean_deck_url
 
 logger = logging.getLogger("discord_bot")
@@ -328,6 +328,11 @@ class ChallengeButtons(discord.ui.View):
     async def accept_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        # Admin pairing ban on the accepter
+        ban = get_pairing_ban(interaction.user.id)
+        if ban:
+            await interaction.response.send_message(pairing_ban_message(ban), ephemeral=True)
+            return
         # Open modal for deck URL entry
         modal = ChallengeAcceptModal(
             challenger_id=self.challenger_id,

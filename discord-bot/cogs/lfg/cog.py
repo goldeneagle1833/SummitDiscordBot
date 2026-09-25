@@ -76,6 +76,9 @@ from utils.database import (
     set_player_event_elo,
     is_blocked_pair,
     create_blocked_users_table,
+    get_pairing_ban,
+    is_pairing_banned,
+    pairing_ban_message,
 )
 from utils.constants import SORCERY_NICKNAMES
 from utils.text import find_best_command_match
@@ -875,6 +878,12 @@ class LFGCog(commands.Cog):
                 )
                 continue
 
+            # Skip players an admin has banned from pairing (safety net if they
+            # were already queued when the ban landed)
+            if is_pairing_banned(user_id):
+                logger.info(f"Skipping {user_id} - pairing ban")
+                continue
+
             if queue_supports_voice(queue_type) and not voice_preferences_compatible(
                 voice, entry.get("voice", ANY_VOICE)
             ):
@@ -994,6 +1003,21 @@ class LFGCog(commands.Cog):
             await ctx.send("You cannot challenge a bot!")
             return
 
+        # Admin pairing bans: the challenger can't use the service, and a banned
+        # opponent can't be pulled into a match either.
+        ban = get_pairing_ban(ctx.author.id)
+        if ban:
+            await ctx.send(
+                f"{ctx.author.mention}, {pairing_ban_message(ban)}", delete_after=60
+            )
+            return
+        if is_pairing_banned(opponent.id):
+            await ctx.send(
+                f"{opponent.mention} is currently blocked from the pairing service and can't be challenged.",
+                delete_after=30,
+            )
+            return
+
         channel_id = config.LFG_CHANNEL_ID
         lfg_channel = self.bot.get_channel(channel_id)
 
@@ -1038,6 +1062,17 @@ class LFGCog(commands.Cog):
 
         user_id = ctx.author.id
         user_global = ctx.author.global_name or ctx.author.display_name
+
+        # Admin pairing ban
+        ban = get_pairing_ban(user_id)
+        if ban:
+            ban_text = pairing_ban_message(ban)
+            try:
+                await ctx.author.send(ban_text)
+            except discord.Forbidden:
+                if ctx.guild:
+                    await ctx.send(f"{ctx.author.mention}, {ban_text}", delete_after=60)
+            return
 
         # Check if challenges are disabled during the first week of an event
         from utils.database import get_active_event
@@ -1493,6 +1528,16 @@ class LFGCog(commands.Cog):
         )
 
         # Player Removal
+        embed.add_field(
+            name="Pairing Bans",
+            value=(
+                "`!ban @user` - Block a player from the pairing service (opens a form: 24h/48h/72h/lifetime + reasoning; DMs them)\n"
+                "`!unban @user` - Lift a pairing ban early (DMs them)\n"
+                "`!bans` - List active pairing bans"
+            ),
+            inline=False,
+        )
+
         embed.add_field(
             name="Player Removal",
             value=(

@@ -1,8 +1,14 @@
 """Feedback API routes for community feedback submissions."""
 
-from flask import Blueprint, jsonify, request, session
+import csv
+import io
+import re
+
+from flask import Blueprint, Response, jsonify, request, session
 
 from repositories.feedback import FeedbackRepository
+from repositories.season_feedback import SeasonFeedbackRepository
+from services import season_feedback
 from utils.auth import require_admin, require_api_key
 
 feedback_bp = Blueprint("feedback", __name__)
@@ -98,4 +104,93 @@ def mark_feedback_notified(feedback_id):
     """Mark feedback as notified after bot sends DM."""
     repo = FeedbackRepository()
     repo.mark_notified(feedback_id)
+    return jsonify({"success": True})
+
+
+# ---------------------------------------------------------------------------
+# Post-season feedback survey
+#
+# The form is public: the link goes out in the season wrap-up announcement
+# rather than in the site nav, and players shouldn't need to log in to answer.
+# If they are logged in, the session identity is attached so admins can
+# follow up on anything serious.
+# ---------------------------------------------------------------------------
+
+
+@feedback_bp.route("/season/form", methods=["GET"])
+def get_season_feedback_form():
+    """Question schema for the post-season feedback form (public)."""
+    return jsonify(season_feedback.get_form())
+
+
+@feedback_bp.route("/season", methods=["POST"])
+def submit_season_feedback():
+    """Submit a post-season feedback response (public, no login required)."""
+    data = request.get_json(silent=True) or {}
+    try:
+        answers = season_feedback.validate_answers(data.get("answers") or {})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    user_id = session.get("user_id")
+    username = session.get("username")
+
+    repo = SeasonFeedbackRepository()
+    response_id = repo.create(
+        season=season_feedback.CURRENT_SEASON,
+        answers=answers,
+        user_id=str(user_id) if user_id else None,
+        username=username,
+    )
+    return jsonify({"success": True, "id": response_id}), 201
+
+
+@feedback_bp.route("/season/responses", methods=["GET"])
+@require_admin
+def list_season_feedback():
+    """Responses for one season with per-question tallies (admin only)."""
+    repo = SeasonFeedbackRepository()
+    seasons = repo.list_seasons()
+    season = request.args.get("season") or (seasons[0] if seasons else season_feedback.CURRENT_SEASON)
+    responses = repo.list_responses(season)
+    return jsonify({
+        "season": season,
+        "seasons": seasons,
+        "current_season": season_feedback.CURRENT_SEASON,
+        "sections": season_feedback.SECTIONS,
+        "responses": responses,
+        "summary": season_feedback.summarize(responses),
+    })
+
+
+@feedback_bp.route("/season/export.csv", methods=["GET"])
+@require_admin
+def export_season_feedback_csv():
+    """Download responses as CSV, one column per question (admin only)."""
+    repo = SeasonFeedbackRepository()
+    season = request.args.get("season") or None
+    responses = repo.list_responses(season)
+
+    columns = season_feedback.csv_columns()
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    for response in responses:
+        writer.writerow(season_feedback.csv_row(response))
+
+    slug = re.sub(r"[^a-z0-9]+", "-", (season or "all-seasons").lower()).strip("-")
+    return Response(
+        buffer.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=season-feedback-{slug}.csv"},
+    )
+
+
+@feedback_bp.route("/season/<int:response_id>", methods=["DELETE"])
+@require_admin
+def delete_season_feedback(response_id):
+    """Delete one survey response (admin only)."""
+    repo = SeasonFeedbackRepository()
+    if not repo.delete(response_id):
+        return jsonify({"error": "Response not found"}), 404
     return jsonify({"success": True})

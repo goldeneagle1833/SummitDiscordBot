@@ -79,6 +79,7 @@ import BracketsAdmin from '@/pages/admin/BracketsAdmin'
 import UserProfiles from '@/pages/admin/UserProfiles'
 import ExplorerApplications from '@/pages/admin/ExplorerApplications'
 import ExplorerApply from '@/pages/ExplorerApply'
+import SeasonFeedback from '@/pages/SeasonFeedback'
 
 // Error pages
 import ErrorPage from '@/pages/ErrorPage'
@@ -208,6 +209,8 @@ const router = createBrowserRouter([
       { path: '/deck-builder', element: <DeckBuilder /> },
       { path: '/secret-fart-leaderboard', element: <FartLeaderboard /> },
       { path: '/feedback', element: <Feedback /> },
+      // Post-season survey: unlisted, the link goes out in the announcement
+      { path: '/season-feedback', element: <SeasonFeedback /> },
       { path: '/login', element: <Login /> },
       // Creator
       { path: '/creator', element: <CreatorGuard><Creator /></CreatorGuard> },

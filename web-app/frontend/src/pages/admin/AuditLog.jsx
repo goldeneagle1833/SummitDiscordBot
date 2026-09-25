@@ -11,6 +11,7 @@ import CardPointsSection from '@/components/admin/CardPointsSection'
 import ReactionRolesSection from '@/components/admin/ReactionRolesSection'
 import AuditLogTable from '@/components/admin/AuditLogTable'
 import FeedbackKanban from '@/components/admin/FeedbackKanban'
+import SeasonFeedbackSection from '@/components/admin/SeasonFeedbackSection'
 
 export default function AuditLog() {
   usePageTitle('Admin Audit Log')
@@ -23,6 +24,9 @@ export default function AuditLog() {
       </div>
       <AdminCollapsible title="Feedback Board" subtitle="Community feedback submissions" defaultOpen>
         <FeedbackKanban />
+      </AdminCollapsible>
+      <AdminCollapsible title="Season Feedback" subtitle="Post-season survey responses and CSV export">
+        <SeasonFeedbackSection />
       </AdminCollapsible>
       <AdminCollapsible title="Dashboard" subtitle="Community health at a glance" defaultOpen>
         <DashboardSection />

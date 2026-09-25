@@ -213,6 +213,9 @@ KNOWN_PUBLIC_ENDPOINTS = {
 
     # -- Feedback (public submission) --
     "api.feedback.submit_feedback",
+    # Post-season survey: link is shared in the announcement, no login needed
+    "api.feedback.get_season_feedback_form",
+    "api.feedback.submit_season_feedback",
 }
 
 

@@ -325,3 +325,35 @@ class TestEventMatchHistoryRoutes:
         resp = admin_session.post("/api/events/Test Event/match-history", json={})
         assert resp.status_code == 400
 
+
+class TestSetDisplayName:
+    """Players choose the name the site shows, and may change it later."""
+
+    def _login(self, client, user_id="phil_1"):
+        from repositories.user_profiles import UserProfileRepository
+        UserProfileRepository().upsert_profile(user_id=user_id, display_name="schotti", provider="discord")
+        with client.session_transaction() as sess:
+            sess["user_id"] = user_id
+            sess["username"] = "schotti"
+            sess["auth_provider"] = "discord"
+        return client
+
+    def test_name_can_be_changed_after_it_was_set(self, client):
+        from repositories.user_profiles import UserProfileRepository
+        self._login(client)
+
+        first = client.post("/api/player/phil_1/set-display-name", json={"display_name": "schotti"})
+        assert first.status_code == 200
+        second = client.post("/api/player/phil_1/set-display-name", json={"display_name": "Phil"})
+        assert second.status_code == 200
+        assert second.get_json()["display_name"] == "Phil"
+        assert UserProfileRepository().get_by_user_id("phil_1")["custom_display_name"] == "Phil"
+
+    def test_only_the_owner_can_rename(self, client):
+        self._login(client)
+        resp = client.post("/api/player/someone_else/set-display-name", json={"display_name": "Phil"})
+        assert resp.status_code == 403
+
+    def test_rename_requires_login(self, client):
+        resp = client.post("/api/player/phil_1/set-display-name", json={"display_name": "Phil"})
+        assert resp.status_code == 401

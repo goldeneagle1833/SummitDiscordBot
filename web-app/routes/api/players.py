@@ -2623,7 +2623,10 @@ def player_api(player_id):
 
 @players_bp.route("/player/<player_id>/set-display-name", methods=["POST"])
 def set_display_name(player_id):
-    """Set a custom display name for the logged-in user (one-time only)."""
+    """Set or change the logged-in user's chosen display name.
+
+    Players may rename themselves whenever they like.
+    """
     logger.info(f"set_display_name API called: player_id={player_id}")
 
     # Verify session auth - user must be logged in as this player
@@ -2665,11 +2668,10 @@ def set_display_name(player_id):
     try:
         profile_repo = UserProfileRepository()
 
-        # Try to set the custom display name (fails if already set)
         profile_user_id = logged_in_id_str
         success = profile_repo.set_custom_display_name(profile_user_id, auth_provider, new_name)
         if not success:
-            return jsonify({"error": "Display name has already been set"}), 409
+            return jsonify({"error": "Profile not found"}), 404
 
         logger.info(f"User {logged_in_id_str} set custom display name to '{new_name}'")
 

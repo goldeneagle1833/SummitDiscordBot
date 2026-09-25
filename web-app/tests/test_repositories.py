@@ -271,6 +271,19 @@ class TestUserProfileRepository:
         profile = repo.get_by_user_id("99")
         assert profile["custom_display_name"] == "Custom"
 
+    def test_chosen_name_can_be_changed_again(self, match_db):
+        """A player renames themselves as often as they like."""
+        repo = UserProfileRepository(db_path=match_db)
+        repo.upsert_profile(user_id="99", display_name="schotti", provider="discord")
+
+        assert repo.set_custom_display_name("99", "discord", "schotti") is True
+        assert repo.set_custom_display_name("99", "discord", "Phil") is True
+        assert repo.get_by_user_id("99")["custom_display_name"] == "Phil"
+
+    def test_chosen_name_needs_a_profile(self, match_db):
+        repo = UserProfileRepository(db_path=match_db)
+        assert repo.set_custom_display_name("nobody", "discord", "Phil") is False
+
     def test_ensure_table_idempotent(self, match_db):
         """Creating repo twice doesn't fail (table already exists)."""
         repo1 = UserProfileRepository(db_path=match_db)

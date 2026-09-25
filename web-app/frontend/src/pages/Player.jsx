@@ -161,7 +161,7 @@ const [editDeck, setEditDeck] = useState(null)
         />
       )}
 
-      {/* Display Name Banner (owner only, no custom name yet) */}
+      {/* Display name: a banner until the owner picks one, then a change link */}
       {data.is_owner && (
         <DisplayNameBanner
           playerId={playerId}

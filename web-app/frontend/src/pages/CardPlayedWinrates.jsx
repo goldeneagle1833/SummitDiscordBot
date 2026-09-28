@@ -14,17 +14,17 @@ const EMPTY_FILTERS = { type: '', element: '', rarity: '' }
 const EMPTY_ROWS = []
 const EMPTY_CATALOG = []
 
-const SEGMENT = 'px-4 min-h-[36px] text-sm transition-colors'
-const SEGMENT_ON = `${SEGMENT} bg-primary text-bg-base font-semibold`
-const SEGMENT_OFF = `${SEGMENT} bg-bg-elevated text-text-muted hover:text-text`
 const TAB = 'px-4 min-h-[34px] rounded text-sm transition-colors'
 const TAB_ON = `${TAB} bg-bg-elevated text-text`
 const TAB_OFF = `${TAB} text-text-muted hover:text-text`
 const FIELD = 'bg-bg-surface border border-border rounded px-3 text-sm text-text min-h-[36px] focus:outline-none focus:border-primary'
 const GHOST = 'border border-border bg-bg-surface text-[#c9d1d9] rounded px-3 min-h-[32px] text-xs hover:border-primary/60 transition-colors'
 
-function selectionOf(format, from, through) {
-  const selection = { format }
+// Summit only runs constructed ranked queues, so the format is fixed.
+const FORMAT = 'constructed'
+
+function selectionOf(from, through) {
+  const selection = { format: FORMAT }
   if (from) selection.from = from
   if (through) selection.through = through
   return selection
@@ -51,7 +51,6 @@ export default function CardPlayedWinrates() {
   usePageTitle('Card Win Rates')
 
   const [tab, setTab] = useState('cards')
-  const [format, setFormat] = useState('constructed')
   const [from, setFrom] = useState('')
   const [through, setThrough] = useState('')
   const [search, setSearch] = useState('')
@@ -72,7 +71,7 @@ export default function CardPlayedWinrates() {
   const [queryPopulation, setQueryPopulation] = useState(null)
   const requestId = useRef(0)
 
-  const selection = useMemo(() => selectionOf(format, from, through), [format, from, through])
+  const selection = useMemo(() => selectionOf(from, through), [from, through])
   const query = useMemo(() => new URLSearchParams(selection).toString(), [selection])
   const dateOrderProblem = from && through && from > through
 
@@ -177,10 +176,6 @@ export default function CardPlayedWinrates() {
 
       <section className="flex flex-col gap-3" aria-label="Data selection">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex border border-border rounded-lg overflow-hidden" role="group" aria-label="Format">
-            <button type="button" aria-pressed={format === 'constructed'} onClick={() => setFormat('constructed')} className={format === 'constructed' ? SEGMENT_ON : SEGMENT_OFF}>Constructed</button>
-            <button type="button" aria-pressed={format === 'limited'} onClick={() => setFormat('limited')} className={format === 'limited' ? SEGMENT_ON : SEGMENT_OFF}>Limited</button>
-          </div>
           <label className="flex items-center gap-2 text-sm text-text-muted">From
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={FIELD} />
           </label>
@@ -231,7 +226,7 @@ export default function CardPlayedWinrates() {
           </UnavailablePanel>
         ) : rows.length === 0 ? (
           <UnavailablePanel title="No games in this range">
-            No Summit ranked games were released for this format and date range yet.
+            No Summit ranked games were released for this date range yet.
           </UnavailablePanel>
         ) : (
           <>

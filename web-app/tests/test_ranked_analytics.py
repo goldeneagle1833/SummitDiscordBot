@@ -88,6 +88,7 @@ class TestCardsRoute:
     def test_requires_a_valid_format(self, client, configured, upstream):
         assert client.get("/api/ranked-analytics/cards").status_code == 400
         assert client.get("/api/ranked-analytics/cards?format=casual").status_code == 400
+        assert client.get("/api/ranked-analytics/cards?format=limited").status_code == 400
         assert "url" not in upstream
 
     def test_rejects_extra_and_repeated_parameters(self, client, configured, upstream):

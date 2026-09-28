@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderWithRouter, screen, waitFor, userEvent, within } from '@/test/test-utils'
+import { renderWithRouter, screen, userEvent, within } from '@/test/test-utils'
 import CardPlayedWinrates from '@/pages/CardPlayedWinrates'
 import { getRankedCards, getRankedCatalog, getRankedCardReplays } from '@/api/rankedAnalytics'
 import { ApiError } from '@/api/client'
@@ -103,15 +103,6 @@ describe('CardPlayedWinrates', () => {
     await user.click(screen.getByRole('button', { name: 'Avatar' }))
     expect(screen.getByRole('row', { name: /Imposter/ })).toBeInTheDocument()
     expect(screen.queryByRole('row', { name: /Gravedigger/ })).not.toBeInTheDocument()
-  })
-
-  it('switches format and refetches', async () => {
-    const user = userEvent.setup()
-    renderWithRouter(<CardPlayedWinrates />)
-    await screen.findByRole('row', { name: /Whirling Blades/ })
-
-    await user.click(screen.getByRole('button', { name: 'Limited' }))
-    await waitFor(() => expect(getRankedCards).toHaveBeenLastCalledWith({ format: 'limited' }))
   })
 
   it('expands a card into art and replay clips', async () => {

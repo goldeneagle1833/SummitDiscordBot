@@ -36,7 +36,9 @@ DEFAULT_UPSTREAM = "https://playsorceryonline.com/api/summit/game-analytics"
 # (connect, read). Cohort queries scan a lot of games upstream.
 REQUEST_TIMEOUT_S = (3, 30)
 MAX_BODY_BYTES = 16 * 1024
-FORMATS = ("constructed", "limited")
+# Summit only runs constructed ranked queues. PSO would accept "limited"
+# too, but nothing on the site asks for it.
+FORMATS = ("constructed",)
 SELECTION_KEYS = ("format", "from", "through")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _CARD_KEY_RE = re.compile(r"^[^/\\]{1,120}$")
@@ -123,7 +125,7 @@ def clean_selection(args) -> dict[str, str]:
 
     fmt = selection.get("format")
     if fmt not in FORMATS:
-        raise InvalidSelection("format must be 'constructed' or 'limited'")
+        raise InvalidSelection("format must be 'constructed'")
     for key in ("from", "through"):
         value = selection.get(key)
         if value is not None and not _DATE_RE.match(value):

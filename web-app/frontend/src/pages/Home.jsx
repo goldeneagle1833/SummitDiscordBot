@@ -445,25 +445,28 @@ function YouTubeVideos() {
   if (!videos.length) return null
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-      {videos.map((v, i) => (
-        <div key={i} className="bg-bg-surface border border-border rounded-soft overflow-hidden">
-          <a href={v.url} target="_blank" rel="noopener noreferrer">
-            <img src={v.thumbnail} alt={v.title} className="w-full aspect-video object-cover" loading="lazy" />
-          </a>
-          <div className="p-3">
-            <p className="text-xs text-text-muted mb-1">
-              <a href={v.channel_url} target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">
-                {v.channel_display_name}
-              </a>
-            </p>
-            <a href={v.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium hover:text-primary transition-colors line-clamp-2">
-              {v.title}
+    <>
+      <p className="text-text-muted text-sm mb-4">Or catch up on some Sorcery content:</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {videos.map((v, i) => (
+          <div key={i} className="bg-bg-surface border border-border rounded-soft overflow-hidden">
+            <a href={v.url} target="_blank" rel="noopener noreferrer">
+              <img src={v.thumbnail} alt={v.title} className="w-full aspect-video object-cover" loading="lazy" />
             </a>
+            <div className="p-3">
+              <p className="text-xs text-text-muted mb-1">
+                <a href={v.channel_url} target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">
+                  {v.channel_display_name}
+                </a>
+              </p>
+              <a href={v.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium hover:text-primary transition-colors line-clamp-2">
+                {v.title}
+              </a>
+            </div>
           </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </>
   )
 }
 
@@ -684,10 +687,9 @@ export default function Home() {
           </div>
           <h2 className="text-xl font-display text-secondary mb-2">No Active Event</h2>
           <p className="text-text-muted mb-2">Check back soon for the next event leaderboard!</p>
-          <p className="text-text-muted text-sm mb-6">
+          <p className="text-text-muted text-sm mb-4">
             In the meantime, check out the{' '}
-            <Link to="/avatars" className="text-primary hover:text-primary/80">Avatar Win Rates</Link>
-            {' '}or catch up on some Sorcery content:
+            <Link to="/avatars" className="text-primary hover:text-primary/80">Avatar Win Rates</Link>.
           </p>
           <YouTubeVideos />
         </section>

@@ -129,6 +129,46 @@ def _extract_deck_info(deck_json):
     return avatar_name, elements
 
 
+LIFETIME_CHANGE_COLUMNS = ("winner_lifetime_elo_change", "loser_lifetime_elo_change")
+
+
+def _lifetime_change_select(columns):
+    """SELECT fragment for the per-match lifetime ELO deltas (NULL when the table predates them)."""
+    if all(col in columns for col in LIFETIME_CHANGE_COLUMNS):
+        return "winner_lifetime_elo_change, loser_lifetime_elo_change"
+    return "NULL as winner_lifetime_elo_change, NULL as loser_lifetime_elo_change"
+
+
+def _row_lifetime_delta(row, did_win):
+    """Lifetime ELO delta for one match row, from the player's side.
+
+    Bot rows carry the lifetime delta at index 25/26. Rows without it (older
+    matches, web reports, solo reports) moved lifetime ELO by the event delta,
+    which is also how the profile ELO chart reconstructs history.
+    """
+    lifetime = None
+    if len(row) > 26:
+        lifetime = row[25] if did_win else row[26]
+    if lifetime is None:
+        lifetime = row[7] if did_win else row[8]
+    return lifetime or 0
+
+
+def _active_event_window():
+    """(start_date, end_date) of the active event, or (None, None) when none is running."""
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        row = conn.execute(
+            "SELECT start_date, end_date FROM events WHERE is_active = 1 LIMIT 1"
+        ).fetchone()
+        conn.close()
+    except sqlite3.OperationalError:
+        return None, None
+    if not row or not row[0]:
+        return None, None
+    return str(row[0]), (str(row[1]) if row[1] else None)
+
+
 @players_bp.route("/deck-snapshot/<int:match_id>/<player_id>")
 def deck_snapshot(match_id, player_id):
     """Get deck snapshot for a specific player in a match."""
@@ -1150,7 +1190,9 @@ def player_api(player_id):
             bot_base_params = (query_player_id, query_player_id, query_player_id, event_start_date, event_end_date)
         # Voice games have been flagged only since the voice queue preference shipped
         cur.execute("PRAGMA table_info(match_records)")
-        voice_select = "voice" if "voice" in {c[1] for c in cur.fetchall()} else "NULL as voice"
+        record_cols = {c[1] for c in cur.fetchall()}
+        voice_select = "voice" if "voice" in record_cols else "NULL as voice"
+        lifetime_change_select = _lifetime_change_select(record_cols)
         # Try new schema first, fallback to old
         try:
             cur.execute(
@@ -1180,7 +1222,8 @@ def player_api(player_id):
                     loser_lifetime_elo_after,
                     match_comment,
                     reporter_id,
-                    {voice_select}
+                    {voice_select},
+                    {lifetime_change_select}
                 FROM match_records
                 WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                 ORDER BY timestamp DESC
@@ -1281,6 +1324,10 @@ def player_api(player_id):
             event_filter_clause = ""
             query_params = (query_player_id, query_player_id, query_player_id)
 
+        cur.execute("PRAGMA table_info(match_records_archive)")
+        archive_cols = {c[1] for c in cur.fetchall()}
+        archive_voice_select = "voice" if "voice" in archive_cols else "NULL as voice"
+        archive_lifetime_select = _lifetime_change_select(archive_cols)
         try:
             cur.execute(
                 f"""
@@ -1308,7 +1355,9 @@ def player_api(player_id):
                     winner_lifetime_elo_after,
                     loser_lifetime_elo_after,
                     match_comment,
-                    reporter_id
+                    reporter_id,
+                    {archive_voice_select},
+                    {archive_lifetime_select}
                 FROM match_records_archive
                 WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                 ORDER BY timestamp DESC
@@ -2324,9 +2373,44 @@ def player_api(player_id):
             "opponent": opponent_name,
         })
 
-    # Recent decks - group matches by deck URL to calculate win rates
+    # Recent decks - group matches by deck URL to calculate win rates and ELO impact.
+    # Both ELO figures sum the per-match *lifetime* ELO deltas: "season" over the
+    # selected event/season window (the active event when viewing lifetime),
+    # "lifetime" over every match in scope.
     recent_decks = []
-    deck_stats = {}  # deck_url -> {wins, losses, avatar, deck_name, last_date}
+    deck_stats = {}  # deck_url -> {wins, losses, avatar, deck_name, last_date, elo_*}
+    if event_filter == "lifetime":
+        season_start, season_end = _active_event_window()
+    else:
+        season_start, season_end = event_start_date, event_end_date
+
+    def _in_season_window(ts):
+        if not season_start or not ts:
+            return False
+        ts = str(ts)
+        return ts >= season_start and (not season_end or ts <= season_end)
+
+    def _new_deck_stats(avatar_name, deck_name, last_date):
+        return {
+            "wins": 0,
+            "losses": 0,
+            "avatar": avatar_name,
+            "deck_name": deck_name,
+            "last_date": last_date,
+            "elo_season": 0,
+            "elo_lifetime": 0,
+            "season_wins": 0,
+            "season_losses": 0,
+        }
+
+    def _add_deck_result(stats, did_win, ts, lifetime_delta=0):
+        stats["wins" if did_win else "losses"] += 1
+        stats["elo_lifetime"] += lifetime_delta
+        if _in_season_window(ts):
+            stats["elo_season"] += lifetime_delta
+            stats["season_wins" if did_win else "season_losses"] += 1
+        if ts and (not stats["last_date"] or ts > stats["last_date"]):
+            stats["last_date"] = ts
 
     for row in all_rows:
         did_win = row[0]
@@ -2362,23 +2446,11 @@ def player_api(player_id):
                 except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                     pass
 
-            deck_stats[player_deck_url] = {
-                "wins": 0,
-                "losses": 0,
-                "avatar": avatar_name,
-                "deck_name": deck_name,
-                "last_date": row[6],
-            }
+            deck_stats[player_deck_url] = _new_deck_stats(avatar_name, deck_name, row[6])
 
-        # Update win/loss count
-        if did_win:
-            deck_stats[player_deck_url]["wins"] += 1
-        else:
-            deck_stats[player_deck_url]["losses"] += 1
-
-        # Update last_date if this match is more recent
-        if row[6] and (not deck_stats[player_deck_url]["last_date"] or row[6] > deck_stats[player_deck_url]["last_date"]):
-            deck_stats[player_deck_url]["last_date"] = row[6]
+        _add_deck_result(
+            deck_stats[player_deck_url], did_win, row[6], _row_lifetime_delta(row, did_win)
+        )
 
     # Include external matches in recent decks
     for em in external_matches_raw:
@@ -2403,22 +2475,10 @@ def player_api(player_id):
                         deck_name = deck_data["name"]
                 except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                     pass
-            deck_stats[player_deck_url] = {
-                "wins": 0,
-                "losses": 0,
-                "avatar": avatar_name,
-                "deck_name": deck_name,
-                "last_date": em.get("timestamp"),
-            }
+            deck_stats[player_deck_url] = _new_deck_stats(avatar_name, deck_name, em.get("timestamp"))
 
-        if did_win:
-            deck_stats[player_deck_url]["wins"] += 1
-        else:
-            deck_stats[player_deck_url]["losses"] += 1
-
-        em_ts = em.get("timestamp")
-        if em_ts and (not deck_stats[player_deck_url]["last_date"] or em_ts > deck_stats[player_deck_url]["last_date"]):
-            deck_stats[player_deck_url]["last_date"] = em_ts
+        # External matches carry no ELO, so they only count toward the record
+        _add_deck_result(deck_stats[player_deck_url], did_win, em.get("timestamp"))
 
     # Convert to list and sort by most recent usage
     for deck_url, stats in sorted(deck_stats.items(), key=lambda x: x[1]["last_date"] or "", reverse=True):
@@ -2435,6 +2495,11 @@ def player_api(player_id):
                 "losses": stats["losses"],
                 "win_rate": round(deck_win_rate, 1),
                 "total_games": total_games,
+                # None when no season/event window applies (e.g. between seasons)
+                "elo_season": round(stats["elo_season"]) if season_start else None,
+                "elo_lifetime": round(stats["elo_lifetime"]),
+                "season_wins": stats["season_wins"],
+                "season_losses": stats["season_losses"],
             }
         )
 

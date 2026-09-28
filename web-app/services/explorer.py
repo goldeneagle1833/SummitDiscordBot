@@ -36,6 +36,60 @@ def _normalize_name(name: str) -> str:
     return re.sub(r"[\s_\-\.]+", "", name.strip().lower())
 
 
+# Next.js streams the React Server Components payload into the page as
+# self.__next_f.push([1, "<JSON-escaped string>"]) calls.
+_NEXT_CHUNK_RE = re.compile(r'self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)')
+
+
+def _iter_json_arrays(text: str, marker: str):
+    """Yield each JSON array that directly follows ``marker`` in ``text``.
+
+    ``marker`` must end with the opening bracket. Arrays that don't parse are
+    skipped rather than raised, since the page payload is best-effort input.
+    """
+    search_from = 0
+    while True:
+        start = text.find(marker, search_from)
+        if start == -1:
+            return
+        open_at = start + len(marker) - 1
+        end = _matching_bracket(text, open_at)
+        search_from = open_at + 1
+        if end is None:
+            continue
+        try:
+            parsed = json.loads(text[open_at:end + 1])
+        except ValueError:
+            continue
+        if isinstance(parsed, list):
+            yield parsed
+
+
+def _matching_bracket(text: str, open_at: int) -> int | None:
+    """Index of the ``]`` closing the ``[`` at ``open_at``, respecting JSON strings."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for i in range(open_at, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                return i
+    return None
+
+
 class ExplorerService:
     def fetch_event_data(self, url: str) -> dict:
         """Fetch and structure event data from a sorcerytcg.com event URL.
@@ -65,9 +119,11 @@ class ExplorerService:
                 break
 
         # Fetch the page HTML to get the authoritative standings order from Play Network
-        html_standings = self._fetch_page_standings(url)
+        page_html = self._fetch_page_html(url)
+        html_standings = self._parse_page_standings(page_html)
+        registration_standings = self._parse_registration_standings(page_html)
 
-        results = self._build_results(players_data, html_standings)
+        results = self._build_results(players_data, html_standings, registration_standings)
         unmatched = [r["display_name"] for r in results if not r.pop("_official_rank")]
 
         # Extract venue name from store or owner
@@ -91,7 +147,7 @@ class ExplorerService:
             "total_players": len([p for p in players_data if p.get("status") != "Dropped" or p.get("seats")]),
             "venue_name": venue_name,
             "play_format": play_format,
-            "top_cut_size": event.get("topcut") or 0,
+            "top_cut_size": self.top_cut_size(event),
             "results": results,
             # "official" = order taken from the sorcerytcg.com standings list;
             # "estimated" = scrape failed for some/all players, order falls back
@@ -100,28 +156,101 @@ class ExplorerService:
             "unmatched_players": unmatched,
         }
 
-    def _fetch_page_standings(self, url: str) -> dict[str, int]:
-        """Fetch the event page HTML and parse the Play Network standings order.
+    @staticmethod
+    def _fetch_page_html(url: str) -> str:
+        """Fetch the event page HTML that carries the Play Network standings.
 
-        Returns a dict mapping display_name -> position (1-indexed).
-        Returns empty dict if parsing fails (caller falls back to algorithmic ranking).
+        Returns "" on any failure so callers fall back to algorithmic ranking.
         """
         try:
             resp = requests.get(
                 url, timeout=15, headers={"User-Agent": "Mozilla/5.0"}
             )
             if resp.status_code != 200:
-                logger.warning("Failed to fetch page standings: HTTP %s", resp.status_code)
-                return {}
-            standings = self._parse_page_standings(resp.text)
-            if not standings:
-                logger.warning("Parsed 0 standings from page HTML — CSS may have changed")
-            else:
-                logger.info("Parsed %d standings from Play Network page", len(standings))
-            return standings
+                logger.warning("Failed to fetch event page: HTTP %s", resp.status_code)
+                return ""
+            return resp.text
         except Exception as exc:
-            logger.warning("Could not parse page standings: %s", exc)
+            logger.warning("Could not fetch event page: %s", exc)
+            return ""
+
+    @staticmethod
+    def top_cut_size(event: dict, default: int = 0) -> int:
+        """Read the top-cut size from a tRPC event.
+
+        sorcerytcg.com used to return ``topcut`` as a bare number; it is now
+        an object (``{"size": 8, "format": ...}``), and ``None`` when the
+        event has no cut.
+        """
+        topcut = event.get("topcut")
+        if isinstance(topcut, dict):
+            topcut = topcut.get("size")
+        try:
+            return int(topcut) if topcut else default
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def resolve_standing(
+        registration_id: str | None,
+        display_name: str,
+        registration_standings: dict[str, int] | None,
+        html_standings: dict[str, int] | None,
+    ) -> int | None:
+        """Look a player's official position up by registration id, then by name.
+
+        The registration lookup is authoritative: display names are not
+        unique (Grand Contest Italy had two "Luca M"s, in 2nd and 10th), and
+        the name-keyed scrape can only ever return one position for both.
+        """
+        if registration_id and registration_standings:
+            position = registration_standings.get(registration_id)
+            if position:
+                return position
+        if html_standings and display_name:
+            position = html_standings.get(display_name)
+            if position:
+                return position
+            normalized = _normalize_name(display_name)
+            for name, pos in html_standings.items():
+                if _normalize_name(name) == normalized:
+                    return pos
+        return None
+
+    @staticmethod
+    def _parse_registration_standings(page_html: str) -> dict[str, int]:
+        """Parse the standings array Next.js embeds in the event page.
+
+        The page's React Server Components payload carries the same
+        ``standings`` list the site renders, one entry per registration with
+        its ``position``. Keying by registration id means two players with
+        the same display name can't collide. Returns {} if the payload can't
+        be found, in which case callers use the name-based scrape.
+        """
+        if not page_html:
             return {}
+        # The payload is streamed as JS string literals; decode and join them
+        # in order, since one array can straddle two chunks.
+        chunks = []
+        for match in _NEXT_CHUNK_RE.finditer(page_html):
+            try:
+                chunks.append(json.loads('"' + match.group(1) + '"'))
+            except ValueError:
+                continue
+        payload = "".join(chunks) if chunks else page_html
+
+        for entries in _iter_json_arrays(payload, '"standings":['):
+            standings = {}
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                registration_id = entry.get("id")
+                position = entry.get("position")
+                if registration_id and isinstance(position, int) and position > 0:
+                    standings[registration_id] = position
+            if standings:
+                return standings
+        return {}
 
     @staticmethod
     def _parse_page_standings(page_html: str) -> dict[str, int]:
@@ -129,7 +258,12 @@ class ExplorerService:
 
         Matches on class tokens rather than exact class strings so minor
         Tailwind tweaks (w-4 -> w-5, span -> button) don't silently break it.
+
+        Display names are not unique, so prefer _parse_registration_standings
+        and keep this as the fallback when the embedded payload is missing.
         """
+        if not page_html:
+            return {}
         entries = re.findall(
             r'<span class="[^"]*\bfont-title text-lg\b[^"]*">\s*(\d+)\s*</span>.*?'
             r'<(?:span|button)[^>]*class="[^"]*\btruncate font-title\b[^"]*"[^>]*>(.*?)</(?:span|button)>',
@@ -173,12 +307,18 @@ class ExplorerService:
                 f"Unexpected response format from sorcerytcg.com: {exc}"
             ) from exc
 
-    def _build_results(self, players_data: list, html_standings: dict[str, int]) -> list[dict]:
+    def _build_results(
+        self,
+        players_data: list,
+        html_standings: dict[str, int],
+        registration_standings: dict[str, int] | None = None,
+    ) -> list[dict]:
         """Build results list from the tRPC event players data.
 
-        Standing order comes from html_standings (Play Network page, source of truth).
-        Falls back to Swiss score descending if html_standings is empty or a player
-        is not found in the HTML (e.g. CSS class names changed).
+        Standing order comes from the Play Network page (source of truth):
+        registration_standings first, then html_standings by display name.
+        Falls back to Swiss score descending if both are empty or a player
+        is not found in either (e.g. CSS class names changed).
 
         Wins = total match wins (Swiss + top-cut), matching Play Network's displayed record.
         """
@@ -215,16 +355,15 @@ class ExplorerService:
                 "swiss_score": swiss_score,
                 "image_url": image_url,
                 "team_name": "",
+                "_official_rank": self.resolve_standing(
+                    player.get("id"), display_name, registration_standings, html_standings
+                ),
             })
 
         # Sort by Play Network page standings (source of truth).
-        # Fall back to Swiss score descending for any player not found in the HTML.
-        normalized_standings = {_normalize_name(n): pos for n, pos in html_standings.items()}
-        fallback_rank = len(html_standings) + 1 if html_standings else 1
-        for row in player_rows:
-            row["_official_rank"] = html_standings.get(
-                row["display_name"], normalized_standings.get(_normalize_name(row["display_name"]))
-            )
+        # Fall back to Swiss score descending for any player not found on the page.
+        known = max(len(registration_standings or {}), len(html_standings or {}))
+        fallback_rank = known + 1 if known else 1
         player_rows.sort(
             key=lambda r: (
                 r["_official_rank"] or fallback_rank,

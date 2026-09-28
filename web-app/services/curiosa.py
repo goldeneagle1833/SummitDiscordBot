@@ -7,6 +7,8 @@ import time
 import urllib.parse
 import requests
 
+from services.explorer import ExplorerService
+
 logger = logging.getLogger(__name__)
 
 # Rate limit: minimum seconds between API requests
@@ -426,10 +428,7 @@ class CuriosaService:
         event = self._fetch_event_trpc(event_id)
         event_name = event.get("title", "")
         event_date = (event.get("startsAt") or "")[:10] or None
-        try:
-            top_cut_size = int(event.get("topcut") or 8)
-        except (TypeError, ValueError):
-            top_cut_size = 8
+        top_cut_size = ExplorerService.top_cut_size(event, default=8)
         players_data = event.get("players", [])
 
         # Filter to players that are not dropped (or have seats = played games)
@@ -449,12 +448,25 @@ class CuriosaService:
                 "errors": ["No active players found in this event"],
             }
 
-        # Step 2: Scrape the event page HTML for authoritative standings order
+        # Step 2: Scrape the event page for the authoritative standings order.
+        # The embedded payload is keyed by registration id; the rendered list
+        # is keyed by display name and is only a fallback, because names are
+        # not unique (two "Luca M"s finished 2nd and 10th at GC Italy).
         if on_progress:
             on_progress("Fetching standings from event page...")
-        html_standings = self._fetch_page_standings(event_url)
+        page_html = self._fetch_page_html(event_url)
+        registration_standings = ExplorerService._parse_registration_standings(page_html)
+        html_standings = ExplorerService._parse_page_standings(page_html)
+        if registration_standings:
+            logger.info("Parsed %d standings from event payload", len(registration_standings))
+        elif html_standings:
+            logger.info("Parsed %d standings from event page markup", len(html_standings))
+        else:
+            logger.warning("Parsed 0 standings from event page")
 
         # Compute Swiss scores as fallback for sorting
+        known = max(len(registration_standings), len(html_standings))
+        fallback_rank = known + 1 if known else 1
         player_swiss = {}
         for player in active_players:
             user = player.get("user", {})
@@ -464,15 +476,19 @@ class CuriosaService:
                 s.get("result", {}).get("score", 0) for s in seats
                 if s.get("round", {}).get("phase", {}).get("structure") == "Swiss"
             )
-            player_swiss[player["id"]] = {"name": name, "swiss_score": swiss_score}
+            standing = ExplorerService.resolve_standing(
+                player.get("id"), name, registration_standings, html_standings
+            )
+            player_swiss[player["id"]] = {
+                "name": name,
+                "swiss_score": swiss_score,
+                "standing": standing or fallback_rank,
+            }
 
-        # Sort active players by standings (HTML source of truth, Swiss fallback)
-        fallback_rank = len(html_standings) + 1 if html_standings else 1
+        # Sort active players by standings (page source of truth, Swiss fallback)
         active_players.sort(
             key=lambda p: (
-                html_standings.get(
-                    player_swiss[p["id"]]["name"], fallback_rank
-                ),
+                player_swiss[p["id"]]["standing"],
                 -player_swiss[p["id"]]["swiss_score"],
             )
         )
@@ -496,9 +512,8 @@ class CuriosaService:
 
             batch_results = self._fetch_player_snapshots_batch(event_id, batch)
             for player, result in zip(batch, batch_results):
-                user = player.get("user", {})
-                name = user.get("displayname") or user.get("username") or "Unknown"
-                standing = html_standings.get(name, fallback_rank)
+                name = player_swiss[player["id"]]["name"]
+                standing = player_swiss[player["id"]]["standing"]
                 if result is None:
                     errors.append(f"No deck snapshot for {name}")
                     continue
@@ -514,7 +529,8 @@ class CuriosaService:
                 })
 
         match_history = self._build_match_history(
-            active_players, deck_by_registration, html_standings, fallback_rank
+            active_players, deck_by_registration, html_standings, fallback_rank,
+            registration_standings,
         )
 
         return {
@@ -533,11 +549,13 @@ class CuriosaService:
         deck_by_registration: dict[str, str],
         html_standings: dict[str, int],
         fallback_rank: int,
+        registration_standings: dict[str, int] | None = None,
     ) -> list[dict]:
         """Build a round-by-round match list for every player in the event.
 
         Each entry describes one player and their matches in descending round
         order (most recent first), with the opponent resolved from the pairing.
+        Standings resolve by registration id first, then by display name.
         """
         by_registration = {p["id"]: p for p in players if p.get("id")}
 
@@ -600,8 +618,11 @@ class CuriosaService:
 
             matches.sort(key=lambda m: m["round"] or 0, reverse=True)
             entry = describe(registration_id)
+            standing = ExplorerService.resolve_standing(
+                registration_id, entry["display_name"], registration_standings, html_standings
+            )
             entry.update({
-                "standing": html_standings.get(entry["display_name"], fallback_rank),
+                "standing": standing or fallback_rank,
                 "wins": wins,
                 "losses": losses,
                 "draws": draws,
@@ -628,29 +649,9 @@ class CuriosaService:
         }
 
     @staticmethod
-    def _fetch_page_standings(event_url: str) -> dict[str, int]:
-        """Scrape the event page HTML for Play Network standings order.
-
-        Returns a dict mapping display_name -> position (1-indexed).
-        Returns empty dict if parsing fails.
-        """
-        try:
-            resp = requests.get(
-                event_url, timeout=15, headers={"User-Agent": "Mozilla/5.0"}
-            )
-            if resp.status_code != 200:
-                logger.warning("Failed to fetch page standings: HTTP %s", resp.status_code)
-                return {}
-            from services.explorer import ExplorerService
-            standings = ExplorerService._parse_page_standings(resp.text)
-            if standings:
-                logger.info("Parsed %d standings from event page", len(standings))
-            else:
-                logger.warning("Parsed 0 standings from page HTML")
-            return standings
-        except Exception as exc:
-            logger.warning("Could not parse page standings: %s", exc)
-            return {}
+    def _fetch_page_html(event_url: str) -> str:
+        """Fetch the event page; the standings live in its embedded payload."""
+        return ExplorerService._fetch_page_html(event_url)
 
     def _fetch_event_trpc(self, event_id: str) -> dict:
         """Fetch event data from sorcerytcg.com tRPC endpoint."""

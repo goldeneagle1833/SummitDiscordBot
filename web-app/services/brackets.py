@@ -400,11 +400,18 @@ class BracketService:
         champion_row = champion(matches) if matches else None
         self._use_site_names(entrants, rounds, champion_row)
 
+        # The tree stays under wraps until every entrant has a decklist in,
+        # so nobody scouts their draw before the field is locked. The count
+        # travels with the detail so the page can hold the bracket back
+        # without a second request.
+        decks_missing = len([e for e in entrants if e["seed"] not in seeds_with_decks])
+
         return {
             "bracket": bracket,
             "entrants": entrants,
             "rounds": rounds,
             "champion": champion_row,
+            "decks_missing": decks_missing,
         }
 
     def _annotate_for_viewer(self, match, *, viewer_id, is_admin, seeds_with_decks, finished):

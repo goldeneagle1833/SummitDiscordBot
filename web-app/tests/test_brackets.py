@@ -593,6 +593,17 @@ class TestDecklists:
         assert len(repo.get_decks(bracket_id)) == 1
         assert repo.get_deck(bracket_id, 2)["deck_url"].endswith("two")
 
+    def test_the_detail_counts_who_still_owes_a_deck(self, service, repo):
+        slug, _ = self._publish(service, repo, count=4)
+        assert service.get_bracket_detail(slug)["decks_missing"] == 4
+
+        service.submit_deck(slug, "https://curiosa.io/decks/one", actor_id="u1")
+        assert service.get_bracket_detail(slug)["decks_missing"] == 3
+
+        for seed in (2, 3, 4):
+            service.submit_deck(slug, f"https://curiosa.io/decks/{seed}", actor_id=f"u{seed}")
+        assert service.get_bracket_detail(slug)["decks_missing"] == 0
+
     def test_someone_outside_the_bracket_cannot_submit(self, service, repo):
         slug, _ = self._publish(service, repo)
         with pytest.raises(BracketError, match="not in this bracket"):

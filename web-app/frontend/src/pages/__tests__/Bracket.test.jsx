@@ -222,6 +222,55 @@ describe('Bracket page', () => {
     expect(screen.getByText('Seed 1')).toBeInTheDocument()
   })
 
+  it('hides the bracket from players until every decklist is in', async () => {
+    getBracket.mockResolvedValue(bracketData({ decks_missing: 1 }))
+    renderWithRouter(<Bracket />)
+
+    expect(
+      await screen.findByText(/revealed once every decklist is in/i),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/1 of 2 players still needs to submit a deck/i)).toBeInTheDocument()
+    expect(screen.getByText(/waiting on decklists/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /report result/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/match waiting on you/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/matches played/)).not.toBeInTheDocument()
+    // The decklist panel stays so the stragglers can still submit.
+    expect(screen.getByText('Decklists')).toBeInTheDocument()
+  })
+
+  it('reveals the bracket once the last decklist arrives', async () => {
+    getBracket.mockResolvedValue(bracketData({ decks_missing: 0 }))
+    renderWithRouter(<Bracket />)
+
+    expect(await screen.findByRole('button', { name: /report result/i })).toBeInTheDocument()
+    expect(screen.queryByText(/revealed once every decklist is in/i)).not.toBeInTheDocument()
+  })
+
+  it('still shows admins the bracket while decklists are outstanding', async () => {
+    mockUser.value = { user_id: 'admin', is_admin: true }
+    getBracket.mockResolvedValue(bracketData({ decks_missing: 2 }))
+    renderWithRouter(<Bracket />)
+
+    expect(await screen.findByText(/players can’t see the bracket yet/i)).toBeInTheDocument()
+    expect(screen.getByText(/2 decklists are still to come/i)).toBeInTheDocument()
+    expect(screen.getByText('Finals')).toBeInTheDocument()
+    expect(screen.queryByText(/revealed once every decklist is in/i)).not.toBeInTheDocument()
+  })
+
+  it('does not hold back a finished bracket', async () => {
+    getBracket.mockResolvedValue(
+      bracketData({
+        bracket: { slug: 'season-7', name: 'Season 7 Postseason', status: 'complete' },
+        champion: { display_name: 'One', seed: 1, user_id: 'u1' },
+        decks_missing: 1,
+      }),
+    )
+    renderWithRouter(<Bracket />)
+
+    expect(await screen.findByText('Winner')).toBeInTheDocument()
+    expect(screen.queryByText(/revealed once every decklist is in/i)).not.toBeInTheDocument()
+  })
+
   it('lists the decklists under the bracket', async () => {
     renderWithRouter(<Bracket />)
     expect(await screen.findByText('Decklists')).toBeInTheDocument()

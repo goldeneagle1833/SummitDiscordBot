@@ -155,6 +155,11 @@ export default function Bracket() {
   if (!data) return <Spinner />
 
   const { bracket, rounds, champion, entrants } = data
+  // Nobody scouts their draw before the field is locked: the tree stays
+  // hidden from players until every entrant has a decklist in. Admins still
+  // see it, so they can chase the stragglers.
+  const decksMissing = data.decks_missing ?? 0
+  const bracketHidden = decksMissing > 0 && bracket.status !== 'complete' && !isAdmin
   const needsYou = rounds
     .flatMap((r) => r.matches)
     .filter((m) => m.viewer_can_report || m.viewer_can_confirm)
@@ -177,12 +182,14 @@ export default function Bracket() {
           <p className="text-sm text-text-muted">
             {entrants.length} players
             {bracket.elo_event_name ? ` · seeded from ${bracket.elo_event_name}` : ''}
-            {bracket.status === 'complete'
-              ? ' · finished'
-              : liveRound
-                ? ` · ${liveRound.title} in progress`
-                : ''}
-            {` · ${played}/${allMatches.length} matches played`}
+            {bracketHidden
+              ? ' · waiting on decklists'
+              : bracket.status === 'complete'
+                ? ' · finished'
+                : liveRound
+                  ? ` · ${liveRound.title} in progress`
+                  : ''}
+            {!bracketHidden && ` · ${played}/${allMatches.length} matches played`}
           </p>
         </div>
         <Link to="/brackets" className="text-sm text-secondary hover:underline">
@@ -224,24 +231,41 @@ export default function Bracket() {
         </p>
       )}
 
-      {needsYou.length > 0 && (
+      {!bracketHidden && needsYou.length > 0 && (
         <div className="bg-secondary/10 border border-secondary/40 rounded-lg px-4 py-3 text-sm">
           You have {needsYou.length} match{needsYou.length > 1 ? 'es' : ''} waiting on you —
           the highlighted one{needsYou.length > 1 ? 's' : ''} below.
         </div>
       )}
 
+      {isAdmin && decksMissing > 0 && bracket.status !== 'complete' && (
+        <div className="bg-amber-400/10 border border-amber-400/40 rounded-lg px-4 py-3 text-sm">
+          Players can’t see the bracket yet — {decksMissing} decklist
+          {decksMissing > 1 ? 's are' : ' is'} still to come. Only admins see the tree below.
+        </div>
+      )}
+
       {notice && <p className="text-sm text-text-muted">{notice}</p>}
 
-      <BracketTree
-        rounds={rounds}
-        onReport={setReporting}
-        onConfirm={handleConfirm}
-        onOpenTable={handleOpenTable}
-        onAdminAction={isAdmin ? handleAdminAction : null}
-        isAdmin={isAdmin}
-        avatars={avatars}
-      />
+      {bracketHidden ? (
+        <div className="bg-bg-surface border border-border rounded-lg px-5 py-8 text-center space-y-1">
+          <p className="font-display text-lg">The bracket is revealed once every decklist is in</p>
+          <p className="text-sm text-text-muted">
+            {decksMissing} of {entrants.length} players still
+            {decksMissing === 1 ? ' needs' : ' need'} to submit a deck.
+          </p>
+        </div>
+      ) : (
+        <BracketTree
+          rounds={rounds}
+          onReport={setReporting}
+          onConfirm={handleConfirm}
+          onOpenTable={handleOpenTable}
+          onAdminAction={isAdmin ? handleAdminAction : null}
+          isAdmin={isAdmin}
+          avatars={avatars}
+        />
+      )}
 
       <DeckPanel slug={slug} roster={decks} isAdmin={isAdmin} onChanged={loadDecks} />
 

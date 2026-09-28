@@ -1564,7 +1564,8 @@ class LFGCog(commands.Cog):
                 "`!correct_limited_match <match_id>` - Flip winner/loser & recalculate limited ELO\n"
                 "`!remove_limited_match <match_id>` - Remove a limited match & revert ELO\n"
                 "`!spot_limited_elo @user <elo>` - Set a player's limited ELO\n"
-                "`!start_limited_season [name]` - Archive limited data & reset limited ELO\n"
+                "`!start_limited_season <name>` - Archive limited data, reset limited ELO & start a new limited season\n"
+                "`!end_limited_season` - End & archive the active limited season without starting a new one\n"
                 "`!reset_limited_elo` - **DANGER:** Reset ALL limited data"
             ),
             inline=False,
@@ -2587,24 +2588,6 @@ class LFGCog(commands.Cog):
                     inline=False,
                 )
 
-                limited_prev = prev.get("limited_summary")
-                if limited_prev:
-                    limited_top_str = (
-                        "\n".join(
-                            [f"  {i+1}. {name} ({elo} ELO)" for i, (name, elo) in enumerate(limited_prev["top_players"])]
-                        ) or "No ranked players"
-                    )
-                    embed.add_field(
-                        name=f"Previous Event Archived: {prev['event_name']} (Limited)",
-                        value=(
-                            f"**Total Matches:** {limited_prev['total_matches']}\n"
-                            f"**Arena Runs:** {limited_prev['total_runs']}\n"
-                            f"**Ranked Players:** {limited_prev['total_players']}\n"
-                            f"**Top 3:**\n{limited_top_str}"
-                        ),
-                        inline=False,
-                    )
-
             embed.set_footer(text=f"Started by {ctx.author.display_name}")
             await ctx.send(embed=embed)
 
@@ -2694,23 +2677,6 @@ class LFGCog(commands.Cog):
                 ),
                 inline=False,
             )
-
-            # Limited summary
-            limited = summary.get("limited_summary")
-            if limited:
-                limited_top_str = "\n".join(
-                    [f"  {i+1}. {name} ({elo} ELO)" for i, (name, elo) in enumerate(limited["top_players"])]
-                ) or "No ranked players"
-                embed.add_field(
-                    name="Limited Final Results",
-                    value=(
-                        f"**Total Matches:** {limited['total_matches']}\n"
-                        f"**Arena Runs:** {limited['total_runs']}\n"
-                        f"**Ranked Players:** {limited['total_players']}\n"
-                        f"**Top 3:**\n{limited_top_str}"
-                    ),
-                    inline=False,
-                )
 
             embed.add_field(
                 name="What's Next?",
@@ -3693,6 +3659,88 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
         else:
             logger.error(f"start_limited_season error: {error}")
+            await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def end_limited_season(self, ctx):
+        """
+        End the active limited season and archive its data without starting a new one.
+        Limited ELO is left as-is; the next !start_limited_season resets it.
+        Does NOT affect the constructed season/event.
+        Usage: !end_limited_season
+        """
+        from services.limited_service import archive_limited_for_event
+        from repositories.limited_repo import get_active_limited_event
+
+        try:
+            active_limited = get_active_limited_event()
+            if not active_limited:
+                await ctx.send(
+                    "No limited season is currently active. Use `!start_limited_season <name>` to begin one."
+                )
+                return
+
+            event_id = active_limited["event_id"]
+            event_name = active_limited["event_name"]
+            limited_summary = archive_limited_for_event(event_id, event_name)
+
+            limited_top_str = (
+                "\n".join(
+                    [f"  {i+1}. {name} ({elo} ELO)" for i, (name, elo) in enumerate(limited_summary["top_players"])]
+                ) or "No ranked players"
+            )
+            embed = discord.Embed(
+                title=f"Limited Season Ended: {event_name}",
+                description="Limited data has been archived. Constructed season is unaffected.",
+                color=discord.Color.blue(),
+            )
+            embed.add_field(
+                name="Final Results",
+                value=(
+                    f"**Total Matches:** {limited_summary['total_matches']}\n"
+                    f"**Arena Runs:** {limited_summary['total_runs']}\n"
+                    f"**Ranked Players:** {limited_summary['total_players']}\n"
+                    f"**Top 3:**\n{limited_top_str}"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="What's Next?",
+                value=(
+                    "No limited season is currently active.\n"
+                    "Use `!start_limited_season <name>` to begin a new one (resets limited ELO to 1500)."
+                ),
+                inline=False,
+            )
+            embed.set_footer(text=f"Ended by {ctx.author.display_name}")
+            await ctx.send(embed=embed)
+
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "end_limited_season",
+                previous_state={"event_id": event_id, "event_name": event_name},
+                new_state=limited_summary,
+                details=f"Limited season '{event_name}' ended by {ctx.author.display_name}",
+            )
+            logger.info(f"Limited season {event_id} ended by {ctx.author} (ID: {ctx.author.id})")
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Limited Season End Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"end_limited_season failed: {e}")
+
+    @end_limited_season.error
+    async def end_limited_season_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"end_limited_season error: {error}")
             await ctx.send(f"An error occurred: {error}")
 
     @commands.command()

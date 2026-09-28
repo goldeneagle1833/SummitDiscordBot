@@ -254,6 +254,7 @@ def build_catalog() -> list[dict]:
     except Exception as exc:
         logger.error("Could not load the card catalog for analytics: %s", exc)
         rows = []
+    pso_by_name = {entry["name"].lower(): entry for entry in fetch_pso_catalog()}
     for row in rows:
         name = (row.get("name") or "").strip()
         if not name or name.lower() in seen:
@@ -263,18 +264,26 @@ def build_catalog() -> list[dict]:
         elements = [] if raw_elements.lower() in ("", "none") else [
             e.strip() for e in raw_elements.split(",") if e.strip()
         ]
+        # The synced table can carry a name with no metadata at all (the
+        # production copy does, for every row). PSO's list fills the gaps so
+        # the type, element and rarity filters still work.
+        pso = pso_by_name.get(name.lower())
+        card_type = row.get("card_type") or (pso["type"] if pso else "")
+        rarity = row.get("rarity") or (pso["rarity"] if pso else "")
+        if not elements and raw_elements.lower() != "none" and pso:
+            elements = list(pso["elements"])
         image = resolve_card_image(name)
         cards.append({
             "name": name,
-            "type": row.get("card_type") or "",
+            "type": card_type,
             "elements": elements,
-            "rarity": row.get("rarity") or "",
-            "imageUrl": f"/card-images/{image}" if image else None,
+            "rarity": rarity,
+            "imageUrl": f"/card-images/{image}" if image else (pso["imageUrl"] if pso else None),
         })
-    for entry in fetch_pso_catalog():
-        if entry["name"].lower() in seen:
+    for key, entry in pso_by_name.items():
+        if key in seen:
             continue
-        seen.add(entry["name"].lower())
+        seen.add(key)
         image = resolve_card_image(entry["name"])
         cards.append(dict(entry, imageUrl=f"/card-images/{image}" if image else entry["imageUrl"]))
     with _catalog_lock:

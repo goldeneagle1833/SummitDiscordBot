@@ -286,3 +286,31 @@ class TestPsoCatalogMerge:
         assert svc.fetch_pso_catalog() == []
         assert svc.fetch_pso_catalog() == []
         assert calls["n"] == 1
+
+    def test_fills_empty_local_metadata_from_pso(self, client, monkeypatch):
+        """Production's synced table has names but blank type/rarity/elements."""
+        class FakeRepo:
+            def get_all_cards(self):
+                return [
+                    {"name": "Imposter", "card_type": "", "rarity": "", "elements": ""},
+                    {"name": "Whirling Blades", "card_type": "", "rarity": "", "elements": ""},
+                    {"name": "Bridge Troll", "card_type": "Minion", "rarity": "Ordinary", "elements": "None"},
+                ]
+
+        monkeypatch.setattr(svc, "CardCatalogRepository", FakeRepo)
+        monkeypatch.setattr(svc, "fetch_pso_catalog", lambda: list(self.PSO) + [
+            {"name": "Bridge Troll", "type": "Minion", "elements": ["Water"], "rarity": "Ordinary",
+             "imageUrl": "https://playsorceryonline.com/images/alp-bridge_troll-b-s.png"},
+        ])
+        monkeypatch.setattr(svc, "resolve_card_image", lambda name: None)
+
+        rows = {r["name"]: r for r in client.get("/api/ranked-analytics/catalog").get_json()}
+
+        assert rows["Imposter"]["type"] == "Avatar"
+        assert rows["Imposter"]["rarity"] == "Unique"
+        assert rows["Imposter"]["imageUrl"] == "https://playsorceryonline.com/images/got-imposter-b-s.png"
+        assert rows["Whirling Blades"]["type"] == "Magic"
+        assert rows["Whirling Blades"]["elements"] == ["Air"]
+        # An explicit local "None" is a real value, not a gap.
+        assert rows["Bridge Troll"]["elements"] == []
+        assert rows["Bridge Troll"]["type"] == "Minion"

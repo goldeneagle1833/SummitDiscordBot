@@ -141,6 +141,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.ranked_analytics.card_replays",
     "api.ranked_analytics.cohort",
     "api.ranked_analytics.catalog",
+    "api.ranked_analytics.seasons",
 
     # -- Fun stats (public read-only) --
     "api.fun_stats.get_fun_stats_filters",

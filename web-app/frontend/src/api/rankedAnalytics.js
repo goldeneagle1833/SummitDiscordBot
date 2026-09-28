@@ -13,3 +13,4 @@ export const getRankedCards = (params) => get(withQuery('/cards', params))
 export const getRankedCardReplays = (cardKey, params) =>
   get(withQuery(`/cards/${encodeURIComponent(cardKey)}/replays`, params))
 export const getRankedCatalog = () => get(withQuery('/catalog'))
+export const getRankedSeasons = () => get(withQuery('/seasons'))

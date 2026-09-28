@@ -3,7 +3,9 @@
 Source: the Summit handoff ZIP (PSO release `9b7c6e4`, September 28, 2026).
 Only the pieces the Card Win Rates page reuses are here:
 
-- `cardTable.ts` — filtering, column minimums, sorting and paging of the `/cards` rows (unchanged)
+- `cardTable.ts` — filtering, column minimums, sorting and paging of the `/cards` rows
+  (one Summit patch: `cardMetricValue`/`cardMetricCount` accept any extra rate key on a row,
+  so new PSO columns such as `inHand` sort without touching this file again)
 - `queryModel.ts`, `population.ts` — query builder model and API types (unchanged)
 - `QueryBuilder.tsx` — the AND/OR query builder (unchanged)
 - `query.css` — its stylesheet with PSO's green palette swapped for Summit's tokens

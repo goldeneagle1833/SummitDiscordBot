@@ -5,17 +5,21 @@ import { gamesLabel, lookupCard, percent, ppLabel, shortDate, TONE_BAR, TONE_TEX
 
 export const REPLAY_CLIP_BASE = 'https://playsorceryonline.com/replay-clips/'
 
-const COLUMNS = [
+const LEADING_COLUMNS = [
   { key: 'cardName', label: 'Card' },
   { key: 'deckShare', label: 'Popularity' },
   { key: 'inDeck', label: 'In deck' },
   { key: 'played', label: 'Played' },
   { key: 'openingHand', label: 'Opening hand' },
+]
+const TRAILING_COLUMNS = [
   { key: 'inDeckUnplayed', label: 'Not played' },
   { key: 'winRateDifference', label: 'Effect of playing it' },
 ]
+const BUILT_IN_KEYS = new Set([...LEADING_COLUMNS, ...TRAILING_COLUMNS].map((c) => c.key))
 
 const COLUMN_HELP = {
+  cardName: 'Sort by card name',
   deckShare: 'Share of decks that ran this card',
   inDeck: 'Win rate of players who had it in their deck',
   played: 'Win rate of players who played it',
@@ -23,6 +27,40 @@ const COLUMN_HELP = {
   inDeckUnplayed: 'Win rate when it was in the deck but never played',
   winRateDifference: 'Played win rate minus in-deck, not-played win rate (percentage points)',
 }
+
+// Labels for rate columns PSO has added or may add. Anything else gets a
+// humanized version of its key.
+const EXTRA_LABELS = {
+  inHand: 'In hand',
+  notInHand: 'Not in hand',
+  inDeckNotInHand: 'Not in hand',
+  drawn: 'Drawn',
+  notDrawn: 'Not drawn',
+}
+
+const humanize = (key) => {
+  const words = key.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/**
+ * Rate columns present on the rows beyond the ones this table was built
+ * for, in the order PSO sends them. Any object with a winRate counts.
+ */
+export function extraRateMetrics(rows) {
+  const first = rows[0]
+  if (!first) return []
+  return Object.keys(first)
+    .filter((key) => !BUILT_IN_KEYS.has(key) && first[key] && typeof first[key] === 'object' && 'winRate' in first[key])
+    .map((key) => ({ key, label: EXTRA_LABELS[key] ?? humanize(key) }))
+}
+
+export function tableColumns(extraMetrics = []) {
+  return [...LEADING_COLUMNS, ...extraMetrics, ...TRAILING_COLUMNS]
+}
+
+const columnHelp = (column) =>
+  COLUMN_HELP[column.key] ?? `Win rate when the card was ${column.label.toLowerCase()}`
 
 // The diverging bar caps at 20 pp either way.
 const BAR_CAP = 0.2
@@ -108,7 +146,7 @@ function StatCard({ label, rate, highlight, barTone }) {
   )
 }
 
-function CardDetailRow({ card, meta, selection, avatarImages }) {
+function CardDetailRow({ card, meta, selection, avatarImages, extraMetrics, columnCount }) {
   const [replays, setReplays] = useState({ loading: true, error: null, items: [] })
 
   useEffect(() => {
@@ -124,7 +162,7 @@ function CardDetailRow({ card, meta, selection, avatarImages }) {
 
   return (
     <tr className="bg-bg-base">
-      <td colSpan={COLUMNS.length} className="px-4 sm:px-5 py-5 border-b border-border">
+      <td colSpan={columnCount} className="px-4 sm:px-5 py-5 border-b border-border">
         <div className="flex flex-col md:flex-row gap-5 items-start">
           {meta?.imageUrl ? (
             <img src={meta.imageUrl} alt={card.cardName} loading="lazy"
@@ -143,6 +181,9 @@ function CardDetailRow({ card, meta, selection, avatarImages }) {
               <StatCard label="In deck" rate={card.inDeck} barTone="bg-primary" />
               <StatCard label="Played" rate={card.played} highlight />
               <StatCard label="In opening hand" rate={card.openingHand} barTone="bg-primary" />
+              {extraMetrics.map(({ key, label }) => (
+                <StatCard key={key} label={label} rate={card[key]} barTone="bg-primary" />
+              ))}
               <StatCard label="In deck, never played" rate={card.inDeckUnplayed} barTone="bg-text-muted" />
             </div>
             <div className="flex flex-col gap-2">
@@ -177,19 +218,21 @@ function CardDetailRow({ card, meta, selection, avatarImages }) {
  * with the card column pinned.
  */
 export default function CardWinRateTable({
-  rows, sortKey, sortDirection, onSort, selectedCard, onToggle, catalogIndex, avatarImages, selection,
+  rows, sortKey, sortDirection, onSort, selectedCard, onToggle, catalogIndex, avatarImages, selection, extraMetrics = [],
 }) {
+  const columns = tableColumns(extraMetrics)
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[900px] border-collapse text-sm">
         <thead>
           <tr className="text-left text-xs text-text-muted">
-            {COLUMNS.map(({ key, label }) => {
+            {columns.map((column) => {
+              const { key, label } = column
               const active = sortKey === key
               return (
                 <th key={key} scope="col" aria-sort={active ? sortDirection : 'none'}
                   className={`px-3 first:px-4 first:sm:px-5 py-2.5 font-medium border-b border-border ${key === 'cardName' ? 'sticky left-0 bg-bg-surface z-10 min-w-[220px]' : ''}`}>
-                  <button type="button" onClick={() => onSort(key)} title={COLUMN_HELP[key]}
+                  <button type="button" onClick={() => onSort(key)} title={columnHelp(column)}
                     className={`inline-flex items-center gap-1.5 hover:text-text ${active ? 'text-secondary' : ''}`}>
                     {label}
                     <span aria-hidden="true" className="text-[10px]">{active ? (sortDirection === 'ascending' ? '↑' : '↓') : '↕'}</span>
@@ -231,11 +274,17 @@ export default function CardWinRateTable({
                   <td className="px-3 py-2.5"><RateCell rate={card.inDeck} /></td>
                   <td className="px-3 py-2.5"><RateCell rate={card.played} /></td>
                   <td className="px-3 py-2.5"><RateCell rate={card.openingHand} /></td>
+                  {extraMetrics.map(({ key }) => (
+                    <td key={key} className="px-3 py-2.5">
+                      {card[key] ? <RateCell rate={card[key]} /> : <span className="text-text-muted">—</span>}
+                    </td>
+                  ))}
                   <td className="px-3 py-2.5"><RateCell rate={card.inDeckUnplayed} /></td>
                   <td className="px-3 py-2.5"><EffectCell card={card} /></td>
                 </tr>
                 {expanded && (
-                  <CardDetailRow card={card} meta={meta} selection={selection} avatarImages={avatarImages} />
+                  <CardDetailRow card={card} meta={meta} selection={selection} avatarImages={avatarImages}
+                    extraMetrics={extraMetrics} columnCount={columns.length} />
                 )}
               </Fragment>
             )
@@ -246,4 +295,4 @@ export default function CardWinRateTable({
   )
 }
 
-export { COLUMNS as TABLE_COLUMNS, CARD_METRICS }
+export { CARD_METRICS }

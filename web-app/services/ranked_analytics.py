@@ -20,6 +20,7 @@ and the page shows its "not available yet" state.
 import logging
 import os
 import re
+import sqlite3
 import threading
 import time
 from typing import NamedTuple
@@ -291,6 +292,46 @@ def build_catalog() -> list[dict]:
     with _catalog_lock:
         _catalog_cache = (now, cards)
     return cards
+
+
+def list_seasons(db_path=None) -> list[dict]:
+    """Summit seasons as inclusive UTC date ranges for the season picker.
+
+    Seasons are the ``events`` rows in elo.db (the bot's ranked seasons),
+    plus the hand-kept ``SEASON_FILTERS`` for seasons that predate the table.
+    Newest first. ``through`` is the calendar day the season ended on; PSO
+    treats both ends as inclusive dates.
+    """
+    seasons: list[dict] = []
+    try:
+        conn = sqlite3.connect(str(db_path or webapp_config.ELO_DB_PATH))
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='events'")
+            if cur.fetchone():
+                cur.execute("SELECT event_id, event_name, start_date, end_date, is_active FROM events")
+                for event_id, name, start, end, active in cur.fetchall():
+                    if not start:
+                        continue
+                    seasons.append({
+                        "id": str(event_id), "name": name or f"Season {event_id}",
+                        "from": str(start)[:10], "through": str(end)[:10] if end else None,
+                        "is_active": bool(active),
+                    })
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        logger.warning("Could not read seasons for ranked analytics: %s", exc)
+    known = {season["name"].lower() for season in seasons}
+    for extra in webapp_config.SEASON_FILTERS:
+        if any(extra["name"].lower() in name for name in known):
+            continue
+        seasons.append({
+            "id": extra["id"], "name": extra["name"],
+            "from": extra["start_date"], "through": extra["end_date"], "is_active": False,
+        })
+    seasons.sort(key=lambda season: season["from"], reverse=True)
+    return seasons
 
 
 def reset_caches() -> None:

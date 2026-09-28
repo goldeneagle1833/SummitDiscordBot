@@ -21,6 +21,7 @@ from services.ranked_analytics import (
     forward,
     validate_card_key,
 )
+from services import ranked_analytics as analytics_service
 
 ranked_analytics_bp = Blueprint("ranked_analytics", __name__)
 logger = logging.getLogger(__name__)
@@ -99,3 +100,10 @@ def catalog():
     response.headers["Cache-Control"] = "public, max-age=600"
     return response
 
+
+@ranked_analytics_bp.route("/seasons")
+def seasons():
+    """Summit seasons as date ranges, for the season picker. Local data only."""
+    response = jsonify(analytics_service.list_seasons())
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response

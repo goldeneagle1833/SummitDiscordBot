@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getRankedCards, getRankedCatalog, RANKED_ANALYTICS_ENDPOINT } from '@/api/rankedAnalytics'
+import { getRankedCards, getRankedCatalog, getRankedSeasons, RANKED_ANALYTICS_ENDPOINT } from '@/api/rankedAnalytics'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import QuickFilters from '@/components/analytics/QuickFilters'
 import ColumnMinimums from '@/components/analytics/ColumnMinimums'
 import StandoutTiles from '@/components/analytics/StandoutTiles'
-import CardWinRateTable from '@/components/analytics/CardWinRateTable'
+import CardWinRateTable, { extraRateMetrics } from '@/components/analytics/CardWinRateTable'
 import { EMPTY_MINIMUMS, indexCardMetadata, minimumMetricValue, minimumSample, selectCardTable } from '@/vendor/analytics-ui/cardTable'
 import { QueryBuilder } from '@/vendor/analytics-ui/QueryBuilder'
 import '@/vendor/analytics-ui/summit-query.css'
@@ -23,11 +23,25 @@ const GHOST = 'border border-border bg-bg-surface text-[#c9d1d9] rounded px-3 mi
 // Summit only runs constructed ranked queues, so the format is fixed.
 const FORMAT = 'constructed'
 
+const ALL_SEASONS = 'all'
+const CUSTOM_DATES = 'custom'
+
 function selectionOf(from, through) {
   const selection = { format: FORMAT }
   if (from) selection.from = from
   if (through) selection.through = through
   return selection
+}
+
+const shortDay = (iso) => {
+  if (!iso) return null
+  const [year, month, day] = iso.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
+}
+
+function seasonLabel(season) {
+  const range = season.through ? `${shortDay(season.from)} – ${shortDay(season.through)}` : `from ${shortDay(season.from)}`
+  return `${season.name}${season.is_active ? ' (current)' : ''} · ${range}`
 }
 
 function UnavailablePanel({ title, children }) {
@@ -51,6 +65,8 @@ export default function CardPlayedWinrates() {
   usePageTitle('Card Win Rates')
 
   const [tab, setTab] = useState('cards')
+  const [seasons, setSeasons] = useState([])
+  const [season, setSeason] = useState(ALL_SEASONS)
   const [from, setFrom] = useState('')
   const [through, setThrough] = useState('')
   const [search, setSearch] = useState('')
@@ -71,9 +87,20 @@ export default function CardPlayedWinrates() {
   const [queryPopulation, setQueryPopulation] = useState(null)
   const requestId = useRef(0)
 
-  const selection = useMemo(() => selectionOf(from, through), [from, through])
+  const chosenSeason = seasons.find((s) => s.id === season) ?? null
+  const selection = useMemo(() => {
+    if (season === CUSTOM_DATES) return selectionOf(from, through)
+    if (chosenSeason) return selectionOf(chosenSeason.from, chosenSeason.through)
+    return selectionOf('', '')
+  }, [season, chosenSeason, from, through])
   const query = useMemo(() => new URLSearchParams(selection).toString(), [selection])
-  const dateOrderProblem = from && through && from > through
+  const dateOrderProblem = season === CUSTOM_DATES && from && through && from > through
+
+  useEffect(() => {
+    getRankedSeasons()
+      .then((rows) => setSeasons(Array.isArray(rows) ? rows : []))
+      .catch(() => setSeasons([]))
+  }, [])
 
   useEffect(() => {
     getRankedCatalog()
@@ -107,6 +134,7 @@ export default function CardPlayedWinrates() {
     [search, quickFilters, minimums, minimumValues],
   )
   const rows = cards?.cards ?? EMPTY_ROWS
+  const extraMetrics = useMemo(() => extraRateMetrics(rows), [rows])
   const table = useMemo(
     () => selectCardTable(rows, catalogIndex, tableFilters, sortKey, sortDirection, page),
     [rows, catalogIndex, tableFilters, sortKey, sortDirection, page],
@@ -176,12 +204,25 @@ export default function CardPlayedWinrates() {
 
       <section className="flex flex-col gap-3" aria-label="Data selection">
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-text-muted">From
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={FIELD} />
+          <label className="flex items-center gap-2 text-sm text-text-muted">Season
+            <select value={season} onChange={(e) => setSeason(e.target.value)} className={`${FIELD} max-w-[320px]`}>
+              <option value={ALL_SEASONS}>All released games</option>
+              {seasons.map((s) => (
+                <option key={s.id} value={s.id}>{seasonLabel(s)}</option>
+              ))}
+              <option value={CUSTOM_DATES}>Custom dates…</option>
+            </select>
           </label>
-          <label className="flex items-center gap-2 text-sm text-text-muted">Through
-            <input type="date" value={through} onChange={(e) => setThrough(e.target.value)} className={FIELD} />
-          </label>
+          {season === CUSTOM_DATES && (
+            <>
+              <label className="flex items-center gap-2 text-sm text-text-muted">From
+                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={FIELD} />
+              </label>
+              <label className="flex items-center gap-2 text-sm text-text-muted">Through
+                <input type="date" value={through} onChange={(e) => setThrough(e.target.value)} className={FIELD} />
+              </label>
+            </>
+          )}
           {tab === 'cards' && (
             <input
               type="search" aria-label="Search cards" placeholder="Search cards…"
@@ -247,6 +288,7 @@ export default function CardPlayedWinrates() {
                   rows={table.cards} sortKey={sortKey} sortDirection={sortDirection} onSort={chooseSort}
                   selectedCard={selectedCard} onToggle={(key) => setSelectedCard((c) => (c === key ? null : key))}
                   catalogIndex={catalogIndex} avatarImages={avatarImages} selection={selection}
+                  extraMetrics={extraMetrics}
                 />
               )}
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-3 border-t border-border text-xs text-text-muted">

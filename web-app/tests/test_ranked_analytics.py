@@ -1,6 +1,7 @@
 """Tests for the Play Sorcery Online ranked analytics proxy."""
 
 import json
+import sqlite3
 
 import pytest
 import requests
@@ -315,3 +316,45 @@ class TestPsoCatalogMerge:
         # An explicit local "None" is a real value, not a gap.
         assert rows["Bridge Troll"]["elements"] == []
         assert rows["Bridge Troll"]["type"] == "Minion"
+
+
+class TestSeasons:
+    def _elo_db(self, tmp_path, rows):
+        path = tmp_path / "elo-seasons.db"
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE events (event_id INTEGER, event_name TEXT, start_date TEXT, end_date TEXT, is_active INTEGER)")
+        conn.executemany("INSERT INTO events VALUES (?, ?, ?, ?, ?)", rows)
+        conn.commit()
+        conn.close()
+        return path
+
+    def test_lists_summit_seasons_newest_first_as_inclusive_dates(self, tmp_path, monkeypatch):
+        db = self._elo_db(tmp_path, [
+            (6, "Gothic Season 6", "2026-07-25T16:40:15.927894", "2026-08-22T16:41:11.025632", 0),
+            (7, "Season 7", "2026-08-30T21:10:54.599565", "2026-09-28T01:47:18.613081", 0),
+            (8, "Season 8", "2026-10-03T12:00:00", None, 1),
+        ])
+        monkeypatch.setattr(webapp_config, "SEASON_FILTERS", [
+            {"id": "season_gothic_1", "name": "Gothic Season 1", "start_date": "2026-01-03", "end_date": "2026-02-03"},
+        ])
+
+        seasons = svc.list_seasons(db)
+
+        assert [s["name"] for s in seasons] == ["Season 8", "Season 7", "Gothic Season 6", "Gothic Season 1"]
+        assert seasons[1] == {"id": "7", "name": "Season 7", "from": "2026-08-30", "through": "2026-09-28", "is_active": False}
+        assert seasons[0]["through"] is None and seasons[0]["is_active"] is True
+        assert seasons[3]["id"] == "season_gothic_1"
+
+    def test_hand_kept_season_is_skipped_when_the_table_has_it(self, tmp_path, monkeypatch):
+        db = self._elo_db(tmp_path, [(1, "Gothic Season 1", "2026-01-03T00:00:00", "2026-02-03T00:00:00", 0)])
+        monkeypatch.setattr(webapp_config, "SEASON_FILTERS", [
+            {"id": "season_gothic_1", "name": "Gothic Season 1", "start_date": "2026-01-03", "end_date": "2026-02-03"},
+        ])
+        assert [s["id"] for s in svc.list_seasons(db)] == ["1"]
+
+    def test_route_is_public_and_cached_briefly(self, client, monkeypatch):
+        monkeypatch.setattr(svc, "list_seasons", lambda: [{"id": "7", "name": "Season 7", "from": "2026-08-30", "through": "2026-09-28", "is_active": False}])
+        resp = client.get("/api/ranked-analytics/seasons")
+        assert resp.status_code == 200
+        assert resp.get_json()[0]["name"] == "Season 7"
+        assert "max-age=300" in resp.headers["Cache-Control"]

@@ -5,7 +5,7 @@ export interface CardRow {
 }
 export interface CardMetadata { name: string; type: string; elements: readonly string[]; rarity: string; imageUrl?: string }
 export type MetricKey = 'deckShare' | 'inDeck' | 'played' | 'openingHand' | 'inDeckUnplayed' | 'winRateDifference'
-export type SortKey = 'cardName' | MetricKey
+export type SortKey = 'cardName' | MetricKey | string
 export type SortDirection = 'ascending' | 'descending'
 export interface CardTableFilters {
   search: string; type: string; element: string; rarity: string
@@ -26,17 +26,27 @@ export const EMPTY_MINIMUMS: Record<MetricKey, string> = {
   deckShare: '', inDeck: '', played: '', openingHand: '', inDeckUnplayed: '', winRateDifference: '',
 }
 
-export function cardMetricValue(card: CardRow, key: MetricKey): number | null {
+// Summit patch: PSO adds rate columns over time (e.g. inHand / notInHand).
+// Any key on a row holding a Rate object can be sorted like the built-ins.
+function extraRate(card: CardRow, key: string): Rate | null {
+  const value = (card as unknown as Record<string, unknown>)[key]
+  return value && typeof value === 'object' && 'winRate' in value ? value as Rate : null
+}
+
+export function cardMetricValue(card: CardRow, key: MetricKey | string): number | null {
   if (key === 'deckShare') return card.deckShare
   if (key === 'winRateDifference') return card.played.winRate === null || card.inDeckUnplayed.winRate === null
     ? null : card.played.winRate - card.inDeckUnplayed.winRate
-  return card[key].winRate
+  if (key === 'inDeck' || key === 'played' || key === 'openingHand' || key === 'inDeckUnplayed') return card[key].winRate
+  return extraRate(card, key)?.winRate ?? null
 }
 
-function cardMetricCount(card: CardRow, key: MetricKey): number | null {
+function cardMetricCount(card: CardRow, key: MetricKey | string): number | null {
   if (key === 'winRateDifference') return card.played.playerGames === null || card.inDeckUnplayed.playerGames === null
     ? null : Math.min(card.played.playerGames, card.inDeckUnplayed.playerGames)
-  return card[key === 'deckShare' ? 'inDeck' : key].playerGames
+  if (key === 'deckShare' || key === 'inDeck') return card.inDeck.playerGames
+  if (key === 'played' || key === 'openingHand' || key === 'inDeckUnplayed') return card[key].playerGames
+  return extraRate(card, key)?.playerGames ?? null
 }
 
 export function minimumSample(value: string): number {

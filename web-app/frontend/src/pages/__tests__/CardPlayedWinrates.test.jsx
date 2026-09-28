@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderWithRouter, screen, userEvent, within } from '@/test/test-utils'
+import { renderWithRouter, screen, waitFor, userEvent, within } from '@/test/test-utils'
 import CardPlayedWinrates from '@/pages/CardPlayedWinrates'
-import { getRankedCards, getRankedCatalog, getRankedCardReplays } from '@/api/rankedAnalytics'
+import { getRankedCards, getRankedCatalog, getRankedCardReplays, getRankedSeasons } from '@/api/rankedAnalytics'
 import { ApiError } from '@/api/client'
 
 vi.mock('@/api/rankedAnalytics', async () => {
@@ -11,6 +11,7 @@ vi.mock('@/api/rankedAnalytics', async () => {
     getRankedCards: vi.fn(),
     getRankedCatalog: vi.fn(),
     getRankedCardReplays: vi.fn(),
+    getRankedSeasons: vi.fn(),
   }
 })
 
@@ -41,6 +42,11 @@ const CARDS = {
   ],
 }
 
+const SEASONS = [
+  { id: '8', name: 'Season 8', from: '2026-10-03', through: null, is_active: true },
+  { id: '7', name: 'Season 7', from: '2026-08-30', through: '2026-09-28', is_active: false },
+]
+
 const CATALOG = [
   { name: 'Whirling Blades', type: 'Magic', elements: ['Air'], rarity: 'Exceptional', imageUrl: '/card-images/alp-whirling_blades-b-s.png' },
   { name: 'Gravedigger', type: 'Minion', elements: ['Earth'], rarity: 'Ordinary', imageUrl: null },
@@ -54,6 +60,7 @@ describe('CardPlayedWinrates', () => {
     getRankedCatalog.mockResolvedValue(CATALOG)
     getRankedCards.mockResolvedValue(CARDS)
     getRankedCardReplays.mockResolvedValue({ replays: [] })
+    getRankedSeasons.mockResolvedValue(SEASONS)
   })
 
   it('asks the proxy for constructed cards and renders the table', async () => {
@@ -103,6 +110,47 @@ describe('CardPlayedWinrates', () => {
     await user.click(screen.getByRole('button', { name: 'Avatar' }))
     expect(screen.getByRole('row', { name: /Imposter/ })).toBeInTheDocument()
     expect(screen.queryByRole('row', { name: /Gravedigger/ })).not.toBeInTheDocument()
+  })
+
+  it('turns a chosen season into that season\u2019s date range', async () => {
+    const user = userEvent.setup()
+    renderWithRouter(<CardPlayedWinrates />)
+    await screen.findByRole('row', { name: /Whirling Blades/ })
+    await screen.findByRole('option', { name: /Season 7/ })
+
+    await user.selectOptions(screen.getByLabelText('Season'), '7')
+    await waitFor(() => expect(getRankedCards).toHaveBeenLastCalledWith({ format: 'constructed', from: '2026-08-30', through: '2026-09-28' }))
+    expect(screen.queryByLabelText('From')).not.toBeInTheDocument()
+
+    // A season still running has no end date yet.
+    await user.selectOptions(screen.getByLabelText('Season'), '8')
+    await waitFor(() => expect(getRankedCards).toHaveBeenLastCalledWith({ format: 'constructed', from: '2026-10-03' }))
+
+    await user.selectOptions(screen.getByLabelText('Season'), 'custom')
+    expect(screen.getByLabelText('From')).toBeInTheDocument()
+    expect(screen.getByLabelText('Through')).toBeInTheDocument()
+  })
+
+  it('renders rate columns it did not know about, such as in hand', async () => {
+    const user = userEvent.setup()
+    getRankedCards.mockResolvedValue({
+      ...CARDS,
+      cards: CARDS.cards.map((c, i) => ({
+        ...c,
+        inHand: rate(0.5 + i * 0.05, 100 + i),
+        notInHand: i === 2 ? suppressed : rate(0.45, 90),
+      })),
+    })
+    renderWithRouter(<CardPlayedWinrates />)
+    await screen.findByRole('row', { name: /Whirling Blades/ })
+
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent.replace(/[\u2191\u2193\u2195]/g, '').trim())
+    expect(headers).toEqual(['Card', 'Popularity', 'In deck', 'Played', 'Opening hand', 'In hand', 'Not in hand', 'Not played', 'Effect of playing it'])
+    expect(within(screen.getByRole('row', { name: /Whirling Blades/ })).getByText('50.0%')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /In hand/ }))
+    const names = screen.getAllByRole('row').slice(1).map((r) => within(r).getByRole('button', { expanded: false }).textContent)
+    expect(names).toEqual(['\u25b8Imposter', '\u25b8Gravedigger', '\u25b8Whirling Blades'])
   })
 
   it('expands a card into art and replay clips', async () => {

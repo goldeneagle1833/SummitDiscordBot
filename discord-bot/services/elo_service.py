@@ -1236,6 +1236,13 @@ def end_current_event():
     Returns:
         dict with event summary (top players, total matches) or None
     """
+    # Make sure the archive tables carry every column the INSERTs below
+    # expect. These migrations used to run only from start_new_event(), so
+    # !end_event on a long-lived database could hit an archive table that
+    # predated newer columns (e.g. match_records_archive.voice).
+    create_events_table()
+    create_match_records_archive()
+
     active_event = get_active_event()
     if not active_event:
         return None

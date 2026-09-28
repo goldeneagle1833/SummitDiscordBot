@@ -19,7 +19,7 @@ from cogs.lfg.helpers import (
     scrub_urls,
 )
 from cogs.lfg.persistent_confirm import update_match_card_message_ref
-from cogs.lfg.voice import SUMMIT_VOICE_URL, queue_supports_voice, voice_match_tag, voice_match_text
+from cogs.lfg.voice import voice_match_tag, voice_match_text
 
 logger = logging.getLogger("discord_bot")
 
@@ -52,19 +52,17 @@ class PrivateSeatLinkView(discord.ui.View):
         self.add_item(PrivateSeatLinkButton(user_id, game_url))
 
 
-def match_delivery_extras(provisioned_links, reporter_id, other_id, queue_type=None, is_voice_match=False):
+def match_delivery_extras(provisioned_links, reporter_id, other_id, is_voice_match=False):
     """Add Sorcery Online details only after both private seats were provisioned.
 
-    Voice-enabled queues (Ranked/Casual) always say whether the match is a
-    voice match; other queues only show the voice link alongside SO seats.
+    The voice room link is shown for voice matches only, whether or not the
+    seats were provisioned.
     """
     reporter_game_url = provisioned_links.get(reporter_id)
     other_game_url = provisioned_links.get(other_id)
-    queue_voice_text = (
-        voice_match_text(queue_type, is_voice_match) if queue_supports_voice(queue_type) else None
-    )
+    voice_text = voice_match_text(is_voice_match)
     if not reporter_game_url or not other_game_url:
-        return None, None, "", "", queue_voice_text or ""
+        return None, None, "", "", voice_text
     reporter_game_text = (
         f"\n\n🎴 **Play on Sorcery Online:** {reporter_game_url}"
         if reporter_game_url
@@ -74,11 +72,6 @@ def match_delivery_extras(provisioned_links, reporter_id, other_id, queue_type=N
         f"\n\n🎴 **Play on Sorcery Online:** {other_game_url}"
         if other_game_url
         else ""
-    )
-    voice_text = (
-        queue_voice_text
-        if queue_voice_text is not None
-        else f"\n\n🔊 **Voice chat:** [Join To Make a Room]({SUMMIT_VOICE_URL})"
     )
     return (
         reporter_game_url,
@@ -355,8 +348,8 @@ async def send_pairing_messages(
     """
     emoji, label = match_type_presentation(match_type)
     title = f"{emoji} **{headline or f'{label} Match Found!'}**"
-    voice_queue = voice is not None and queue_supports_voice(match_type)
-    if voice_queue:
+    # Queue pairings say whether the match is on voice; direct challenges (voice=None) don't.
+    if voice is not None:
         title = f"{title} {voice_match_tag(voice)}"
     (
         reporter_game_url,
@@ -368,7 +361,6 @@ async def send_pairing_messages(
         provisioned_links or {},
         reporter.user_id,
         other.user_id,
-        queue_type=match_type if voice_queue else None,
         is_voice_match=bool(voice),
     )
 

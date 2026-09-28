@@ -1,4 +1,4 @@
-"""Voice preferences on the Ranked and Casual queues."""
+"""Voice preferences on every LFG queue: voice or no voice, nothing in between."""
 
 import datetime
 import sqlite3
@@ -11,12 +11,18 @@ import pytest
 sys.modules.setdefault("config", MagicMock(GUILD_ID=1))
 
 from cogs.lfg.cog import LFGCog
-from cogs.lfg.queue import DeckURLModal, match_delivery_extras, provision_match_and_publish_results
+from cogs.lfg.queue import (
+    DeckURLModal,
+    LimitedQueueModal,
+    PointsQueueModal,
+    match_delivery_extras,
+    provision_match_and_publish_results,
+)
 from cogs.lfg.state import lfg_queue, pending_web_matches
 from cogs.lfg.voice import (
-    ANY_VOICE,
     NO_VOICE,
     VOICE,
+    VOICE_PREFERENCES,
     normalize_voice_preference,
     resolve_match_voice,
     voice_preferences_compatible,
@@ -66,73 +72,80 @@ def clear_queue():
 class TestVoiceRules:
     @pytest.mark.parametrize(
         "raw, expected",
-        [(None, ANY_VOICE), ("", ANY_VOICE), ("voice", VOICE), ("No-Voice", NO_VOICE),
-         (" any ", ANY_VOICE), ("maybe", None), (True, None)],
+        [(None, VOICE), ("", VOICE), ("voice", VOICE), ("No-Voice", NO_VOICE),
+         (" any ", None), ("either", None), ("maybe", None), (True, None)],
     )
     def test_normalize(self, raw, expected):
         assert normalize_voice_preference(raw) == expected
 
-    def test_only_voice_and_no_voice_clash(self):
+    def test_there_is_no_either_option(self):
+        assert VOICE_PREFERENCES == (VOICE, NO_VOICE)
+
+    def test_only_the_same_choice_pairs(self):
         assert not voice_preferences_compatible(VOICE, NO_VOICE)
         assert not voice_preferences_compatible(NO_VOICE, VOICE)
-        for a, b in [(VOICE, VOICE), (VOICE, ANY_VOICE), (NO_VOICE, NO_VOICE),
-                     (NO_VOICE, ANY_VOICE), (ANY_VOICE, ANY_VOICE), (VOICE, None)]:
+        for a, b in [(VOICE, VOICE), (NO_VOICE, NO_VOICE), (VOICE, None), (None, None)]:
             assert voice_preferences_compatible(a, b)
 
-    def test_match_is_voice_when_either_player_asked(self):
-        assert resolve_match_voice(VOICE, ANY_VOICE)
-        assert resolve_match_voice(ANY_VOICE, VOICE)
-        assert not resolve_match_voice(ANY_VOICE, ANY_VOICE)
-        assert not resolve_match_voice(NO_VOICE, ANY_VOICE)
+    def test_match_is_voice_when_players_asked(self):
+        assert resolve_match_voice(VOICE, VOICE)
+        assert resolve_match_voice(VOICE, None)
+        assert not resolve_match_voice(NO_VOICE, NO_VOICE)
 
 
 class TestVoiceMatching:
     def test_voice_player_skips_no_voice_player(self, lfg_cog, ctx):
         lfg_queue[111] = entry("ranked", 10, NO_VOICE)
-        lfg_queue[222] = entry("ranked", 5, ANY_VOICE)
+        lfg_queue[222] = entry("ranked", 5, VOICE)
         assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=VOICE) == 222
 
     def test_no_voice_player_skips_voice_player(self, lfg_cog, ctx):
         lfg_queue[111] = entry("testing", 10, VOICE)
         assert lfg_cog.check_if_someone_is_lfg(ctx, "testing", voice=NO_VOICE) is None
 
-    def test_any_matches_oldest_regardless_of_voice(self, lfg_cog, ctx):
+    def test_default_preference_is_voice(self, lfg_cog, ctx):
         lfg_queue[111] = entry("ranked", 10, NO_VOICE)
         lfg_queue[222] = entry("ranked", 5, VOICE)
-        assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=ANY_VOICE) == 111
+        assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked") == 222
 
-    def test_legacy_entries_without_voice_count_as_any(self, lfg_cog, ctx):
+    def test_entries_without_voice_count_as_voice(self, lfg_cog, ctx):
         lfg_queue[111] = entry("ranked", 10)
         assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=VOICE) == 111
+        assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=NO_VOICE) is None
 
-    def test_other_queues_ignore_voice(self, lfg_cog, ctx):
-        lfg_queue[111] = entry("rumble", 10, NO_VOICE)
-        assert lfg_cog.check_if_someone_is_lfg(ctx, "rumble", voice=VOICE) == 111
+    @pytest.mark.parametrize("queue_type", ["points", "ranked", "testing", "limited", "rumble"])
+    def test_every_queue_respects_voice(self, lfg_cog, ctx, queue_type):
+        lfg_queue[111] = entry(queue_type, 10, NO_VOICE)
+        lfg_queue[222] = entry(queue_type, 5, VOICE)
+        assert lfg_cog.check_if_someone_is_lfg(ctx, queue_type, voice=VOICE) == 222
+        assert lfg_cog.check_if_someone_is_lfg(ctx, queue_type, voice=NO_VOICE) == 111
 
     def test_add_to_queue_stores_voice(self, lfg_cog, ctx):
         lfg_cog.add_to_lfg_queue(ctx, 30, None, "ranked", voice=NO_VOICE)
         assert lfg_queue[999]["queues"]["ranked"]["voice"] == NO_VOICE
 
+    def test_add_to_queue_defaults_and_rejects_either(self, lfg_cog, ctx):
+        lfg_cog.add_to_lfg_queue(ctx, 30, None, "rumble")
+        assert lfg_queue[999]["queues"]["rumble"]["voice"] == VOICE
+        lfg_cog.add_to_lfg_queue(ctx, 30, None, "limited", voice="any")
+        assert lfg_queue[999]["queues"]["limited"]["voice"] == VOICE
+
 
 class TestVoiceMessages:
     def test_voice_match_always_gets_voice_link(self):
-        assert "Join To Make a Room" in match_delivery_extras({}, 1, 2, "ranked", True)[4]
+        assert "Join To Make a Room" in match_delivery_extras({}, 1, 2, is_voice_match=True)[4]
 
     def test_no_voice_match_has_no_room_link_even_with_seats(self):
         seats = {1: "a", 2: "b"}
-        for queue_type in ("ranked", "testing"):
-            assert match_delivery_extras(seats, 1, 2, queue_type, False)[4] == ""
-
-    def test_other_queues_keep_legacy_voice_reminder(self):
-        extras = match_delivery_extras({1: "a", 2: "b"}, 1, 2, "rumble", False)
-        assert "Join To Make a Room" in extras[4]
+        assert match_delivery_extras(seats, 1, 2, is_voice_match=False)[4] == ""
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("match_type, label", [("ranked", "Ranked"), ("rumble", "Rumble")])
     @pytest.mark.parametrize("voice, tag, has_link", [
         (True, "(🔊 Voice match)", True),
         (False, "(🔇 No-voice match)", False),
     ])
-    async def test_both_players_dm_says_voice_or_no_voice(self, voice, tag, has_link):
+    async def test_both_players_dm_says_voice_or_no_voice(self, voice, tag, has_link, match_type, label):
         from cogs.lfg.pairing_messages import PairingPlayer, send_pairing_messages
 
         def player(user_id):
@@ -145,11 +158,11 @@ class TestVoiceMessages:
         with patch("cogs.lfg.pairing_messages.update_match_card_message_ref"):
             await send_pairing_messages(
                 MagicMock(), reporter=reporter, other=other,
-                match_card_view=MagicMock(), match_type="ranked", voice=voice,
+                match_card_view=MagicMock(), match_type=match_type, voice=voice,
             )
         for p in (reporter, other):
             text = p.user.send.await_args.args[0]
-            assert f"**Ranked Match Found!** {tag}" in text
+            assert f"**{label} Match Found!** {tag}" in text
             assert ("Join To Make a Room" in text) is has_link
 
     @pytest.mark.asyncio
@@ -216,11 +229,14 @@ class TestVoiceWebsite:
              patch("services.matchmaking_api.enabled_queue_definitions", return_value=definitions):
             status = await _status(bot, 2)
         ranked, rumble = status["queues"]
-        assert ranked["voice_options"] is True
-        assert ranked["waiting_by_voice"] == {VOICE: 1, NO_VOICE: 1, ANY_VOICE: 1}
+        for queue in (ranked, rumble):
+            assert queue["voice_options"] is True
+            assert queue["voice_choices"] == [VOICE, NO_VOICE]
+            assert queue["default_voice"] == VOICE
+        assert ranked["waiting_by_voice"] == {VOICE: 2, NO_VOICE: 1}
         assert ranked["voice"] == NO_VOICE
-        assert rumble["voice_options"] is False
-        assert "waiting_by_voice" not in rumble
+        assert rumble["waiting_by_voice"] == {VOICE: 1, NO_VOICE: 0}
+        assert rumble["voice"] is None
 
     @pytest.mark.asyncio
     async def test_website_result_carries_voice_flag(self):
@@ -235,21 +251,32 @@ class TestVoiceWebsite:
 
 
 class TestVoiceModal:
-    def test_ranked_and_casual_modals_have_required_voice_dropdown(self):
-        for queue_type in ("ranked", "testing"):
-            modal = DeckURLModal(MagicMock(), queue_type=queue_type)
-            labels = [item for item in modal.children if isinstance(item, discord.ui.Label)]
-            assert len(labels) == 1
-            select = labels[0].component
-            assert [o.value for o in select.options] == [VOICE, NO_VOICE, ANY_VOICE]
-            assert select.required
-            # Voice is preselected so joining needs no extra clicks.
-            assert [o.value for o in select.options if o.default] == [VOICE]
-            # Deck URL, then voice, then duration
-            assert modal.children.index(labels[0]) == 1
-            assert modal.children[-1] is modal.timeframe
+    @staticmethod
+    def assert_voice_dropdown(modal):
+        labels = [item for item in modal.children if isinstance(item, discord.ui.Label)]
+        assert len(labels) == 1
+        select = labels[0].component
+        assert select is modal.voice_select
+        assert [o.value for o in select.options] == [VOICE, NO_VOICE]
+        assert select.required
+        # Voice is preselected so joining needs no extra clicks.
+        assert [o.value for o in select.options if o.default] == [VOICE]
+        # Voice sits just above the duration field, which stays last.
+        assert modal.children.index(labels[0]) == len(modal.children) - 2
+        assert modal.children[-1] is modal.timeframe
 
-    def test_other_queues_have_no_voice_dropdown(self):
-        modal = DeckURLModal(MagicMock(), queue_type="rumble")
-        assert modal.voice_select is None
-        assert not any(isinstance(item, discord.ui.Label) for item in modal.children)
+    @pytest.mark.parametrize("queue_type", ["ranked", "testing", "rumble"])
+    def test_deck_url_modal_has_required_voice_dropdown(self, queue_type):
+        modal = DeckURLModal(MagicMock(), queue_type=queue_type)
+        self.assert_voice_dropdown(modal)
+        assert modal.children[0] is modal.deck_url
+
+    def test_limited_modal_has_voice_dropdown(self):
+        modal = LimitedQueueModal(MagicMock())
+        self.assert_voice_dropdown(modal)
+        assert modal.children[0] is modal.draft_url
+
+    def test_points_modal_has_voice_dropdown(self):
+        modal = PointsQueueModal(MagicMock())
+        self.assert_voice_dropdown(modal)
+        assert modal.children[0] is modal.deck_url

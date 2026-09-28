@@ -11,12 +11,11 @@ from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pendin
 from cogs.lfg.queue_definitions import queue_definition, queue_is_enabled
 from cogs.lfg.helpers import correction_tip, match_type_presentation
 from cogs.lfg.voice import (
-    ANY_VOICE,
+    DEFAULT_VOICE,
     VOICE,
     VOICE_LABELS,
     NO_VOICE,
     normalize_voice_preference,
-    queue_supports_voice,
     resolve_match_voice,
 )
 from cogs.lfg.persistent_confirm import create_match_card_view, update_match_card_message_ref
@@ -152,20 +151,19 @@ def get_last_unreported_pairing(user_id: int, guild_id: int):
 
 
 VOICE_SELECT_DESCRIPTIONS = {
-    VOICE: "Only match players who want voice (or don't mind)",
-    NO_VOICE: "Only match players who want no voice (or don't mind)",
-    ANY_VOICE: "Match with anyone",
+    VOICE: "Only match players who want voice",
+    NO_VOICE: "Only match players who want no voice",
 }
 
 
 def build_voice_select():
-    """Voice-preference dropdown for the Ranked/Casual join modal.
+    """Voice-preference dropdown for every queue's join modal.
 
-    Voice is preselected so joining takes no extra clicks; players who want a
-    different preference pick it from the dropdown.
+    Voice is preselected so joining takes no extra clicks; players who want
+    no voice pick it from the dropdown.
     """
     return discord.ui.Select(
-        placeholder="Voice, no voice, or either?",
+        placeholder="Voice or no voice?",
         min_values=1,
         max_values=1,
         required=True,
@@ -174,11 +172,27 @@ def build_voice_select():
                 label=VOICE_LABELS[value],
                 value=value,
                 description=VOICE_SELECT_DESCRIPTIONS[value],
-                default=value == VOICE,
+                default=value == DEFAULT_VOICE,
             )
-            for value in (VOICE, NO_VOICE, ANY_VOICE)
+            for value in (VOICE, NO_VOICE)
         ],
     )
+
+
+def add_voice_select(modal):
+    """Put the voice dropdown just above the modal's duration field and return it."""
+    select = build_voice_select()
+    modal.remove_item(modal.timeframe)
+    modal.add_item(discord.ui.Label(text="Voice chat", component=select))
+    modal.add_item(modal.timeframe)
+    return select
+
+
+def selected_voice(select):
+    """The chosen preference from a voice dropdown, defaulting to voice."""
+    if select is not None and select.values:
+        return normalize_voice_preference(select.values[0]) or DEFAULT_VOICE
+    return DEFAULT_VOICE
 
 
 class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
@@ -206,28 +220,14 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             is_button_join  # True if from button, False if from !lfg command
         )
         self.queue_type = queue_type
-        self.voice_select = None
-        if queue_supports_voice(queue_type):
-            self.voice_select = build_voice_select()
-            # Keep the voice choice next to the deck URL, above the duration.
-            self.remove_item(self.timeframe)
-            self.add_item(
-                discord.ui.Label(
-                    text="Voice chat",
-                    component=self.voice_select,
-                )
-            )
-            self.add_item(self.timeframe)
+        # Keep the voice choice next to the deck URL, above the duration.
+        self.voice_select = add_voice_select(self)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
         timeframe_value = parse_queue_timeframe(self.timeframe.value)
-        voice = (
-            normalize_voice_preference(self.voice_select.values[0])
-            if self.voice_select is not None and self.voice_select.values
-            else ANY_VOICE
-        ) or ANY_VOICE
+        voice = selected_voice(self.voice_select)
 
         deck_url = clean_deck_url(self.deck_url.value.strip()) if self.deck_url.value else None
 
@@ -300,11 +300,13 @@ class LimitedQueueModal(discord.ui.Modal, title="Join Limited Queue"):
     def __init__(self, bot):
         super().__init__()
         self.bot = bot
+        self.voice_select = add_voice_select(self)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
         timeframe_value = parse_queue_timeframe(self.timeframe.value)
+        voice = selected_voice(self.voice_select)
 
         active_run = get_active_arena_run(interaction.user.id)
         if active_run and active_run["status"] == "active" and active_run["wins"] < 4 and active_run["losses"] < 2:
@@ -341,6 +343,7 @@ class LimitedQueueModal(discord.ui.Modal, title="Join Limited Queue"):
             timeframe_value,
             deck_url,
             run_id,
+            voice=voice,
         )
 
 
@@ -365,10 +368,12 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
     def __init__(self, bot):
         super().__init__()
         self.bot = bot
+        self.voice_select = add_voice_select(self)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
+        voice = selected_voice(self.voice_select)
         deck_url = clean_deck_url(self.deck_url.value.strip())
         if not deck_url or not any(host in deck_url.lower() for host in (
             "curiosa.io", "sorcerytcg.com", "draftsorcery.com", "playsorceryonline.com"
@@ -396,15 +401,16 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
             "points",
             timeframe_value,
             deck_url,
+            voice=voice,
         )
 
 
 async def _process_queue_join(
     bot, interaction, queue_type, timeframe_value, deck_url, run_id=None, origin="discord",
-    voice=ANY_VOICE,
+    voice=DEFAULT_VOICE,
 ):
     """Handle queue join flow after modal validation."""
-    voice = (normalize_voice_preference(voice) or ANY_VOICE) if queue_supports_voice(queue_type) else ANY_VOICE
+    voice = normalize_voice_preference(voice) or DEFAULT_VOICE
 
     class FakeContext:
         def __init__(self, bot, interaction):
@@ -452,9 +458,7 @@ async def _process_queue_join(
             matched_run_id = int(matched_entry.get("run_id") or 0)
             matched_user_origin = matched_entry.get("origin", "discord")
             match_type = lfg_cog.resolve_match_type(queue_type, matched_queue_type)
-            match_voice = queue_supports_voice(queue_type) and resolve_match_voice(
-                voice, matched_entry.get("voice", ANY_VOICE)
-            )
+            match_voice = resolve_match_voice(voice, matched_entry.get("voice"))
 
             if matched_ladder_info:
                 from utils.database import get_user_event_elo, save_ladder_challenge, delete_ladder_challenge
@@ -734,8 +738,7 @@ async def _process_queue_join(
     else:
         queue_label = "Rumble (Omens)" if queue_type == "points" else queue_type.capitalize()
         deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
-        if queue_supports_voice(queue_type):
-            deck_msg += f"\n**Voice:** {VOICE_LABELS[voice]}"
+        deck_msg += f"\n**Voice:** {VOICE_LABELS[voice]}"
         try:
             await interaction.user.send(
                 f"You have been added to the **{queue_label}** queue for {timeframe_value} minutes.{deck_msg}"

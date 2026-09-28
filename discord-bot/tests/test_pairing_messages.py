@@ -15,12 +15,12 @@ from cogs.lfg.helpers import (
     deck_text_if_private,
 )
 from cogs.lfg.pairing_messages import (
-    SUMMIT_VOICE_URL,
     PairingPlayer,
     announce_pairing,
     match_type_presentation,
     send_pairing_messages,
 )
+from cogs.lfg.voice import SUMMIT_VOICE_URL
 from services.summit_result_reporting import _notify_sorcery_online_match_recorded
 
 

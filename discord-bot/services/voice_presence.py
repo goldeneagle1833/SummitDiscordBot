@@ -13,7 +13,7 @@ import time
 import discord
 
 import config
-from cogs.lfg.pairing_messages import SUMMIT_VOICE_URL
+from cogs.lfg.voice import SUMMIT_VOICE_URL
 
 logger = logging.getLogger("discord_bot")
 

@@ -364,18 +364,20 @@ class MatchRepository:
         conn.close()
         return records
 
+    VOICE_QUEUE_TYPES = ("points", "ranked", "testing", "limited", "rumble")
+
     def get_voice_match_stats(self) -> dict:
-        """Voice vs no-voice queue games (ranked, testing) in the current season.
+        """Voice vs no-voice queue games, per queue type, in the current season.
 
         Returns season totals per queue plus the same split per day, oldest day first:
-        ``{"queues": {"ranked": {"voice", "no_voice"}, "testing": {...}},
-           "days": [{"date": "YYYY-MM-DD", "ranked": {...}, "testing": {...}}]}``
+        ``{"queues": {"ranked": {"voice", "no_voice"}, "testing": {...}, ...},
+           "days": [{"date": "YYYY-MM-DD", "ranked": {...}, "testing": {...}, ...}]}``
 
         Only matches that came from a queue pairing are counted (pairing_id is set),
         so games recorded before voice tracking started aren't miscounted as no-voice.
         """
         def empty():
-            return {queue: {"voice": 0, "no_voice": 0} for queue in ("ranked", "testing")}
+            return {queue: {"voice": 0, "no_voice": 0} for queue in self.VOICE_QUEUE_TYPES}
 
         totals = empty()
         days = {}
@@ -385,14 +387,16 @@ class MatchRepository:
             cur.execute("PRAGMA table_info(match_records)")
             if not {"voice", "pairing_id"} <= {row[1] for row in cur.fetchall()}:
                 return {"queues": totals, "days": []}
+            placeholders = ", ".join("?" for _ in self.VOICE_QUEUE_TYPES)
             cur.execute(
                 f"""
                 SELECT date(timestamp) AS day, match_type, voice, COUNT(*)
                 FROM match_records
-                WHERE pairing_id IS NOT NULL AND match_type IN ('ranked', 'testing') {self._NOT_SEASON}
+                WHERE pairing_id IS NOT NULL AND match_type IN ({placeholders}) {self._NOT_SEASON}
                 GROUP BY day, match_type, voice
                 ORDER BY day
-                """
+                """,
+                self.VOICE_QUEUE_TYPES,
             )
             for day, match_type, voice, count in cur.fetchall():
                 key = "voice" if voice else "no_voice"

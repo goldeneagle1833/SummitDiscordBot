@@ -240,10 +240,14 @@ const VOICE_FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'ranked', label: 'Ranked' },
   { key: 'testing', label: 'Casual' },
+  { key: 'points', label: 'Rumble (Omens)' },
+  { key: 'rumble', label: 'Rumble' },
+  { key: 'limited', label: 'Limited' },
 ]
+const VOICE_QUEUES = VOICE_FILTERS.filter(f => f.key !== 'all')
 
 function voiceSplit(counts, filter) {
-  const queues = filter === 'all' ? ['ranked', 'testing'] : [filter]
+  const queues = filter === 'all' ? VOICE_QUEUES.map(f => f.key) : [filter]
   return queues.reduce(
     (acc, q) => ({
       voice: acc.voice + (counts?.[q]?.voice || 0),
@@ -287,8 +291,7 @@ export function VoiceStatsCard() {
   }, [])
 
   const rows = [
-    ['Ranked', voiceSplit(stats?.queues, 'ranked')],
-    ['Casual', voiceSplit(stats?.queues, 'testing')],
+    ...VOICE_QUEUES.map(f => [f.label, voiceSplit(stats?.queues, f.key)]),
     ['Total', voiceSplit(stats?.queues, 'all')],
   ]
   const days = (stats?.days || []).map(day => ({
@@ -301,7 +304,7 @@ export function VoiceStatsCard() {
       <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
         <div>
           <h3 className="text-sm font-semibold mb-1">Voice vs No-Voice Games</h3>
-          <p className="text-xs text-text-muted">Ranked and Casual queue games this season, by day</p>
+          <p className="text-xs text-text-muted">Queue games this season, by day</p>
         </div>
         <div className="flex gap-1" role="group" aria-label="Queue">
           {VOICE_FILTERS.map(f => (

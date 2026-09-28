@@ -202,14 +202,18 @@ class TestAdminRoutes:
 
         assert resp.status_code == 200
         data = resp.get_json()
+        quiet = {"voice": 0, "no_voice": 0}
         assert data["queues"] == {
+            "points": quiet,
             "ranked": {"voice": 1, "no_voice": 1},
             "testing": {"voice": 0, "no_voice": 1},
+            "limited": quiet,
+            "rumble": quiet,
         }
         assert data["days"] == [
-            {"date": "2026-09-21",
-             "ranked": {"voice": 1, "no_voice": 0}, "testing": {"voice": 0, "no_voice": 0}},
-            {"date": "2026-09-22",
+            {"date": "2026-09-21", "points": quiet, "limited": quiet, "rumble": quiet,
+             "ranked": {"voice": 1, "no_voice": 0}, "testing": quiet},
+            {"date": "2026-09-22", "points": quiet, "limited": quiet, "rumble": quiet,
              "ranked": {"voice": 0, "no_voice": 1}, "testing": {"voice": 0, "no_voice": 1}},
         ]
 

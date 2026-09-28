@@ -447,8 +447,8 @@ class TestEnforcement:
     def test_matching_skips_banned_queued_player(self):
         set_pairing_ban(555, ADMIN_ID, "r", "24h")
         now = datetime.datetime.now()
-        lfg_queue[555] = {"queues": {"ranked": {"timestamp": now - datetime.timedelta(minutes=5), "timeframe": 30, "voice": "any"}}}
-        lfg_queue[556] = {"queues": {"ranked": {"timestamp": now, "timeframe": 30, "voice": "any"}}}
+        lfg_queue[555] = {"queues": {"ranked": {"timestamp": now - datetime.timedelta(minutes=5), "timeframe": 30, "voice": "voice"}}}
+        lfg_queue[556] = {"queues": {"ranked": {"timestamp": now, "timeframe": 30, "voice": "voice"}}}
         cog = object.__new__(LFGCog)
         cog.bot = Mock()
         cog.check_last_match_opponent = MagicMock(return_value=False)

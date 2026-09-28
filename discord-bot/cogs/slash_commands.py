@@ -133,7 +133,12 @@ class SlashCommandsCog(commands.Cog):
         name="issue-challenge",
         description="Issue a ladder challenge (Top 16 event players only, once per day)",
     )
-    async def issue_challenge_slash(self, interaction: discord.Interaction):
+    @app_commands.describe(voice="Play the challenge on voice chat or not (default: voice)")
+    @app_commands.choices(voice=[
+        app_commands.Choice(name="🔊 Voice", value="voice"),
+        app_commands.Choice(name="🔇 No voice", value="no_voice"),
+    ])
+    async def issue_challenge_slash(self, interaction: discord.Interaction, voice: str = "voice"):
         """Ladder challenge - Top 16 event players can challenge the field with special ELO stakes"""
         await interaction.response.defer(ephemeral=True)
         ctx = FakeContext(self.bot, interaction)
@@ -145,7 +150,7 @@ class SlashCommandsCog(commands.Cog):
             )
             return
 
-        await lfg_cog.issue_challenge(ctx)
+        await lfg_cog.issue_challenge(ctx, voice)
 
     # ==================== UTILITY COMMANDS ====================
 

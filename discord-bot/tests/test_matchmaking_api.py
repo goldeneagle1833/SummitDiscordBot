@@ -55,12 +55,14 @@ def test_missing_links_add_nothing_to_legacy_match_messages():
 def test_complete_links_add_private_seats_and_voice_reminder():
     reporter_url = "https://example.test/seat/10"
     other_url = "https://example.test/seat/20"
-    extras = match_delivery_extras({10: reporter_url, 20: other_url}, 10, 20)
+    extras = match_delivery_extras({10: reporter_url, 20: other_url}, 10, 20, is_voice_match=True)
     assert extras[0] == reporter_url
     assert extras[1] == other_url
     assert reporter_url in extras[2]
     assert other_url in extras[3]
     assert "Join To Make a Room" in extras[4]
+    # No-voice matches get the seats but no room link
+    assert match_delivery_extras({10: reporter_url, 20: other_url}, 10, 20, is_voice_match=False)[4] == ""
 
 
 @pytest.mark.asyncio

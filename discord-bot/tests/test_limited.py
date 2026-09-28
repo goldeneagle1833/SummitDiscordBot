@@ -575,9 +575,11 @@ class TestLimitedQueueJoinModal:
 
         modal = mock_interaction.response.send_modal.await_args.args[0]
         assert isinstance(modal, LimitedQueueModal)
-        assert len(modal.children) == 2
-        assert modal.children[0].label == "Queue Duration (minutes)"
-        assert modal.children[1].label == "DraftSorcery Draft URL (if no active run)"
+        # Draft URL, then the voice choice, then duration
+        assert len(modal.children) == 3
+        assert modal.children[0].label == "DraftSorcery Draft URL (if no active run)"
+        assert modal.children[1].component is modal.voice_select
+        assert modal.children[2].label == "Queue Duration (minutes)"
 
     @pytest.mark.asyncio
     async def test_limited_modal_queues_with_active_run_data(self, mock_bot, mock_interaction):
@@ -607,8 +609,10 @@ class TestLimitedQueueJoinModal:
         assert deck_url == "https://curiosa.io/deck/limited-run"
         assert queue_type == "limited"
         assert lfg_cog.add_to_lfg_queue.call_args.kwargs["run_id"] > 0
+        assert lfg_cog.add_to_lfg_queue.call_args.kwargs["voice"] == "voice"
         mock_interaction.followup.send.assert_awaited_with(
-            "You've joined the **Limited** queue for 45 minutes!\n**Deck:** https://curiosa.io/deck/limited-run",
+            "You've joined the **Limited** queue for 45 minutes!\n**Deck:** https://curiosa.io/deck/limited-run"
+            "\n**Voice:** \U0001f50a Voice",
             ephemeral=True,
         )
 

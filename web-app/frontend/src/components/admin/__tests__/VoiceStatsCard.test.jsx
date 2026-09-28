@@ -9,28 +9,34 @@ vi.mock('@/api/client', () => ({
     queues: {
       ranked: { voice: 96, no_voice: 96 },
       testing: { voice: 7, no_voice: 39 },
+      rumble: { voice: 3, no_voice: 1 },
     },
     days: [
       { date: '2026-09-21', ranked: { voice: 40, no_voice: 50 }, testing: { voice: 2, no_voice: 20 } },
-      { date: '2026-09-22', ranked: { voice: 56, no_voice: 46 }, testing: { voice: 5, no_voice: 19 } },
+      { date: '2026-09-22', ranked: { voice: 56, no_voice: 46 }, testing: { voice: 5, no_voice: 19 }, rumble: { voice: 3, no_voice: 1 } },
     ],
   })),
 }))
 
 describe('VoiceStatsCard', () => {
-  it('shows season totals per queue with the voice share', async () => {
+  it('shows season totals for every queue with the voice share', async () => {
     renderWithRouter(<VoiceStatsCard />)
-    expect(await screen.findByText('Ranked')).toBeInTheDocument()
-    expect(screen.getByText('50%')).toBeInTheDocument()
-    expect(screen.getByText('15%')).toBeInTheDocument()
-    expect(screen.getByText('43%')).toBeInTheDocument()
+    expect(await screen.findByRole('cell', { name: 'Ranked' })).toBeInTheDocument()
+    for (const label of ['Casual', 'Rumble (Omens)', 'Rumble', 'Limited', 'Total']) {
+      expect(screen.getByRole('cell', { name: label })).toBeInTheDocument()
+    }
+    expect(screen.getByText('50%')).toBeInTheDocument() // ranked
+    expect(screen.getByText('15%')).toBeInTheDocument() // casual
+    expect(screen.getByText('75%')).toBeInTheDocument() // rumble
+    expect(screen.getByText('44%')).toBeInTheDocument() // total: 106 of 242
+    expect(screen.getAllByText('--')).toHaveLength(2) // queues with no games yet
   })
 
   it('switches the chart queue filter', async () => {
     renderWithRouter(<VoiceStatsCard />)
-    const casual = await screen.findByRole('button', { name: 'Casual' })
+    const rumble = await screen.findByRole('button', { name: 'Rumble' })
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(casual)
-    expect(casual).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(rumble)
+    expect(rumble).toHaveAttribute('aria-pressed', 'true')
   })
 })

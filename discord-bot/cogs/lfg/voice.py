@@ -1,47 +1,46 @@
-"""Voice-chat preferences for the Ranked and Casual queues.
+"""Voice-chat preferences for every LFG queue.
 
 Voice is a preference on a queue entry, not a separate queue: every player
-in Ranked stays on one ladder. A player picks ``voice``, ``no_voice`` or
-``any``; ``voice`` and ``no_voice`` never pair, ``any`` pairs with both.
-A pairing is a voice match when either player asked for voice, and ranked
-voice matches count toward top-cut eligibility.
+in Ranked stays on one ladder. A player picks ``voice`` or ``no_voice`` and
+only pairs with players who picked the same. Voice is the default when a
+join path gives no preference. Ranked voice matches count toward top-cut
+eligibility.
 """
 
 VOICE = "voice"
 NO_VOICE = "no_voice"
-ANY_VOICE = "any"
-VOICE_PREFERENCES = (VOICE, NO_VOICE, ANY_VOICE)
-
-VOICE_QUEUE_TYPES = ("ranked", "testing")
+VOICE_PREFERENCES = (VOICE, NO_VOICE)
+DEFAULT_VOICE = VOICE
 
 VOICE_LABELS = {
     VOICE: "🔊 Voice",
     NO_VOICE: "🔇 No voice",
-    ANY_VOICE: "🤷 Either",
+}
+
+VOICE_ICONS = {
+    VOICE: "🔊",
+    NO_VOICE: "🔇",
 }
 
 SUMMIT_VOICE_URL = "https://discord.com/channels/1319120227643949211/1552047481129541713"
 
 
-def queue_supports_voice(queue_type):
-    return queue_type in VOICE_QUEUE_TYPES
-
-
 def normalize_voice_preference(value):
-    """Return a valid preference, ``any`` when missing, or None when invalid."""
+    """Return a valid preference, ``voice`` when missing, or None when invalid."""
     if value is None or value == "":
-        return ANY_VOICE
+        return DEFAULT_VOICE
     value = str(value).strip().lower().replace("-", "_")
     return value if value in VOICE_PREFERENCES else None
 
 
 def voice_preferences_compatible(pref_a, pref_b):
-    return {pref_a or ANY_VOICE, pref_b or ANY_VOICE} != {VOICE, NO_VOICE}
+    """Players only pair with others who made the same voice choice."""
+    return (pref_a or DEFAULT_VOICE) == (pref_b or DEFAULT_VOICE)
 
 
 def resolve_match_voice(pref_a, pref_b):
-    """A match is played on voice when either player asked for voice."""
-    return VOICE in (pref_a, pref_b)
+    """A match is played on voice when the players asked for voice."""
+    return VOICE in (pref_a or DEFAULT_VOICE, pref_b or DEFAULT_VOICE)
 
 
 def voice_match_tag(is_voice_match):
@@ -49,8 +48,8 @@ def voice_match_tag(is_voice_match):
     return "(🔊 Voice match)" if is_voice_match else "(🔇 No-voice match)"
 
 
-def voice_match_text(queue_type, is_voice_match):
-    """Match-found DM line for voice-enabled queues: the room link, voice matches only."""
+def voice_match_text(is_voice_match):
+    """Match-found DM line: the room link, voice matches only."""
     if is_voice_match:
         return f"\n\n🔊 **Voice chat:** [Join To Make a Room]({SUMMIT_VOICE_URL})"
     return ""

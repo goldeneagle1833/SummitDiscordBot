@@ -45,10 +45,9 @@ from cogs.lfg.pairing_messages import (
 )
 from cogs.lfg.queue_definitions import enabled_queue_definitions
 from cogs.lfg.voice import (
-    ANY_VOICE,
-    NO_VOICE,
-    VOICE,
-    queue_supports_voice,
+    DEFAULT_VOICE,
+    VOICE_ICONS,
+    normalize_voice_preference,
     resolve_match_voice,
     voice_preferences_compatible,
 )
@@ -643,10 +642,8 @@ class LFGCog(commands.Cog):
                     time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
                     time_remaining = entry["timeframe"] - time_elapsed
                     placeholder = SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]
-                    voice_icon = ""
-                    if queue_supports_voice(definition["type"]):
-                        voice_icon = {VOICE: " \U0001f50a", NO_VOICE: " \U0001f507"}.get(entry.get("voice"), "")
-                    details.append(f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`{voice_icon}")
+                    voice_icon = VOICE_ICONS.get(entry.get("voice"), VOICE_ICONS[DEFAULT_VOICE])
+                    details.append(f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min` {voice_icon}")
                 embed.add_field(
                     name=f'{definition.get("status_emoji", definition["emoji"])} {definition["label"]} Queue',
                     value="\n".join(details) if details else "`Empty`",
@@ -841,11 +838,11 @@ class LFGCog(commands.Cog):
             return "testing"
         return "ranked"
 
-    def check_if_someone_is_lfg(self, ctx, queue_type="ranked", voice=ANY_VOICE):
+    def check_if_someone_is_lfg(self, ctx, queue_type="ranked", voice=DEFAULT_VOICE):
         """Find a player in queue compatible with the given queue_type.
         All queue types use FIFO order (oldest first) with anti-rematch for ranked/limited.
         Casual (testing): No pairing restrictions, FIFO order (oldest first).
-        Ranked/Casual also skip players whose voice preference clashes (voice vs no voice).
+        Every queue skips players whose voice preference differs (voice vs no voice).
         Returns user_id if a valid match is found, None otherwise.
         """
         now = datetime.datetime.now()
@@ -884,9 +881,7 @@ class LFGCog(commands.Cog):
                 logger.info(f"Skipping {user_id} - pairing ban")
                 continue
 
-            if queue_supports_voice(queue_type) and not voice_preferences_compatible(
-                voice, entry.get("voice", ANY_VOICE)
-            ):
+            if not voice_preferences_compatible(voice, entry.get("voice")):
                 continue
 
             # Ranked/Limited: skip if they played each other in their last match
@@ -905,14 +900,14 @@ class LFGCog(commands.Cog):
 
     def add_to_lfg_queue(
         self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None, run_id=None,
-        origin="discord", voice=ANY_VOICE
+        origin="discord", voice=DEFAULT_VOICE
     ):
         queue_entry = {
             "timestamp": datetime.datetime.now(),
             "timeframe": int(timeframe),
             "deck_url": deck_url,
             "origin": origin,
-            "voice": voice or ANY_VOICE,
+            "voice": normalize_voice_preference(voice) or DEFAULT_VOICE,
         }
         if ladder_info:
             queue_entry["ladder_info"] = ladder_info
@@ -1040,13 +1035,14 @@ class LFGCog(commands.Cog):
         )
 
     @commands.command()
-    async def issue_challenge(self, ctx):
+    async def issue_challenge(self, ctx, voice: str = DEFAULT_VOICE):
         """Issue a ladder challenge (Top 16 players or admins, once per day).
 
         Adds you to the ranked queue. The next person who matches with you will play
         for modified ELO stakes. Can be used in DMs with the bot.
         The challenge only counts against your daily limit when a match is found.
         Disabled during the first week of a new event.
+        Pass ``no_voice`` to queue as a no-voice game; voice is the default.
 
         Stakes:
         - If the non-Top 16 player WINS: 2x ELO gain
@@ -1062,6 +1058,16 @@ class LFGCog(commands.Cog):
 
         user_id = ctx.author.id
         user_global = ctx.author.global_name or ctx.author.display_name
+
+        voice = normalize_voice_preference(voice)
+        if voice is None:
+            voice_help = "Use `!issue_challenge` for a voice game or `!issue_challenge no_voice` for no voice."
+            try:
+                await ctx.author.send(voice_help)
+            except discord.Forbidden:
+                if ctx.guild:
+                    await ctx.send(f"{ctx.author.mention}, {voice_help}", delete_after=20)
+            return
 
         # Admin pairing ban
         ban = get_pairing_ban(user_id)
@@ -1179,7 +1185,7 @@ class LFGCog(commands.Cog):
 
             # Check for an existing match in the ranked queue
             self.clean_expired_lfg()
-            matched_user_id = self.check_if_someone_is_lfg(ctx, "ranked")
+            matched_user_id = self.check_if_someone_is_lfg(ctx, "ranked", voice=voice)
 
             if matched_user_id:
                 # Match found - NOW save the challenge to DB (counts against daily limit)
@@ -1192,7 +1198,7 @@ class LFGCog(commands.Cog):
                     matched_user_deck_url = matched_entry.get("deck_url")
                     matched_user_origin = matched_entry.get("origin", "discord")
                     matched_queue_type = "ranked"
-                    match_voice = resolve_match_voice(ANY_VOICE, matched_entry.get("voice"))
+                    match_voice = resolve_match_voice(voice, matched_entry.get("voice"))
 
                     # Adjust ladder multipliers based on ELO difference
                     challenger_elo = get_user_event_elo(user_id)
@@ -1238,6 +1244,7 @@ class LFGCog(commands.Cog):
                     deck_url=None,
                     queue_type="ranked",
                     ladder_info=ladder_info,
+                    voice=voice,
                 )
 
         # Handle result outside the lock
@@ -1455,7 +1462,7 @@ class LFGCog(commands.Cog):
                 "`!challenge @user` - Challenge a specific player to a match\n"
                 "**When to use:** When you want to play against a specific person "
                 "instead of being matched randomly. They have 5 minutes to accept.\n\n"
-                "`!issue_challenge` or `/issue-challenge` - Issue a ladder challenge (Top 16 or admins)\n"
+                "`!issue_challenge [no_voice]` or `/issue-challenge` - Issue a ladder challenge (Top 16 or admins); voice unless you say `no_voice`\n"
                 "**When to use:** Top 16 players or admins can issue once per day (disabled first week of event). "
                 "Adds you to the ranked queue - the next player to match with you plays for special stakes. "
                 "Non-Top 16 wins = 2x ELO gain, Top 16 loses = 0.5x ELO loss (normal stakes if ELO diff < 100)."

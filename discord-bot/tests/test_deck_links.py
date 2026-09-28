@@ -125,6 +125,48 @@ async def test_scrape_curosa_async_missing_pso_deck_is_empty():
         assert await scrape_curosa_async("https://playsorceryonline.com/?deck=notarealdeck") == "{}"
 
 
+async def test_backfill_recovers_pso_decks_in_live_and_archived_matches():
+    """Ended events move matches into match_records_archive; the profile reads
+    both tables, so the startup backfill has to repair both."""
+    import sqlite3
+    from unittest.mock import AsyncMock
+    from repositories.elo_repo import create_match_records_archive
+    from services.elo_service import backfill_deck_data
+
+    create_match_records_archive()
+    conn = sqlite3.connect("match_records.db")
+    conn.execute(
+        """INSERT INTO match_records (winner_id, losser_id, timestamp, curiosa_url_winner,
+           curiosa_url_loser, json_deck_data_winner, json_deck_data_loser)
+           VALUES (1, 2, '2026-09-01', ?, NULL, '{}', '{}')""",
+        (PSO_URL,),
+    )
+    conn.execute(
+        """INSERT INTO match_records_archive (event_id, winner_id, losser_id, timestamp,
+           curiosa_url_winner, curiosa_url_loser, json_deck_data_winner, json_deck_data_loser)
+           VALUES (7, 3, 4, '2026-08-01', 'https://sorcerytcg.com/decks/abc123', ?, '{"name":"kept"}', '{}')""",
+        (PSO_URL,),
+    )
+    conn.commit()
+    conn.close()
+
+    fetched = json.dumps({"name": "Earth/Fire", "source": "sorcery_online", "avatar": [{"name": "Sorcerer"}]})
+    with patch("services.elo_service.scrape_curosa_async", new=AsyncMock(return_value=fetched)) as scrape, \
+            patch("asyncio.sleep", new=AsyncMock()):
+        await backfill_deck_data()
+
+    # Only the two missing PSO decks were fetched; the archived winner's kept JSON was left alone.
+    assert scrape.await_count == 2
+    conn = sqlite3.connect("match_records.db")
+    live = conn.execute("SELECT json_deck_data_winner FROM match_records").fetchone()[0]
+    archived = conn.execute(
+        "SELECT json_deck_data_winner, json_deck_data_loser FROM match_records_archive"
+    ).fetchone()
+    conn.close()
+    assert json.loads(live)["name"] == "Earth/Fire"
+    assert archived == ('{"name":"kept"}', fetched)
+
+
 def test_scrape_curosa_sync_logs_pso_decks_to_file(tmp_path):
     log = tmp_path / "deck_data_test.json"
     with patch("utils.deck_checker.requests.get", return_value=_response(200, PSO_EXPORT)):

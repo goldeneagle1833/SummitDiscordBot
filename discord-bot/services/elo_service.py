@@ -915,40 +915,51 @@ async def _update_deck_data(match_id: int, winner_url: str, loser_url: str, tabl
         logger.warning("_update_deck_data: failed to write deck data for match %s: %s", match_id, exc)
 
 
+# Tables whose deck JSON the startup backfill repairs. Ended events move their
+# matches into the archive, and the profile page reads both, so a deck that was
+# never fetched (e.g. a PSO link from before the bot accepted them) has to be
+# recovered there too.
+_BACKFILL_TABLES = ("match_records", "match_records_archive")
+
+
 async def backfill_deck_data() -> None:
     """Background startup task: fetch deck JSON for any records with valid URLs but empty JSON.
 
     Runs once on bot startup to recover data for matches that were recorded when
-    the async deck-fetch was broken (e.g. wrong WHERE clause, SSL failures).
+    the deck fetch could not handle the link (e.g. wrong WHERE clause, SSL
+    failures, or a Play Sorcery Online link from before those were supported).
+    Covers the live table and the event archive.
     Rate-limited to ~1 request per second to avoid hammering Curiosa.
     """
     import asyncio as _asyncio
 
-    try:
-        conn = sqlite3.connect("match_records.db")
-        cur = conn.cursor()
-        # Fetch records where either deck JSON column is missing — filter valid URLs in Python
-        cur.execute(
-            """
-            SELECT rowid, curiosa_url_winner, curiosa_url_loser,
-                   json_deck_data_winner, json_deck_data_loser
-            FROM match_records
-            WHERE (json_deck_data_winner IS NULL OR json_deck_data_winner = '{}')
-               OR (json_deck_data_loser IS NULL OR json_deck_data_loser = '{}')
-            """
-        )
-        rows = cur.fetchall()
-        conn.close()
-    except Exception as exc:
-        logger.warning("backfill_deck_data: failed to query records: %s", exc)
-        return
+    to_backfill = []  # (table, rowid, winner_url, loser_url, winner_json, loser_json)
+    for table in _BACKFILL_TABLES:
+        try:
+            conn = sqlite3.connect("match_records.db")
+            cur = conn.cursor()
+            # Fetch records where either deck JSON column is missing — filter valid URLs in Python
+            cur.execute(
+                f"""
+                SELECT rowid, curiosa_url_winner, curiosa_url_loser,
+                       json_deck_data_winner, json_deck_data_loser
+                FROM {table}
+                WHERE (json_deck_data_winner IS NULL OR json_deck_data_winner = '{{}}')
+                   OR (json_deck_data_loser IS NULL OR json_deck_data_loser = '{{}}')
+                """
+            )
+            rows = cur.fetchall()
+            conn.close()
+        except Exception as exc:
+            logger.warning("backfill_deck_data: failed to query %s: %s", table, exc)
+            continue
 
-    # Filter to only rows that have at least one valid URL with missing JSON
-    to_backfill = [
-        row for row in rows
-        if (_is_valid_deck_url(row[1]) and (not row[3] or row[3] == "{}"))
-        or (_is_valid_deck_url(row[2]) and (not row[4] or row[4] == "{}"))
-    ]
+        # Filter to only rows that have at least one valid URL with missing JSON
+        to_backfill.extend(
+            (table, *row) for row in rows
+            if (_is_valid_deck_url(row[1]) and (not row[3] or row[3] == "{}"))
+            or (_is_valid_deck_url(row[2]) and (not row[4] or row[4] == "{}"))
+        )
 
     if not to_backfill:
         logger.info("backfill_deck_data: nothing to backfill")
@@ -956,7 +967,7 @@ async def backfill_deck_data() -> None:
 
     logger.info("backfill_deck_data: backfilling %d records", len(to_backfill))
     updated = 0
-    for rowid, winner_url, loser_url, existing_winner_json, existing_loser_json in to_backfill:
+    for table, rowid, winner_url, loser_url, existing_winner_json, existing_loser_json in to_backfill:
         winner_json = existing_winner_json or "{}"
         loser_json = existing_loser_json or "{}"
 
@@ -970,14 +981,14 @@ async def backfill_deck_data() -> None:
             try:
                 conn = sqlite3.connect("match_records.db")
                 conn.execute(
-                    "UPDATE match_records SET json_deck_data = ?, json_deck_data_winner = ?, json_deck_data_loser = ? WHERE rowid = ?",
+                    f"UPDATE {table} SET json_deck_data = ?, json_deck_data_winner = ?, json_deck_data_loser = ? WHERE rowid = ?",
                     (winner_json, winner_json, loser_json, rowid),
                 )
                 conn.commit()
                 conn.close()
                 updated += 1
             except Exception as exc:
-                logger.warning("backfill_deck_data: failed to update rowid=%s: %s", rowid, exc)
+                logger.warning("backfill_deck_data: failed to update %s rowid=%s: %s", table, rowid, exc)
 
         await _asyncio.sleep(1)  # rate-limit: 1 req/sec
 

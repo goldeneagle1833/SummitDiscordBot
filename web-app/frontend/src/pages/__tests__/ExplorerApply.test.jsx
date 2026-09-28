@@ -151,6 +151,22 @@ describe('ExplorerApply page', () => {
     expect(screen.getByRole('button', { name: /Update Application/ })).toBeInTheDocument()
   })
 
+  it('explains when an admin already started their application', async () => {
+    getMyApplication.mockResolvedValue({
+      application: {
+        id: 7, status: 'pending', editable: true, source: 'admin_added', first_name: 'Kiel',
+      },
+    })
+    renderWithRouter(<ExplorerApply />)
+
+    expect(
+      await screen.findByText(/An Explorer admin has already started an application for you/)
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/You have already applied/)).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText(/First name/)).toHaveValue('Kiel'))
+    expect(screen.getByRole('button', { name: /Update Application/ })).toBeInTheDocument()
+  })
+
   it('saves an edit through the update endpoint', async () => {
     getMyApplication.mockResolvedValue({
       application: {

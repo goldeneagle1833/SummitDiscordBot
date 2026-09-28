@@ -263,7 +263,19 @@ export default function ExplorerApply() {
         </p>
       </div>
 
-      {editing && (
+      {editing && existing.source === 'admin_added' && (
+        <div className="mb-6 bg-bg-surface border border-border rounded-lg p-4 space-y-1">
+          <p className="text-sm text-text-primary font-medium">
+            An Explorer admin has already started an application for you.
+          </p>
+          <p className="text-xs text-text-muted">
+            Fill in the rest below and save. Your answers go onto that same application,
+            so the Council won&apos;t see two of you.
+          </p>
+        </div>
+      )}
+
+      {editing && existing.source !== 'admin_added' && (
         <div className="mb-6 bg-bg-surface border border-border rounded-lg p-4 space-y-1">
           <p className="text-sm text-text-primary font-medium">
             You have already applied — status:{' '}
@@ -348,7 +360,7 @@ export default function ExplorerApply() {
               disabled={storeNotListed}
               value={storeNotListed ? '' : form.lgs_url}
               onChange={update('lgs_url')}
-              placeholder="https://sorcerytcg.com/stores/..."
+              placeholder="For example, https://sorcerytcg.com/stores/..."
               aria-invalid={Boolean(storeUrlError)}
               className={`${inputClass} disabled:opacity-50`}
             />
@@ -374,7 +386,7 @@ export default function ExplorerApply() {
         <section className="bg-bg-surface border border-border rounded-lg p-4 space-y-4">
           <h2 className="text-base font-semibold text-text-primary">The event</h2>
           <Field
-            label="Roughly how many local players would you expect to attend?"
+            label="Roughly how many players would you expect to attend?"
             hint="Based on prior attendance"
           >
             <select value={form.expected_attendance} onChange={update('expected_attendance')} className={inputClass}>
@@ -384,13 +396,13 @@ export default function ExplorerApply() {
             </select>
           </Field>
           <Field
-            label="Three potential dates you'd like to host"
+            label="Three potential dates from March through October when you'd like to host?"
             hint="Rough ideas are fine for now"
           >
             <input
               value={form.proposed_dates}
               onChange={update('proposed_dates')}
-              placeholder="e.g. 3/6/27, 4/10/27, 6/12/27"
+              placeholder="For example, 4/10/27, 6/12/27, 9/18/27"
               className={inputClass}
             />
           </Field>

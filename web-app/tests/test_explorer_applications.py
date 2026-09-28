@@ -354,15 +354,86 @@ class TestCandidates:
     def test_candidates_do_not_block_a_later_real_application(
         self, admin_session, applicant_session
     ):
-        admin_session.post(
-            "/api/explorer/applications/candidates", json={"discord_handle": "Rubonic"}
-        )
         # Two admin-added rows both have a NULL discord_user_id and must not collide.
         admin_session.post(
             "/api/explorer/applications/candidates", json={"discord_handle": "SomeoneElse"}
         )
+        admin_session.post(
+            "/api/explorer/applications/candidates", json={"discord_handle": "AnotherOne"}
+        )
         res = applicant_session.post("/api/explorer/applications", json=valid_application())
         assert res.status_code == 201
+
+    def test_matching_candidate_is_claimed_when_the_person_logs_in(self, applicant_session):
+        """An admin pencils Rubonic in; Rubonic then visits the form. They should
+        see that row as their own, not an empty form that makes a second one."""
+        candidate_id = ExplorerApplicationRepository().create_application(
+            None, {"discord_handle": "@rubonic ", "first_name": "Ruben", "state": "Virginia"},
+            source="admin_added", created_by="AdminUser",
+        )
+
+        mine = applicant_session.get("/api/explorer/applications/mine").get_json()
+        assert mine["application"]["id"] == candidate_id
+        assert mine["application"]["first_name"] == "Ruben"
+        assert mine["application"]["editable"] is True
+
+        stored = ExplorerApplicationRepository().get_application(candidate_id)
+        assert stored["discord_user_id"] == "555000111222333444"
+
+        # Now that it's theirs, submitting fills it in rather than duplicating.
+        res = applicant_session.post("/api/explorer/applications", json=valid_application())
+        assert res.status_code == 409
+        res = applicant_session.put(
+            "/api/explorer/applications/mine", json=valid_application(city="Richmond")
+        )
+        assert res.status_code == 200
+        assert res.get_json()["application"]["city"] == "Richmond"
+        assert len(ExplorerApplicationRepository().list_applications()) == 1
+
+    def test_submitting_fills_in_a_matching_candidate_instead_of_duplicating(
+        self, applicant_session
+    ):
+        candidate_id = ExplorerApplicationRepository().create_application(
+            None, {"discord_handle": "Rubonic"}, source="admin_added", created_by="AdminUser"
+        )
+        ExplorerApplicationRepository().upsert_vote(
+            candidate_id, "admin_user_1", "AdminUser", {"enthusiasm": 4}
+        )
+
+        res = applicant_session.post("/api/explorer/applications", json=valid_application())
+        assert res.status_code == 201
+        assert res.get_json()["application_id"] == candidate_id
+
+        repo = ExplorerApplicationRepository()
+        assert len(repo.list_applications()) == 1
+        stored = repo.get_application(candidate_id)
+        assert stored["discord_user_id"] == "555000111222333444"
+        assert stored["city"] == "Mechanicsville"
+        # The admins' early scoring survives the claim.
+        assert repo.get_votes(candidate_id)[0]["enthusiasm"] == 4
+
+    def test_google_logins_never_claim_a_candidate(self, client):
+        """A Google username is a display name, not a Discord handle."""
+        ExplorerApplicationRepository().create_application(
+            None, {"discord_handle": "Ruben"}, source="admin_added", created_by="AdminUser"
+        )
+        with client.session_transaction() as sess:
+            sess["user_id"] = "google-abc"
+            sess["username"] = "Ruben"
+            sess["auth_provider"] = "google"
+        mine = client.get("/api/explorer/applications/mine").get_json()
+        assert mine["application"] is None
+
+    def test_admin_cannot_add_someone_who_already_applied(self, admin_session):
+        ExplorerApplicationRepository().create_application(
+            "555000111222333444", valid_application(), source="application"
+        )
+        res = admin_session.post(
+            "/api/explorer/applications/candidates", json={"discord_handle": "RUBONIC"}
+        )
+        assert res.status_code == 409
+        assert "already on the board" in res.get_json()["error"]
+        assert len(ExplorerApplicationRepository().list_applications()) == 1
 
     def test_candidates_can_be_scored_like_applications(self, admin_session):
         app_id = admin_session.post(

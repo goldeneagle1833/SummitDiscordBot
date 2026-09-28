@@ -40,6 +40,11 @@ APPLICATION_FIELDS = (
 )
 
 
+def normalize_handle(handle: str | None) -> str:
+    """Lowercase a Discord handle and drop a leading @ so typed handles compare."""
+    return (handle or "").strip().lstrip("@").strip().lower()
+
+
 class ExplorerApplicationRepository:
     """Data access for Explorer host applications, votes and comments."""
 
@@ -88,6 +93,52 @@ class ExplorerApplicationRepository:
                 (str(discord_user_id),),
             ).fetchone()
             return dict(row) if row else None
+
+    def get_by_handle(self, discord_handle: str | None) -> dict | None:
+        """Find an application by Discord handle, ignoring case and a leading @."""
+        handle = normalize_handle(discord_handle)
+        if not handle:
+            return None
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT * FROM explorer_applications
+                   WHERE LOWER(LTRIM(TRIM(discord_handle), '@')) = ?
+                   ORDER BY submitted_at ASC, id ASC
+                   LIMIT 1""",
+                (handle,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def claim_candidate(self, discord_user_id: str, discord_handle: str | None) -> dict | None:
+        """Tie an admin-added candidate row to the Discord account it was meant for.
+
+        Admins add candidates by handle before the person has logged in, so
+        those rows have no discord_user_id. When someone whose Discord username
+        matches logs in, hand them that row instead of letting them create a
+        second one. Returns the claimed row, or None if nothing matched.
+        """
+        handle = normalize_handle(discord_handle)
+        if not handle:
+            return None
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT * FROM explorer_applications
+                   WHERE discord_user_id IS NULL
+                     AND LOWER(LTRIM(TRIM(discord_handle), '@')) = ?
+                   ORDER BY submitted_at ASC, id ASC
+                   LIMIT 1""",
+                (handle,),
+            ).fetchone()
+            if not row:
+                return None
+            conn.execute(
+                """UPDATE explorer_applications
+                   SET discord_user_id = ?, updated_at = datetime('now')
+                   WHERE id = ? AND discord_user_id IS NULL""",
+                (str(discord_user_id), row["id"]),
+            )
+            conn.commit()
+            return self.get_application(row["id"])
 
     def list_applications(self, status: str | None = None) -> list[dict]:
         """List applications with their vote aggregate, newest first.

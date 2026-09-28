@@ -105,6 +105,17 @@ def _geocode_in_background(application_id: int, city, state, country):
 # ── Public (logged-in applicant) ──────────────────────────────────────────────
 
 
+def _claim_candidate(repo: ExplorerApplicationRepository, user_id: str) -> dict | None:
+    """Hand a Discord user the admin-added candidate row that carries their handle.
+
+    Only a Discord login proves the username; a Google login's username is a
+    display name, so it never claims anything.
+    """
+    if session.get("auth_provider") != "discord":
+        return None
+    return repo.claim_candidate(user_id, session.get("username"))
+
+
 @explorer_applications_bp.route("", methods=["POST"])
 @require_auth
 def submit_application():
@@ -143,7 +154,15 @@ def submit_application():
 
     if session.get("auth_provider") == "discord":
         fields.setdefault("discord_handle", username or "")
-    application_id = repo.create_application(user_id, fields, source="application")
+
+    # An admin may have pencilled this person in by handle already. Fill in
+    # that row rather than creating a second one for the same person.
+    candidate = _claim_candidate(repo, user_id)
+    if candidate:
+        application_id = candidate["id"]
+        repo.update_application(application_id, fields)
+    else:
+        application_id = repo.create_application(user_id, fields, source="application")
 
     _geocode_in_background(
         application_id, fields.get("city"), fields.get("state"), fields.get("country")
@@ -162,7 +181,8 @@ def my_application():
     if not user_id:
         return jsonify({"success": True, "application": None}), 200
 
-    application = ExplorerApplicationRepository().get_by_discord_user(user_id)
+    repo = ExplorerApplicationRepository()
+    application = repo.get_by_discord_user(user_id) or _claim_candidate(repo, user_id)
     return jsonify({"success": True, "application": _applicant_view(application)}), 200
 
 
@@ -394,6 +414,16 @@ def add_candidate():
 
     _, admin_name = _current_user()
     repo = ExplorerApplicationRepository()
+    already = repo.get_by_handle(fields.get("discord_handle"))
+    if already:
+        who = already.get("discord_handle") or already.get("first_name")
+        return jsonify({
+            "success": False,
+            "error": f"{who} is already on the board (application #{already['id']})."
+                     " Open that one instead of adding a second.",
+            "application_id": already["id"],
+        }), 409
+
     application_id = repo.create_application(
         None, fields, source="admin_added", created_by=admin_name
     )

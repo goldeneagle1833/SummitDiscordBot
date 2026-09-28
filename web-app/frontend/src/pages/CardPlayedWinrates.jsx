@@ -1,226 +1,278 @@
-import { useState, useEffect, useMemo } from "react";
-import { getPlayedWinrates, getPlayedWinrateFilters, getPlayedWinrateSeasonStats } from "@/api/cards";
-import Spinner from "@/components/ui/Spinner";
-import usePageTitle from "@/hooks/usePageTitle";
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { getRankedCards, getRankedCatalog, RANKED_ANALYTICS_ENDPOINT } from '@/api/rankedAnalytics'
+import Spinner from '@/components/ui/Spinner'
+import usePageTitle from '@/hooks/usePageTitle'
+import QuickFilters from '@/components/analytics/QuickFilters'
+import ColumnMinimums from '@/components/analytics/ColumnMinimums'
+import StandoutTiles from '@/components/analytics/StandoutTiles'
+import CardWinRateTable from '@/components/analytics/CardWinRateTable'
+import { EMPTY_MINIMUMS, indexCardMetadata, minimumMetricValue, minimumSample, selectCardTable } from '@/vendor/analytics-ui/cardTable'
+import { QueryBuilder } from '@/vendor/analytics-ui/QueryBuilder'
+import '@/vendor/analytics-ui/summit-query.css'
 
-const SORT_OPTIONS = [
-  { value: "played-score", label: "Played Score" },
-  { value: "winrate", label: "Win Rate" },
-  { value: "alphabetical", label: "Alphabetical" },
-  { value: "most-played", label: "Most Played" },
-  { value: "most-wins", label: "Wins" },
-];
+const EMPTY_FILTERS = { type: '', element: '', rarity: '' }
+const EMPTY_ROWS = []
+const EMPTY_CATALOG = []
 
-const SORT_LABELS = {
-  "played-score": "played score",
-  winrate: "win rate",
-  alphabetical: "name (A\u2013Z)",
-  "most-played": "most games played",
-  "most-wins": "wins",
-};
+const SEGMENT = 'px-4 min-h-[36px] text-sm transition-colors'
+const SEGMENT_ON = `${SEGMENT} bg-primary text-bg-base font-semibold`
+const SEGMENT_OFF = `${SEGMENT} bg-bg-elevated text-text-muted hover:text-text`
+const TAB = 'px-4 min-h-[34px] rounded text-sm transition-colors'
+const TAB_ON = `${TAB} bg-bg-elevated text-text`
+const TAB_OFF = `${TAB} text-text-muted hover:text-text`
+const FIELD = 'bg-bg-surface border border-border rounded px-3 text-sm text-text min-h-[36px] focus:outline-none focus:border-primary'
+const GHOST = 'border border-border bg-bg-surface text-[#c9d1d9] rounded px-3 min-h-[32px] text-xs hover:border-primary/60 transition-colors'
 
-const MIN_GAMES_OPTIONS = [1, 3, 5, 10, 20];
-
-function getWinRateColor(winRate) {
-  const pct = Math.max(0, Math.min(100, winRate));
-  if (pct <= 50) {
-    const ratio = pct / 50;
-    return `rgb(${Math.round(231 + 24 * ratio)}, ${Math.round(76 + 179 * ratio)}, ${Math.round(60 + 195 * ratio)})`;
-  }
-  const ratio = (pct - 50) / 50;
-  return `rgb(${Math.round(255 - 209 * ratio)}, ${Math.round(255 - 51 * ratio)}, ${Math.round(255 - 142 * ratio)})`;
+function selectionOf(format, from, through) {
+  const selection = { format }
+  if (from) selection.from = from
+  if (through) selection.through = through
+  return selection
 }
 
-function sortCards(data, key) {
-  const d = [...data];
-  switch (key) {
-    case "winrate":
-      return d.sort((a, b) => b.win_rate - a.win_rate || b.total - a.total);
-    case "alphabetical":
-      return d.sort((a, b) => a.name.localeCompare(b.name));
-    case "most-played":
-      return d.sort((a, b) => b.total - a.total || b.win_rate - a.win_rate);
-    case "most-wins":
-      return d.sort((a, b) => b.wins - a.wins || b.win_rate - a.win_rate);
-    case "played-score":
-    default:
-      return d.sort((a, b) => (b.played_score ?? 0) - (a.played_score ?? 0) || b.wins - a.wins);
-  }
+function UnavailablePanel({ title, children }) {
+  return (
+    <div className="bg-bg-surface border border-border rounded-soft p-8 text-center max-w-2xl mx-auto">
+      <h2 className="font-display text-xl text-secondary mb-2">{title}</h2>
+      <p className="text-sm text-text-muted">{children}</p>
+    </div>
+  )
 }
 
+/**
+ * Card Win Rates, fed by Play Sorcery Online's Summit ranked analytics.
+ *
+ * Every rate comes from PSO through the server-side proxy. The population is
+ * fixed there: first games at Summit matchmade ranked tables, released in
+ * batches on the 1st and 15th. This page filters, sorts and pages those
+ * rows in the browser and never re-computes a rate itself.
+ */
 export default function CardPlayedWinrates() {
-  usePageTitle("Card Played Win Rates");
-  const [cards, setCards] = useState([]);
-  const [filters, setFilters] = useState({ events: [] });
-  const [seasonStats, setSeasonStats] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [eventFilter, setEventFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("played-score");
-  const [minGames, setMinGames] = useState(3);
-  const [search, setSearch] = useState("");
+  usePageTitle('Card Win Rates')
+
+  const [tab, setTab] = useState('cards')
+  const [format, setFormat] = useState('constructed')
+  const [from, setFrom] = useState('')
+  const [through, setThrough] = useState('')
+  const [search, setSearch] = useState('')
+  const [quickFilters, setQuickFilters] = useState(EMPTY_FILTERS)
+  const [minimums, setMinimums] = useState({ ...EMPTY_MINIMUMS })
+  const [minimumValues, setMinimumValues] = useState({ ...EMPTY_MINIMUMS })
+  const [minimumsOpen, setMinimumsOpen] = useState(false)
+  const [sortKey, setSortKey] = useState('played')
+  const [sortDirection, setSortDirection] = useState('descending')
+  const [page, setPage] = useState(1)
+  const [selectedCard, setSelectedCard] = useState(null)
+
+  const [cards, setCards] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [catalog, setCatalog] = useState(EMPTY_CATALOG)
+  const [catalogError, setCatalogError] = useState(null)
+  const [queryPopulation, setQueryPopulation] = useState(null)
+  const requestId = useRef(0)
+
+  const selection = useMemo(() => selectionOf(format, from, through), [format, from, through])
+  const query = useMemo(() => new URLSearchParams(selection).toString(), [selection])
+  const dateOrderProblem = from && through && from > through
 
   useEffect(() => {
-    Promise.allSettled([
-      getPlayedWinrateFilters(),
-      getPlayedWinrateSeasonStats(),
-    ]).then(([flt, ss]) => {
-      if (flt.status === "fulfilled") setFilters(flt.value);
-      if (ss.status === "fulfilled") setSeasonStats(ss.value);
-    });
-  }, []);
+    getRankedCatalog()
+      .then((rows) => setCatalog(Array.isArray(rows) ? rows : EMPTY_CATALOG))
+      .catch(() => setCatalogError('Card art and quick filters could not be loaded.'))
+  }, [])
 
   useEffect(() => {
-    setLoading(true);
-    const params = {};
-    if (eventFilter !== "all") params.event = eventFilter;
-    getPlayedWinrates(params)
-      .then(setCards)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [eventFilter]);
+    if (dateOrderProblem) return
+    const id = ++requestId.current
+    setLoading(true)
+    setError(null)
+    getRankedCards(selection)
+      .then((body) => { if (id === requestId.current) setCards(body) })
+      .catch((err) => { if (id === requestId.current) { setCards(null); setError(err) } })
+      .finally(() => { if (id === requestId.current) setLoading(false) })
+  }, [selection, dateOrderProblem])
 
-  const filtered = useMemo(() => {
-    let result = cards.filter((c) => c.total >= minGames);
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter((c) => c.name.toLowerCase().includes(q));
+  useEffect(() => {
+    setPage(1)
+    setSelectedCard(null)
+  }, [selection, search, quickFilters, minimums, minimumValues, sortKey, sortDirection])
+
+  const catalogIndex = useMemo(() => indexCardMetadata(catalog), [catalog])
+  const avatarImages = useMemo(
+    () => new Map(catalog.filter((c) => c.type === 'Avatar').map((c) => [c.name.toLowerCase(), c.imageUrl])),
+    [catalog],
+  )
+  const tableFilters = useMemo(
+    () => ({ search, ...quickFilters, minimums, minimumValues }),
+    [search, quickFilters, minimums, minimumValues],
+  )
+  const rows = cards?.cards ?? EMPTY_ROWS
+  const table = useMemo(
+    () => selectCardTable(rows, catalogIndex, tableFilters, sortKey, sortDirection, page),
+    [rows, catalogIndex, tableFilters, sortKey, sortDirection, page],
+  )
+
+  const quickFilterCount = Object.values(quickFilters).filter(Boolean).length
+  const minimumCount = Object.values(minimums).filter((v) => minimumSample(v) > 0).length
+    + Object.values(minimumValues).filter((v) => minimumMetricValue(v) !== null).length
+  const anyFilter = Boolean(search) || quickFilterCount > 0 || minimumCount > 0
+
+  const clearFilters = () => {
+    setSearch('')
+    setQuickFilters(EMPTY_FILTERS)
+    setMinimums({ ...EMPTY_MINIMUMS })
+    setMinimumValues({ ...EMPTY_MINIMUMS })
+  }
+
+  const chooseSort = (key) => {
+    if (key === sortKey) {
+      setSortDirection((d) => (d === 'ascending' ? 'descending' : 'ascending'))
+    } else {
+      setSortKey(key)
+      setSortDirection(key === 'cardName' ? 'ascending' : 'descending')
     }
-    return sortCards(result, sortBy);
-  }, [cards, sortBy, minGames, search]);
+  }
 
-  const totalGames = useMemo(
-    () => cards.reduce((s, c) => s + c.total, 0),
-    [cards],
-  );
+  const jumpToCard = (cardKey) => {
+    const index = selectCardTable(rows, catalogIndex, tableFilters, sortKey, sortDirection, 1)
+    // Find which page the card lands on under the current sort, then open it there.
+    const all = []
+    for (let p = 1; p <= index.pageCount; p++) {
+      all.push(...selectCardTable(rows, catalogIndex, tableFilters, sortKey, sortDirection, p).cards.map((c) => c.cardKey))
+    }
+    const position = all.indexOf(cardKey)
+    if (position >= 0) setPage(Math.floor(position / 50) + 1)
+    setSelectedCard(cardKey)
+  }
 
-  if (error) return <p className="text-center text-accent-red py-8">{error}</p>;
+  const receiveQueryPopulation = useCallback((key, data) => setQueryPopulation({ key, data }), [])
+  const population = tab === 'query' && queryPopulation?.key === `${RANKED_ANALYTICS_ENDPOINT}?${query}`
+    ? queryPopulation.data
+    : cards
+
+  const unavailable = error?.status === 503 || (cards && cards.dataAvailable === false)
 
   return (
-    <div>
-      <section className="text-center mb-6">
-        <h1 className="text-2xl font-display text-secondary">
-          Card Played Win Rates
-        </h1>
-        <p className="text-sm text-text-muted mt-1">
-          When a card is played in a game, how likely is the player to win?
-          Sorted by {SORT_LABELS[sortBy]}
-        </p>
-        <p className="text-xs text-text-muted mt-1">
-          Data from Sorcery Online reported matches
-          {totalGames > 0 && ` \u2014 ${Math.round(totalGames / 2).toLocaleString()} games analyzed`}
-        </p>
-        {seasonStats.length > 0 && (
-          <p className="text-xs text-text-muted mt-1">
-            {seasonStats.map((s, i) => (
-              <span key={s.id}>
-                {i > 0 && " | "}
-                {s.name}{s.is_active ? " (current)" : ""}: {s.total_games.toLocaleString()} games
-              </span>
-            ))}
+    <div className="flex flex-col gap-5">
+      <section className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-display text-secondary">Card Win Rates</h1>
+          <p className="text-sm text-text-muted mt-1">
+            When a card is in your deck, in your opening hand, or gets played, how often do you win?
           </p>
+          <p className="text-xs text-text-muted mt-1" aria-live="polite">
+            Summit ranked games on Play Sorcery Online
+            {population?.dataAvailable && typeof population.totalGames === 'number' && (
+              <> {'·'} <span className="text-text">{population.totalGames.toLocaleString()} games</span></>
+            )}
+            {population?.releasedThrough && <> {'·'} data through {population.releasedThrough}</>}
+          </p>
+        </div>
+        <div className="flex gap-1 bg-bg-surface border border-border rounded-lg p-1 self-start" role="tablist" aria-label="Analytics views">
+          <button type="button" role="tab" aria-selected={tab === 'cards'} onClick={() => setTab('cards')} className={tab === 'cards' ? TAB_ON : TAB_OFF}>Cards</button>
+          <button type="button" role="tab" aria-selected={tab === 'query'} onClick={() => setTab('query')} className={tab === 'query' ? TAB_ON : TAB_OFF}>Build a query</button>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3" aria-label="Data selection">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex border border-border rounded-lg overflow-hidden" role="group" aria-label="Format">
+            <button type="button" aria-pressed={format === 'constructed'} onClick={() => setFormat('constructed')} className={format === 'constructed' ? SEGMENT_ON : SEGMENT_OFF}>Constructed</button>
+            <button type="button" aria-pressed={format === 'limited'} onClick={() => setFormat('limited')} className={format === 'limited' ? SEGMENT_ON : SEGMENT_OFF}>Limited</button>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-text-muted">From
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={FIELD} />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-text-muted">Through
+            <input type="date" value={through} onChange={(e) => setThrough(e.target.value)} className={FIELD} />
+          </label>
+          {tab === 'cards' && (
+            <input
+              type="search" aria-label="Search cards" placeholder="Search cards…"
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              className={`${FIELD} w-full sm:w-64 sm:ml-auto placeholder:text-text-muted`}
+            />
+          )}
+        </div>
+        {dateOrderProblem && (
+          <p className="text-xs text-accent-red" role="alert">The From date must be on or before the Through date.</p>
+        )}
+        {tab === 'cards' && (
+          <div className="flex flex-wrap items-center gap-2">
+            <QuickFilters filters={quickFilters} onChange={setQuickFilters} disabled={Boolean(catalogError)} />
+            <div className="flex items-center gap-2 sm:ml-auto">
+              {anyFilter && (
+                <button type="button" onClick={clearFilters} className="text-xs text-primary hover:underline px-1 min-h-[32px]">Clear filters</button>
+              )}
+              <button type="button" aria-expanded={minimumsOpen} onClick={() => setMinimumsOpen((o) => !o)} className={GHOST}>
+                Column minimums{minimumCount > 0 && <span className="ml-1 text-secondary">{minimumCount}</span>} {minimumsOpen ? '▾' : '▸'}
+              </button>
+            </div>
+          </div>
+        )}
+        {tab === 'cards' && catalogError && <p className="text-xs text-text-muted">{catalogError}</p>}
+        {tab === 'cards' && minimumsOpen && (
+          <ColumnMinimums minimums={minimums} minimumValues={minimumValues} onMinimums={setMinimums} onMinimumValues={setMinimumValues} />
         )}
       </section>
 
-      <div className="flex flex-wrap justify-center gap-4 mb-6">
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-text-muted">Event:</label>
-          <select
-            value={eventFilter}
-            onChange={(e) => setEventFilter(e.target.value)}
-            className="bg-bg-surface border border-border rounded px-2 py-1 text-sm"
-          >
-            <option value="all">All Events</option>
-            {(filters.events || []).map((ev) => (
-              <option
-                key={ev.event_id || "current"}
-                value={ev.is_active ? "current" : String(ev.event_id)}
-              >
-                {ev.event_name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-text-muted">Min games:</label>
-          <select
-            value={minGames}
-            onChange={(e) => setMinGames(Number(e.target.value))}
-            className="bg-bg-surface border border-border rounded px-2 py-1 text-sm"
-          >
-            {MIN_GAMES_OPTIONS.map((n) => (
-              <option key={n} value={n}>{n}+</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-text-muted">Sort by:</label>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="bg-bg-surface border border-border rounded px-2 py-1 text-sm"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-        <input
-          type="text"
-          placeholder="Search cards..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-48 px-3 py-1 bg-bg-surface border border-border rounded text-sm text-text placeholder:text-text-muted focus:outline-none focus:border-primary"
-        />
-      </div>
-
-      {loading ? (
-        <Spinner className="py-20" />
-      ) : (
-        <>
-          <p className="text-xs text-text-muted text-center mb-4">
-            Showing {filtered.length} of {cards.length} cards (min {minGames} games)
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {filtered.map((card) => (
-              <div
-                key={card.name}
-                className="bg-bg-surface border border-border rounded-soft overflow-hidden hover:border-primary/50 transition-colors"
-              >
-                {card.image_url ? (
-                  <img
-                    src={card.image_url}
-                    alt={card.name}
-                    className="w-full aspect-[2.5/3.5] object-cover"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="w-full aspect-[2.5/3.5] bg-bg-elevated flex items-center justify-center">
-                    <span className="text-text-muted text-xs text-center px-2">{card.name}</span>
-                  </div>
-                )}
-                <div className="p-2 text-center">
-                  <h3 className="text-xs font-semibold truncate mb-1">{card.name}</h3>
-                  <div
-                    className="text-lg font-bold"
-                    style={{ color: getWinRateColor(card.win_rate) }}
-                  >
-                    {card.win_rate}%
-                  </div>
-                  <div className="text-xs text-text-muted">
-                    {card.wins}W - {card.losses}L ({card.total} games)
-                  </div>
-                </div>
+      {tab === 'cards' ? (
+        loading ? (
+          <Spinner className="py-20" />
+        ) : unavailable ? (
+          <UnavailablePanel title="Ranked analytics isn’t available yet">
+            Play Sorcery Online publishes Summit ranked card data in batches on the 1st and 15th of each month.
+            Check back soon.
+          </UnavailablePanel>
+        ) : error ? (
+          <UnavailablePanel title="Couldn’t load card analytics">
+            {error.message || 'Something went wrong. Try again in a moment.'}
+          </UnavailablePanel>
+        ) : rows.length === 0 ? (
+          <UnavailablePanel title="No games in this range">
+            No Summit ranked games were released for this format and date range yet.
+          </UnavailablePanel>
+        ) : (
+          <>
+            <StandoutTiles cards={rows} catalogIndex={catalogIndex} filters={tableFilters} onSelect={jumpToCard} />
+            <div className="bg-bg-surface border border-border rounded-soft overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-3 border-b border-border text-xs text-text-muted">
+                <span role="status">
+                  {table.total
+                    ? `Showing ${table.start.toLocaleString()}–${table.end.toLocaleString()} of ${table.total.toLocaleString()} cards`
+                    : 'No cards match these filters'}
+                </span>
+                <span>Click any column header to sort. Click a card for art and replays.</span>
               </div>
-            ))}
-          </div>
-          {filtered.length === 0 && (
-            <p className="text-center text-text-muted py-8">
-              No cards found with {minGames}+ games played.
-            </p>
-          )}
-        </>
+              {table.total === 0 ? (
+                <p className="text-center text-text-muted py-10 text-sm">No cards match this selection. Try fewer filters.</p>
+              ) : (
+                <CardWinRateTable
+                  rows={table.cards} sortKey={sortKey} sortDirection={sortDirection} onSort={chooseSort}
+                  selectedCard={selectedCard} onToggle={(key) => setSelectedCard((c) => (c === key ? null : key))}
+                  catalogIndex={catalogIndex} avatarImages={avatarImages} selection={selection}
+                />
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-3 border-t border-border text-xs text-text-muted">
+                <span>Rates hide below 20 player-games. A player-game is one player’s side of one game.</span>
+                {table.pageCount > 1 && (
+                  <nav className="flex items-center gap-2" aria-label="Card pages">
+                    <button type="button" disabled={table.page <= 1} onClick={() => { setPage(table.page - 1); setSelectedCard(null) }} className={`${GHOST} disabled:opacity-40`}>← Previous</button>
+                    <span>Page {table.page} of {table.pageCount}</span>
+                    <button type="button" disabled={table.page >= table.pageCount} onClick={() => { setPage(table.page + 1); setSelectedCard(null) }} className={`${GHOST} disabled:opacity-40`}>Next →</button>
+                  </nav>
+                )}
+              </div>
+            </div>
+          </>
+        )
+      ) : (
+        <QueryBuilder
+          endpoint={RANKED_ANALYTICS_ENDPOINT} query={query} admin={false} active={tab === 'query'}
+          catalog={catalog} catalogError={catalogError} onPopulation={receiveQueryPopulation}
+        />
       )}
     </div>
-  );
+  )
 }

@@ -15,7 +15,7 @@ const ALL_NAV_OPTIONS = [
   { to: '/about', label: 'About' },
   { to: '/avatars', label: 'Avatar Winrates' },
   { to: '/avatars/top-players', label: 'Avatar Top 16' },
-  { to: '/cards/played-winrates', label: 'Card Played Winrates' },
+  { to: '/cards/played-winrates', label: 'Card Win Rates' },
   { to: '/deck-rec', label: 'Sorcery Deck Rec' },
   { to: '/deck-builder', label: 'Deck Visualizer' },
   { to: '/elements', label: 'Element Winrates' },
@@ -806,7 +806,7 @@ export default function Nav() {
           <SidebarHeading label="Stats" />
           <SidebarLink to="/avatars" label="Avatar Winrates" location={location} onClick={close} />
           <SidebarLink to="/avatars/top-players" label="Avatar Top 16" location={location} onClick={close} />
-          {user?.is_admin && <SidebarLink to="/cards/played-winrates" label="Card Played Winrates" location={location} onClick={close} />}
+          {user?.is_admin && <SidebarLink to="/cards/played-winrates" label="Card Win Rates" location={location} onClick={close} />}
           <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
 
           {/* Event Info */}

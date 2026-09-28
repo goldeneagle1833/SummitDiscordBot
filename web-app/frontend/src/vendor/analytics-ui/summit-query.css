@@ -1,0 +1,21 @@
+/* Summit-side base styles for the vendored query builder.
+   PSO's `style.css` (not vendored) supplied these shell classes and form
+   defaults; this file provides the same hooks in the Summit theme. */
+.analytics-query { color: #f0f6fc; font-size: 14px; }
+.analytics-query h2 { font-family: Almendra, Georgia, serif; font-weight: 400; font-size: 22px; color: #ffd700; margin: 0; }
+.analytics-query input:not([type="checkbox"]), .analytics-query select {
+  border: 1px solid #30363d; border-radius: 6px; background: #0d1117; color: #f0f6fc;
+  min-height: 40px; padding: 8px 11px; font: inherit; font-size: 13px; min-width: 0;
+}
+.analytics-query input:focus-visible, .analytics-query select:focus-visible, .analytics-query button:focus-visible {
+  outline: 2px solid #58a6ff; outline-offset: 2px;
+}
+.analytics-query button { font: inherit; font-size: 13px; }
+.game-analytics__panel { border: 1px solid #30363d; border-radius: 8px; background: #161b22; padding: 20px; }
+.game-analytics__eyebrow { color: #8b949e; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; margin: 0 0 4px; }
+.game-analytics__run { border: 0; border-radius: 6px; background: #58a6ff; color: #0d1117; font-weight: 600; padding: 10px 18px; cursor: pointer; }
+.game-analytics__run:hover { background: #79c0ff; }
+.game-analytics__error { color: #f85149; font-size: 13px; margin: 12px 0 0; }
+@media (max-width: 640px) {
+  .game-analytics__panel { padding: 14px; }
+}

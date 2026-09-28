@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import time
 import urllib.parse
 import requests
@@ -14,6 +15,38 @@ except Exception:
 
 # sorcerytcg.com tRPC API (formerly curiosa.io)
 _TRPC_BASE = "https://sorcerytcg.com/api/trpc/deck.get"
+
+# Play Sorcery Online hosts its own decks. A share link looks like
+# https://playsorceryonline.com/?deck=pD-1gXa3cg8c and its public exporter
+# hands the deck back in the same avatar/spellbook/atlas/sideboard shape
+# sorcerytcg.com decks are stored in.
+_PSO_HOST = "playsorceryonline.com"
+_PSO_DECK_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,}$")
+PSO_DECK_EXPORT_URL = "https://playsorceryonline.com/api/decks/export"
+# Tags a stored deck as PSO-hosted so its id is never mistaken for a Curiosa id.
+PSO_DECK_SOURCE = "sorcery_online"
+
+
+def get_pso_deck_id(url: str) -> str | None:
+    """Return the deck id from a Play Sorcery Online deck link, else None."""
+    if not url or not isinstance(url, str):
+        return None
+    try:
+        parsed = urllib.parse.urlparse(url.strip())
+    except ValueError:
+        return None
+    host = (parsed.netloc or "").lower().split(":")[0]
+    if parsed.scheme not in ("http", "https"):
+        return None
+    if host != _PSO_HOST and not host.endswith("." + _PSO_HOST):
+        return None
+    deck_id = urllib.parse.parse_qs(parsed.query).get("deck", [""])[0].strip()
+    return deck_id if _PSO_DECK_ID_RE.match(deck_id) else None
+
+
+def pso_deck_url(deck_id: str) -> str:
+    """The canonical share link for a PSO-hosted deck."""
+    return f"https://{_PSO_HOST}/?deck={deck_id}"
 
 
 def get_deck_id(url: str) -> str:
@@ -42,6 +75,10 @@ def clean_deck_url(url: str) -> str:
     """
     if not url or not isinstance(url, str):
         return url
+    # A Sorcery Online deck link keeps only its deck id
+    pso_id = get_pso_deck_id(url)
+    if pso_id:
+        return pso_deck_url(pso_id)
     # Only clean sorcerytcg.com and curiosa.io URLs
     lower = url.lower()
     if "sorcerytcg.com" not in lower and "curiosa.io" not in lower:
@@ -137,11 +174,114 @@ def _fetch_deck_from_api(deck_id: str) -> dict | None:
     return legacy if legacy else None
 
 
-def scrape_Curosa(deck_url, name):
-    """Fetch deck data from sorcerytcg.com and save to file.
+def _convert_pso_export_to_legacy(export: dict) -> dict:
+    """Trim a Play Sorcery Online deck export to the legacy Curiosa format.
 
-    Retries once after 30 seconds only if the API returns a 400 error.
+    PSO already answers in avatar/spellbook/atlas/sideboard sections, but its
+    cards carry extra fields and no image. The deck is tagged with its source
+    because PSO deck ids look nothing like Curiosa ids and must not be used as
+    one (the website's "Try this Deck" launcher imports from Curiosa by id).
     """
+    if not isinstance(export, dict):
+        return {}
+
+    sections = {}
+    for section in ("avatar", "spellbook", "atlas", "sideboard"):
+        cards = []
+        for entry in export.get(section) or []:
+            if not isinstance(entry, dict) or not entry.get("name"):
+                continue
+            cards.append({
+                "name": entry.get("name", ""),
+                "quantity": entry.get("quantity", 1),
+                "type": entry.get("type") or "Unknown",
+                "rarity": entry.get("rarity") or "Unknown",
+                "cost": entry.get("cost"),
+                "elements": entry.get("elements") or "None",
+                "image": "",
+            })
+        sections[section] = cards
+
+    if not any(sections.values()):
+        return {}
+
+    return {
+        "id": export.get("id", ""),
+        "name": export.get("name", ""),
+        "username": export.get("username", ""),
+        "source": PSO_DECK_SOURCE,
+        **sections,
+    }
+
+
+def fetch_sorcery_online_deck(deck_url: str) -> dict | None:
+    """Fetch a PSO-hosted deck through PSO's public exporter.
+
+    Returns the legacy-format dict or None on failure. The link itself is not
+    logged: PSO share links are effectively the deck's password.
+    """
+    pso_id = get_pso_deck_id(deck_url)
+    if not pso_id:
+        return None
+    try:
+        response = requests.get(
+            PSO_DECK_EXPORT_URL,
+            params={"input": pso_deck_url(pso_id)},
+            timeout=30,
+            verify=_REQUESTS_VERIFY,
+        )
+        if response.status_code != 200:
+            return None
+        legacy = _convert_pso_export_to_legacy(response.json())
+    except Exception:
+        return None
+    return legacy if legacy else None
+
+
+def fetch_deck_by_url(deck_url: str) -> dict | None:
+    """Fetch a deck from whichever service the link points at.
+
+    Returns the legacy-format dict or None on failure.
+    """
+    if get_pso_deck_id(deck_url):
+        return fetch_sorcery_online_deck(deck_url)
+    deck_id = get_deck_id(deck_url)
+    if not deck_id:
+        return None
+    return _fetch_deck_from_api(deck_id)
+
+
+def _append_deck_to_file(legacy_deck: dict, name: str) -> None:
+    """Append a scraped deck to the on-disk deck log (best effort)."""
+    if os.path.exists(name):
+        with open(name, "r") as f:
+            try:
+                existing_data = json.load(f)
+            except json.JSONDecodeError:
+                existing_data = []
+    else:
+        existing_data = []
+
+    existing_data.append(legacy_deck)
+
+    with open(name, "w") as f:
+        json.dump(existing_data, f, indent=2)
+
+
+def scrape_Curosa(deck_url, name):
+    """Fetch deck data from sorcerytcg.com or Sorcery Online and save to file.
+
+    Retries once after 30 seconds only if the sorcerytcg.com API returns a
+    400 error.
+    """
+    if get_pso_deck_id(deck_url):
+        legacy_deck = fetch_sorcery_online_deck(deck_url)
+        if not legacy_deck:
+            print("Sorcery Online did not return valid deck data.")
+            return "{}"
+        _append_deck_to_file(legacy_deck, name)
+        return json.dumps(legacy_deck)
+
     deck_id = get_deck_id(deck_url)
     input_json = json.dumps({"json": {"id": deck_id}})
     api_url = f"{_TRPC_BASE}?input={urllib.parse.quote(input_json)}"
@@ -175,22 +315,7 @@ def scrape_Curosa(deck_url, name):
                 print("API did not return valid deck data.")
                 return "{}"
 
-            # Load existing data from file if it exists
-            if os.path.exists(name):
-                with open(name, "r") as f:
-                    try:
-                        existing_data = json.load(f)
-                    except json.JSONDecodeError:
-                        existing_data = []
-            else:
-                existing_data = []
-
-            # Append the new data to existing data
-            existing_data.append(legacy_deck)
-
-            # Write the updated data back to the file
-            with open(name, "w") as f:
-                json.dump(existing_data, f, indent=2)
+            _append_deck_to_file(legacy_deck, name)
 
             # Return json data as a string to save in the db
             return json.dumps(legacy_deck)
@@ -216,11 +341,8 @@ async def scrape_curosa_async(deck_url: str) -> str:
     Returns a JSON string of the deck data, or '{}' on any failure.
     """
     def _fetch() -> str:
-        deck_id = get_deck_id(deck_url)
-        if not deck_id:
-            return "{}"
         try:
-            legacy = _fetch_deck_from_api(deck_id)
+            legacy = fetch_deck_by_url(deck_url)
             if not legacy:
                 return "{}"
             return json.dumps(legacy)

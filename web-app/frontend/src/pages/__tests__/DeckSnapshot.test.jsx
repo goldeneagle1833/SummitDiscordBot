@@ -46,13 +46,27 @@ describe('DeckSnapshot', () => {
   })
 
   it('hides the button for decks with no usable deck id', async () => {
-    // Sorcery Online / DraftSorcery snapshots carry no id — there is no URL to
-    // hand Sorcery Online, so the button must not appear.
+    // DraftSorcery snapshots carry no id — there is no URL to hand Sorcery
+    // Online, so the button must not appear.
     get.mockResolvedValue(snapshot({ ...CARDS, name: 'Drafted Deck' }))
 
     renderWithRouter(<DeckSnapshot />)
 
     await waitFor(() => expect(screen.getByText('Drafted Deck')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /Try this Deck/i })).not.toBeInTheDocument()
+  })
+
+  it('links a Sorcery Online deck back to its deckbuilder instead of the launcher', async () => {
+    // A PSO-hosted deck keeps its PSO id, which is not a Curiosa id, so the
+    // "Try this Deck" launcher (which imports from Curiosa) must not be offered.
+    get.mockResolvedValue(snapshot({
+      ...CARDS, id: 'pD-1gXa3cg8c', name: 'Earth/Fire', source: 'sorcery_online',
+    }))
+
+    renderWithRouter(<DeckSnapshot />)
+
+    const link = await screen.findByRole('link', { name: /Open in Sorcery Online/i })
+    expect(link).toHaveAttribute('href', 'https://playsorceryonline.com/?deck=pD-1gXa3cg8c')
     expect(screen.queryByRole('button', { name: /Try this Deck/i })).not.toBeInTheDocument()
   })
 })

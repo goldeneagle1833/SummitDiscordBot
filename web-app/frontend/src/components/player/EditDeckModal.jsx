@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { updateMatchDeck } from '@/api/games'
+import { DECK_URL_PLACEHOLDER } from '@/utils/deckLinks'
 
 export default function EditDeckModal({ matchId, currentUrl, eloSource, onClose, onSaved }) {
   const [deckUrl, setDeckUrl] = useState(currentUrl || '')
@@ -40,7 +41,7 @@ export default function EditDeckModal({ matchId, currentUrl, eloSource, onClose,
           type="url"
           value={deckUrl}
           onChange={(e) => setDeckUrl(e.target.value)}
-          placeholder="https://curiosa.io/decks/..."
+          placeholder={DECK_URL_PLACEHOLDER}
           className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-2"
           autoFocus
           onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}

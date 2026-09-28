@@ -54,6 +54,8 @@ MAX_ERROR_MESSAGE_LEN = 500
 # Hostname suffix -> service label for outbound calls
 EXTERNAL_SERVICES = {
     "curiosa.io": "curiosa",
+    "sorcerytcg.com": "curiosa",
+    "playsorceryonline.com": "sorcery_online",
     "discord.com": "discord",
     "discordapp.com": "discord",
     "googleapis.com": "google",

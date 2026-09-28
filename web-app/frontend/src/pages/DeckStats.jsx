@@ -7,6 +7,7 @@ import StatCard from '@/components/player/StatCard'
 import CollapsibleSection from '@/components/player/CollapsibleSection'
 import { get } from '@/api/client'
 import usePageTitle from '@/hooks/usePageTitle'
+import { getDeckSourceLabel } from '@/utils/deckLinks'
 
 const TCGPLAYER_IMPACT_LINK = 'https://partner.tcgplayer.com/c/5746741/1780961/21018'
 const CARD_TYPE_ORDER = ['Minion', 'Magic', 'Artifact', 'Aura', 'Site', 'Other']
@@ -156,7 +157,7 @@ export default function DeckStats() {
               rel="noopener noreferrer"
               className="text-xs text-secondary hover:underline mt-1 inline-block"
             >
-              View on Curiosa &rarr;
+              View on {getDeckSourceLabel(data.url)} &rarr;
             </a>
           </div>
           {tcgUrl && (

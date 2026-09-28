@@ -15,6 +15,7 @@ from repositories.user_profiles import UserProfileRepository
 from repositories.blocked_users_repo import BlockedUsersRepository
 from utils.auth import is_admin
 from utils.card_images import resolve_card_image
+from services.curiosa import is_deck_url, normalize_deck_url
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +220,7 @@ def get_deck_stats(player_id):
         return jsonify({"error": "Unauthorized"}), 403
 
     # Normalise the target URL the same way the player page does
-    deck_url = deck_url.split("?")[0]
+    deck_url = normalize_deck_url(deck_url)
 
     conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -303,7 +304,7 @@ def get_deck_stats(player_id):
         if not player_url:
             continue
         # Normalise URL
-        player_url = player_url.split("?")[0]
+        player_url = normalize_deck_url(player_url)
         if player_url != deck_url:
             continue
 
@@ -2152,7 +2153,7 @@ def player_api(player_id):
             "{}",
             "",
             None,
-        ) and (str(player_deck_url_check).startswith("https://curiosa.io") or str(player_deck_url_check).startswith("https://sorcerytcg.com")):
+        ) and is_deck_url(str(player_deck_url_check)):
             has_deck = True
         if player_deck_json and player_deck_json not in ("{}", "", None):
             has_deck = True
@@ -2341,11 +2342,11 @@ def player_api(player_id):
             "No URL provided",
             "Admin reported match",
             "{}",
-        ) or not (str(player_deck_url).startswith("https://curiosa.io") or str(player_deck_url).startswith("https://sorcerytcg.com")):
+        ) or not is_deck_url(str(player_deck_url)):
             continue
 
-        # Normalize URL by stripping query parameters (e.g. ?tab=view)
-        player_deck_url = player_deck_url.split("?")[0]
+        # Canonical form (drops ?tab=view on Curiosa, keeps ?deck= on PSO)
+        player_deck_url = normalize_deck_url(player_deck_url)
 
         # Initialize deck stats if first time seeing this URL
         if player_deck_url not in deck_stats:
@@ -2385,10 +2386,10 @@ def player_api(player_id):
         player_deck_url = em.get("winner_deck_url") if did_win else em.get("loser_deck_url")
         player_deck_json = em.get("json_deck_data_winner") if did_win else em.get("json_deck_data_loser")
 
-        if not player_deck_url or not (str(player_deck_url).startswith("https://curiosa.io") or str(player_deck_url).startswith("https://sorcerytcg.com")):
+        if not player_deck_url or not is_deck_url(str(player_deck_url)):
             continue
 
-        player_deck_url = player_deck_url.split("?")[0]
+        player_deck_url = normalize_deck_url(player_deck_url)
 
         if player_deck_url not in deck_stats:
             avatar_name = "Unknown"

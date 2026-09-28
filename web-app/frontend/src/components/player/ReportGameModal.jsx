@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { recordGame, submitMatchReport, searchOpponents, listAllAvatars, getPlayerSeasons } from '@/api/games'
+import { DECK_URL_PLACEHOLDER } from '@/utils/deckLinks'
 
 export default function ReportGameModal({ playerId, onClose, onReported, initialLifeSubmitter, initialLifeOpponent }) {
   const [mode, setMode] = useState('ranked')
@@ -177,7 +178,7 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
                   type="url"
                   value={deckUrl}
                   onChange={(e) => setDeckUrl(e.target.value)}
-                  placeholder="https://curiosa.io/decks/..."
+                  placeholder={DECK_URL_PLACEHOLDER}
                   className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm"
                 />
               </div>
@@ -252,7 +253,7 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
                   type="url"
                   value={deckUrl}
                   onChange={(e) => setDeckUrl(e.target.value)}
-                  placeholder="https://curiosa.io/decks/..."
+                  placeholder={DECK_URL_PLACEHOLDER}
                   className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm"
                 />
               </div>

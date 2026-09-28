@@ -20,6 +20,104 @@ _EVENT_URL_RE = re.compile(
     r"https?://(?:play\.)?sorcerytcg\.com/events/([A-Za-z0-9_-]+)", re.IGNORECASE
 )
 
+# ── Deck links ────────────────────────────────────────────────────────────
+#
+# Players share decks from two places:
+#   - sorcerytcg.com (formerly curiosa.io): https://sorcerytcg.com/decks/<id>
+#   - Play Sorcery Online (PSO), which hosts its own decks:
+#     https://playsorceryonline.com/?deck=<id>
+# PSO puts the deck id in the query string, so the old "strip everything after
+# the ?" normalisation would collapse every PSO deck into one. These helpers
+# are the single place that knows both shapes.
+
+_CURIOSA_HOSTS = ("curiosa.io", "sorcerytcg.com")
+_PSO_HOST = "playsorceryonline.com"
+_PSO_DECK_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,}$")
+_CURIOSA_DECK_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+# Path segments the deckbuilder appends after the id; not part of the id.
+_NON_ID_SEGMENTS = {"edit", "view", "copy"}
+# PSO's public exporter: hand it a deck link, get the deck back.
+PSO_DECK_EXPORT_URL = "https://playsorceryonline.com/api/decks/export"
+# Marks a legacy-format deck as PSO-hosted, so its id is not mistaken for a
+# Curiosa id (which the "Try this Deck" launcher needs).
+PSO_DECK_SOURCE = "sorcery_online"
+
+
+def _split_url(url):
+    if not url or not isinstance(url, str):
+        return None
+    try:
+        parsed = urllib.parse.urlparse(url.strip())
+    except ValueError:
+        return None
+    if parsed.scheme not in ("http", "https"):
+        return None
+    return parsed
+
+
+def _host_matches(netloc: str, host: str) -> bool:
+    netloc = (netloc or "").lower().split(":")[0]
+    return netloc == host or netloc.endswith("." + host)
+
+
+def get_pso_deck_id(url: str) -> str | None:
+    """Return the deck id from a Play Sorcery Online deck link, else None."""
+    parsed = _split_url(url)
+    if not parsed or not _host_matches(parsed.netloc, _PSO_HOST):
+        return None
+    deck_id = urllib.parse.parse_qs(parsed.query).get("deck", [""])[0].strip()
+    return deck_id if _PSO_DECK_ID_RE.match(deck_id) else None
+
+
+def get_curiosa_deck_id(url: str) -> str | None:
+    """Return the deck id from a sorcerytcg.com / curiosa.io deck link, else None."""
+    parsed = _split_url(url)
+    if not parsed or not any(_host_matches(parsed.netloc, h) for h in _CURIOSA_HOSTS):
+        return None
+    parts = [p for p in parsed.path.split("/") if p]
+    while parts and parts[-1].lower() in _NON_ID_SEGMENTS:
+        parts.pop()
+    if len(parts) != 2 or parts[0].lower() != "decks":
+        return None
+    return parts[1] if _CURIOSA_DECK_ID_RE.match(parts[1]) else None
+
+
+def pso_deck_url(deck_id: str) -> str:
+    """The canonical share link for a PSO-hosted deck."""
+    return f"https://{_PSO_HOST}/?deck={deck_id}"
+
+
+def is_deck_url(url: str) -> bool:
+    """True for a deck link from either sorcerytcg.com or Play Sorcery Online."""
+    return bool(get_pso_deck_id(url) or get_curiosa_deck_id(url))
+
+
+def deck_url_source(url: str) -> str | None:
+    """'sorcery_online', 'curiosa', or None for anything else."""
+    if get_pso_deck_id(url):
+        return PSO_DECK_SOURCE
+    if get_curiosa_deck_id(url):
+        return "curiosa"
+    return None
+
+
+def normalize_deck_url(url: str) -> str:
+    """Canonical form of a deck link, so one deck groups as one on a profile.
+
+    Curiosa links lose their query string and any trailing /edit; PSO links keep
+    only the deck id. Anything else just loses its query string, as before.
+    """
+    if not url or not isinstance(url, str):
+        return url
+    pso_id = get_pso_deck_id(url)
+    if pso_id:
+        return pso_deck_url(pso_id)
+    curiosa_id = get_curiosa_deck_id(url)
+    if curiosa_id:
+        parsed = _split_url(url)
+        return f"{parsed.scheme}://{parsed.netloc}/decks/{curiosa_id}"
+    return url.split("?")[0]
+
 
 def _convert_trpc_to_legacy(trpc_response: dict) -> dict:
     """Convert a sorcerytcg.com tRPC deck response to the legacy Curiosa format.
@@ -84,8 +182,49 @@ def _convert_trpc_to_legacy(trpc_response: dict) -> dict:
     }
 
 
+def _convert_pso_export_to_legacy(export: dict) -> dict:
+    """Convert a Play Sorcery Online deck export to the legacy Curiosa format.
+
+    PSO's exporter already answers in avatar/spellbook/atlas/sideboard sections,
+    but its cards carry extra fields and no image, so trim each card to the
+    shape every consumer expects. The deck is tagged with its source because
+    PSO deck ids look nothing like Curiosa ids and must not be used as one.
+    """
+    if not isinstance(export, dict):
+        return {}
+
+    sections = {}
+    for section in ("avatar", "spellbook", "atlas", "sideboard"):
+        cards = []
+        for entry in export.get(section) or []:
+            if not isinstance(entry, dict) or not entry.get("name"):
+                continue
+            cards.append({
+                "name": entry.get("name", ""),
+                "quantity": entry.get("quantity", 1),
+                "type": entry.get("type") or "Unknown",
+                "rarity": entry.get("rarity") or "Unknown",
+                "cost": entry.get("cost"),
+                "elements": entry.get("elements") or "None",
+                "image": "",
+            })
+        sections[section] = cards
+
+    if not any(sections.values()):
+        return {}
+
+    return {
+        "id": export.get("id", ""),
+        "name": export.get("name", ""),
+        "username": export.get("username", ""),
+        "source": PSO_DECK_SOURCE,
+        **sections,
+    }
+
+
 class CuriosaService:
-    """Service for interacting with sorcerytcg.com API (formerly Curiosa)."""
+    """Service for fetching decks from sorcerytcg.com (formerly Curiosa) and
+    Play Sorcery Online, returned in the shared legacy format."""
 
     def __init__(self):
         self._last_request_time = 0
@@ -117,19 +256,42 @@ class CuriosaService:
         legacy = _convert_trpc_to_legacy(trpc_data)
         return legacy if legacy else None
 
+    def _fetch_pso_deck(self, deck_id: str) -> dict | None:
+        """Fetch a PSO-hosted deck through PSO's public exporter.
+
+        PSO is a separate service from sorcerytcg.com, so the Curiosa rate
+        limit does not apply here.
+        """
+        response = requests.get(
+            PSO_DECK_EXPORT_URL, params={"input": pso_deck_url(deck_id)}, timeout=30
+        )
+        if response.status_code != 200:
+            logger.warning(
+                f"Sorcery Online returned status {response.status_code} for deck {deck_id}"
+            )
+            return None
+        legacy = _convert_pso_export_to_legacy(response.json())
+        return legacy if legacy else None
+
+    def _fetch_by_url(self, deck_url: str) -> dict | None:
+        """Fetch a deck from whichever service the link points at."""
+        pso_id = get_pso_deck_id(deck_url)
+        if pso_id:
+            return self._fetch_pso_deck(pso_id)
+        deck_id = self.get_deck_id_from_url(deck_url)
+        if not deck_id:
+            logger.warning("Could not extract deck ID from URL")
+            return None
+        self._rate_limit()
+        return self._fetch_single_deck(deck_id)
+
     def fetch_deck_data(self, deck_url: str) -> str:
         """
-        Fetch deck data from sorcerytcg.com API.
+        Fetch deck data for a sorcerytcg.com or Play Sorcery Online deck link.
         Returns JSON string of deck data, or '{}' on failure.
         """
         try:
-            deck_id = self.get_deck_id_from_url(deck_url)
-            if not deck_id:
-                logger.warning("Could not extract deck ID from URL")
-                return "{}"
-
-            self._rate_limit()
-            legacy = self._fetch_single_deck(deck_id)
+            legacy = self._fetch_by_url(deck_url)
             if not legacy:
                 return "{}"
 
@@ -154,26 +316,24 @@ class CuriosaService:
         Returns:
             Tuple of (list of legacy deck dicts, list of error strings).
         """
-        url_id_pairs = []
+        deck_urls = []
         errors = []
         for url in urls:
             if not url or not isinstance(url, str) or not url.strip():
                 continue
             url = url.strip()
-            deck_id = self.get_deck_id_from_url(url)
-            if not deck_id:
+            if not get_pso_deck_id(url) and not self.get_deck_id_from_url(url):
                 errors.append(f"Invalid URL: {url}")
                 continue
-            url_id_pairs.append((url, deck_id))
+            deck_urls.append(url)
 
-        if not url_id_pairs:
+        if not deck_urls:
             return [], errors
 
         decks = []
-        for deck_url, deck_id in url_id_pairs:
-            self._rate_limit()
+        for deck_url in deck_urls:
             try:
-                legacy = self._fetch_single_deck(deck_id)
+                legacy = self._fetch_by_url(deck_url)
                 if legacy:
                     decks.append(legacy)
                 else:

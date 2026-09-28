@@ -6,7 +6,7 @@ import sqlite3
 from flask import Blueprint, jsonify, request, session
 
 from webapp_config import MATCH_RECORDS_DB_PATH
-from services.curiosa import CuriosaService
+from services.curiosa import CuriosaService, is_deck_url, normalize_deck_url
 from utils.auth import require_auth
 
 logger = logging.getLogger(__name__)
@@ -200,10 +200,18 @@ def update_match_deck():
             return jsonify({"error": "match_id is required", "success": False}), 400
         if not deck_url:
             return jsonify({"error": "deck_url is required", "success": False}), 400
+        if not is_deck_url(deck_url):
+            return jsonify({
+                "error": "Deck link must be a sorcerytcg.com deck or a Play Sorcery Online deck (?deck=...)",
+                "success": False,
+            }), 400
         if source not in ("bot", "web"):
             return jsonify({"error": "source must be 'bot' or 'web'", "success": False}), 400
 
-        # Fetch deck data from Curiosa API
+        # Store the canonical link so the same deck groups as one on the profile
+        deck_url = normalize_deck_url(deck_url)
+
+        # Fetch deck data from Curiosa or Sorcery Online
         curiosa_service = CuriosaService()
         json_deck_data = curiosa_service.fetch_deck_data(deck_url)
         if json_deck_data == "{}":

@@ -7,7 +7,7 @@ from urllib.parse import urlparse, parse_qs
 
 import requests
 
-from utils.deck_checker import scrape_curosa_async
+from utils.deck_checker import fetch_sorcery_online_deck, scrape_curosa_async
 from repositories.card_points_repo import get_all_card_points, get_max_budget
 
 logger = logging.getLogger("discord_bot")
@@ -72,19 +72,7 @@ async def _fetch_draftsorcery_deck(url: str) -> dict | None:
 
 async def _fetch_sorcery_online_deck(url: str) -> dict | None:
     """Fetch the public deck export without exposing the link in logs."""
-
-    def _fetch():
-        try:
-            response = requests.get(
-                "https://playsorceryonline.com/api/decks/export",
-                params={"input": url},
-                timeout=30,
-            )
-            return response.json() if response.status_code == 200 else None
-        except Exception:
-            return None
-
-    return await asyncio.to_thread(_fetch)
+    return await asyncio.to_thread(fetch_sorcery_online_deck, url)
 
 
 def calculate_deck_points(deck_data: dict, card_points: dict[str, int]) -> tuple[int, list[dict]]:

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { getStreamerBanner } from '@/api/streamers'
+import { DECK_URL_PLACEHOLDER } from '@/utils/deckLinks'
 
 const PERMANENT_LINKS = ['Home', 'Discord', 'Reddit', 'About', 'Patreon', 'Feedback']
 
@@ -126,7 +127,7 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
               type="url"
               value={deckUrl}
               onChange={(e) => setDeckUrl(e.target.value)}
-              placeholder="https://curiosa.io/decks/..."
+              placeholder={DECK_URL_PLACEHOLDER}
               className="w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm"
             />
           </div>

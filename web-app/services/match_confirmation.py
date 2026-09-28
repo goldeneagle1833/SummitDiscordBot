@@ -2,15 +2,20 @@
 
 import datetime
 import logging
-import re
 from typing import Optional
 
 from repositories.match_confirmation import MatchConfirmationRepository
 from repositories.user_profiles import UserProfileRepository
+from services.curiosa import is_deck_url
 
 # Configure logger for match reporting operations
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+INVALID_DECK_URL_MESSAGE = (
+    "Invalid deck URL format. Expected: https://sorcerytcg.com/decks/[deck-id] "
+    "or https://playsorceryonline.com/?deck=[deck-id]"
+)
 
 
 def _normalize_played_cards(players):
@@ -438,23 +443,14 @@ class MatchConfirmationService:
         if went_first not in ("submitter", "opponent"):
             errors["went_first"] = "Turn order must be 'submitter' or 'opponent'"
 
-        # Validate deck URLs
-        # Pattern supports: http/https, optional www, alphanumeric ID with hyphens/underscores, optional query params
-        deck_url_pattern = r"^https?://(www\.)?(curiosa\.io|sorcerytcg\.com)/decks/[a-zA-Z0-9_-]+(\?.*)?$"
-
+        # Validate deck URLs: a sorcerytcg.com deck or a Play Sorcery Online deck
         # Submitter deck URL is optional, but must be valid if provided
-        if submitter_deck_url:
-            if not re.match(deck_url_pattern, submitter_deck_url):
-                errors[
-                    "submitter_deck_url"
-                ] = "Invalid deck URL format. Expected: https://sorcerytcg.com/decks/[deck-id]"
+        if submitter_deck_url and not is_deck_url(submitter_deck_url):
+            errors["submitter_deck_url"] = INVALID_DECK_URL_MESSAGE
 
         # Opponent deck URL is optional (provided during confirmation)
-        if opponent_deck_url:
-            if not re.match(deck_url_pattern, opponent_deck_url):
-                errors[
-                    "opponent_deck_url"
-                ] = "Invalid deck URL format. Expected: https://sorcerytcg.com/decks/[deck-id]"
+        if opponent_deck_url and not is_deck_url(opponent_deck_url):
+            errors["opponent_deck_url"] = INVALID_DECK_URL_MESSAGE
 
         return {"valid": len(errors) == 0, "errors": errors}
 
@@ -941,10 +937,8 @@ class MatchConfirmationService:
         # Update opponent's deck URL if provided
         if opponent_deck_url:
             # Validate deck URL format
-            import re
-            deck_url_pattern = r"^https://(curiosa\.io|sorcerytcg\.com)/decks/[a-zA-Z0-9_-]+(\?.*)?$"
-            if not re.match(deck_url_pattern, opponent_deck_url):
-                raise ValueError("Invalid deck URL format. Expected: https://sorcerytcg.com/decks/[deck-id]")
+            if not is_deck_url(opponent_deck_url):
+                raise ValueError(INVALID_DECK_URL_MESSAGE)
 
             # Determine if opponent is winner or loser (direct string comparison - no normalization)
             is_winner = str(confirmation["winner_discord_id"]) == str(opponent_user_id)

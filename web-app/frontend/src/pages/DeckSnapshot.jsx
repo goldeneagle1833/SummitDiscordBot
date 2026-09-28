@@ -6,6 +6,7 @@ import DeckVisualizer from '@/components/deck/DeckVisualizer'
 import TryDeckButton from '@/components/deck/TryDeckButton'
 import { get } from '@/api/client'
 import usePageTitle from '@/hooks/usePageTitle'
+import { psoDeckUrl } from '@/utils/deckLinks'
 
 const TCGPLAYER_IMPACT_LINK = 'https://partner.tcgplayer.com/c/5746741/1780961/21018'
 const CARD_TYPE_ORDER = ['Minion', 'Magic', 'Artifact', 'Aura', 'Site', 'Other']
@@ -33,12 +34,21 @@ function buildTcgPlayerUrl(cards) {
   return TCGPLAYER_IMPACT_LINK + '?u=' + encodeURIComponent(massEntryUrl)
 }
 
-// Snapshots store the Curiosa deck id they were scraped from. Decks captured
-// from Sorcery Online or DraftSorcery have no id, and there's no URL to hand
-// Sorcery Online for those, so they get no launch button.
+// Snapshots store the deck id they were scraped from. A Curiosa id can be
+// handed to Sorcery Online to preload a table, so those decks get the launch
+// button. A deck that came from Sorcery Online itself is tagged with its
+// source: its id is a PSO id, not a Curiosa one, so it gets a plain link back
+// to the deck instead. DraftSorcery decks have no id and get neither.
 function getCuriosaDeckId(deck) {
+  if (deck?.source === 'sorcery_online') return null
   const id = (deck?.id || '').trim()
   return /^[a-z0-9]{8,}$/i.test(id) ? id : null
+}
+
+function getPsoDeckLink(deck) {
+  if (deck?.source !== 'sorcery_online') return null
+  const id = (deck?.id || '').trim()
+  return id ? psoDeckUrl(id) : null
 }
 
 function collectAllCards(deck) {
@@ -136,6 +146,7 @@ export default function DeckSnapshot() {
   const allCards = collectAllCards(deck)
   const tcgUrl = buildTcgPlayerUrl(allCards)
   const curiosaDeckId = getCuriosaDeckId(deck)
+  const psoDeckLink = getPsoDeckLink(deck)
   const spellbookGroups = groupByType(spellbook)
 
   return (
@@ -157,6 +168,17 @@ export default function DeckSnapshot() {
           </div>
           <div className="flex flex-wrap items-start gap-2">
             {curiosaDeckId && <TryDeckButton deckId={curiosaDeckId} />}
+            {psoDeckLink && (
+              <a
+                href={psoDeckLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Opens this deck in the Play Sorcery Online deckbuilder"
+                className="inline-flex items-center gap-1 bg-secondary hover:bg-secondary/80 text-black font-medium text-sm px-4 py-2 rounded transition-colors whitespace-nowrap"
+              >
+                Open in Sorcery Online &#8599;
+              </a>
+            )}
             {tcgUrl && (
               <a
                 href={tcgUrl}

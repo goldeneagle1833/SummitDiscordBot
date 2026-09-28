@@ -6,7 +6,7 @@ import datetime
 import json
 import logging
 
-from utils.deck_checker import scrape_Curosa, scrape_curosa_async
+from utils.deck_checker import get_pso_deck_id, scrape_Curosa, scrape_curosa_async
 from repositories.elo_repo import (
     create_db,
     create_events_table,
@@ -857,9 +857,15 @@ _VALID_DECK_URL_PREFIXES = (
 
 
 def _is_valid_deck_url(url: str) -> bool:
-    """Return True if url is a proper deck URL with a non-empty deck ID."""
+    """Return True if url is a proper deck URL with a non-empty deck ID.
+
+    Accepts sorcerytcg.com / curiosa.io decks and Play Sorcery Online deck
+    links (https://playsorceryonline.com/?deck=<id>).
+    """
     if not url or not isinstance(url, str):
         return False
+    if get_pso_deck_id(url):
+        return True
     base = url.split("?")[0].rstrip("/")
     for prefix in _VALID_DECK_URL_PREFIXES:
         if base.startswith(prefix):

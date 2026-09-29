@@ -6,6 +6,8 @@ from collections import Counter
 from flask import Blueprint, jsonify, request
 
 from services.leaderboard import LeaderboardService
+from services.ticket_leaderboard import TicketLeaderboardService
+from utils.api_auth import require_integration_api_key
 from webapp_config import SEASON_FILTERS, MATCH_RECORDS_DB_PATH
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,25 @@ def get_combined_leaderboard():
     except Exception as e:
         logger.error(f"Error fetching combined leaderboard: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@leaderboard_bp.route("/leaderboard/ticket-holders")
+@require_integration_api_key
+def get_ticket_holder_leaderboard():
+    """The Discord leaderboard channel as JSON: ticket holders ranked.
+
+    Partner endpoint (Play Sorcery Online). Query params:
+        limit: cap the ticket-holder list (default: everyone ranked)
+    """
+    limit = request.args.get("limit", type=int)
+    if limit is not None and limit < 1:
+        return jsonify({"success": False, "error": "limit must be a positive integer"}), 400
+    try:
+        data = TicketLeaderboardService().get_leaderboard(limit=limit)
+        return jsonify({"success": True, **data})
+    except Exception as e:
+        logger.error(f"Error fetching ticket-holder leaderboard: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "Could not build leaderboard"}), 500
 
 
 @leaderboard_bp.route("/leaderboard/paper")

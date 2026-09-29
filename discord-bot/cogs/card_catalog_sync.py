@@ -12,6 +12,7 @@ import requests
 from discord.ext import commands, tasks
 
 import config
+from utils.card_api import to_legacy_card
 
 logger = logging.getLogger("discord_bot")
 
@@ -42,6 +43,14 @@ class CardCatalogSyncCog(commands.Cog):
     @card_sync_task.before_loop
     async def before_card_sync(self):
         await self.bot.wait_until_ready()
+        # Repair a catalog left blank by a sync that misread the API format,
+        # instead of waiting for the next daily run.
+        try:
+            if await asyncio.to_thread(self._catalog_has_blank_cards):
+                logger.warning("Card catalog has cards with no type; syncing now")
+                await asyncio.to_thread(self._sync_cards)
+        except Exception:
+            logger.error("Startup card catalog repair failed", exc_info=True)
         next_run = self.card_sync_task.next_iteration
         logger.info(f"Card catalog sync task is ready - next run: {next_run}")
 
@@ -70,6 +79,14 @@ class CardCatalogSyncCog(commands.Cog):
             logger.error(f"Manual card sync failed: {e}", exc_info=True)
             await msg.edit(content=f"Sync failed: {e}")
 
+    def _catalog_has_blank_cards(self) -> bool:
+        conn = sqlite3.connect("elo.db")
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM card_catalog WHERE card_type = ''").fetchone()
+        finally:
+            conn.close()
+        return row[0] > 0
+
     def _sync_cards(self) -> dict | None:
         """Fetch cards from API and sync to DB. Returns result dict or None on failure."""
         # Fetch from API
@@ -96,6 +113,7 @@ class CardCatalogSyncCog(commands.Cog):
 
         api_names = set()
         for card_data in api_cards:
+            card_data = to_legacy_card(card_data)
             name = card_data.get("name", "").strip()
             if not name:
                 continue

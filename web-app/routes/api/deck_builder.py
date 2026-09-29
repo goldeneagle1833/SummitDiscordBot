@@ -11,6 +11,7 @@ Endpoints:
 
 import json
 import logging
+import time
 
 from flask import Blueprint, jsonify, request, session
 
@@ -30,6 +31,18 @@ deck_builder_bp = Blueprint("deck_builder", __name__)
 # ---------------------------------------------------------------------------
 
 _card_metadata: dict[str, dict] | None = None
+_all_card_names: list[str] | None = None
+_all_cards_enriched: list[dict] | None = None
+_cache_time = 0.0
+_CACHE_TTL = 3600  # the bot re-syncs card_catalog daily
+
+
+def _expire_caches() -> None:
+    """Drop the card caches once they are older than _CACHE_TTL."""
+    global _card_metadata, _all_card_names, _all_cards_enriched, _cache_time
+    if time.monotonic() - _cache_time >= _CACHE_TTL:
+        _card_metadata = _all_card_names = _all_cards_enriched = None
+        _cache_time = time.monotonic()
 
 
 def _get_card_metadata() -> dict[str, dict]:
@@ -139,10 +152,6 @@ def _enrich_cards(cards: list[dict]) -> list[dict]:
     return [_enrich_card(c) for c in cards]
 
 
-# Full card name list (cached)
-_all_card_names: list[str] | None = None
-
-
 def _get_all_card_names() -> list[str]:
     """Return sorted list of all card names from card_catalog DB."""
     global _all_card_names
@@ -162,13 +171,12 @@ def _get_all_card_names() -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-_all_cards_enriched: list[dict] | None = None
-
 
 @deck_builder_bp.route("/all-cards", methods=["GET"])
 def all_cards():
     """Return all available cards with enriched metadata. Cached after first call."""
     global _all_cards_enriched
+    _expire_caches()
     if _all_cards_enriched is None:
         names = _get_all_card_names()
         _all_cards_enriched = [_enrich_card({"name": n, "quantity": 1}) for n in names]
@@ -188,6 +196,7 @@ def fetch_deck():
     if "curiosa.io" not in deck_url.lower() and "sorcerytcg.com" not in deck_url.lower() and not deck_url.startswith("http"):
         return jsonify({"error": "Invalid deck URL"}), 400
 
+    _expire_caches()
     try:
         service = CuriosaService()
         raw = service.fetch_deck_data(deck_url)

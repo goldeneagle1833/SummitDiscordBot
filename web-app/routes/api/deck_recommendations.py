@@ -64,13 +64,16 @@ def _attach_images(cards: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 _card_metadata: dict[str, dict] | None = None
+_card_metadata_time = 0.0
+_CARD_METADATA_TTL = 3600  # the bot re-syncs card_catalog daily
 
 
 def _get_card_metadata() -> dict[str, dict]:
     """Return {normalized_name: {elements, rarity, attack, defence}} from card_catalog DB."""
-    global _card_metadata
-    if _card_metadata is not None:
+    global _card_metadata, _card_metadata_time
+    if _card_metadata is not None and (time.monotonic() - _card_metadata_time) < _CARD_METADATA_TTL:
         return _card_metadata
+    _card_metadata_time = time.monotonic()
 
     meta: dict[str, dict] = {}
     try:

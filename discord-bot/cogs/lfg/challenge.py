@@ -13,6 +13,15 @@ from cogs.lfg.pairing_messages import (
 )
 from utils.database import save_pairing, get_pairing_ban, pairing_ban_message
 from utils.deck_checker import clean_deck_url
+from services.avatar_mode import check_join_deck, lock_match_avatar, needs_avatar
+
+
+def _require_deck_in_avatar_mode(deck_input):
+    """Direct challenges are ranked: Avatar-mode seasons need the deck link."""
+    if needs_avatar("ranked"):
+        deck_input.required = True
+        deck_input.label = "Your Deck URL (required: sets your avatar)"
+        deck_input.placeholder = "Curiosa or Sorcery Online deck link"
 
 logger = logging.getLogger("discord_bot")
 
@@ -60,11 +69,18 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
         self.lfg_channel = lfg_channel
         self.bot = bot
         self.guild_id = guild_id
+        _require_deck_in_avatar_mode(self.deck_url)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
         url = clean_deck_url(self.deck_url.value.strip()) if self.deck_url.value else None
+        challenger_avatar = None
+        if needs_avatar("ranked"):
+            challenger_avatar, deck_error = await check_join_deck(url)
+            if deck_error:
+                await interaction.followup.send(deck_error, ephemeral=True)
+                return
         challenger_global = self.challenger.global_name or self.challenger.display_name
         opponent_global = self.opponent.global_name or self.opponent.display_name
 
@@ -74,6 +90,7 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
             self.lfg_channel,
             challenger_deck_url=url,
             guild_id=self.guild_id,
+            challenger_avatar=challenger_avatar,
         )
 
         try:
@@ -149,6 +166,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         channel=None,
         challenger_deck_url: str = None,
         guild_id: int = None,
+        challenger_avatar: str = None,
     ):
         super().__init__()
         self.challenger_id = challenger_id
@@ -156,6 +174,8 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         self.channel = channel
         self.challenger_deck_url = challenger_deck_url
         self.guild_id = guild_id
+        self.challenger_avatar = challenger_avatar
+        _require_deck_in_avatar_mode(self.deck_url)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -163,6 +183,15 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         challenger = await interaction.client.fetch_user(self.challenger_id)
         accepter_global = interaction.user.global_name or interaction.user.display_name
         accepter_deck_url = clean_deck_url(self.deck_url.value.strip()) if self.deck_url.value else None
+
+        # Avatar-mode season: accepting makes the match, so both avatars lock now
+        challenger_avatar = accepter_avatar = None
+        if needs_avatar("ranked"):
+            accepter_avatar, deck_error = await check_join_deck(accepter_deck_url)
+            if deck_error:
+                await interaction.followup.send(deck_error, ephemeral=True)
+                return
+            challenger_avatar = await lock_match_avatar(self.challenger_deck_url, self.challenger_avatar)
 
         # Remove both players from the LFG queue if they're in it
         if self.challenger_id in lfg_queue:
@@ -198,6 +227,8 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
                     player1_deck_url=self.challenger_deck_url,
                     player2_deck_url=accepter_deck_url,
                     match_type="ranked",
+                    player1_avatar=challenger_avatar,
+                    player2_avatar=accepter_avatar,
                 )
                 logger.info(
                     f"Saved challenge pairing {pairing_id} in guild {self.guild_id}: "
@@ -256,6 +287,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         other_id, other_global, other_user, other_deck_url, other_is_accepter = (
             other_player
         )
+        avatars = {self.challenger_id: challenger_avatar, interaction.user.id: accepter_avatar}
 
         # Use pairing_id if we saved one, otherwise 0
         challenge_pairing_id = pairing_id if self.guild_id else 0
@@ -285,6 +317,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
                 reporter_user,
                 reporter_deck_url,
                 interaction=interaction if reporter_is_accepter else None,
+                avatar=avatars.get(reporter_id),
             ),
             other=PairingPlayer(
                 other_id,
@@ -292,6 +325,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
                 other_user,
                 other_deck_url,
                 interaction=interaction if other_is_accepter else None,
+                avatar=avatars.get(other_id),
             ),
             match_card_view=match_card_view,
             match_type="ranked",
@@ -316,6 +350,7 @@ class ChallengeButtons(discord.ui.View):
         channel=None,
         challenger_deck_url: str = None,
         guild_id: int = None,
+        challenger_avatar: str = None,
     ):
         super().__init__(timeout=300)  # 5 minute timeout
         self.challenger_id = challenger_id
@@ -323,6 +358,7 @@ class ChallengeButtons(discord.ui.View):
         self.channel = channel
         self.challenger_deck_url = challenger_deck_url
         self.guild_id = guild_id
+        self.challenger_avatar = challenger_avatar
 
     @discord.ui.button(label="Accept Challenge", style=discord.ButtonStyle.success)
     async def accept_button(
@@ -340,6 +376,7 @@ class ChallengeButtons(discord.ui.View):
             channel=self.channel,
             challenger_deck_url=self.challenger_deck_url,
             guild_id=self.guild_id,
+            challenger_avatar=self.challenger_avatar,
         )
         await interaction.response.send_modal(modal)
         await interaction.message.edit(view=None)

@@ -54,6 +54,10 @@ async def _send_confirmation_to_opponent(
     confirm_msg, confirmation_view, reply_interaction, guild_id,
 ):
     """Send a confirmation view to the opponent via DM, falling back to a channel."""
+    # Avatar-mode events: the opponent confirms the avatars along with the result
+    avatar_note = getattr(confirmation_view, "avatar_note", "")
+    if isinstance(avatar_note, str) and avatar_note:
+        confirm_msg = f"{confirm_msg}{avatar_note}"
     logger.info(f"Attempting to send confirmation to opponent {opponent_id} ({opponent_global})")
 
     # Always try DM first - don't skip based on role

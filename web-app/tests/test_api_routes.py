@@ -57,7 +57,9 @@ class TestLeaderboardRoutes:
         data = resp.get_json()
         assert data["leaderboard"][0] == {
             "id": "1",
+            "entry_id": "1",
             "name": "Alice",
+            "avatar": None,
             "event_elo": 1620,
             "wins": 1,
             "losses": 0,

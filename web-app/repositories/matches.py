@@ -364,6 +364,40 @@ class MatchRepository:
         conn.close()
         return records
 
+    def get_season_avatar_records(self, event_start: str) -> dict[tuple[str, str], dict[str, int]]:
+        """Win/loss per (player, avatar) since the event started (Avatar-mode events).
+
+        Only matches that carry avatars count, i.e. games rated on the avatar ladder.
+        """
+        conn = self._get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(match_records)")
+            if "winner_avatar" not in {row[1] for row in cur.fetchall()}:
+                return {}
+            cur.execute(
+                f"""
+                SELECT user_id, avatar, SUM(wins), SUM(losses)
+                FROM (
+                    SELECT winner_id AS user_id, winner_avatar AS avatar, 1 AS wins, 0 AS losses
+                    FROM match_records
+                    WHERE timestamp >= ? AND winner_avatar IS NOT NULL {self._NOT_SEASON}
+                    UNION ALL
+                    SELECT losser_id AS user_id, loser_avatar AS avatar, 0 AS wins, 1 AS losses
+                    FROM match_records
+                    WHERE timestamp >= ? AND loser_avatar IS NOT NULL {self._NOT_SEASON}
+                )
+                GROUP BY user_id, avatar
+                """,
+                (event_start, event_start),
+            )
+            return {
+                (str(row[0]), row[1]): {"wins": int(row[2]), "losses": int(row[3])}
+                for row in cur.fetchall()
+            }
+        finally:
+            conn.close()
+
     VOICE_QUEUE_TYPES = ("points", "ranked", "testing", "limited", "rumble")
 
     def get_voice_match_stats(self) -> dict:
@@ -771,12 +805,28 @@ class MatchRepository:
         return rows
 
     def get_match_full_details(self, match_id: int) -> dict | None:
-        """Get full match details including ELO changes for admin operations."""
+        """Get full match details including ELO changes for admin operations.
+
+        ``*_elo_change`` is the event ladder's change, ``*_lifetime_elo_change``
+        the lifetime ladder's (None on very old rows), and in Avatar-mode
+        events ``*_avatar`` / ``*_avatar_elo_change`` the avatar entries'.
+        """
         conn = self._get_connection()
         cur = conn.cursor()
+        cur.execute("PRAGMA table_info(match_records)")
+        available = {row[1] for row in cur.fetchall()}
+        optional = [
+            col for col in (
+                "winner_lifetime_elo_change", "loser_lifetime_elo_change",
+                "winner_avatar", "loser_avatar",
+                "winner_avatar_elo_change", "loser_avatar_elo_change",
+            )
+            if col in available
+        ]
+        extra = "".join(f", {col}" for col in optional)
         cur.execute(
-            """SELECT rowid, winner_id, losser_id, winner_display_name,
-                      losser_display_name, winner_elo_change, loser_elo_change, timestamp
+            f"""SELECT rowid, winner_id, losser_id, winner_display_name,
+                      losser_display_name, winner_elo_change, loser_elo_change, timestamp{extra}
                FROM match_records WHERE rowid = ?""",
             (match_id,),
         )
@@ -784,7 +834,7 @@ class MatchRepository:
         conn.close()
         if not row:
             return None
-        return {
+        details = {
             "match_id": row[0],
             "winner_id": row[1],
             "loser_id": row[2],
@@ -794,6 +844,13 @@ class MatchRepository:
             "loser_elo_change": row[6] or 0,
             "timestamp": row[7],
         }
+        details.update({col: None for col in (
+            "winner_lifetime_elo_change", "loser_lifetime_elo_change",
+            "winner_avatar", "loser_avatar",
+            "winner_avatar_elo_change", "loser_avatar_elo_change",
+        )})
+        details.update(zip(optional, row[8:]))
+        return details
 
     def insert_match(self, data: dict) -> int:
         """Record a played match and return its row id.

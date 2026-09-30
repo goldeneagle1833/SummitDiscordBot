@@ -5,6 +5,8 @@ import datetime
 import logging
 from contextlib import contextmanager
 
+from repositories.avatar_elo_repo import ensure_avatar_elo_schema
+
 logger = logging.getLogger("discord_bot")
 
 # Match types that skip ELO updates. Do NOT reuse this for Curiosa deck-URL
@@ -18,6 +20,19 @@ NON_ELO_MATCH_TYPES_SQL = ", ".join(f"'{t}'" for t in NON_ELO_MATCH_TYPES)
 # participation or game counts.
 NON_SEASON_SOURCES = ("Bracket",)
 NON_SEASON_SOURCES_SQL = ", ".join(f"'{s}'" for s in NON_SEASON_SOURCES)
+
+# Match columns written only in Avatar-mode events (NULL otherwise). The
+# *_elo_change / *_lifetime_elo_change columns keep their meaning; these hold
+# the per-avatar ladder's own change so each ladder can be reversed exactly.
+AVATAR_MATCH_COLUMNS = (
+    "winner_avatar TEXT",
+    "loser_avatar TEXT",
+    "winner_avatar_elo_change INTEGER",
+    "loser_avatar_elo_change INTEGER",
+    "winner_avatar_elo_after INTEGER",
+    "loser_avatar_elo_after INTEGER",
+)
+AVATAR_MATCH_COLUMN_NAMES = tuple(col.split()[0] for col in AVATAR_MATCH_COLUMNS)
 
 ELO_COUNTING_MATCH_FILTER = f"""
     (match_type IS NULL OR match_type NOT IN ({NON_ELO_MATCH_TYPES_SQL}))
@@ -162,6 +177,13 @@ def create_db():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Avatar-mode events: each side's avatar and its per-avatar event ELO
+    for col in AVATAR_MATCH_COLUMNS:
+        try:
+            cur.execute(f"ALTER TABLE match_records ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
     # Create solo_match_reports table with auto-increment report_id
     cur.execute("""CREATE TABLE IF NOT EXISTS solo_match_reports
                    (report_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -254,6 +276,9 @@ def create_events_table():
         cur.execute("ALTER TABLE event_standings_archive ADD COLUMN final_online_rank INTEGER")
         logger.info("Added final_online_rank to event_standings_archive")
 
+    # Player/Avatar mode per event, and the per-avatar ladder
+    ensure_avatar_elo_schema(conn)
+
     conn.commit()
     conn.close()
 
@@ -329,6 +354,11 @@ def create_match_records_archive():
         cur.execute("ALTER TABLE match_records_archive ADD COLUMN voice INTEGER NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass  # Column already exists
+    for col in AVATAR_MATCH_COLUMNS:
+        try:
+            cur.execute(f"ALTER TABLE match_records_archive ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
     conn.commit()
     conn.close()
@@ -387,6 +417,13 @@ def create_active_pairings_table():
         cur.execute("ALTER TABLE active_pairings ADD COLUMN voice INTEGER NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass  # Column already exists
+
+    # Migration: avatars read from each deck when the match was made (Avatar mode)
+    for col in ("player1_avatar", "player2_avatar"):
+        try:
+            cur.execute(f"ALTER TABLE active_pairings ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
     conn.commit()
     conn.close()
@@ -471,7 +508,7 @@ def get_active_event():
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
-    cur.execute("""SELECT event_id, event_name, start_date
+    cur.execute("""SELECT event_id, event_name, start_date, elo_mode
                    FROM events
                    WHERE is_active = 1
                    LIMIT 1""")
@@ -483,6 +520,7 @@ def get_active_event():
             "event_id": row[0],
             "event_name": row[1],
             "start_date": datetime.datetime.fromisoformat(row[2]),
+            "elo_mode": row[3] or "player",
         }
     return None
 
@@ -624,29 +662,30 @@ def get_top_16_user_ids():
     Get the user IDs of the top 16 players by current online event ELO (Discord bot).
 
     Only counts players who have played at least one online event match.
+    In Avatar mode a player counts once, at their best avatar entry.
     Falls back to online lifetime ELO if no active event.
 
     Returns:
         List of user_id integers for the top 16 players
     """
+    return _top_unique_player_ids(16)
+
+
+def _top_unique_player_ids(limit: int) -> list[int]:
+    from services.avatar_mode import get_event_ladder, unique_players
+
     migrate_to_dual_elo_system()
     active_event = get_active_event()
-    conn = sqlite3.connect("elo.db")
-    cur = conn.cursor()
-
     if active_event:
-        event_start_str = active_event["start_date"].isoformat()
-        participants = get_event_participant_ids(event_start_str)
+        return [entry.user_id for entry in unique_players(get_event_ladder(active_event))[:limit]]
 
-        cur.execute(
-            "SELECT user_id FROM overall_standings ORDER BY online_event_elo DESC"
-        )
-        rows = [row for row in cur.fetchall() if row[0] in participants][:16]
-    else:
-        cur.execute("SELECT user_id FROM overall_standings ORDER BY online_elo DESC LIMIT 16")
-        rows = cur.fetchall()
-
-    conn.close()
+    conn = sqlite3.connect("elo.db")
+    try:
+        rows = conn.execute(
+            "SELECT user_id FROM overall_standings ORDER BY online_elo DESC LIMIT ?", (limit,)
+        ).fetchall()
+    finally:
+        conn.close()
     return [row[0] for row in rows]
 
 
@@ -655,30 +694,13 @@ def get_top_8_user_ids():
     Get the user IDs of the top 8 players by current online event ELO (Discord bot).
 
     Only counts players who have played at least one online event match.
+    In Avatar mode a player counts once, at their best avatar entry.
     Falls back to online lifetime ELO if no active event.
 
     Returns:
         List of user_id integers for the top 8 players
     """
-    migrate_to_dual_elo_system()
-    active_event = get_active_event()
-    conn = sqlite3.connect("elo.db")
-    cur = conn.cursor()
-
-    if active_event:
-        event_start_str = active_event["start_date"].isoformat()
-        participants = get_event_participant_ids(event_start_str)
-
-        cur.execute(
-            "SELECT user_id FROM overall_standings ORDER BY online_event_elo DESC"
-        )
-        rows = [row for row in cur.fetchall() if row[0] in participants][:8]
-    else:
-        cur.execute("SELECT user_id FROM overall_standings ORDER BY online_elo DESC LIMIT 8")
-        rows = cur.fetchall()
-
-    conn.close()
-    return [row[0] for row in rows]
+    return _top_unique_player_ids(8)
 
 
 def get_event_participant_ids(event_start_str: str) -> set:
@@ -1009,6 +1031,8 @@ def save_pairing(
     player2_deck_url: str = None,
     match_type: str = "ranked",
     voice: bool = False,
+    player1_avatar: str = None,
+    player2_avatar: str = None,
 ) -> int:
     """
     Save a new active pairing to the database.
@@ -1021,6 +1045,7 @@ def save_pairing(
         player2_deck_url: Optional deck URL for player 2
         match_type: Match type (ranked, testing, limited)
         voice: True when the pairing is a voice match
+        player1_avatar / player2_avatar: Avatars locked to the match (Avatar mode)
 
     Returns:
         The pairing_id of the created record
@@ -1041,8 +1066,9 @@ def save_pairing(
 
             cur.execute(
                 """INSERT INTO active_pairings
-                   (guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, status, match_type, voice)
-                   VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)""",
+                   (guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, status,
+                    match_type, voice, player1_avatar, player2_avatar)
+                   VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)""",
                 (
                     guild_id,
                     player1_id,
@@ -1052,6 +1078,8 @@ def save_pairing(
                     datetime.datetime.now().isoformat(),
                     match_type,
                     1 if voice else 0,
+                    player1_avatar,
+                    player2_avatar,
                 ),
             )
 
@@ -1084,7 +1112,8 @@ def get_active_pairing_for_user(guild_id: int, user_id: int) -> dict | None:
     cur = conn.cursor()
 
     cur.execute(
-        """SELECT pairing_id, guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, match_type
+        """SELECT pairing_id, guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, match_type,
+                  player1_avatar, player2_avatar
            FROM active_pairings
            WHERE guild_id = ? AND (player1_id = ? OR player2_id = ?) AND status = 'active'
            ORDER BY created_at DESC
@@ -1104,6 +1133,8 @@ def get_active_pairing_for_user(guild_id: int, user_id: int) -> dict | None:
             "player2_deck_url": row[5],
             "created_at": row[6],
             "match_type": row[7] or "ranked",
+            "player1_avatar": row[8],
+            "player2_avatar": row[9],
         }
     return None
 
@@ -1115,7 +1146,8 @@ def get_pairing_by_id(guild_id: int, pairing_id: int) -> dict | None:
     conn.row_factory = sqlite3.Row
     row = conn.execute(
         """SELECT pairing_id, guild_id, player1_id, player2_id,
-                  player1_deck_url, player2_deck_url, created_at, status, match_type, voice
+                  player1_deck_url, player2_deck_url, created_at, status, match_type, voice,
+                  player1_avatar, player2_avatar
            FROM active_pairings
            WHERE guild_id = ? AND pairing_id = ?""",
         (guild_id, pairing_id),
@@ -1137,6 +1169,25 @@ def get_pairing_voice(pairing_id: int) -> bool:
     finally:
         conn.close()
     return bool(row and row[0])
+
+
+def get_pairing_avatars(pairing_id: int) -> dict:
+    """{player_id: avatar} locked to a pairing when the match was made ({} when none)."""
+    if not pairing_id:
+        return {}
+    create_active_pairings_table()
+    conn = sqlite3.connect("match_records.db")
+    try:
+        row = conn.execute(
+            "SELECT player1_id, player1_avatar, player2_id, player2_avatar "
+            "FROM active_pairings WHERE pairing_id = ?",
+            (pairing_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return {}
+    return {pid: avatar for pid, avatar in ((row[0], row[1]), (row[2], row[3])) if avatar}
 
 
 def get_opponent_from_pairing(guild_id: int, user_id: int) -> int | None:
@@ -1178,7 +1229,8 @@ def get_pairing_between_players(guild_id: int, user_id: int, opponent_id: int) -
     cur = conn.cursor()
 
     cur.execute(
-        """SELECT pairing_id, guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, match_type
+        """SELECT pairing_id, guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, match_type,
+                  player1_avatar, player2_avatar
            FROM active_pairings
            WHERE guild_id = ? AND status = 'active'
            AND ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))
@@ -1199,6 +1251,8 @@ def get_pairing_between_players(guild_id: int, user_id: int, opponent_id: int) -
             "player2_deck_url": row[5],
             "created_at": row[6],
             "match_type": row[7] or "ranked",
+            "player1_avatar": row[8],
+            "player2_avatar": row[9],
         }
     return None
 

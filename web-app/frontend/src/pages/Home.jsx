@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { get } from '@/api/client'
-import { getEventLeaderboard, getPaperEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
+import { getEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
 import PostseasonName, { PostseasonLegend } from '@/components/player/BracketMarks'
-import AvatarBadges from '@/components/leaderboard/AvatarBadges'
+import AvatarBadges, { AvatarCell } from '@/components/leaderboard/AvatarBadges'
 import { getAvatarImageFiles, getSeasonAvatarBadges } from '@/api/cards'
-import { badgesByPlayer } from '@/utils/avatarBadges'
+import { badgesByPlayer, getAvatarImagePath } from '@/utils/avatarBadges'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -417,11 +417,16 @@ export function PromoCarousel() {
 function StatBar({ leaderboard, eloKey = 'event_elo' }) {
   if (!leaderboard.length) return null
   const total = leaderboard.length
+  // Avatar-mode seasons list one row per player and avatar; count people once
+  const players = new Set(leaderboard.map((p) => String(p.id))).size
   const top = leaderboard[0][eloKey]
   const avg = Math.round(leaderboard.reduce((s, p) => s + (p[eloKey] || 0), 0) / total)
+  const stats = [['Players', players]]
+  if (total !== players) stats.push(['Avatar Entries', total])
+  stats.push(['Top ELO', top], ['Avg ELO', avg])
   return (
     <div className="flex gap-6 mb-4 text-center">
-      {[['Players', total], ['Top ELO', top], ['Avg ELO', avg]].map(([label, val]) => (
+      {stats.map(([label, val]) => (
         <div key={label}>
           <div className="text-lg font-bold text-secondary">{val}</div>
           <div className="text-xs text-text-muted">{label}</div>
@@ -474,12 +479,13 @@ function YouTubeVideos() {
 
 const STORAGE_KEY = 'home_elo_source_preference'
 
-const SOURCE_LABELS = { online: 'Online', paper: 'Paper', limited: 'Limited' }
+// Paper is hidden: nobody plays on the paper ladder
+const SOURCE_LABELS = { online: 'Online', limited: 'Limited' }
 
 function EloToggle({ source, onChange }) {
   return (
     <div className="inline-flex bg-bg-surface border border-border rounded-soft overflow-hidden">
-      {['online', 'paper', 'limited'].map((s) => (
+      {['online', 'limited'].map((s) => (
         <button
           key={s}
           onClick={() => onChange(s)}
@@ -498,20 +504,50 @@ function EloToggle({ source, onChange }) {
 
 // ── Leaderboard Table ─────────────────────────────────────────
 
+/** Each row's position among the rows on the same avatar ({ place, of }), in ladder order. */
+function rankWithinAvatar(leaderboard) {
+  const totals = {}
+  for (const row of leaderboard) totals[row.avatar] = (totals[row.avatar] || 0) + 1
+  const seen = {}
+  return leaderboard.map((row) => {
+    seen[row.avatar] = (seen[row.avatar] || 0) + 1
+    return { place: seen[row.avatar], of: totals[row.avatar] }
+  })
+}
+
+function avatarImageSrc(avatar, files) {
+  const file = avatar ? getAvatarImagePath(avatar, files) : null
+  return file ? `/avatar-images/${file}` : null
+}
+
 const RANK_LABELS = { 1: 'I', 2: 'II', 3: 'III' }
 
-function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges = {} }) {
+function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges = {}, avatarMode = false, avatarImageFiles = [] }) {
   if (!leaderboard.length) {
     return <p className="text-center text-text-muted py-8">No matches played yet</p>
   }
+  // Player mode: the season "top player with this avatar" badges get their own
+  // column. Avatar mode: every row instead shows where that entry ranks among
+  // everyone playing the same avatar this season.
+  const showBadges = !avatarMode && Object.keys(avatarBadges || {}).length > 0
+  const avatarRanks = avatarMode ? rankWithinAvatar(leaderboard) : null
+  const badgesForRow = (player) => (avatarBadges || {})[String(player.id)] || []
   return (
     <div className="overflow-x-auto">
       <PostseasonLegend className="mb-2 px-1" />
+      {avatarMode && (
+        <p className="text-xs text-text-muted mb-2 px-1">
+          Each avatar is rated separately, so a player can appear once per avatar.
+          Top cut still gives each player one invite.
+        </p>
+      )}
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border text-left">
             <th className="py-2 px-3 w-14 text-text-muted font-semibold">Rank</th>
             <th className="py-2 px-3 text-text-muted font-semibold">Player</th>
+            {showBadges && <th className="py-2 px-3 text-text-muted font-semibold">Badge</th>}
+            {avatarMode && <th className="py-2 px-3 text-text-muted font-semibold">Avatar</th>}
             <th className="py-2 px-3 text-right text-text-muted font-semibold">ELO</th>
           </tr>
         </thead>
@@ -519,7 +555,7 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
           {leaderboard.map((player, index) => {
             const rank = index + 1
             return (
-              <tr key={player.id} className={`border-b border-border/50 hover:bg-bg-surface/50 transition-colors ${rank <= 3 ? `font-semibold` : ''}`}>
+              <tr key={player.entry_id || player.id} className={`border-b border-border/50 hover:bg-bg-surface/50 transition-colors ${rank <= 3 ? `font-semibold` : ''}`}>
                 <td className="py-2 px-3">
                   {rank <= 3 ? (
                     <span className={`inline-flex items-center justify-center w-7 h-7 rounded text-xs font-bold ${
@@ -539,8 +575,21 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
                       {player.name}
                     </Link>
                   </PostseasonName>
-                  <AvatarBadges badges={avatarBadges[String(player.id)]} />
                 </td>
+                {showBadges && (
+                  <td className="py-2 px-3">
+                    <AvatarBadges badges={badgesForRow(player)} withLabel />
+                  </td>
+                )}
+                {avatarMode && (
+                  <td className="py-2 px-3">
+                    <AvatarCell
+                      avatar={player.avatar}
+                      rank={avatarRanks[index]}
+                      imgSrc={avatarImageSrc(player.avatar, avatarImageFiles)}
+                    />
+                  </td>
+                )}
                 <td className="py-2 px-3 text-right">{player[eloKey]}</td>
               </tr>
             )
@@ -555,9 +604,13 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
 
 export default function Home() {
   usePageTitle('Sorcerers Summit')
-  const [source, setSource] = useState(() =>
-    ['paper', 'limited'].includes(localStorage.getItem(STORAGE_KEY)) ? localStorage.getItem(STORAGE_KEY) : 'online'
-  )
+  const [source, setSource] = useState(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY) === 'limited' ? 'limited' : 'online'
+    } catch {
+      return 'online'
+    }
+  })
   const [eventData, setEventData] = useState(null)
   const [loading, setLoading] = useState(true)
   const titleClickCount = useRef(0)
@@ -575,7 +628,7 @@ export default function Home() {
         const trophyRuns = data.trophy_runs || []
         setEventData({ limited: true, leaderboard: Array.isArray(lb) ? lb : [], stats, trophyRuns })
       } else {
-        const data = src === 'paper' ? await getPaperEventLeaderboard() : await getEventLeaderboard()
+        const data = await getEventLeaderboard()
         setEventData(data)
       }
     } catch {
@@ -591,11 +644,14 @@ export default function Home() {
 
   // Current-season "top player with this avatar" badges (online leaderboard)
   const [avatarBadges, setAvatarBadges] = useState({})
+  const [avatarImageFiles, setAvatarImageFiles] = useState([])
   useEffect(() => {
     let cancelled = false
     Promise.all([getSeasonAvatarBadges(), getAvatarImageFiles()])
       .then(([data, files]) => {
-        if (!cancelled) setAvatarBadges(badgesByPlayer(data?.badges, files))
+        if (cancelled) return
+        setAvatarBadges(badgesByPlayer(data?.badges, files))
+        setAvatarImageFiles(files || [])
       })
       .catch(() => {})
     return () => { cancelled = true }
@@ -676,7 +732,12 @@ export default function Home() {
           ) : (
             <>
               <StatBar leaderboard={leaderboard} />
-              <EventLeaderboardTable leaderboard={leaderboard} avatarBadges={source === 'online' ? avatarBadges : undefined} />
+              <EventLeaderboardTable
+                leaderboard={leaderboard}
+                avatarBadges={source === 'online' ? avatarBadges : undefined}
+                avatarImageFiles={avatarImageFiles}
+                avatarMode={eventData.event?.elo_mode === 'avatar'}
+              />
             </>
           )}
         </section>

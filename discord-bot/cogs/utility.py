@@ -185,8 +185,8 @@ class UtilityCog(commands.Cog):
             name="🔧 Admin Commands",
             value=(
                 "`!admin_help` - View all admin commands with details\n"
-                "`!admin_report @winner @loser` - Manually report match\n"
-                "`!spot_elo_reset @user [elo]` - Set user's ELO\n"
+                "`!admin_report @winner @loser` - Manually report match (Avatar mode: `/admin-report`)\n"
+                "`!spot_elo_reset @user [elo] [avatar]` - Set user's ELO (Avatar mode needs the avatar)\n"
                 "`!correct_match <id>` - Flip outcome & recalculate ELO\n"
                 "`!remove_match <id>` - Remove match & revert ELO\n"
                 "`!remove_player @user` - Remove player from rankings\n"

@@ -26,7 +26,7 @@ from services.bracket_builder import (
     winner_name,
 )
 from services.curiosa import CuriosaService
-from services.leaderboard import LeaderboardService
+from services.leaderboard import LeaderboardService, unique_players
 from services.paper_elo import calculate_elo
 from services.sorcery_online_table import TableUnavailable, provision_match_table
 from services.ticket_holders import ticket_holder_ids
@@ -93,7 +93,8 @@ class BracketService:
         """Ladder standings to seed from, flagged with ticket-holder status.
 
         Mirrors the bot's leaderboard message: current-event ELO, restricted to
-        players who actually played this event, best first.
+        players who actually played this event, best first. In an Avatar-mode
+        event each player is seeded once, at their best avatar entry.
         """
         data = self._leaderboard.get_event_leaderboard()
         standings = data.get("leaderboard") or []
@@ -108,7 +109,7 @@ class BracketService:
         holders = ticket_holder_ids(self._repo)
 
         players = []
-        for entry in standings:
+        for entry in unique_players(standings):
             user_id = str(entry["id"])
             is_holder = user_id in holders
             if source == "ticket_holders" and holders and not is_holder:
@@ -120,6 +121,7 @@ class BracketService:
                     "elo": entry.get(elo_key),
                     "games": (entry.get("wins") or 0) + (entry.get("losses") or 0),
                     "is_ticket_holder": is_holder,
+                    "avatar": entry.get("avatar"),
                 }
             )
 

@@ -302,7 +302,8 @@ export default function Avatars() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [eventFilter, setEventFilter] = useState("all");
-  const [sourceFilter, setSourceFilter] = useState("discord");
+  // Online only: the Paper source is hidden (nobody plays on the paper ladder)
+  const sourceFilter = "discord";
   const [sortBy, setSortBy] = useState("avatar-score");
 
   useEffect(() => {
@@ -411,22 +412,6 @@ export default function Avatars() {
               </option>
             ))}
           </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-text-muted">Source:</label>
-          <div className="inline-flex bg-bg-surface border border-border rounded-lg overflow-hidden">
-            {[
-              ["discord", "Online"],
-              ["web", "Paper"],
-            ].map(([val, label]) => (
-              <button
-                key={val}
-                className={`px-3 py-1 text-xs font-medium transition-colors ${sourceFilter === val ? "bg-primary text-bg" : "text-text-muted hover:text-text"}`}
-                onClick={() => setSourceFilter(val)}>
-                {label}
-              </button>
-            ))}
-          </div>
         </div>
         <div className="flex items-center gap-2">
           <label className="text-sm text-text-muted">Sort by:</label>

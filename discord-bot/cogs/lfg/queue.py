@@ -33,6 +33,13 @@ from repositories.limited_repo import save_limited_pairing, get_active_arena_run
 from services.card_points_service import validate_deck_points
 from services.limited_service import auto_start_arena_run
 from services.sorcery_online_matchmaking import provision_sorcery_online_match
+from services.avatar_mode import (
+    check_join_deck,
+    is_avatar_mode,
+    lock_match_avatar,
+    needs_avatar,
+    set_avatar_ladder_stakes,
+)
 from utils.deck_checker import clean_deck_url
 
 logger = logging.getLogger("discord_bot")
@@ -220,6 +227,11 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             is_button_join  # True if from button, False if from !lfg command
         )
         self.queue_type = queue_type
+        if needs_avatar(queue_type):
+            # Avatar-mode season: the deck link is how the avatar is known
+            self.deck_url.required = True
+            self.deck_url.label = "Deck URL (required: sets your avatar)"
+            self.deck_url.placeholder = "Curiosa or Sorcery Online deck link"
         # Keep the voice choice next to the deck URL, above the duration.
         self.voice_select = add_voice_select(self)
 
@@ -438,6 +450,15 @@ async def _process_queue_join(
         await interaction.followup.send(pairing_ban_message(ban), ephemeral=True)
         return
 
+    # Avatar-mode season: the deck must be readable before the player is
+    # queued, so a bad link fails now instead of after they're paired.
+    join_avatar = None
+    if needs_avatar(queue_type):
+        join_avatar, deck_error = await check_join_deck(deck_url)
+        if deck_error:
+            await interaction.followup.send(deck_error, ephemeral=True)
+            return
+
     async with lfg_queue_lock:
         # Check if already in this specific queue type
         user_queues = lfg_queue.get(interaction.user.id, {}).get("queues", {})
@@ -457,6 +478,7 @@ async def _process_queue_join(
             matched_ladder_info = matched_entry.get("ladder_info")
             matched_run_id = int(matched_entry.get("run_id") or 0)
             matched_user_origin = matched_entry.get("origin", "discord")
+            matched_join_avatar = matched_entry.get("avatar")
             match_type = lfg_cog.resolve_match_type(queue_type, matched_queue_type)
             match_voice = resolve_match_voice(voice, matched_entry.get("voice"))
 
@@ -513,6 +535,7 @@ async def _process_queue_join(
             matched_ladder_info = None
             matched_run_id = None
             matched_user_origin = None
+            matched_join_avatar = None
             match_type = None
             match_voice = False
             lfg_cog.add_to_lfg_queue(
@@ -523,6 +546,7 @@ async def _process_queue_join(
                 run_id=run_id,
                 origin=origin,
                 voice=voice,
+                avatar=join_avatar,
             )
 
     # Notify limited ping channel when someone is waiting (no match found)
@@ -586,6 +610,23 @@ async def _process_queue_join(
             )
             return
 
+        # Avatar-mode season: read both decks now and lock the avatars to the match
+        joiner_avatar = matched_avatar = None
+        if match_type == "ranked" and is_avatar_mode():
+            joiner_avatar = await lock_match_avatar(deck_url, join_avatar)
+            matched_avatar = await lock_match_avatar(matched_user_deck_url, matched_join_avatar)
+            if matched_ladder_info:
+                try:
+                    challenger_is_joiner = matched_ladder_info["challenger_id"] == interaction.user.id
+                    set_avatar_ladder_stakes(
+                        matched_ladder_info,
+                        joiner_avatar if challenger_is_joiner else matched_avatar,
+                        matched_user_id if challenger_is_joiner else interaction.user.id,
+                        matched_avatar if challenger_is_joiner else joiner_avatar,
+                    )
+                except Exception as e:
+                    logger.error(f"Could not size avatar ladder stakes: {e}", exc_info=True)
+
         try:
             if match_type == "limited":
                 pairing_id = save_limited_pairing(
@@ -606,6 +647,8 @@ async def _process_queue_join(
                     player2_deck_url=matched_user_deck_url or "",
                     match_type=match_type or "ranked",
                     voice=match_voice,
+                    player1_avatar=joiner_avatar,
+                    player2_avatar=matched_avatar,
                 )
             logger.info(
                 f"Saved {'limited ' if match_type == 'limited' else ''}pairing {pairing_id} in guild {interaction.guild.id}: "
@@ -666,6 +709,7 @@ async def _process_queue_join(
             (interaction.user.id, joiner_global, interaction.user, deck_url, True),
             (matched_user_id, matched_global, matched_user, matched_user_deck_url, False),
         ]
+        avatars = {interaction.user.id: joiner_avatar, matched_user_id: matched_avatar}
         reporter_player, other_player = random.sample(players, 2)
         reporter_id, reporter_global, reporter_user, reporter_deck_url, reporter_is_joiner = reporter_player
         other_id, other_global, other_user, other_deck_url, _ = other_player
@@ -701,9 +745,13 @@ async def _process_queue_join(
         delivery = await send_pairing_messages(
             bot,
             reporter=PairingPlayer(
-                reporter_id, reporter_global, reporter_user, reporter_deck_url
+                reporter_id, reporter_global, reporter_user, reporter_deck_url,
+                avatar=avatars.get(reporter_id),
             ),
-            other=PairingPlayer(other_id, other_global, other_user, other_deck_url),
+            other=PairingPlayer(
+                other_id, other_global, other_user, other_deck_url,
+                avatar=avatars.get(other_id),
+            ),
             match_card_view=match_card_view,
             match_type=match_type,
             provisioned_links=provisioned_links,
@@ -712,8 +760,10 @@ async def _process_queue_join(
 
         ladder_note = ""
         if matched_ladder_info:
+            challenger_id = matched_ladder_info["challenger_id"]
+            opponent_id = interaction.user.id if challenger_id != interaction.user.id else matched_user_id
             ladder_note = ladder_stakes_note(
-                matched_ladder_info["challenger_id"], interaction.user.id
+                challenger_id, opponent_id, avatars.get(challenger_id), avatars.get(opponent_id)
             )
         await announce_pairing(
             lfg_channel,
@@ -738,6 +788,8 @@ async def _process_queue_join(
     else:
         queue_label = "Rumble (Omens)" if queue_type == "points" else queue_type.capitalize()
         deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
+        if join_avatar:
+            deck_msg += f"\n**Avatar:** {join_avatar} (locked when your match is made)"
         deck_msg += f"\n**Voice:** {VOICE_LABELS[voice]}"
         try:
             await interaction.user.send(

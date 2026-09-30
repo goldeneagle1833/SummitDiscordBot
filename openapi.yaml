@@ -2842,12 +2842,17 @@ paths:
                     type:
                     - object
                     - 'null'
+                    description: The active event, including elo_mode ("player" or "avatar").
                   leaderboard:
                     type: array
+                    description: >-
+                      One row per player in Player mode; one row per player and avatar in
+                      Avatar mode (a player can appear more than once).
                     items:
                       type: object
                       required:
                       - id
+                      - entry_id
                       - name
                       - event_elo
                       - wins
@@ -2855,8 +2860,16 @@ paths:
                       properties:
                         id:
                           type: string
+                        entry_id:
+                          type: string
+                          description: Unique per row ("<id>:<avatar>" in Avatar mode, else the id).
                         name:
                           type: string
+                        avatar:
+                          type:
+                          - string
+                          - 'null'
+                          description: The avatar this ELO belongs to (Avatar mode only).
                         event_elo:
                           type: integer
                         wins:

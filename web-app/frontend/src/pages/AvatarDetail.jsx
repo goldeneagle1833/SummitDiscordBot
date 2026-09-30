@@ -50,28 +50,6 @@ function getElementStyle(elements) {
   return { bar: 'from-purple-500 to-purple-700', text: 'text-purple-400' }
 }
 
-// ── Source Toggle ─────────────────────────────────────────────
-
-const SOURCE_KEY = 'avatars_source_preference'
-
-function SourceToggle({ source, onChange }) {
-  return (
-    <div className="inline-flex bg-bg-surface border border-border rounded-soft overflow-hidden">
-      {[['discord', 'Online'], ['web', 'Paper']].map(([val, label]) => (
-        <button
-          key={val}
-          onClick={() => onChange(val)}
-          className={`px-4 py-1.5 text-xs font-medium transition-colors ${
-            source === val ? 'bg-primary text-black' : 'text-text-muted hover:bg-bg-elevated hover:text-primary'
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 // ── Stat Card ─────────────────────────────────────────────────
 
 function StatCard({ value, label, sub }) {
@@ -377,7 +355,8 @@ export default function AvatarDetail() {
   const [filters, setFilters] = useState({ events: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [source, setSource] = useState(() => localStorage.getItem(SOURCE_KEY) || 'discord')
+  // Online only: the Paper source is hidden (nobody plays on the paper ladder)
+  const source = 'discord'
   const [eventFilter, setEventFilter] = useState('all')
 
   // Load filters + image files once
@@ -410,10 +389,6 @@ export default function AvatarDetail() {
 
   useEffect(() => { fetchAvatar() }, [fetchAvatar])
 
-  const handleSourceChange = (s) => {
-    setSource(s)
-    localStorage.setItem(SOURCE_KEY, s)
-  }
 
   if (loading && !avatar) return <Spinner className="py-20" />
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
@@ -457,7 +432,6 @@ export default function AvatarDetail() {
         </div>
         <div className="flex items-center gap-2">
           <label className="text-sm text-text-muted">Source:</label>
-          <SourceToggle source={source} onChange={handleSourceChange} />
         </div>
       </div>
 

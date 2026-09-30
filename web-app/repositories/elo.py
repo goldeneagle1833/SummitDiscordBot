@@ -101,8 +101,10 @@ class EloRepository:
             conn.close()
             return None
 
-        cur.execute("""
-            SELECT event_id, event_name, start_date
+        cur.execute("PRAGMA table_info(events)")
+        mode_column = "elo_mode" if "elo_mode" in {r[1] for r in cur.fetchall()} else "'player'"
+        cur.execute(f"""
+            SELECT event_id, event_name, start_date, {mode_column}
             FROM events
             WHERE is_active = 1
             LIMIT 1
@@ -111,8 +113,67 @@ class EloRepository:
         conn.close()
 
         if row:
-            return {"event_id": row[0], "event_name": row[1], "start_date": row[2]}
+            return {
+                "event_id": row[0],
+                "event_name": row[1],
+                "start_date": row[2],
+                # "player": one event ELO per player; "avatar": one per player and avatar
+                "elo_mode": row[3] or "player",
+            }
         return None
+
+    def get_event_elo_mode(self, event_id: int) -> str:
+        """An event's ELO mode ("player" for events from before modes existed)."""
+        conn = self._get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(events)")
+            if "elo_mode" not in {r[1] for r in cur.fetchall()}:
+                return "player"
+            cur.execute("SELECT elo_mode FROM events WHERE event_id = ?", (event_id,))
+            row = cur.fetchone()
+        finally:
+            conn.close()
+        return (row[0] if row else None) or "player"
+
+    def get_avatar_standings(self, event_id: int) -> list[dict]:
+        """Every (player, avatar) entry of an Avatar-mode event, best first."""
+        conn = self._get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_avatar_standings'"
+            )
+            if not cur.fetchone():
+                return []
+            cur.execute(
+                """SELECT user_id, avatar, user_display_name, event_elo, games_played
+                   FROM event_avatar_standings
+                   WHERE event_id = ? AND games_played > 0
+                   ORDER BY event_elo DESC, games_played DESC, user_id ASC, avatar ASC""",
+                (event_id,),
+            )
+            rows = cur.fetchall()
+        finally:
+            conn.close()
+        return [
+            {
+                "user_id": row[0],
+                "avatar": row[1],
+                "display_name": row[2],
+                "event_elo": row[3],
+                "games_played": row[4],
+            }
+            for row in rows
+        ]
+
+    def get_player_avatar_standings(self, event_id: int, user_id) -> list[dict]:
+        """One player's avatar entries in an event, each with its ladder rank."""
+        return [
+            {**entry, "rank": rank}
+            for rank, entry in enumerate(self.get_avatar_standings(event_id), start=1)
+            if str(entry["user_id"]) == str(user_id)
+        ]
 
     def get_all_elos(self) -> list[int]:
         """Get all lifetime ELO values for distribution calculation."""
@@ -184,6 +245,36 @@ class EloRepository:
         conn.commit()
         conn.close()
         return changed
+
+    def reverse_match_elo(self, player_changes, avatar_event_id=None) -> None:
+        """Undo one match on every ladder it moved, in one transaction.
+
+        ``player_changes`` is a list of dicts with user_id, lifetime, event and
+        (Avatar-mode events) avatar / avatar_change. Each ladder is reverted by
+        its own recorded change.
+        """
+        conn = self._get_connection()
+        try:
+            cur = conn.cursor()
+            for change in player_changes:
+                cur.execute(
+                    "UPDATE overall_standings SET online_elo = online_elo - ?, "
+                    "online_event_elo = online_event_elo - ? WHERE user_id = ?",
+                    (change["lifetime"], change["event"], change["user_id"]),
+                )
+                if avatar_event_id and change.get("avatar") and change.get("avatar_change") is not None:
+                    cur.execute(
+                        "UPDATE event_avatar_standings SET event_elo = event_elo - ?, "
+                        "games_played = MAX(games_played - 1, 0) "
+                        "WHERE event_id = ? AND user_id = ? AND avatar = ?",
+                        (change["avatar_change"], avatar_event_id, change["user_id"], change["avatar"]),
+                    )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def upsert_user_elo(self, user_id: int, display_name: str, new_elo: int):
         """Insert or update a user's lifetime ELO in overall_standings."""

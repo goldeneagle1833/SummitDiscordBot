@@ -189,7 +189,9 @@ class EloCog(commands.Cog):
             if check_is_admin(ctx):
                 msg += f"**Lifetime ELO:** {lifetime_elo} (Rank #{lifetime_rank})\n"
 
-            if active_event:
+            if active_event and active_event.get("elo_mode") == "avatar":
+                msg += _avatar_rank_lines(active_event, target_user.id)
+            elif active_event:
                 if has_event_games:
                     msg += f"**Event ELO ({active_event['event_name']}):** {event_elo} (Rank #{event_rank})"
                 else:
@@ -240,25 +242,15 @@ class EloCog(commands.Cog):
         """Check the top 16 event Elo rankings for the current event."""
         from utils.database import get_active_event, get_event_participant_ids
 
+        from services.avatar_mode import get_event_ladder
+
         active_event = get_active_event()
         if not active_event:
             await ctx.send("No active event. Check back when a new event starts!")
             return
 
-        event_start_str = active_event["start_date"].isoformat()
-        event_participants = get_event_participant_ids(event_start_str)
-
-        conn = sqlite3.connect("elo.db")
-        cur = conn.cursor()
-        cur.execute(
-            """SELECT user_id, user_display_name, online_event_elo FROM overall_standings
-               ORDER BY online_event_elo DESC"""
-        )
-        all_rows = cur.fetchall()
-        conn.close()
-
-        # Filter to only players who have actually played event matches
-        rows = [(name, elo) for uid, name, elo in all_rows if uid in event_participants][:16]
+        # One row per player (Player mode) or per player/avatar entry (Avatar mode)
+        rows = [(entry.label, entry.event_elo) for entry in get_event_ladder(active_event)[:16]]
 
         if rows:
             leaderboard = f"🏆 **{active_event['event_name']} Leaderboard** 🏆\n"
@@ -357,7 +349,10 @@ class EloCog(commands.Cog):
                 if snapshot["winner"]["lifetime_before"] is not None
                 else "Lifetime: unavailable"
             )
-        lines.append(f"Event: {snapshot['winner']['event_before']} -> {snapshot['winner']['event_after']}")
+        lines.append(
+            f"Event{_avatar_label(snapshot['winner'])}: "
+            f"{snapshot['winner']['event_before']} -> {snapshot['winner']['event_after']}"
+        )
         lines.append(f"**Loser:** {snapshot['loser_display_name']}")
         if is_admin:
             lines.append(
@@ -365,7 +360,10 @@ class EloCog(commands.Cog):
                 if snapshot["loser"]["lifetime_before"] is not None
                 else "Lifetime: unavailable"
             )
-        lines.append(f"Event: {snapshot['loser']['event_before']} -> {snapshot['loser']['event_after']}")
+        lines.append(
+            f"Event{_avatar_label(snapshot['loser'])}: "
+            f"{snapshot['loser']['event_before']} -> {snapshot['loser']['event_after']}"
+        )
 
         if snapshot["notes"]:
             lines.append("**Notes:**")
@@ -373,6 +371,26 @@ class EloCog(commands.Cog):
 
         await ctx.send("\n".join(lines))
 
+
+
+def _avatar_label(side: dict) -> str:
+    return f" ({side['avatar']})" if side.get("avatar") else ""
+
+
+def _avatar_rank_lines(active_event, user_id) -> str:
+    """!rank in Avatar mode: every avatar entry the player has, with its rank."""
+    from repositories.avatar_elo_repo import get_player_avatar_standings
+
+    entries = get_player_avatar_standings(active_event["event_id"], user_id)
+    header = f"**Event ELO ({active_event['event_name']}) — rated per avatar:**"
+    if not entries:
+        return f"{header}\nNo matches yet."
+    lines = [
+        f"- **{entry['avatar']}:** {entry['event_elo']} (Rank #{entry['rank']}, "
+        f"{entry['games_played']} game{'s' if entry['games_played'] != 1 else ''})"
+        for entry in entries
+    ]
+    return header + "\n" + "\n".join(lines)
 
 
 async def setup(bot):

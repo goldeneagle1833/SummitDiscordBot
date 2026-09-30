@@ -20,6 +20,12 @@ from cogs.lfg.voice import (
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
 from repositories.limited_repo import get_active_arena_run
 from repositories.pairing_bans_repo import get_pairing_ban, pairing_ban_message
+from services.avatar_mode import (
+    AVATAR_QUEUE_TYPES,
+    DECK_REQUIRED_MESSAGE,
+    DECK_UNREADABLE_MESSAGE,
+    active_event_mode,
+)
 from services.card_points_service import validate_deck_points
 from services.summit_result_reporting import record_sorcery_online_result
 from cogs.lfg.voice import SUMMIT_VOICE_URL
@@ -112,11 +118,18 @@ async def _status(bot, user_id):
     if cog:
         cog.clean_expired_lfg()
     _prune_results()
+    elo_mode = active_event_mode()
     async with lfg_queue_lock:
         joined = lfg_queue.get(user_id, {}).get("queues", {})
         queues = []
         for definition in enabled_queue_definitions():
             queue_type = definition["type"]
+            # Avatar-mode seasons read the avatar from the deck, so ranked needs one
+            deck_mode = (
+                "required"
+                if elo_mode == "avatar" and queue_type in AVATAR_QUEUE_TYPES
+                else definition["deck_mode"]
+            )
             entries = [
                 user_data["queues"][queue_type]
                 for user_data in lfg_queue.values()
@@ -128,7 +141,7 @@ async def _status(bot, user_id):
                 "emoji": definition["emoji"],
                 "waiting_count": len(entries),
                 "joined": queue_type in joined or matching_web_users.get(user_id) == queue_type,
-                "deck_mode": definition["deck_mode"],
+                "deck_mode": deck_mode,
                 # Every queue takes a voice / no_voice choice (voice is the default).
                 "voice_options": True,
                 "voice_choices": list(VOICE_PREFERENCES),
@@ -149,6 +162,7 @@ async def _status(bot, user_id):
         "membership": "member",
         "summit_invite_url": os.getenv("SUMMIT_DISCORD_INVITE", "https://discord.gg/sorcererssummit"),
         "voice_url": VOICE_URL,
+        "elo_mode": elo_mode,
         "queues": queues,
         "result": result,
     }
@@ -232,6 +246,9 @@ async def start_matchmaking_api(bot):
         run_id = None
         if definition["deck_mode"] == "required" and not deck_url:
             raise web.HTTPBadRequest(text="A deck is required for this queue")
+        avatar_required = queue_type in AVATAR_QUEUE_TYPES and active_event_mode() == "avatar"
+        if avatar_required and not deck_url:
+            raise web.HTTPBadRequest(text=DECK_REQUIRED_MESSAGE)
         if queue_type == "limited":
             active_run = get_active_arena_run(user_id)
             if not (
@@ -250,6 +267,8 @@ async def start_matchmaking_api(bot):
             bot, interaction, queue_type, duration, deck_url,
             run_id=run_id, origin="sorcery_online", voice=voice,
         )
+        if avatar_required and DECK_UNREADABLE_MESSAGE in interaction.followup.messages:
+            raise web.HTTPBadRequest(text=DECK_UNREADABLE_MESSAGE)
         return web.json_response(await _status(bot, user_id))
 
     async def leave(request):

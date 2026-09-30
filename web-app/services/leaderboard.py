@@ -6,6 +6,28 @@ from repositories.matches import MatchRepository
 from repositories.user_profiles import UserProfileRepository
 
 
+def unique_players(entries) -> list:
+    """Each player's best entry only, keeping ladder order.
+
+    Top cut belongs to the player: in an Avatar-mode event a second
+    qualifying avatar never takes a second slot, so the next unique player
+    moves up. In Player mode every entry is already a different player.
+    """
+    seen = set()
+    best = []
+    for entry in entries:
+        user_id = str(entry.get("user_id", entry.get("id")))
+        if user_id in seen:
+            continue
+        seen.add(user_id)
+        best.append(entry)
+    return best
+
+
+def is_avatar_mode(event: dict | None) -> bool:
+    return bool(event) and event.get("elo_mode") == "avatar"
+
+
 def voice_requirement() -> dict:
     """Top-cut voice requirement settings for the season leaderboards."""
     return {
@@ -66,9 +88,43 @@ class LeaderboardService:
 
         return leaderboard_data
 
+    def _avatar_event_rows(self, active_event, wins_key="wins", losses_key="losses") -> list[dict]:
+        """Avatar-mode ladder: one row per (player, avatar) entry, best first."""
+        event_start = active_event.get("start_date")
+        records = self._match_repo.get_season_avatar_records(event_start) if event_start else {}
+        voice_games = self._match_repo.get_season_voice_games(event_start) if event_start else {}
+        rows = []
+        for entry in self._elo_repo.get_avatar_standings(active_event["event_id"]):
+            user_id = str(entry["user_id"])
+            record = records.get((user_id, entry["avatar"]), {"wins": 0, "losses": 0})
+            rows.append(
+                {
+                    "id": user_id,
+                    "entry_id": f"{user_id}:{entry['avatar']}",
+                    "name": self._name(user_id, entry["display_name"]),
+                    "avatar": entry["avatar"],
+                    "event_elo": entry["event_elo"],
+                    wins_key: record["wins"],
+                    losses_key: record["losses"],
+                    # Voice games count toward top cut per player, not per avatar
+                    "voice_games": voice_games.get(user_id, 0),
+                }
+            )
+        return rows
+
     def get_event_leaderboard(self) -> dict:
-        """Get event leaderboard with active event info and season records."""
+        """Get event leaderboard with active event info and season records.
+
+        Player mode: one row per player. Avatar mode: one row per player and
+        avatar (each carries `avatar` and a unique `entry_id`).
+        """
         active_event = self._elo_repo.get_active_event()
+        if is_avatar_mode(active_event):
+            return {
+                "event": active_event,
+                "leaderboard": self._avatar_event_rows(active_event),
+                "voice_requirement": voice_requirement(),
+            }
         standings = self._elo_repo.get_event_standings()
 
         season_records = {}
@@ -88,7 +144,9 @@ class LeaderboardService:
                 leaderboard_data.append(
                     {
                         "id": str(user_id),
+                        "entry_id": str(user_id),
                         "name": self._name(user_id, standing["display_name"]),
+                        "avatar": None,
                         "event_elo": standing["event_elo"],
                         "wins": record["wins"],
                         "losses": record["losses"],
@@ -109,6 +167,18 @@ class LeaderboardService:
 
         # Lifetime section: unified (all sources)
         lifetime_data = self.get_leaderboard()
+
+        if is_avatar_mode(active_event):
+            return {
+                "lifetime": lifetime_data,
+                "event": {
+                    "info": active_event,
+                    "leaderboard": self._avatar_event_rows(
+                        active_event, wins_key="season_wins", losses_key="season_losses"
+                    ),
+                    "voice_requirement": voice_requirement(),
+                },
+            }
 
         event_data = []
         event_player_ids = set()
@@ -132,7 +202,9 @@ class LeaderboardService:
                 event_data.append(
                     {
                         "id": str(user_id),
+                        "entry_id": str(user_id),
                         "name": self._name(user_id, standing["display_name"]),
+                        "avatar": None,
                         "event_elo": standing["event_elo"],
                         "season_wins": record["wins"],
                         "season_losses": record["losses"],

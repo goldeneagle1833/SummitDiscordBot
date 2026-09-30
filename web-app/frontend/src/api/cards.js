@@ -10,7 +10,10 @@ export const getAvatarTopPlayers = (params) => {
 }
 export const getAvatar = (name) => get(`/api/avatars/${encodeURIComponent(name)}`)
 export const getAvatarImageFiles = () => get('/api/avatars/image-files')
-export const getAvatarFilters = () => get('/api/avatars/filters')
+export const getAvatarFilters = (params) => {
+  const query = params ? `?${new URLSearchParams(params)}` : ''
+  return get(`/api/avatars/filters${query}`)
+}
 export const getPlayDrawStats = () => get('/api/avatars/play-draw-stats')
 export const getSeasonStats = () => get('/api/avatars/season-stats')
 export const getSeasonAvatarBadges = () => get('/api/avatars/season-top-players')

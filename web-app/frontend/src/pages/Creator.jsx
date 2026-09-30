@@ -18,7 +18,8 @@ export default function Creator() {
   const [cards, setCards] = useState([])
   const [filters, setFilters] = useState({ events: [] })
   const [eventFilter, setEventFilter] = useState('all')
-  const [sourceFilter, setSourceFilter] = useState('all')
+  // The Online/Paper source toggle is hidden (nobody plays on the paper ladder)
+  const sourceFilter = 'all'
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
@@ -160,20 +161,6 @@ export default function Creator() {
               </option>
             ))}
           </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-text-muted">Source:</label>
-          <div className="inline-flex bg-bg-surface border border-border rounded-lg overflow-hidden">
-            {[['discord', 'Online'], ['web', 'Paper']].map(([val, label]) => (
-              <button
-                key={val}
-                className={`px-3 py-1 text-xs font-medium transition-colors ${sourceFilter === val ? 'bg-primary text-bg' : 'text-text-muted hover:text-text'}`}
-                onClick={() => setSourceFilter(val)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
         </div>
         <div className="flex items-center gap-2">
           <button

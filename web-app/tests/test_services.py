@@ -86,8 +86,8 @@ class TestLeaderboardService:
         result = service.get_event_leaderboard()
 
         assert result["leaderboard"] == [
-            {"id": "1", "name": "Alice", "event_elo": 1640, "wins": 5, "losses": 2,
-             "voice_games": 3},
+            {"id": "1", "entry_id": "1", "name": "Alice", "avatar": None, "event_elo": 1640,
+             "wins": 5, "losses": 2, "voice_games": 3},
         ]
         assert result["voice_requirement"] == {"min_games": 5, "enforced": False}
         match_repo.get_season_records.assert_called_once_with("2025-01-01")

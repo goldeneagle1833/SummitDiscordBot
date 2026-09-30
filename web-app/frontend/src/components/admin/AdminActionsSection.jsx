@@ -4,6 +4,7 @@ import { get, post } from '@/api/client'
 export default function AdminActionsSection({ onRefresh }) {
   const [activeEvent, setActiveEvent] = useState(undefined) // undefined = loading
   const [eventName, setEventName] = useState('')
+  const [eloMode, setEloMode] = useState('player')
   const [activityHours, setActivityHours] = useState(24)
   const [activityResult, setActivityResult] = useState(null)
   const [activityLoading, setActivityLoading] = useState(false)
@@ -54,17 +55,20 @@ export default function AdminActionsSection({ onRefresh }) {
 
   const handleStartEvent = async () => {
     if (!eventName.trim()) { alert('Please enter an event name.'); return }
+    const modeText = eloMode === 'avatar'
+      ? 'AVATAR mode: every player/avatar pair gets its own event ELO, and ranked games need a deck link.'
+      : 'PLAYER mode: one event ELO per player.'
     if (!confirm(
-      `Start new event "${eventName}"?\n\nThis will archive the current event (if any) and reset event ELO for all players.`
+      `Start new event "${eventName}"?\n\n${modeText}\nThe mode can't be changed once the event starts.\n\nThis will archive the current event (if any) and reset event ELO for all players.`
     )) return
 
     setActionLoading('start')
     try {
-      const d = await post('/api/admin/start-event', { event_name: eventName.trim() })
+      const d = await post('/api/admin/start-event', { event_name: eventName.trim(), elo_mode: eloMode })
       if (d.success) {
         alert('✅ ' + d.message)
         setEventName('')
-        setActiveEvent({ event_name: eventName.trim() })
+        setActiveEvent({ event_name: eventName.trim(), elo_mode: eloMode })
         onRefresh?.()
       } else {
         alert('❌ Error: ' + d.error)
@@ -107,6 +111,7 @@ export default function AdminActionsSection({ onRefresh }) {
         }`}>
           {activeEvent
             ? `📅 Current Event: ${activeEvent.event_name}${activeEvent.event_id ? ` (ID: ${activeEvent.event_id})` : ''}`
+              + ` · ${activeEvent.elo_mode === 'avatar' ? 'Avatar' : 'Player'} mode`
             : 'ℹ️ No active event'}
         </div>
       )}
@@ -183,6 +188,32 @@ export default function AdminActionsSection({ onRefresh }) {
             className="w-full bg-bg-surface border border-border rounded px-3 py-1.5 text-sm"
             maxLength={100}
           />
+          <fieldset className="text-xs space-y-1">
+            <legend className="text-text-muted mb-1">ELO mode (locked once the event starts)</legend>
+            <label className="flex items-start gap-2">
+              <input
+                type="radio"
+                name="elo_mode"
+                value="player"
+                checked={eloMode === 'player'}
+                onChange={() => setEloMode('player')}
+              />
+              <span><strong>Player</strong>: one event ELO per player</span>
+            </label>
+            <label className="flex items-start gap-2">
+              <input
+                type="radio"
+                name="elo_mode"
+                value="avatar"
+                checked={eloMode === 'avatar'}
+                onChange={() => setEloMode('avatar')}
+              />
+              <span>
+                <strong>Avatar</strong>: one event ELO per player and avatar; ranked games need a deck link.
+                Top cut stays one invite per player.
+              </span>
+            </label>
+          </fieldset>
           <button
             onClick={handleStartEvent}
             disabled={actionLoading === 'start'}

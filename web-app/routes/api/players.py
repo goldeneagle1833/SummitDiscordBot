@@ -16,6 +16,7 @@ from repositories.blocked_users_repo import BlockedUsersRepository
 from utils.auth import is_admin
 from utils.card_images import resolve_card_image
 from services.curiosa import is_deck_url, normalize_deck_url
+from services.avatar_elo import get_player_avatar_changes, get_player_avatar_elo
 
 logger = logging.getLogger(__name__)
 
@@ -1578,7 +1579,7 @@ def player_api(player_id):
                     match_conn_tmp.close()
 
                     elo_cur.execute(
-                        "SELECT user_id, event_elo FROM overall_standings WHERE event_elo > ?",
+                        "SELECT user_id, online_event_elo FROM overall_standings WHERE online_event_elo > ?",
                         (event_elo,),
                     )
                     displayed_rank = sum(1 for r in elo_cur.fetchall() if r[0] in bot_participants) + 1
@@ -1888,6 +1889,21 @@ def player_api(player_id):
         )
     avatar_performance.sort(key=lambda x: x["wins"] + x["losses"], reverse=True)
 
+    # Avatar-mode events: every avatar the player has an event ELO on, with ranks
+    try:
+        avatar_elo = get_player_avatar_elo(
+            player_id_normalized, event_filter, archive_event_id,
+            elo_db_path=ELO_DB_PATH, match_db_path=MATCH_RECORDS_DB_PATH,
+        )
+    except Exception:
+        logger.exception("Could not load avatar event ELO for %s", player_id_normalized)
+        avatar_elo = {"elo_mode": "player", "entries": [], "history": {}}
+    entries_by_avatar = {e["avatar"]: e for e in avatar_elo["entries"]}
+    for perf in avatar_performance:
+        entry = entries_by_avatar.get(perf["name"])
+        perf["event_elo"] = entry["event_elo"] if entry else None
+        perf["event_rank"] = entry["rank"] if entry else None
+
     # Opponent avatar stats - only count main avatar (type: "Avatar"), exclude sideboard
     opponent_avatar_stats = {}
     for row in all_rows:
@@ -2176,12 +2192,18 @@ def player_api(player_id):
             return True
         return False if len(row) > 24 and row[24] is not None else None
 
+    # Avatar-mode events rate the avatar entry, so its change is the one to show
+    avatar_changes = get_player_avatar_changes(player_id_normalized, MATCH_RECORDS_DB_PATH)
+
     def _build_match_entry(row):
         """Convert a raw DB row into a match history dict."""
         did_win = row[0]
         opponent_name = row[5] if did_win else row[4]
         opponent_id = str(row[11]) if did_win else str(row[10])
         elo_change = row[7] if did_win else row[8]
+        avatar_change = avatar_changes.get((str(row[6]), str(row[10]), str(row[11])))
+        if avatar_change is not None:
+            elo_change = avatar_change[0] if did_win else avatar_change[1]
 
         player_deck_url = None
         opponent_deck_url = None
@@ -2630,6 +2652,15 @@ def player_api(player_id):
                 "on_draw_win_rate": round(casual_draw_win_rate, 1),
             },
             "avatar_performance": avatar_performance if _section_visible("avatar_performance") else [],
+            # Avatar-mode events: one event ELO per avatar (empty in Player mode).
+            # The per-avatar ELOs and ranks are public like the event ladder; the
+            # graph follows the ELO history section's visibility.
+            "avatar_event_elo": {
+                "elo_mode": avatar_elo["elo_mode"],
+                "event_name": avatar_elo.get("event_name"),
+                "entries": avatar_elo["entries"],
+                "history": avatar_elo["history"] if _section_visible("elo_history") else {},
+            },
             "avatar_matchups": avatar_matchups if _section_visible("avatar_matchups") else [],
             "recent_decks": recent_decks if _section_visible("recent_decks") else [],
             "elo_history": elo_history if _section_visible("elo_history") else [],

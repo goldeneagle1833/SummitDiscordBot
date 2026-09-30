@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { getAvatarFilters, getAvatarTopPlayers } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -38,19 +38,47 @@ function getWinRateClass(winRate) {
 export default function AvatarTopPlayers() {
   usePageTitle('Top Avatar Players')
 
+  // ?avatar=<name>&event=<season> opens the page on one avatar and season (the
+  // home leaderboard links here). With no season given it shows the running
+  // season, or all seasons between seasons.
+  const [searchParams, setSearchParams] = useSearchParams()
   const [data, setData] = useState({ avatars: [] })
   const [filters, setFilters] = useState({ events: [] })
-  const [selectedAvatar, setSelectedAvatar] = useState('')
-  const [eventFilter, setEventFilter] = useState('all')
+  const [selectedAvatar, setSelectedAvatarState] = useState(() => searchParams.get('avatar') || '')
+  const [eventFilter, setEventFilterState] = useState(() => searchParams.get('event') || 'current')
   const [sourceFilter, setSourceFilter] = useState('discord')
   const [sortBy, setSortBy] = useState('avatar_score')
   const [minGames, setMinGames] = useState(10)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  // Keep the choice in the URL so the view can be shared or bookmarked
+  const updateParam = (key, value, fallback) => {
+    setSearchParams((params) => {
+      const next = new URLSearchParams(params)
+      if (value && value !== fallback) next.set(key, value)
+      else next.delete(key)
+      return next
+    }, { replace: true })
+  }
+  const setSelectedAvatar = (value) => {
+    setSelectedAvatarState(value)
+    updateParam('avatar', value, '')
+  }
+  const setEventFilter = (value) => {
+    setEventFilterState(value)
+    updateParam('event', value, 'current')
+  }
+
   useEffect(() => {
-    getAvatarFilters()
-      .then(setFilters)
+    // The current season is public on this page (the home leaderboard links here)
+    getAvatarFilters({ include_active: 1 })
+      .then((result) => {
+        setFilters(result)
+        // Between seasons there's no current one to default to
+        const hasCurrent = (result.events || []).some((ev) => ev.is_active)
+        if (!hasCurrent) setEventFilterState((value) => (value === 'current' ? 'all' : value))
+      })
       .catch(() => {})
   }, [])
 
@@ -66,7 +94,7 @@ export default function AvatarTopPlayers() {
       .then((result) => {
         const avatars = result.avatars || []
         setData({ ...result, avatars })
-        setSelectedAvatar((current) => {
+        setSelectedAvatarState((current) => {
           if (avatars.some((avatar) => avatar.name === current)) return current
           return avatars[0]?.name || ''
         })
@@ -119,16 +147,16 @@ export default function AvatarTopPlayers() {
           </label>
 
           <label className="block">
-            <span className="text-xs uppercase tracking-wide text-text-muted">Event</span>
+            <span className="text-xs uppercase tracking-wide text-text-muted">Season</span>
             <select
               value={eventFilter}
               onChange={(e) => setEventFilter(e.target.value)}
               className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm"
             >
-              <option value="all">All Events</option>
-              {(filters.events || []).map((ev) => (
+              <option value="all">All Seasons</option>
+              {[...(filters.events || [])].sort((a, b) => Number(b.is_active) - Number(a.is_active)).map((ev) => (
                 <option key={ev.event_id || 'current'} value={ev.is_active ? 'current' : String(ev.event_id)}>
-                  {ev.event_name}
+                  {ev.is_active ? `${ev.event_name} (current)` : ev.event_name}
                 </option>
               ))}
             </select>
@@ -142,7 +170,6 @@ export default function AvatarTopPlayers() {
               className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm"
             >
               <option value="discord">Online</option>
-              <option value="web">Paper</option>
               <option value="all">All Sources</option>
             </select>
           </label>

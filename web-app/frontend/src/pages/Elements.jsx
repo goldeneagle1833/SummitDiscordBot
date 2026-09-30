@@ -161,7 +161,8 @@ export default function Elements() {
   const { user } = useAuth()
   const isAdmin = user?.is_admin === true
 
-  const [source, setSource] = useState(() => localStorage.getItem('elements_source_preference') || 'discord')
+  // Online only: the Paper source is hidden (nobody plays on the paper ladder)
+  const source = 'discord'
   const [eventFilter, setEventFilter] = useState('all')
   const [events, setEvents] = useState([])
   const [data, setData] = useState(null)
@@ -200,10 +201,6 @@ export default function Elements() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  const handleSource = (s) => {
-    setSource(s)
-    localStorage.setItem('elements_source_preference', s)
-  }
 
   if (loading) return <Spinner className="py-20" />
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
@@ -251,27 +248,6 @@ export default function Elements() {
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-text-muted">Match Source:</label>
-          <div className="inline-flex bg-bg-surface border border-border rounded-lg overflow-hidden">
-            {[
-              { key: 'discord', label: 'Online' },
-              { key: 'web', label: 'Paper' },
-            ].map(({ key, label }) => (
-              <button
-                key={key}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                  source === key
-                    ? 'bg-secondary text-bg-base font-semibold'
-                    : 'text-text-muted hover:text-text-primary hover:bg-bg-raised'
-                }`}
-                onClick={() => handleSource(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       {elements.length === 0 ? (

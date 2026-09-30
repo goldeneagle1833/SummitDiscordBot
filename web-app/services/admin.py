@@ -71,34 +71,49 @@ class AdminService:
         winner_elo_change = match["winner_elo_change"]
         loser_elo_change = match["loser_elo_change"]
 
-        # Reverse ELO for winner
-        try:
-            winner_current = self._elo_repo.get_user_elo(winner_id)
-            if winner_current is not None:
-                new_winner_elo = winner_current - winner_elo_change
-                self._elo_repo.upsert_user_elo(
-                    winner_id, match["winner_name"] or f"User#{winner_id}", new_winner_elo
-                )
-        except Exception as e:
-            logger.warning(f"Could not reverse winner ELO: {e}")
+        # Undo every ladder by its own change: lifetime by the lifetime change
+        # (very old rows only stored the event change), event by the event
+        # change, and in Avatar-mode events the two avatar entries.
+        active_event = self._elo_repo.get_active_event()
+        avatar_event_id = (
+            active_event["event_id"]
+            if active_event and active_event.get("elo_mode") == "avatar"
+            else None
+        )
 
-        # Reverse ELO for loser
+        def _lifetime(side):
+            value = match.get(f"{side}_lifetime_elo_change")
+            return match[f"{side}_elo_change"] if value is None else value
+
         try:
-            loser_current = self._elo_repo.get_user_elo(loser_id)
-            if loser_current is not None:
-                new_loser_elo = loser_current - loser_elo_change
-                self._elo_repo.upsert_user_elo(
-                    loser_id, match["loser_name"] or f"User#{loser_id}", new_loser_elo
-                )
+            self._elo_repo.reverse_match_elo(
+                [
+                    {
+                        "user_id": winner_id,
+                        "lifetime": _lifetime("winner"),
+                        "event": winner_elo_change,
+                        "avatar": match.get("winner_avatar"),
+                        "avatar_change": match.get("winner_avatar_elo_change"),
+                    },
+                    {
+                        "user_id": loser_id,
+                        "lifetime": _lifetime("loser"),
+                        "event": loser_elo_change,
+                        "avatar": match.get("loser_avatar"),
+                        "avatar_change": match.get("loser_avatar_elo_change"),
+                    },
+                ],
+                avatar_event_id=avatar_event_id,
+            )
         except Exception as e:
-            logger.warning(f"Could not reverse loser ELO: {e}")
+            logger.warning(f"Could not reverse ELO for match #{match_id}: {e}")
 
         deleted = self._match_repo.delete_match(numeric_id)
         if deleted:
             logger.info(
                 f"Admin removed bot match #{match_id}: "
-                f"winner={winner_id} (ELO {winner_elo_change:+d} reversed), "
-                f"loser={loser_id} (ELO {loser_elo_change:+d} reversed)"
+                f"winner={winner_id} (ELO {int(winner_elo_change):+d} reversed), "
+                f"loser={loser_id} (ELO {int(loser_elo_change):+d} reversed)"
             )
             return {
                 "success": True,
@@ -346,6 +361,15 @@ class AdminService:
                 cur.execute("UPDATE event_standings_archive SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
                 updates["event_standings_archive"] = cur.rowcount
 
+            # event_avatar_standings (Avatar-mode events): an entry the new
+            # account already has for the same event and avatar is kept as is
+            if "event_avatar_standings" in tables:
+                cur.execute(
+                    "UPDATE OR IGNORE event_avatar_standings SET user_id = ? WHERE user_id = ?",
+                    (new_user_id, old_user_id),
+                )
+                updates["event_avatar_standings"] = cur.rowcount
+
             # limited_event_standings_archive
             if "limited_event_standings_archive" in tables:
                 cur.execute("UPDATE limited_event_standings_archive SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
@@ -470,6 +494,10 @@ class AdminService:
             if "event_standings_archive" in tables:
                 cur.execute("DELETE FROM event_standings_archive WHERE user_id = ?", (user_id,))
                 deleted["event_standings_archive"] = cur.rowcount
+
+            if "event_avatar_standings" in tables:
+                cur.execute("DELETE FROM event_avatar_standings WHERE user_id = ?", (user_id,))
+                deleted["event_avatar_standings"] = cur.rowcount
 
             if "limited_event_standings_archive" in tables:
                 cur.execute("DELETE FROM limited_event_standings_archive WHERE user_id = ?", (user_id,))

@@ -64,9 +64,15 @@ def get_avatar_image_files():
 
 @avatars_bp.route("/avatars/filters")
 def get_avatar_filters():
-    """Return available events and sources for avatar page filtering."""
+    """Return available events and sources for avatar page filtering.
+
+    The running season is listed for admins only, except with
+    ``?include_active=1``: the Top Players page shows the current season to
+    everyone (the home leaderboard links there for each avatar).
+    """
     events = []
     sources = []
+    include_active = request.args.get("include_active") == "1"
 
     # Get events from elo.db
     try:
@@ -85,8 +91,8 @@ def get_avatar_filters():
             user_admin = is_admin()
             for row in cur.fetchall():
                 active = bool(row[4])
-                # Only admins can see active events
-                if active and not user_admin:
+                # Only admins can see active events (Top Players asks for it for everyone)
+                if active and not user_admin and not include_active:
                     continue
                 events.append({
                     "event_id": row[0],
@@ -795,11 +801,13 @@ def get_season_avatar_badges():
 
 @avatars_bp.route("/avatars/top-players")
 def get_avatar_top_players():
-    """Return the top players for each avatar, ranked by Avatar Score."""
+    """Return the top players for each avatar, ranked by Avatar Score.
+
+    The current season is public here: the home leaderboard's per-avatar
+    ranks link to it, so everyone needs to see the same season.
+    """
     source_filter = request.args.get("source", "discord")
     event_filter = request.args.get("event", "all")
-    if event_filter == "current" and not is_admin():
-        event_filter = "all"
     try:
         limit = max(1, min(100, int(request.args.get("limit", 16))))
     except (TypeError, ValueError):

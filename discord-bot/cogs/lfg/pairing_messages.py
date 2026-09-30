@@ -89,12 +89,14 @@ class PairingPlayer:
     be answered ephemerally instead of DMed (the accepter of a challenge).
     """
 
-    def __init__(self, user_id, display_name, user, deck_url=None, interaction=None):
+    def __init__(self, user_id, display_name, user, deck_url=None, interaction=None, avatar=None):
         self.user_id = int(user_id)
         self.display_name = display_name
         self.user = user
         self.deck_url = deck_url
         self.interaction = interaction
+        # Avatar-mode events: the avatar read from their deck and locked to the match
+        self.avatar = avatar
 
 
 def _refresh_tip(is_reporter):
@@ -120,6 +122,8 @@ def _build_body(
     game_text="",
     voice_text="",
     self_mention=None,
+    self_avatar=None,
+    opponent_avatar=None,
 ):
     """Compose one player's match message.
 
@@ -131,6 +135,11 @@ def _build_body(
         opening = f"{self_mention} {opening}"
     if self_deck_url:
         opening = f"{opening}\n**Your Deck:** {self_deck_url}"
+    if self_avatar or opponent_avatar:
+        opening = (
+            f"{opening}\n**Avatars (locked for this match):** "
+            f"you — {self_avatar or 'unknown'} · opponent — {opponent_avatar or 'unknown'}"
+        )
 
     if is_reporter:
         role_line = (
@@ -201,6 +210,8 @@ async def _send_reporter(
         is_reporter=True,
         game_text=game_text,
         voice_text=voice_text,
+        self_avatar=reporter.avatar,
+        opponent_avatar=other.avatar,
     )
 
     if reporter.interaction is not None:
@@ -262,6 +273,8 @@ async def _send_other(bot, reporter, other, *, title, game_url, game_text, voice
         is_reporter=False,
         game_text=game_text,
         voice_text=voice_text,
+        self_avatar=other.avatar,
+        opponent_avatar=reporter.avatar,
     )
 
     if other.interaction is not None:
@@ -388,13 +401,16 @@ async def send_pairing_messages(
     )
 
 
-def ladder_stakes_note(challenger_id, opponent_id):
-    """Return the ladder-challenge suffix for the public announcement."""
-    from utils.database import get_user_event_elo
+def ladder_stakes_note(challenger_id, opponent_id, challenger_avatar=None, opponent_avatar=None):
+    """Return the ladder-challenge suffix for the public announcement.
+
+    In Avatar mode the gap is between the two avatars' entries in this match.
+    """
+    from services.avatar_mode import ladder_elo
 
     try:
         elo_diff = abs(
-            get_user_event_elo(challenger_id) - get_user_event_elo(opponent_id)
+            ladder_elo(challenger_id, challenger_avatar) - ladder_elo(opponent_id, opponent_avatar)
         )
     except Exception as e:
         logger.error("Could not read ladder ELO for the announcement note: %s", e)

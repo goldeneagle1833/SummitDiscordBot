@@ -3,6 +3,8 @@ import CollapsibleSection from './CollapsibleSection'
 
 export default function AvatarPerformance({ avatars, playerId, open, onToggle }) {
   if (!avatars?.length) return null
+  // Avatar-mode seasons: each avatar also has its own event ELO and ladder rank
+  const showEventElo = avatars.some((av) => av.event_elo != null)
 
   return (
     <CollapsibleSection title="Avatar Performance" open={open} onToggle={onToggle}>
@@ -13,6 +15,8 @@ export default function AvatarPerformance({ avatars, playerId, open, onToggle })
               <th className="py-2 px-3 text-text-muted font-semibold">Avatar</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Record</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Win Rate</th>
+              {showEventElo && <th className="py-2 px-3 text-text-muted font-semibold">Event ELO</th>}
+              {showEventElo && <th className="py-2 px-3 text-text-muted font-semibold">Rank</th>}
             </tr>
           </thead>
           <tbody>
@@ -32,6 +36,8 @@ export default function AvatarPerformance({ avatars, playerId, open, onToggle })
                   <span className="text-accent-red">{av.losses}L</span>
                 </td>
                 <td className="py-2 px-3">{av.win_rate}%</td>
+                {showEventElo && <td className="py-2 px-3">{av.event_elo ?? '—'}</td>}
+                {showEventElo && <td className="py-2 px-3">{av.event_rank ? `#${av.event_rank}` : '—'}</td>}
               </tr>
             ))}
           </tbody>

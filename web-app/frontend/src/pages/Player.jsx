@@ -20,6 +20,7 @@ import ReportGameModal from '@/components/player/ReportGameModal'
 import EditDeckModal from '@/components/player/EditDeckModal'
 import AdminControls from '@/components/player/AdminControls'
 import EloHistory from '@/components/player/EloHistory'
+import AvatarEloHistory from '@/components/player/AvatarEloHistory'
 import PlayerSeasons from '@/components/player/PlayerSeasons'
 import PostseasonSection from '@/components/player/PostseasonSection'
 import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
@@ -42,10 +43,8 @@ export default function Player() {
 
   // Filter state
   const [eventFilter, setEventFilter] = useState(canSeeLifetime ? 'lifetime' : 'current')
-  const [eloSource, setEloSource] = useState(() => {
-    const saved = localStorage.getItem('elo_source_preference')
-    return saved === 'web' || saved === 'bot' ? saved : 'bot'
-  })
+  // Paper is hidden (nobody plays on the paper ladder), so the profile is always online
+  const [eloSource, setEloSource] = useState('bot')
   const [page, setPage] = useState(1)
   const [casualPage, setCasualPage] = useState(1)
   const [externalPage, setExternalPage] = useState(1)
@@ -63,6 +62,7 @@ const [editDeck, setEditDeck] = useState(null)
   // Collapsible sections
   const [openSections, setOpenSections] = useState({
     eloHistory: false,
+    avatarElo: false,
     eloBrackets: false,
     avatarPerf: false,
     avatarMatchups: false,
@@ -108,10 +108,6 @@ const [editDeck, setEditDeck] = useState(null)
 
   const refreshCurrentPage = () => fetchData(eventFilter, page, eloSource, casualPage, perPage, externalPage)
 
-  const handleSourceChange = (src) => {
-    localStorage.setItem('elo_source_preference', src)
-    refetch(undefined, 1, src, 1)
-  }
 
   const handleNameChange = (newName) => {
     setData((d) => d ? { ...d, name: newName, has_custom_display_name: true } : d)
@@ -123,9 +119,15 @@ const [editDeck, setEditDeck] = useState(null)
   if (!data) return null
 
   // ELO display logic
+  const avatarMode = data.avatar_event_elo?.elo_mode === 'avatar'
+  const avatarEntries = data.avatar_event_elo?.entries || []
   let eloText = ''
   let rankText = ''
-  if (eventFilter === 'lifetime' || !eventFilter) {
+  if ((eventFilter === 'lifetime' || !eventFilter) && avatarMode) {
+    // Lifetime ELO for owners/admins; the season's per-avatar entries are listed below
+    eloText = canSeeLifetime && data.elo != null ? `Lifetime ELO: ${data.elo}` : ''
+    rankText = canSeeLifetime && data.rank ? `Rank #${data.rank}` : ''
+  } else if (eventFilter === 'lifetime' || !eventFilter) {
     if (canSeeLifetime && data.elo != null) {
       eloText = `Lifetime ELO: ${data.elo}`
       if (data.event_elo && data.event_elo !== 1500) eloText += ` | Event ELO: ${data.event_elo}`
@@ -134,6 +136,12 @@ const [editDeck, setEditDeck] = useState(null)
       eloText = data.event_elo && data.event_elo !== 1500 ? `Event ELO: ${data.event_elo}` : ''
       rankText = ''
     }
+  } else if (avatarMode) {
+    // Avatar-mode event: one event ELO per avatar, listed under the header
+    eloText = avatarEntries.length
+      ? `Event ELO per avatar${data.avatar_event_elo?.event_name ? ` (${data.avatar_event_elo.event_name})` : ''}:`
+      : 'No avatar games this event yet'
+    rankText = ''
   } else if (eventFilter === 'current') {
     eloText = data.displayed_elo !== 1500 ? `Current Event ELO: ${data.displayed_elo}` : 'No current event data'
     rankText = data.displayed_rank > 0 ? `Event Rank #${data.displayed_rank}` : ''
@@ -178,8 +186,7 @@ const [editDeck, setEditDeck] = useState(null)
         playerId={playerId}
         eloText={eloText}
         rankText={rankText}
-        eloSource={eloSource}
-        onSourceChange={handleSourceChange}
+        avatarEntries={avatarMode ? avatarEntries : []}
         eventFilter={eventFilter}
         pastEvents={pastEvents}
         onEventChange={(val) => refetch(val, 1, undefined, 1)}
@@ -245,6 +252,16 @@ const [editDeck, setEditDeck] = useState(null)
           currentElo={data.elo}
           open={openSections.eloHistory}
           onToggle={() => toggle('eloHistory')}
+        />
+      )}
+
+      {avatarMode && sectionVisible('elo_history') && (
+        <AvatarEloHistory
+          history={data.avatar_event_elo.history}
+          entries={avatarEntries}
+          eventName={data.avatar_event_elo.event_name}
+          open={openSections.avatarElo}
+          onToggle={() => toggle('avatarElo')}
         />
       )}
 

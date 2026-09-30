@@ -33,9 +33,11 @@ X-API-Key: <your-api-key>
   "event": {
     "event_id": 7,
     "event_name": "Season 7",
-    "start_date": "2026-09-01T00:00:00"
+    "start_date": "2026-09-01T00:00:00",
+    "elo_mode": "avatar"
   },
   "rating": "event",
+  "elo_mode": "avatar",
   "games_played": 412,
   "ticket_holders": [
     {
@@ -48,6 +50,7 @@ X-API-Key: <your-api-key>
       "wins": 20,
       "losses": 11,
       "voice_games": 14,
+      "avatar": "Imposter",
       "is_ticket_holder": true
     }
   ],
@@ -66,6 +69,7 @@ X-API-Key: <your-api-key>
 |--------------------------|--------------------------------------------------------------------------------------|
 | `event`                  | The active Summit season, or `null` when none is running                             |
 | `rating`                 | `event` while a season is running (season ELO), otherwise `lifetime`                 |
+| `elo_mode`               | `player` (one season ELO per player) or `avatar` (one per player and avatar)         |
 | `games_played`           | Rated games counted this season — the number in the embed's title                    |
 | `ticket_holders`         | Every ranked player who holds a Summit ticket, best first                            |
 | `overall`                | Top 8 of everyone ranked, with or without a ticket                                   |
@@ -77,6 +81,7 @@ X-API-Key: <your-api-key>
 | `[].elo`                 | Season ELO (or lifetime ELO when `rating` is `lifetime`)                             |
 | `[].games` / `wins` / `losses` | This season's rated record                                                     |
 | `[].voice_games`         | Games played on voice this season; see `voice_requirement` for the top-cut rule      |
+| `[].avatar`              | Avatar-mode seasons: the avatar this row's ELO belongs to. `null` in Player mode     |
 | `roster.size`            | Number of Discord members currently holding a ticket role                            |
 | `roster.synced_at`       | When the ticket roster was last read from Discord; `null` if it never has been       |
 | `roster.configured`      | `false` means the site cannot read Discord roles, so `ticket_holders` will be empty  |
@@ -84,6 +89,13 @@ X-API-Key: <your-api-key>
 
 Only players who have played at least one rated game this season are ranked, exactly as in
 the Discord channel. Ties in ELO keep the ladder's order.
+
+**Avatar-mode seasons.** Every player/avatar pair has its own season ELO, so a player can
+hold several places on the ladder. `overall` keeps every entry (and `overall_rank` counts
+entries). `ticket_holders` and `free_play` list each player **once**, at their best
+avatar: top cut belongs to the player, so a second qualifying avatar never takes someone
+else's slot. `games` / `wins` / `losses` are that avatar's record; `voice_games` is the
+player's total.
 
 ### Errors
 

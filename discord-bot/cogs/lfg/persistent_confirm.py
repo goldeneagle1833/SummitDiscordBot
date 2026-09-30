@@ -25,7 +25,7 @@ from utils.database import (
     mark_pairing_reported,
     get_active_event,
 )
-from repositories.elo_repo import NON_ELO_MATCH_TYPES, get_pairing_by_id
+from repositories.elo_repo import NON_ELO_MATCH_TYPES, get_pairing_avatars, get_pairing_by_id
 from services.dust_service import try_dust_drop, try_alter_card_drop
 from repositories.dust_repo import get_available_code_count
 from repositories.limited_repo import (
@@ -99,6 +99,10 @@ def ensure_pending_confirmations_table():
         conn.execute("ALTER TABLE pending_confirmations ADD COLUMN confirmer_comment TEXT DEFAULT ''")
     if "pairing_id" not in columns:
         conn.execute("ALTER TABLE pending_confirmations ADD COLUMN pairing_id INTEGER")
+    # Avatar-mode events: the avatars the opponent is confirming (from the pairing lock)
+    for col in ("winner_avatar", "loser_avatar"):
+        if col not in columns:
+            conn.execute(f"ALTER TABLE pending_confirmations ADD COLUMN {col} TEXT")
 
     conn.commit()
     conn.close()
@@ -122,8 +126,9 @@ def save_pending_confirmation(data: dict) -> int:
             opponent_global, match_start_time, first_player,
             match_time, match_comment, winner_deck_url, loser_deck_url,
             ladder_info_json, match_type, guild_id,
-            winner_run_id, loser_run_id, pairing_id
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            winner_run_id, loser_run_id, pairing_id,
+            winner_avatar, loser_avatar
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             data["reporter_id"],
@@ -147,6 +152,8 @@ def save_pending_confirmation(data: dict) -> int:
             data.get("winner_run_id"),
             data.get("loser_run_id"),
             data.get("pairing_id"),
+            data.get("winner_avatar"),
+            data.get("loser_avatar"),
         ),
     )
     confirmation_id = cursor.lastrowid
@@ -357,6 +364,8 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             elo_multiplier_winner=elo_multiplier_winner,
             elo_multiplier_loser=elo_multiplier_loser,
             pairing_id=data.get("pairing_id"),
+            winner_avatar=data.get("winner_avatar"),
+            loser_avatar=data.get("loser_avatar"),
         )
 
         if ladder_info and data["match_type"] not in NON_ELO_MATCH_TYPES:
@@ -964,10 +973,24 @@ class PersistentConfirmCommentModal(discord.ui.Modal, title="Confirm Match"):
 class PersistentMatchConfirmView(discord.ui.View):
     """Confirm / Dispute view whose buttons survive bot restarts."""
 
-    def __init__(self, confirmation_id: int):
+    def __init__(self, confirmation_id: int, avatar_note: str = ""):
         super().__init__(timeout=None)
+        self.confirmation_id = confirmation_id
+        # Appended to the opponent's confirmation message in Avatar-mode events
+        self.avatar_note = avatar_note
         self.add_item(PersistentConfirmButton(confirmation_id))
         self.add_item(PersistentDisputeButton(confirmation_id))
+
+
+def avatar_confirmation_note(winner_global, winner_avatar, loser_global, loser_avatar) -> str:
+    """The avatar lines an opponent confirms along with the result."""
+    if not (winner_avatar or loser_avatar):
+        return ""
+    return (
+        f"\n\n**Avatars:** {winner_global} — {winner_avatar or 'unknown'} · "
+        f"{loser_global} — {loser_avatar or 'unknown'}\n"
+        "If an avatar is wrong, **Dispute** instead of confirming."
+    )
 
 
 def create_confirmation_view(
@@ -1036,8 +1059,17 @@ def create_confirmation_view(
         "loser_run_id": loser_run_id,
         "pairing_id": pairing_id,
     }
+    # Avatar-mode events: the avatars locked when the match was made ride along
+    avatar_note = ""
+    locked = get_pairing_avatars(pairing_id) if match_type not in ("limited", *NON_ELO_MATCH_TYPES) else {}
+    if locked:
+        data["winner_avatar"] = locked.get(winner_id)
+        data["loser_avatar"] = locked.get(loser_id)
+        avatar_note = avatar_confirmation_note(
+            winner_global, data["winner_avatar"], loser_global, data["loser_avatar"]
+        )
     confirmation_id = save_pending_confirmation(data)
-    return PersistentMatchConfirmView(confirmation_id)
+    return PersistentMatchConfirmView(confirmation_id, avatar_note=avatar_note)
 
 
 # ──────────────────────────────────────────────

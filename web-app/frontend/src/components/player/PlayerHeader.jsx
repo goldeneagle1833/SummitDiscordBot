@@ -1,5 +1,5 @@
 import PostseasonName from '@/components/player/BracketMarks'
-export default function PlayerHeader({ data, playerId, eloText, rankText, eloSource, onSourceChange, eventFilter, pastEvents, onEventChange, canSeeLifetime }) {
+export default function PlayerHeader({ data, playerId, eloText, rankText, avatarEntries = [], eventFilter, pastEvents, onEventChange, canSeeLifetime }) {
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -10,29 +10,22 @@ export default function PlayerHeader({ data, playerId, eloText, rankText, eloSou
                 <span tabIndex={0}>{data.name}</span>
               </PostseasonName>
             </h1>
-            {(data.has_web_matches || data.has_bot_matches) && (
-              <div className="inline-flex bg-bg-raised border border-border rounded-lg overflow-hidden">
-                <button
-                  onClick={() => onSourceChange('web')}
-                  className={`px-3 py-1 text-xs font-medium transition-colors ${
-                    eloSource === 'web' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
-                  }`}
-                >
-                  Paper
-                </button>
-                <button
-                  onClick={() => onSourceChange('bot')}
-                  className={`px-3 py-1 text-xs font-medium transition-colors ${
-                    eloSource === 'bot' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
-                  }`}
-                >
-                  Online
-                </button>
-              </div>
-            )}
           </div>
-          <p className="text-text-muted text-sm">{eloText}</p>
+          {eloText && <p className="text-text-muted text-sm">{eloText}</p>}
           {rankText && <p className="text-text-muted text-sm">{rankText}</p>}
+          {avatarEntries.length > 0 && (
+            <ul className="mt-2 flex flex-wrap gap-2" aria-label="Event ELO per avatar">
+              {avatarEntries.map((entry) => (
+                <li
+                  key={entry.avatar}
+                  className="px-2.5 py-1 text-xs rounded border border-border bg-bg-raised"
+                >
+                  <span className="text-text-primary font-medium">{entry.avatar}</span>
+                  <span className="text-text-muted"> · {entry.event_elo} · #{entry.rank}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <select

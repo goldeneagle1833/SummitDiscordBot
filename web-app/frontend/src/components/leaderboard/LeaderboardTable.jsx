@@ -15,6 +15,8 @@ const RANK_MEDALS = ['\u{1F947}', '\u{1F948}', '\u{1F949}']
 
 export default function LeaderboardTable({ data = [], columns = 'lifetime', voiceRequirement = null }) {
   const [showCount, setShowCount] = useState(16)
+  // Avatar-mode seasons rate each player/avatar pair: rows carry an avatar
+  const showAvatar = columns === 'event' && data.some((entry) => entry.avatar)
 
   const visible = data.slice(0, showCount === Infinity ? data.length : showCount)
 
@@ -44,10 +46,12 @@ export default function LeaderboardTable({ data = [], columns = 'lifetime', voic
             <tr>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wider w-12">#</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Player</th>
+              {showAvatar && (
+                <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Avatar</th>
+              )}
               {columns === 'lifetime' && (
                 <>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider hidden sm:table-cell">ELO</th>
-                  <th className="px-3 py-2 text-center text-xs font-semibold text-text-muted uppercase tracking-wider hidden md:table-cell">Mode</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider hidden sm:table-cell">W/L</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">Win %</th>
                 </>
@@ -68,7 +72,7 @@ export default function LeaderboardTable({ data = [], columns = 'lifetime', voic
               const playerId = entry.id || entry.user_id
 
               return (
-                <tr key={playerId} className="hover:bg-bg-elevated transition-colors">
+                <tr key={entry.entry_id || playerId} className="hover:bg-bg-elevated transition-colors">
                   <td className="px-3 py-2 text-sm text-text-muted">{rankDisplay}</td>
                   <td className="px-3 py-2">
                     <PostseasonName playerId={playerId}>
@@ -80,16 +84,12 @@ export default function LeaderboardTable({ data = [], columns = 'lifetime', voic
                       </Link>
                     </PostseasonName>
                   </td>
+                  {showAvatar && (
+                    <td className="px-3 py-2 text-sm text-text-muted">{entry.avatar}</td>
+                  )}
                   {columns === 'lifetime' && (
                     <>
                       <td className="px-3 py-2 text-sm text-right hidden sm:table-cell">{entry.elo}</td>
-                      <td className="px-3 py-2 text-sm text-center hidden md:table-cell">
-                        {entry.primary_mode === 'Paper' ? (
-                          <span className="inline-block px-2 py-0.5 text-xs rounded bg-amber-900/30 text-amber-400" title="Paper games ELO is higher">Paper</span>
-                        ) : (
-                          <span className="inline-block px-2 py-0.5 text-xs rounded bg-blue-900/30 text-blue-400" title="Online games ELO is higher">Online</span>
-                        )}
-                      </td>
                       <td className="px-3 py-2 text-sm text-right hidden sm:table-cell">
                         <span className="text-accent-green">{entry.wins || 0}</span>
                         {'-'}

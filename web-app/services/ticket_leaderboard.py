@@ -9,7 +9,7 @@ Play Sorcery Online can show them without reading Discord.
 import logging
 
 from repositories.brackets import BracketRepository
-from services.leaderboard import LeaderboardService, voice_requirement
+from services.leaderboard import LeaderboardService, unique_players, voice_requirement
 from services.ticket_holders import (
     ensure_roster_fresh,
     is_configured,
@@ -36,6 +36,12 @@ class TicketLeaderboardService:
         have played this event, best first; lifetime ELO when no event is
         running. `limit` caps the ticket-holder list (the channel shows 24);
         by default every ranked ticket holder is returned.
+
+        In an Avatar-mode event the ladder has one entry per player and
+        avatar. `overall` keeps every entry; `ticket_holders` and `free_play`
+        list each player once, at their best avatar, so a second avatar never
+        takes someone else's top-cut slot. Every row carries `avatar` (null in
+        Player mode).
         """
         data = self._leaderboard.get_event_leaderboard()
         standings = data.get("leaderboard") or []
@@ -66,18 +72,20 @@ class TicketLeaderboardService:
                     "wins": wins,
                     "losses": losses,
                     "voice_games": entry.get("voice_games", 0),
+                    "avatar": entry.get("avatar"),
                     "is_ticket_holder": user_id in holders,
                 }
             )
 
-        ticket_holders = _ranked(p for p in players if p["is_ticket_holder"])
-        free_play = _ranked(p for p in players if not p["is_ticket_holder"])
+        ticket_holders = _ranked(unique_players(p for p in players if p["is_ticket_holder"]))
+        free_play = _ranked(unique_players(p for p in players if not p["is_ticket_holder"]))
         if limit is not None:
             ticket_holders = ticket_holders[:limit]
 
         return {
             "event": event,
             "rating": rating,
+            "elo_mode": (event or {}).get("elo_mode", "player"),
             # Every rated game has exactly one winner in the standings.
             "games_played": sum(p["wins"] for p in players),
             "ticket_holders": ticket_holders,

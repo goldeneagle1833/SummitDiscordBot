@@ -133,12 +133,17 @@ class SlashCommandsCog(commands.Cog):
         name="issue-challenge",
         description="Issue a ladder challenge (Top 16 event players only, once per day)",
     )
-    @app_commands.describe(voice="Play the challenge on voice chat or not (default: voice)")
+    @app_commands.describe(
+        voice="Play the challenge on voice chat or not (default: voice)",
+        deck_url="Your deck link (required in Avatar-mode seasons: it sets your avatar)",
+    )
     @app_commands.choices(voice=[
         app_commands.Choice(name="🔊 Voice", value="voice"),
         app_commands.Choice(name="🔇 No voice", value="no_voice"),
     ])
-    async def issue_challenge_slash(self, interaction: discord.Interaction, voice: str = "voice"):
+    async def issue_challenge_slash(
+        self, interaction: discord.Interaction, voice: str = "voice", deck_url: str = None,
+    ):
         """Ladder challenge - Top 16 event players can challenge the field with special ELO stakes"""
         await interaction.response.defer(ephemeral=True)
         ctx = FakeContext(self.bot, interaction)
@@ -150,7 +155,73 @@ class SlashCommandsCog(commands.Cog):
             )
             return
 
-        await lfg_cog.issue_challenge(ctx, voice)
+        await lfg_cog.issue_challenge(ctx, voice, *([deck_url] if deck_url else []))
+
+    # ==================== ADMIN MATCH REPORTS ====================
+
+    async def _admin_report_flow(self, interaction, winner, loser, top16_player=None):
+        """Avatar mode asks for both avatars in a form; Player mode reports right away."""
+        from cogs.lfg.admin_avatar_report import AdminAvatarReportModal
+        from services.avatar_mode import is_avatar_mode
+        from utils.checks import check_is_admin
+
+        ctx = FakeContext(self.bot, interaction)
+        if not isinstance(interaction.user, discord.Member) or not check_is_admin(ctx):
+            await interaction.response.send_message(
+                "You need administrator permissions to use this command.", ephemeral=True
+            )
+            return
+        if winner.id == loser.id:
+            await interaction.response.send_message(
+                "Winner and loser cannot be the same player!", ephemeral=True
+            )
+            return
+
+        if is_avatar_mode():
+            await interaction.response.send_modal(
+                AdminAvatarReportModal(self.bot, winner, loser, top16_player)
+            )
+            return
+
+        await interaction.response.defer()
+        lfg_cog = self.bot.get_cog("LFGCog")
+        if not lfg_cog:
+            await interaction.followup.send("LFG system is not available.", ephemeral=True)
+            return
+        if top16_player:
+            await lfg_cog.report_challenge_as_admin(ctx, winner, loser, top16_player)
+        else:
+            await lfg_cog.report_match_as_admin(ctx, winner, loser)
+
+    @app_commands.command(
+        name="admin-report",
+        description="(Admin) Report a match result; asks for both avatars in Avatar-mode seasons",
+    )
+    @app_commands.describe(winner="The player who won", loser="The player who lost")
+    async def admin_report_slash(
+        self, interaction: discord.Interaction, winner: discord.Member, loser: discord.Member,
+    ):
+        await self._admin_report_flow(interaction, winner, loser)
+
+    @app_commands.command(
+        name="admin-challenge-report",
+        description="(Admin) Report a ladder challenge; asks for both avatars in Avatar-mode seasons",
+    )
+    @app_commands.describe(
+        winner="The player who won",
+        loser="The player who lost",
+        top16_player="The Top 16 player who issued the challenge (winner or loser)",
+    )
+    async def admin_challenge_report_slash(
+        self, interaction: discord.Interaction,
+        winner: discord.Member, loser: discord.Member, top16_player: discord.Member,
+    ):
+        if top16_player.id not in (winner.id, loser.id):
+            await interaction.response.send_message(
+                "The Top 16 player must be either the winner or the loser!", ephemeral=True
+            )
+            return
+        await self._admin_report_flow(interaction, winner, loser, top16_player)
 
     # ==================== UTILITY COMMANDS ====================
 

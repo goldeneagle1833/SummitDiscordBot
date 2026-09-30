@@ -424,16 +424,28 @@ def ladder_stakes_note(challenger_id, opponent_id, challenger_avatar=None, oppon
 
 
 async def announce_pairing(
-    channel, *, player_a, player_b, match_type="ranked", headline=None, note=""
+    channel,
+    *,
+    player_a,
+    player_b,
+    match_type="ranked",
+    headline=None,
+    note="",
+    pairing_id=None,
 ):
-    """Announce a new pairing in the LFG channel."""
+    """Announce a new pairing in the LFG channel.
+
+    ``pairing_id`` is the saved pairing's id; it is shown as the match ID so
+    players and admins can refer to the match before it is reported.
+    """
     if not channel:
         return
     emoji, label = match_type_presentation(match_type)
     title = f"{emoji} **{headline or f'{label} Match Found!'}**"
+    id_text = f" **Match ID:** {pairing_id}" if pairing_id else ""
     try:
         await channel.send(
-            f"{title} {player_a.mention} matched with {player_b.mention}!{note}"
+            f"{title} {player_a.mention} matched with {player_b.mention}!{id_text}{note}"
         )
     except Exception as e:
         logger.error(

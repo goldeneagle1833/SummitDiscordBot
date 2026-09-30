@@ -771,6 +771,7 @@ async def _process_queue_join(
             player_b=matched_user,
             match_type=match_type,
             note=ladder_note,
+            pairing_id=pairing_id,
         )
 
         await lfg_cog.update_lfg_status()

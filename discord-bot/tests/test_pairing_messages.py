@@ -234,6 +234,40 @@ async def test_announcement_uses_the_match_type_and_optional_note():
     assert "📊 **Rumble (Omens) Match Found!**" in text
     assert "<@10> matched with <@20>!" in text
     assert text.endswith(" 🏆 note")
+    assert "Match ID" not in text
+
+
+@pytest.mark.asyncio
+async def test_announcement_includes_the_match_id_before_the_note():
+    channel = MagicMock()
+    channel.send = AsyncMock()
+
+    await announce_pairing(
+        channel,
+        player_a=MagicMock(mention="<@10>"),
+        player_b=MagicMock(mention="<@20>"),
+        note=" 🏆 note",
+        pairing_id=417,
+    )
+
+    text = channel.send.await_args.args[0]
+    assert "<@10> matched with <@20>! **Match ID:** 417 🏆 note" in text
+
+
+@pytest.mark.asyncio
+async def test_announcement_omits_the_match_id_when_no_pairing_was_saved():
+    # Direct challenges without a guild fall back to pairing id 0.
+    channel = MagicMock()
+    channel.send = AsyncMock()
+
+    await announce_pairing(
+        channel,
+        player_a=MagicMock(mention="<@10>"),
+        player_b=MagicMock(mention="<@20>"),
+        pairing_id=0,
+    )
+
+    assert "Match ID" not in channel.send.await_args.args[0]
 
 
 # ── no deck lists in public channels ─────────────────────────────────

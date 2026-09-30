@@ -339,6 +339,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
             player_b=interaction.user,
             match_type="ranked",
             headline="Challenge Accepted!",
+            pairing_id=challenge_pairing_id,
         )
 
 

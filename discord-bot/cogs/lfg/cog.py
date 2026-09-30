@@ -1474,6 +1474,7 @@ class LFGCog(commands.Cog):
                 note=ladder_stakes_note(
                     ladder_info["challenger_id"], matched_user_id, challenger_avatar, matched_avatar
                 ),
+                pairing_id=pairing_id,
             )
 
             if delivery.fell_back_for(user_id):

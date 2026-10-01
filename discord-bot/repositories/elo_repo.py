@@ -1325,6 +1325,64 @@ def mark_pairing_reported(guild_id: int, user_id: int, opponent_id: int, pairing
     return updated
 
 
+def create_pairing_announcements_table():
+    """Create the table that remembers each pairing's LFG channel announcement."""
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute("""CREATE TABLE IF NOT EXISTS pairing_announcements
+                   (pairing_id INTEGER NOT NULL,
+                    match_type TEXT NOT NULL DEFAULT 'ranked',
+                    channel_id INTEGER NOT NULL,
+                    message_id INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (pairing_id, match_type)
+                   )""")
+    conn.commit()
+    conn.close()
+
+
+def save_pairing_announcement(pairing_id: int, match_type: str, channel_id: int, message_id: int):
+    """Remember where a pairing was announced so the match id can be added once reported.
+
+    Limited pairings live in their own table with their own ids, so the key
+    includes ``match_type``.
+    """
+    create_pairing_announcements_table()
+    with get_db_connection("match_records.db") as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO pairing_announcements
+               (pairing_id, match_type, channel_id, message_id, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (pairing_id, match_type or "ranked", channel_id, message_id, datetime.datetime.now().isoformat()),
+        )
+
+
+def get_pairing_announcement(pairing_id: int, match_type: str) -> dict | None:
+    """Return {channel_id, message_id} for a pairing's announcement, or None."""
+    create_pairing_announcements_table()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT channel_id, message_id FROM pairing_announcements WHERE pairing_id = ? AND match_type = ?",
+        (pairing_id, match_type or "ranked"),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {"channel_id": row[0], "message_id": row[1]}
+
+
+def delete_pairing_announcement(pairing_id: int, match_type: str):
+    """Forget a pairing's announcement once the match id has been written into it."""
+    create_pairing_announcements_table()
+    with get_db_connection("match_records.db") as conn:
+        conn.execute(
+            "DELETE FROM pairing_announcements WHERE pairing_id = ? AND match_type = ?",
+            (pairing_id, match_type or "ranked"),
+        )
+
+
 def cancel_pairing(guild_id: int, user_id: int) -> bool:
     """
     Cancel an active pairing for a user in a specific guild.

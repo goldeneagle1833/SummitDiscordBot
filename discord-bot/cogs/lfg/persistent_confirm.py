@@ -402,6 +402,16 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         f"Match #{match_id} successfully saved: {data['winner_global']} defeated {data['loser_global']}"
     )
 
+    # ── add the match id to the LFG channel announcement ──
+    if pairing_id:
+        # Lazy import: pairing_messages imports this module.
+        from cogs.lfg.pairing_messages import announce_match_id
+
+        try:
+            await announce_match_id(bot, pairing_id, data.get("match_type", "ranked"), match_id)
+        except Exception as e:
+            logger.warning(f"Could not add match id to announcement for pairing {pairing_id}: {e}")
+
     # ── update confirmation message ──
     if interaction_valid:
         try:

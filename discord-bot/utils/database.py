@@ -47,6 +47,9 @@ from repositories.elo_repo import (  # noqa: F401
     mark_pairing_reported,
     cancel_pairing,
     cleanup_old_pairings,
+    save_pairing_announcement,
+    get_pairing_announcement,
+    delete_pairing_announcement,
 )
 
 # Business logic functions

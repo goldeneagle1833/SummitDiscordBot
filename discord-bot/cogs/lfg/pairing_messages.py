@@ -19,6 +19,11 @@ from cogs.lfg.helpers import (
     scrub_urls,
 )
 from cogs.lfg.persistent_confirm import update_match_card_message_ref
+from utils.database import (
+    delete_pairing_announcement,
+    get_pairing_announcement,
+    save_pairing_announcement,
+)
 from cogs.lfg.voice import voice_match_tag, voice_match_text
 
 logger = logging.getLogger("discord_bot")
@@ -435,17 +440,17 @@ async def announce_pairing(
 ):
     """Announce a new pairing in the LFG channel.
 
-    ``pairing_id`` is the saved pairing's id; it is shown as the match ID so
-    players and admins can refer to the match before it is reported.
+    The match id that ``!correct_match`` needs only exists once the result is
+    recorded, so when ``pairing_id`` is given the message reference is stored
+    and :func:`announce_match_id` appends the id at report time.
     """
     if not channel:
         return
     emoji, label = match_type_presentation(match_type)
     title = f"{emoji} **{headline or f'{label} Match Found!'}**"
-    id_text = f" **Match ID:** {pairing_id}" if pairing_id else ""
     try:
-        await channel.send(
-            f"{title} {player_a.mention} matched with {player_b.mention}!{id_text}{note}"
+        message = await channel.send(
+            f"{title} {player_a.mention} matched with {player_b.mention}!{note}"
         )
     except Exception as e:
         logger.error(
@@ -453,3 +458,54 @@ async def announce_pairing(
             getattr(channel, "id", "?"),
             e,
         )
+        return
+    if not pairing_id or message is None:
+        return
+    try:
+        save_pairing_announcement(
+            pairing_id, match_type, message.channel.id, message.id
+        )
+    except Exception as e:
+        logger.warning(
+            "Could not save announcement ref for pairing %s: %s", pairing_id, e
+        )
+
+
+def match_id_suffix(match_id):
+    """The text appended to the announcement once the match is recorded."""
+    return f" **Match ID:** #{match_id}"
+
+
+async def announce_match_id(bot, pairing_id, match_type, match_id):
+    """Append the recorded match id to the pairing's LFG channel announcement.
+
+    Called when the result is recorded; the id shown is the match record id
+    that ``!correct_match`` / ``!remove_match`` take.
+    """
+    if not pairing_id or not match_id:
+        return
+    try:
+        ref = get_pairing_announcement(pairing_id, match_type)
+    except Exception as e:
+        logger.warning("Could not load announcement ref for pairing %s: %s", pairing_id, e)
+        return
+    if not ref:
+        return
+    try:
+        channel = bot.get_channel(ref["channel_id"]) or await bot.fetch_channel(
+            ref["channel_id"]
+        )
+        message = await channel.fetch_message(ref["message_id"])
+        suffix = match_id_suffix(match_id)
+        if suffix.strip() not in (message.content or ""):
+            await message.edit(content=f"{message.content}{suffix}")
+    except Exception as e:
+        logger.warning(
+            "Could not add match id %s to announcement for pairing %s: %s",
+            match_id, pairing_id, e,
+        )
+        return
+    try:
+        delete_pairing_announcement(pairing_id, match_type)
+    except Exception as e:
+        logger.warning("Could not delete announcement ref for pairing %s: %s", pairing_id, e)

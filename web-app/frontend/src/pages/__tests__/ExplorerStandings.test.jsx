@@ -43,20 +43,20 @@ describe('ExplorerStandings apply call-to-action', () => {
     fetchEventsMap.mockResolvedValue({ enabled: false, events: [] })
   })
 
-  it('hides the apply button from signed-out visitors', async () => {
+  it('shows the apply button to signed-out visitors', async () => {
     useAuth.mockReturnValue({ user: false, loading: false })
     renderWithRouter(<ExplorerStandings />)
 
-    await screen.findByText('Community Series')
-    expect(screen.queryByRole('link', { name: APPLY_LABEL })).toBeNull()
+    const link = await screen.findByRole('link', { name: APPLY_LABEL })
+    expect(link).toHaveAttribute('href', '/explorer/apply')
   })
 
-  it('hides the apply button from ordinary logged-in players', async () => {
+  it('shows the apply button to ordinary logged-in players', async () => {
     useAuth.mockReturnValue({ user: { id: '1', is_admin: false }, loading: false })
     renderWithRouter(<ExplorerStandings />)
 
-    await screen.findByText('Community Series')
-    expect(screen.queryByRole('link', { name: APPLY_LABEL })).toBeNull()
+    const link = await screen.findByRole('link', { name: APPLY_LABEL })
+    expect(link).toHaveAttribute('href', '/explorer/apply')
   })
 
   it('shows the apply button to Explorer admins', async () => {

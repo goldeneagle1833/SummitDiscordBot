@@ -6,6 +6,7 @@ real-money order records can be backed up and audited independently.
 
 import os
 import secrets
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -147,6 +148,12 @@ class StoreRepository:
                 conn.execute("ALTER TABLE products ADD COLUMN max_per_user_monthly INTEGER")
             except sqlite3.OperationalError:
                 pass  # column already exists
+            try:
+                # JSON list of image URLs, in display order. image_url stays
+                # in sync as the first entry so older readers keep working.
+                conn.execute("ALTER TABLE products ADD COLUMN images TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
     @staticmethod
     def _now() -> str:
@@ -156,20 +163,58 @@ class StoreRepository:
     # Products
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _product_from_row(row) -> dict:
+        """Row -> dict with ``images`` always a list of URL strings.
+
+        Products created before the images column exist with only
+        image_url, so fall back to that as a one-item gallery.
+        """
+        product = dict(row)
+        raw = product.get("images")
+        images: list[str] = []
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    images = [str(u) for u in parsed if u]
+            except (TypeError, ValueError):
+                images = []
+        if not images and product.get("image_url"):
+            images = [product["image_url"]]
+        product["images"] = images
+        return product
+
+    @staticmethod
+    def _clean_images(images) -> list[str]:
+        """Validate an images value from the API into a list of URL strings."""
+        if images is None:
+            return []
+        if not isinstance(images, (list, tuple)):
+            raise ValueError("images must be a list of URLs")
+        cleaned: list[str] = []
+        for url in images:
+            if not isinstance(url, str):
+                raise ValueError("images must be a list of URLs")
+            url = url.strip()
+            if url and url not in cleaned:
+                cleaned.append(url)
+        return cleaned
+
     def list_products(self, include_inactive: bool = False) -> list[dict]:
         query = "SELECT * FROM products"
         if not include_inactive:
             query += " WHERE is_active = 1"
         query += " ORDER BY name ASC"
         with self._connect() as conn:
-            return [dict(r) for r in conn.execute(query).fetchall()]
+            return [self._product_from_row(r) for r in conn.execute(query).fetchall()]
 
     def get_product(self, product_id: int) -> dict | None:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM products WHERE id = ?", (product_id,)
             ).fetchone()
-            return dict(row) if row else None
+            return self._product_from_row(row) if row else None
 
     def create_product(
         self,
@@ -180,25 +225,37 @@ class StoreRepository:
         image_url: str | None = None,
         stock_quantity: int = 0,
         max_per_user_monthly: int | None = None,
+        images: list[str] | None = None,
     ) -> int:
+        images = self._clean_images(images)
+        if not images and image_url:
+            images = [image_url]
         now = self._now()
         with self._connect() as conn:
             cur = conn.execute(
                 """INSERT INTO products
-                   (sku, name, description, price_cents, image_url,
+                   (sku, name, description, price_cents, image_url, images,
                     stock_quantity, max_per_user_monthly, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (sku, name, description, price_cents, image_url,
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (sku, name, description, price_cents,
+                 images[0] if images else None, json.dumps(images),
                  stock_quantity, max_per_user_monthly, now, now),
             )
             return cur.lastrowid
 
     def update_product(self, product_id: int, **fields) -> bool:
         allowed = {"sku", "name", "description", "price_cents", "image_url",
-                   "stock_quantity", "is_active", "max_per_user_monthly"}
+                   "stock_quantity", "is_active", "max_per_user_monthly", "images"}
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return False
+        if "images" in updates:
+            images = self._clean_images(updates["images"])
+            updates["images"] = json.dumps(images)
+            updates["image_url"] = images[0] if images else None
+        elif "image_url" in updates:
+            # Legacy single-image writers keep the gallery consistent
+            updates["images"] = json.dumps([updates["image_url"]] if updates["image_url"] else [])
         updates["updated_at"] = self._now()
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         with self._connect() as conn:
@@ -335,7 +392,7 @@ class StoreRepository:
             order = dict(row)
             order["items"] = [
                 dict(r) for r in conn.execute(
-                    """SELECT oi.*, p.image_url
+                    """SELECT oi.*, p.image_url, p.sku
                        FROM order_items oi
                        LEFT JOIN products p ON p.id = oi.product_id
                        WHERE oi.order_id = ?""",

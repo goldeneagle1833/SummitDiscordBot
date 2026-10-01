@@ -33,6 +33,20 @@ export const adminUpdateProduct = (id, data) =>
   })
 export const adminDeactivateProduct = (id) =>
   post(`/api/store/admin/products/${id}/deactivate`)
+// Uploads one or more image files; resolves to { url, urls } in upload order.
+export const adminUploadProductImages = (files) => {
+  const fd = new FormData()
+  for (const file of files) fd.append('image', file)
+  return fetch('/api/store/admin/products/upload-image', {
+    method: 'POST',
+    body: fd,
+    credentials: 'include',
+  }).then(async (res) => {
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok || !d.success) throw new Error(d.error || res.statusText)
+    return d
+  })
+}
 export const adminGetOrders = (filters = {}) => {
   const params = new URLSearchParams()
   if (filters.status) params.set('status', filters.status)

@@ -101,7 +101,10 @@ def admin_create_product():
             image_url=data.get("image_url"),
             stock_quantity=stock,
             max_per_user_monthly=max_monthly,
+            images=data.get("images"),
         )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except sqlite3.IntegrityError:
         return jsonify({"error": "A product with that SKU already exists"}), 409
 
@@ -111,6 +114,47 @@ def admin_create_product():
     return jsonify({"id": product_id}), 201
 
 
+def _validate_product_patch(data: dict) -> tuple[dict, str | None]:
+    """Coerce an admin PATCH body into repo fields. Returns (fields, error)."""
+    fields: dict = {}
+    for key in ("sku", "name"):
+        if key in data:
+            value = str(data[key] or "").strip()
+            if not value:
+                return {}, f"{key} cannot be empty"
+            fields[key] = value
+    if "description" in data:
+        fields["description"] = str(data["description"] or "")
+    for key in ("price_cents", "stock_quantity"):
+        if key in data:
+            try:
+                value = int(data[key])
+                if value < 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                return {}, f"{key} must be a non-negative integer"
+            fields[key] = value
+    if "is_active" in data:
+        fields["is_active"] = 1 if data["is_active"] in (1, True, "1", "true") else 0
+    if "max_per_user_monthly" in data:
+        value = data["max_per_user_monthly"]
+        if value in (None, ""):
+            fields["max_per_user_monthly"] = None
+        else:
+            try:
+                value = int(value)
+                if value < 1:
+                    raise ValueError
+            except (TypeError, ValueError):
+                return {}, "max_per_user_monthly must be a positive integer"
+            fields["max_per_user_monthly"] = value
+    if "images" in data:
+        fields["images"] = data["images"]
+    elif "image_url" in data:
+        fields["image_url"] = (data["image_url"] or "").strip() or None
+    return fields, None
+
+
 @store_bp.route("/store/admin/products/<int:product_id>", methods=["PATCH"])
 @require_store_admin
 def admin_update_product(product_id: int):
@@ -118,10 +162,15 @@ def admin_update_product(product_id: int):
     repo = _repo()
     if not repo.get_product(product_id):
         return jsonify({"error": "Product not found"}), 404
+    fields, error = _validate_product_patch(data)
+    if error:
+        return jsonify({"error": error}), 400
     try:
-        updated = repo.update_product(product_id, **data)
+        updated = repo.update_product(product_id, **fields)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except sqlite3.IntegrityError:
-        return jsonify({"error": "SKU conflict"}), 409
+        return jsonify({"error": "A product with that SKU already exists"}), 409
     if not updated:
         return jsonify({"error": "No valid fields to update"}), 400
 
@@ -573,30 +622,47 @@ ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
 
 
+MAX_IMAGES_PER_UPLOAD = 10
+
+
 @store_bp.route("/store/admin/products/upload-image", methods=["POST"])
 @require_store_admin
 def upload_product_image():
-    """Upload a product image. Returns the URL path to store on the product."""
-    file = request.files.get("image")
-    if not file or not file.filename:
-        return jsonify({"success": False, "error": "No image file provided"}), 400
+    """Upload one or more product images under the ``image`` field.
 
-    ext = _os.path.splitext(file.filename)[1].lower()
-    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+    Returns ``urls`` in upload order plus ``url`` (the first) for older
+    callers. Every file is validated before any is saved, so a bad file in
+    the batch rejects the whole request.
+    """
+    files = [f for f in request.files.getlist("image") if f and f.filename]
+    if not files:
+        return jsonify({"success": False, "error": "No image file provided"}), 400
+    if len(files) > MAX_IMAGES_PER_UPLOAD:
         return jsonify({
             "success": False,
-            "error": f"Invalid format. Allowed: {', '.join(sorted(ALLOWED_IMAGE_EXTENSIONS))}",
+            "error": f"Too many files. Maximum {MAX_IMAGES_PER_UPLOAD} per upload",
         }), 400
 
-    file.seek(0, _os.SEEK_END)
-    size = file.tell()
-    file.seek(0)
-    if size > MAX_IMAGE_SIZE:
-        return jsonify({"success": False, "error": "Image too large. Maximum 5MB"}), 400
+    staged = []
+    allowed = ", ".join(sorted(ALLOWED_IMAGE_EXTENSIONS))
+    for file in files:
+        ext = _os.path.splitext(file.filename)[1].lower()
+        if ext not in ALLOWED_IMAGE_EXTENSIONS:
+            return jsonify({"success": False, "error": f"Invalid format. Allowed: {allowed}"}), 400
 
-    filename = f"{_uuid.uuid4()}{ext}"
-    file.save(str(STORE_UPLOADS_DIR / filename))
+        file.seek(0, _os.SEEK_END)
+        size = file.tell()
+        file.seek(0)
+        if size > MAX_IMAGE_SIZE:
+            return jsonify({"success": False, "error": "Image too large. Maximum 5MB"}), 400
+        staged.append((file, f"{_uuid.uuid4()}{ext}"))
 
     actor_id, actor_name = _actor()
-    _repo().log_action(actor_id, actor_name, "upload_product_image", filename)
-    return jsonify({"success": True, "url": f"/static/uploads/store/{filename}"})
+    repo = _repo()
+    urls = []
+    for file, filename in staged:
+        file.save(str(STORE_UPLOADS_DIR / filename))
+        repo.log_action(actor_id, actor_name, "upload_product_image", filename)
+        urls.append(f"/static/uploads/store/{filename}")
+
+    return jsonify({"success": True, "url": urls[0], "urls": urls})

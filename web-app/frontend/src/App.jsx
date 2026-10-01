@@ -69,6 +69,7 @@ const ExplorerStandings = lazy(() => import('@/pages/ExplorerStandings'))
 // Phase 7: Admin
 import AuditLog from '@/pages/admin/AuditLog'
 import StoreAdmin from '@/pages/admin/StoreAdmin'
+import StoreOrderPrint from '@/pages/admin/StoreOrderPrint'
 import ActiveConnections from '@/pages/admin/ActiveConnections'
 import UniqueUsers from '@/pages/admin/UniqueUsers'
 import SessionAnalytics from '@/pages/admin/SessionAnalytics'
@@ -237,6 +238,15 @@ const router = createBrowserRouter([
       { path: '/error', element: <ErrorPage /> },
       { path: '*', element: <NotFound /> },
     ],
+  },
+  // Print views live outside the site chrome so only the form is printed
+  {
+    path: '/admin/store/orders/:id/print',
+    element: (
+      <AuthProvider>
+        <StoreAdminGuard><StoreOrderPrint /></StoreAdminGuard>
+      </AuthProvider>
+    ),
   },
 ])
 

@@ -33,6 +33,25 @@ describe('Store page', () => {
     useAuth.mockReturnValue({ user: false, loading: false })
   })
 
+  it('shows a thumbnail strip for products with several images and switches the main image', async () => {
+    getProducts.mockResolvedValue({
+      products: [{ ...TOKEN, images: ['/one.png', '/two.png', '/three.png'] }],
+    })
+    renderStore()
+    const main = await screen.findByAltText('Fire Token')
+    expect(main).toHaveAttribute('src', '/one.png')
+
+    await userEvent.click(screen.getByLabelText('Show image 2 of Fire Token'))
+    expect(screen.getByAltText('Fire Token')).toHaveAttribute('src', '/two.png')
+  })
+
+  it('shows a single image without a thumbnail strip', async () => {
+    getProducts.mockResolvedValue({ products: [{ ...TOKEN, image_url: '/solo.png', images: ['/solo.png'] }] })
+    renderStore()
+    expect(await screen.findByAltText('Fire Token')).toHaveAttribute('src', '/solo.png')
+    expect(screen.queryByLabelText('Fire Token images')).not.toBeInTheDocument()
+  })
+
   it('does not pop the sign-in prompt when a guest arrives', async () => {
     getProducts.mockResolvedValue({ products: [TOKEN] })
     renderStore()

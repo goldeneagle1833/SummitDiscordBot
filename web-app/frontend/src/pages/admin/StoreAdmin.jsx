@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   adminGetProducts, adminCreateProduct, adminUpdateProduct, adminDeactivateProduct,
+  adminUploadProductImages,
   adminGetOrders, adminGetOrder, adminShipOrder, adminSetOrderStatus, formatMoney,
 } from '@/api/store'
 import Spinner from '@/components/ui/Spinner'
@@ -11,40 +12,244 @@ const inputCls =
 
 // ---------------------------------------------------------------- Products
 
-const EMPTY_PRODUCT = { sku: '', name: '', description: '', price: '', stock_quantity: '', image_url: '', max_per_user_monthly: '' }
+const EMPTY_PRODUCT = {
+  sku: '', name: '', description: '', price: '', stock_quantity: '', max_per_user_monthly: '', images: [],
+}
 
-function ProductsPanel() {
-  const [products, setProducts] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [form, setForm] = useState(EMPTY_PRODUCT)
+function productToForm(p) {
+  return {
+    sku: p.sku || '',
+    name: p.name || '',
+    description: p.description || '',
+    price: (p.price_cents / 100).toFixed(2),
+    stock_quantity: String(p.stock_quantity ?? ''),
+    max_per_user_monthly: p.max_per_user_monthly == null ? '' : String(p.max_per_user_monthly),
+    images: p.images?.length ? [...p.images] : p.image_url ? [p.image_url] : [],
+  }
+}
+
+// Shared by "Add product" and the inline editor. `initial` is a product row
+// when editing, null when adding.
+function ProductForm({ initial, onSaved, onCancel }) {
+  const editing = Boolean(initial)
+  const [form, setForm] = useState(() => (initial ? productToForm(initial) : EMPTY_PRODUCT))
+  const [urlDraft, setUrlDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState(null)
   const fileRef = useRef(null)
+  const fileInputId = editing ? `product-image-file-${initial.id}` : 'product-image-file'
 
-  const uploadImage = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const set = (f) => (e) => setForm((x) => ({ ...x, [f]: e.target.value }))
+  const setImages = (fn) => setForm((x) => ({ ...x, images: fn(x.images) }))
+
+  const uploadImages = async (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
     setUploading(true)
     setError(null)
     try {
-      const fd = new FormData()
-      fd.append('image', file)
-      const r = await fetch('/api/store/admin/products/upload-image', {
-        method: 'POST',
-        body: fd,
-        credentials: 'include',
-      })
-      const d = await r.json()
-      if (d.success) setForm((x) => ({ ...x, image_url: d.url }))
-      else setError(`Upload failed: ${d.error}`)
-    } catch {
-      setError('Upload failed')
+      const { urls } = await adminUploadProductImages(files)
+      setImages((imgs) => [...imgs, ...urls.filter((u) => !imgs.includes(u))])
+    } catch (err) {
+      setError(`Upload failed: ${err.message}`)
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
     }
   }
+
+  const addUrl = () => {
+    const url = urlDraft.trim()
+    if (!url) return
+    setImages((imgs) => (imgs.includes(url) ? imgs : [...imgs, url]))
+    setUrlDraft('')
+  }
+
+  const removeImage = (i) => setImages((imgs) => imgs.filter((_, idx) => idx !== i))
+  const moveImage = (i, dir) =>
+    setImages((imgs) => {
+      const j = i + dir
+      if (j < 0 || j >= imgs.length) return imgs
+      const next = [...imgs]
+      ;[next[i], next[j]] = [next[j], next[i]]
+      return next
+    })
+  const makePrimary = (i) => setImages((imgs) => [imgs[i], ...imgs.filter((_, idx) => idx !== i)])
+
+  const submit = async () => {
+    setError(null)
+    const price_cents = Math.round(parseFloat(form.price) * 100)
+    if (!form.sku.trim() || !form.name.trim() || !Number.isFinite(price_cents) || price_cents < 0) {
+      setError('SKU, name, and a valid price are required')
+      return
+    }
+    const stock_quantity = parseInt(form.stock_quantity || '0', 10)
+    if (!Number.isFinite(stock_quantity) || stock_quantity < 0) {
+      setError('Stock must be zero or more')
+      return
+    }
+    const maxMonthly = form.max_per_user_monthly.trim() ? parseInt(form.max_per_user_monthly, 10) : null
+    if (maxMonthly !== null && (!Number.isFinite(maxMonthly) || maxMonthly < 1)) {
+      setError('Monthly limit must be a positive number, or blank for no limit')
+      return
+    }
+    const payload = {
+      sku: form.sku.trim(),
+      name: form.name.trim(),
+      description: form.description.trim(),
+      price_cents,
+      stock_quantity,
+      max_per_user_monthly: maxMonthly,
+      images: form.images,
+    }
+    setSaving(true)
+    try {
+      if (editing) {
+        await adminUpdateProduct(initial.id, payload)
+      } else {
+        await adminCreateProduct({
+          ...payload,
+          max_per_user_monthly: maxMonthly ?? undefined,
+        })
+        setForm(EMPTY_PRODUCT)
+      }
+      onSaved()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-bg-surface border border-border rounded-lg p-4 mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-semibold">{editing ? `Edit ${initial.name}` : 'Add product'}</h2>
+        {editing && (
+          <button type="button" onClick={onCancel} className="text-sm text-text-muted hover:text-text">
+            Cancel
+          </button>
+        )}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <input className={inputCls} placeholder="SKU (e.g. TOK-FIRE)" aria-label="SKU" value={form.sku} onChange={set('sku')} />
+        <input className={inputCls} placeholder="Name" aria-label="Name" value={form.name} onChange={set('name')} />
+        <textarea
+          className={`${inputCls} sm:col-span-2 min-h-20`}
+          placeholder="Description"
+          aria-label="Description"
+          value={form.description}
+          onChange={set('description')}
+        />
+        <input className={inputCls} placeholder="Price (e.g. 12.99)" aria-label="Price" inputMode="decimal" value={form.price} onChange={set('price')} />
+        <input className={inputCls} placeholder="Stock quantity" aria-label="Stock quantity" inputMode="numeric" value={form.stock_quantity} onChange={set('stock_quantity')} />
+        <input
+          className={inputCls}
+          placeholder="Monthly limit per user (blank = unlimited)"
+          aria-label="Monthly limit per user"
+          inputMode="numeric"
+          value={form.max_per_user_monthly}
+          onChange={set('max_per_user_monthly')}
+        />
+
+        <div className="sm:col-span-2 space-y-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              accept=".jpg,.jpeg,.png,.webp,.gif"
+              onChange={uploadImages}
+              className="hidden"
+              id={fileInputId}
+            />
+            <label
+              htmlFor={fileInputId}
+              className="cursor-pointer rounded border border-border bg-bg-elevated px-4 py-2 text-sm hover:border-primary transition-colors"
+            >
+              {uploading ? 'Uploading…' : 'Upload images'}
+            </label>
+            <input
+              className={`${inputCls} flex-1 min-w-48`}
+              placeholder="…or paste an image URL"
+              aria-label="Image URL"
+              value={urlDraft}
+              onChange={(e) => setUrlDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  addUrl()
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={addUrl}
+              disabled={!urlDraft.trim()}
+              className="text-sm text-primary hover:underline disabled:opacity-40 disabled:no-underline"
+            >
+              Add URL
+            </button>
+          </div>
+
+          {form.images.length > 0 ? (
+            <ul className="flex flex-wrap gap-3" aria-label="Product images">
+              {form.images.map((url, i) => (
+                <li key={url} className="relative w-24">
+                  <img
+                    src={url}
+                    alt={i === 0 ? 'Primary image' : `Image ${i + 1}`}
+                    className={`h-24 w-24 object-cover rounded border ${i === 0 ? 'border-secondary' : 'border-border'}`}
+                  />
+                  {i === 0 && (
+                    <span className="absolute top-1 left-1 text-[10px] font-medium bg-secondary text-black px-1.5 py-0.5 rounded">
+                      Primary
+                    </span>
+                  )}
+                  <div className="mt-1 flex items-center justify-between text-xs text-text-muted">
+                    <button type="button" onClick={() => moveImage(i, -1)} disabled={i === 0} aria-label={`Move image ${i + 1} left`} className="hover:text-text disabled:opacity-30">
+                      ←
+                    </button>
+                    {i !== 0 && (
+                      <button type="button" onClick={() => makePrimary(i)} className="hover:text-text">
+                        Primary
+                      </button>
+                    )}
+                    <button type="button" onClick={() => removeImage(i)} aria-label={`Remove image ${i + 1}`} className="hover:text-accent-red">
+                      ✕
+                    </button>
+                    <button type="button" onClick={() => moveImage(i, 1)} disabled={i === form.images.length - 1} aria-label={`Move image ${i + 1} right`} className="hover:text-text disabled:opacity-30">
+                      →
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-text-muted">No images yet. The first image is the one shown in listings.</p>
+          )}
+        </div>
+      </div>
+
+      {error && <p className="text-accent-red text-sm mt-3">{error}</p>}
+
+      <button
+        onClick={submit}
+        disabled={saving || uploading}
+        className="mt-3 bg-primary hover:bg-primary-dark text-white font-medium px-5 py-2 rounded transition-colors disabled:opacity-50"
+      >
+        {saving ? 'Saving…' : editing ? 'Save changes' : 'Add product'}
+      </button>
+    </div>
+  )
+}
+
+function ProductsPanel() {
+  const [products, setProducts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [editing, setEditing] = useState(null) // product row being edited
 
   const load = useCallback(() => {
     adminGetProducts()
@@ -53,36 +258,6 @@ function ProductsPanel() {
       .finally(() => setLoading(false))
   }, [])
   useEffect(load, [load])
-
-  const set = (f) => (e) => setForm((x) => ({ ...x, [f]: e.target.value }))
-
-  const addProduct = async () => {
-    setError(null)
-    const price_cents = Math.round(parseFloat(form.price) * 100)
-    if (!form.sku.trim() || !form.name.trim() || !Number.isFinite(price_cents)) {
-      setError('SKU, name, and a valid price are required')
-      return
-    }
-    setSaving(true)
-    try {
-      const maxMonthly = form.max_per_user_monthly ? parseInt(form.max_per_user_monthly, 10) : undefined
-      await adminCreateProduct({
-        sku: form.sku.trim(),
-        name: form.name.trim(),
-        description: form.description.trim(),
-        price_cents,
-        stock_quantity: parseInt(form.stock_quantity || '0', 10),
-        image_url: form.image_url.trim() || undefined,
-        max_per_user_monthly: maxMonthly || undefined,
-      })
-      setForm(EMPTY_PRODUCT)
-      load()
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const updateStock = async (p, value) => {
     const stock_quantity = parseInt(value, 10)
@@ -109,59 +284,19 @@ function ProductsPanel() {
 
   return (
     <div>
-      <div className="bg-bg-surface border border-border rounded-lg p-4 mb-6">
-        <h2 className="font-semibold mb-3">Add product</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <input className={inputCls} placeholder="SKU (e.g. TOK-FIRE)" value={form.sku} onChange={set('sku')} />
-          <input className={inputCls} placeholder="Name" value={form.name} onChange={set('name')} />
-          <input className={`${inputCls} sm:col-span-2`} placeholder="Description" value={form.description} onChange={set('description')} />
-          <input className={inputCls} placeholder="Price (e.g. 12.99)" inputMode="decimal" value={form.price} onChange={set('price')} />
-          <input className={inputCls} placeholder="Stock quantity" inputMode="numeric" value={form.stock_quantity} onChange={set('stock_quantity')} />
-          <input className={inputCls} placeholder="Monthly limit per user (blank = unlimited)" inputMode="numeric" value={form.max_per_user_monthly} onChange={set('max_per_user_monthly')} />
-          <div className="sm:col-span-2 flex items-center gap-3">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".jpg,.jpeg,.png,.webp,.gif"
-              onChange={uploadImage}
-              className="hidden"
-              id="product-image-file"
-            />
-            <label
-              htmlFor="product-image-file"
-              className="cursor-pointer rounded border border-border bg-bg-elevated px-4 py-2 text-sm hover:border-primary transition-colors"
-            >
-              {uploading ? 'Uploading…' : 'Upload image'}
-            </label>
-            {form.image_url ? (
-              <>
-                <img src={form.image_url} alt="Product preview" className="h-12 w-12 object-cover rounded border border-border" />
-                <button
-                  type="button"
-                  onClick={() => setForm((x) => ({ ...x, image_url: '' }))}
-                  className="text-sm text-text-muted hover:text-accent-red"
-                >
-                  Remove
-                </button>
-              </>
-            ) : (
-              <input
-                className={`${inputCls} flex-1`}
-                placeholder="…or paste an image URL"
-                value={form.image_url}
-                onChange={set('image_url')}
-              />
-            )}
-          </div>
-        </div>
-        <button
-          onClick={addProduct}
-          disabled={saving}
-          className="mt-3 bg-primary hover:bg-primary-dark text-white font-medium px-5 py-2 rounded transition-colors disabled:opacity-50"
-        >
-          {saving ? 'Adding…' : 'Add product'}
-        </button>
-      </div>
+      {editing ? (
+        <ProductForm
+          key={editing.id}
+          initial={editing}
+          onCancel={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null)
+            load()
+          }}
+        />
+      ) : (
+        <ProductForm key="new" initial={null} onSaved={load} />
+      )}
 
       {error && <p className="text-accent-red text-sm mb-3">{error}</p>}
 
@@ -180,45 +315,68 @@ function ProductsPanel() {
             </tr>
           </thead>
           <tbody>
-            {products.map((p) => (
-              <tr key={p.id} className="border-b border-border/50 hover:bg-bg-surface/50">
-                <td className="py-2 px-3">
-                  {p.image_url ? (
-                    <img src={p.image_url} alt="" className="h-10 w-10 object-cover rounded border border-border" />
-                  ) : (
-                    <div className="h-10 w-10 rounded border border-border bg-bg-elevated" />
-                  )}
-                </td>
-                <td className="py-2 px-3 font-mono text-xs">{p.sku}</td>
-                <td className="py-2 px-3">{p.name}</td>
-                <td className="py-2 px-3 text-secondary">{formatMoney(p.price_cents, p.currency)}</td>
-                <td className="py-2 px-3">
-                  <input
-                    type="number"
-                    min="0"
-                    defaultValue={p.stock_quantity}
-                    onBlur={(e) => e.target.value !== String(p.stock_quantity) && updateStock(p, e.target.value)}
-                    className={`${inputCls} w-20 py-1`}
-                    aria-label={`Stock for ${p.name}`}
-                  />
-                </td>
-                <td className="py-2 px-3 text-text-muted text-sm">
-                  {p.max_per_user_monthly ?? '∞'}
-                </td>
-                <td className="py-2 px-3">
-                  {p.is_active ? (
-                    <span className="text-accent-green">Active</span>
-                  ) : (
-                    <span className="text-text-muted">Hidden</span>
-                  )}
-                </td>
-                <td className="py-2 px-3 text-right">
-                  <button onClick={() => toggleActive(p)} className="text-primary hover:underline">
-                    {p.is_active ? 'Hide' : 'Show'}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {products.map((p) => {
+              const imageCount = p.images?.length ?? (p.image_url ? 1 : 0)
+              return (
+                <tr key={p.id} className={`border-b border-border/50 hover:bg-bg-surface/50 ${editing?.id === p.id ? 'bg-primary/5' : ''}`}>
+                  <td className="py-2 px-3">
+                    <div className="relative h-10 w-10">
+                      {p.image_url ? (
+                        <img src={p.image_url} alt="" className="h-10 w-10 object-cover rounded border border-border" />
+                      ) : (
+                        <div className="h-10 w-10 rounded border border-border bg-bg-elevated" />
+                      )}
+                      {imageCount > 1 && (
+                        <span
+                          className="absolute -bottom-1 -right-1 text-[10px] font-medium bg-bg-elevated border border-border rounded px-1"
+                          title={`${imageCount} images`}
+                        >
+                          +{imageCount - 1}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-2 px-3 font-mono text-xs">{p.sku}</td>
+                  <td className="py-2 px-3">{p.name}</td>
+                  <td className="py-2 px-3 text-secondary">{formatMoney(p.price_cents, p.currency)}</td>
+                  <td className="py-2 px-3">
+                    <input
+                      type="number"
+                      min="0"
+                      defaultValue={p.stock_quantity}
+                      onBlur={(e) => e.target.value !== String(p.stock_quantity) && updateStock(p, e.target.value)}
+                      className={`${inputCls} w-20 py-1`}
+                      aria-label={`Stock for ${p.name}`}
+                    />
+                  </td>
+                  <td className="py-2 px-3 text-text-muted text-sm">
+                    {p.max_per_user_monthly ?? '∞'}
+                  </td>
+                  <td className="py-2 px-3">
+                    {p.is_active ? (
+                      <span className="text-accent-green">Active</span>
+                    ) : (
+                      <span className="text-text-muted">Hidden</span>
+                    )}
+                  </td>
+                  <td className="py-2 px-3 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => {
+                        setEditing(p)
+                        window.scrollTo?.({ top: 0, behavior: 'smooth' })
+                      }}
+                      className="text-primary hover:underline mr-3"
+                      aria-label={`Edit ${p.name}`}
+                    >
+                      Edit
+                    </button>
+                    <button onClick={() => toggleActive(p)} className="text-primary hover:underline">
+                      {p.is_active ? 'Hide' : 'Show'}
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
         {products.length === 0 && (
@@ -285,12 +443,28 @@ function OrderRow({ order, onChanged }) {
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg">
-      <button onClick={toggle} className="w-full flex flex-wrap items-center justify-between gap-2 p-3 text-left">
-        <span className="font-mono text-sm">{order.order_number}</span>
-        <span className="text-sm">{order.username}</span>
-        <span className="text-sm text-secondary font-medium">{formatMoney(order.total_cents, order.currency)}</span>
-        <span className="text-sm text-text-muted">{order.status}</span>
-      </button>
+      <div className="flex items-center">
+        <button onClick={toggle} className="flex-1 flex flex-wrap items-center justify-between gap-2 p-3 text-left">
+          <span className="font-mono text-sm">{order.order_number}</span>
+          <span className="text-sm">{order.username}</span>
+          <span className="text-sm text-secondary font-medium">{formatMoney(order.total_cents, order.currency)}</span>
+          <span className="text-sm text-text-muted">{order.status}</span>
+        </button>
+        <a
+          href={`/admin/store/orders/${order.id}/print?print=1`}
+          target="_blank"
+          rel="noopener"
+          className="shrink-0 mr-3 inline-flex items-center gap-1.5 rounded border border-border px-2.5 py-1.5 text-xs text-text-muted hover:text-text hover:border-primary transition-colors"
+          aria-label={`Print order form for ${order.order_number}`}
+          title="Open a printable order form in a new tab"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6 9V3h12v6M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" />
+            <rect x="6" y="14" width="12" height="7" />
+          </svg>
+          Print
+        </a>
+      </div>
 
       {expanded && (
         <div className="border-t border-border p-3 text-sm space-y-3">

@@ -49,6 +49,55 @@ function LoginPromptModal({ onClose }) {
   )
 }
 
+function productImages(p) {
+  if (p.images?.length) return p.images
+  return p.image_url ? [p.image_url] : []
+}
+
+// Main image plus a thumbnail strip when a product has more than one image.
+function ProductGallery({ product }) {
+  const images = productImages(product)
+  const [index, setIndex] = useState(0)
+  const current = images[Math.min(index, images.length - 1)]
+
+  if (images.length === 0) {
+    return (
+      <div className="w-full h-48 bg-gradient-to-br from-bg-elevated to-bg-surface flex items-center justify-center">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" className="text-border">
+          <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
+          <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
+          <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <img src={current} alt={product.name} className="w-full h-48 object-cover" />
+      {images.length > 1 && (
+        <div className="flex gap-1.5 p-2 overflow-x-auto bg-bg-elevated/60" role="list" aria-label={`${product.name} images`}>
+          {images.map((url, i) => (
+            <button
+              key={url}
+              type="button"
+              role="listitem"
+              onClick={() => setIndex(i)}
+              aria-label={`Show image ${i + 1} of ${product.name}`}
+              aria-current={i === index ? 'true' : undefined}
+              className={`shrink-0 rounded border overflow-hidden transition-colors ${
+                i === index ? 'border-secondary' : 'border-border hover:border-secondary/50'
+              }`}
+            >
+              <img src={url} alt="" className="h-12 w-12 object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Store() {
   usePageTitle('Store')
   const { user } = useAuth()
@@ -122,21 +171,7 @@ export default function Store() {
                     : 'border-border hover:border-secondary/40 hover:-translate-y-0.5 hover:shadow-harsh'
                 }`}
               >
-                {p.image_url ? (
-                  <img
-                    src={p.image_url}
-                    alt={p.name}
-                    className="w-full h-48 object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-48 bg-gradient-to-br from-bg-elevated to-bg-surface flex items-center justify-center">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" className="text-border">
-                      <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
-                      <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
-                      <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </div>
-                )}
+                <ProductGallery product={p} />
                 <div className="p-4 flex flex-col flex-1">
                   <h2 className="font-semibold text-text-primary">{p.name}</h2>
                   {p.description && (

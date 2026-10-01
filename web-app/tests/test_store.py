@@ -96,6 +96,54 @@ class TestStoreRepositoryProducts:
         assert repo.adjust_stock(pid, -10) is False
         assert repo.get_product(pid)["stock_quantity"] == 2
 
+    def test_product_images_round_trip(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, images=["/a.png", " /b.png ", "", "/a.png"])
+        p = repo.get_product(pid)
+        assert p["images"] == ["/a.png", "/b.png"]  # trimmed, blanks and dupes dropped
+        assert p["image_url"] == "/a.png"            # first image stays the thumbnail
+
+    def test_product_images_fall_back_to_legacy_image_url(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, image_url="/legacy.png")
+        p = repo.get_product(pid)
+        assert p["images"] == ["/legacy.png"]
+        assert repo.list_products()[0]["images"] == ["/legacy.png"]
+
+    def test_product_without_images(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo)
+        p = repo.get_product(pid)
+        assert p["images"] == []
+        assert p["image_url"] is None
+
+    def test_update_product_images_resets_thumbnail(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, images=["/a.png", "/b.png"])
+        assert repo.update_product(pid, images=["/b.png", "/c.png"])
+        p = repo.get_product(pid)
+        assert p["images"] == ["/b.png", "/c.png"]
+        assert p["image_url"] == "/b.png"
+
+        assert repo.update_product(pid, images=[])
+        p = repo.get_product(pid)
+        assert p["images"] == []
+        assert p["image_url"] is None
+
+    def test_update_product_legacy_image_url_keeps_gallery_in_sync(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, images=["/a.png", "/b.png"])
+        assert repo.update_product(pid, image_url="/solo.png")
+        assert repo.get_product(pid)["images"] == ["/solo.png"]
+
+    def test_update_product_rejects_bad_images(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo)
+        with pytest.raises(ValueError):
+            repo.update_product(pid, images="not-a-list")
+        with pytest.raises(ValueError):
+            repo.update_product(pid, images=[1, 2])
+
     def test_get_nonexistent_product(self, tmp_path):
         repo = _repo(tmp_path)
         assert repo.get_product(9999) is None
@@ -865,6 +913,90 @@ class TestStoreAdminRoutes:
         resp = store_admin_session.post(f"/api/store/admin/products/{pid}/deactivate")
         assert resp.status_code == 200
         assert store_repo.get_product(pid)["is_active"] == 0
+
+    def test_admin_create_product_with_images(self, store_admin_session, store_repo):
+        resp = store_admin_session.post("/api/store/admin/products",
+                                        json={"sku": "IMG-1", "name": "Gallery",
+                                              "price_cents": 500,
+                                              "images": ["/one.png", "/two.png"]})
+        assert resp.status_code == 201
+        p = store_repo.get_product(resp.get_json()["id"])
+        assert p["images"] == ["/one.png", "/two.png"]
+        assert p["image_url"] == "/one.png"
+
+    def test_admin_update_product_full_edit(self, store_admin_session, store_repo):
+        pid = _seed_product(store_repo, sku="EDIT-1", max_per_user_monthly=2)
+        resp = store_admin_session.patch(
+            f"/api/store/admin/products/{pid}",
+            json={"sku": "EDIT-2", "name": "Renamed", "description": "New blurb",
+                  "price_cents": 1234, "stock_quantity": 7,
+                  "max_per_user_monthly": None,
+                  "images": ["/x.png", "/y.png"]},
+        )
+        assert resp.status_code == 200
+        p = store_repo.get_product(pid)
+        assert p["sku"] == "EDIT-2"
+        assert p["name"] == "Renamed"
+        assert p["description"] == "New blurb"
+        assert p["price_cents"] == 1234
+        assert p["stock_quantity"] == 7
+        assert p["max_per_user_monthly"] is None
+        assert p["images"] == ["/x.png", "/y.png"]
+        assert p["image_url"] == "/x.png"
+
+    def test_admin_update_product_validates(self, store_admin_session, store_repo):
+        pid = _seed_product(store_repo, sku="VAL-1")
+        url = f"/api/store/admin/products/{pid}"
+        assert store_admin_session.patch(url, json={"price_cents": -1}).status_code == 400
+        assert store_admin_session.patch(url, json={"price_cents": "abc"}).status_code == 400
+        assert store_admin_session.patch(url, json={"name": "  "}).status_code == 400
+        assert store_admin_session.patch(url, json={"max_per_user_monthly": 0}).status_code == 400
+        assert store_admin_session.patch(url, json={"images": "nope"}).status_code == 400
+        assert store_admin_session.patch(url, json={"bogus": 1}).status_code == 400
+        # Nothing above should have changed the row
+        assert store_repo.get_product(pid)["name"] == "Test Token"
+
+    def test_admin_update_product_sku_conflict(self, store_admin_session, store_repo):
+        _seed_product(store_repo, sku="TAKEN")
+        pid = _seed_product(store_repo, sku="MINE")
+        resp = store_admin_session.patch(f"/api/store/admin/products/{pid}",
+                                          json={"sku": "TAKEN"})
+        assert resp.status_code == 409
+
+    def test_public_products_include_images(self, client, store_repo):
+        _seed_product(store_repo, images=["/one.png", "/two.png"])
+        products = client.get("/api/store/products").get_json()["products"]
+        assert products[0]["images"] == ["/one.png", "/two.png"]
+
+    def test_upload_several_images(self, store_admin_session, store_repo, tmp_path):
+        from io import BytesIO
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+        with patch("routes.api.store.STORE_UPLOADS_DIR", uploads):
+            resp = store_admin_session.post(
+                "/api/store/admin/products/upload-image",
+                data={"image": [(BytesIO(b"png1"), "a.png"), (BytesIO(b"png2"), "b.jpg")]},
+                content_type="multipart/form-data",
+            )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert len(body["urls"]) == 2
+        assert body["url"] == body["urls"][0]
+        assert all(u.startswith("/static/uploads/store/") for u in body["urls"])
+        assert len(list(uploads.glob("*"))) == 2
+
+    def test_upload_rejects_batch_with_bad_file(self, store_admin_session, store_repo, tmp_path):
+        from io import BytesIO
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+        with patch("routes.api.store.STORE_UPLOADS_DIR", uploads):
+            resp = store_admin_session.post(
+                "/api/store/admin/products/upload-image",
+                data={"image": [(BytesIO(b"png1"), "a.png"), (BytesIO(b"exe"), "b.exe")]},
+                content_type="multipart/form-data",
+            )
+        assert resp.status_code == 400
+        assert list(uploads.glob("*")) == []  # nothing saved from the batch
 
     def test_admin_list_orders(self, store_admin_session, store_repo):
         pid = _seed_product(store_repo, stock_quantity=10)

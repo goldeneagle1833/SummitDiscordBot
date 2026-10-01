@@ -479,6 +479,52 @@ class TestStoreCheckoutService:
         assert o["ship_city"] == "Portland"
         assert o["ship_postal"] == "97201"
 
+    def test_handle_event_completed_saves_shipping_from_collected_information(self, tmp_path):
+        """API versions >= 2025-03-31 nest the address under collected_information."""
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, stock_quantity=10)
+        order = _seed_order(repo, product_id=pid, shipping_address={})
+        repo.attach_payment(order["id"], "stripe", "cs_test_ship2")
+
+        svc = self._service(repo)
+        full_order = repo.get_order(order["id"])
+
+        event = {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": "cs_test_ship2",
+                    "payment_status": "paid",
+                    "amount_total": full_order["total_cents"],
+                    "currency": "usd",
+                    "metadata": {"order_id": str(order["id"])},
+                    "collected_information": {
+                        "shipping_details": {
+                            "name": "Sam Rivera",
+                            "address": {
+                                "line1": "12 Elm St",
+                                "line2": None,
+                                "city": "Columbus",
+                                "state": "OH",
+                                "postal_code": "43215",
+                                "country": "US",
+                            },
+                        },
+                    },
+                }
+            },
+        }
+        with patch("services.store_notifications.StoreNotificationService"):
+            result = svc.handle_event(event)
+        assert result["handled"] is True
+        o = repo.get_order(order["id"])
+        assert o["ship_name"] == "Sam Rivera"
+        assert o["ship_line1"] == "12 Elm St"
+        assert o["ship_line2"] == ""
+        assert o["ship_city"] == "Columbus"
+        assert o["ship_state"] == "OH"
+        assert o["ship_postal"] == "43215"
+
     def test_handle_event_amount_mismatch(self, tmp_path):
         repo = _repo(tmp_path)
         pid = _seed_product(repo, stock_quantity=10)

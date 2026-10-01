@@ -45,6 +45,35 @@ def _site_url(path: str) -> str:
     return base.rstrip("/") + path
 
 
+def shipping_address_from_session(session_obj) -> dict | None:
+    """Pull the buyer's shipping address out of a Checkout Session.
+
+    Stripe API versions from 2025-03-31 onward moved the address from the
+    top-level ``shipping_details`` to ``collected_information.shipping_details``.
+    Which shape arrives depends on the API version pinned on the webhook
+    endpoint (and on the SDK for retrieves), so accept both. Returns the
+    address in the repository's key format, or None if none was collected.
+    """
+    shipping = (
+        session_obj.get("shipping_details")
+        or (session_obj.get("collected_information") or {}).get("shipping_details")
+        or session_obj.get("shipping")
+        or {}
+    )
+    addr = shipping.get("address") if shipping else None
+    if not addr:
+        return None
+    return {
+        "name": shipping.get("name") or "",
+        "line1": addr.get("line1") or "",
+        "line2": addr.get("line2") or "",
+        "city": addr.get("city") or "",
+        "state": addr.get("state") or "",
+        "postal": addr.get("postal_code") or "",
+        "country": addr.get("country") or "US",
+    }
+
+
 class StoreCheckoutService:
     """Creates checkout sessions and processes Stripe webhook events."""
 
@@ -309,18 +338,9 @@ class StoreCheckoutService:
         # Save the shipping address collected by Stripe Checkout BEFORE the
         # paid transition: if anything below fails, the webhook returns 500
         # and Stripe retries, but a retry skips everything after mark_paid.
-        shipping = session_obj.get("shipping_details") or session_obj.get("shipping") or {}
-        if shipping.get("address"):
-            addr = shipping["address"]
-            self.repo.update_shipping_address(order["id"], {
-                "name": shipping.get("name", ""),
-                "line1": addr.get("line1", ""),
-                "line2": addr.get("line2", ""),
-                "city": addr.get("city", ""),
-                "state": addr.get("state", ""),
-                "postal": addr.get("postal_code", ""),
-                "country": addr.get("country", "US"),
-            })
+        address = shipping_address_from_session(session_obj)
+        if address:
+            self.repo.update_shipping_address(order["id"], address)
 
         if self.repo.mark_paid(order["id"]):
             self.repo.log_action(

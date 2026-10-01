@@ -17,6 +17,7 @@ Usage (from web-app/, inside the venv):
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -71,7 +72,7 @@ def main() -> int:
             print(f"{order_number}: could not fetch {session_id}: {getattr(e, 'user_message', None) or e}")
             continue
 
-        address = shipping_address_from_session(session.to_dict_recursive())
+        address = shipping_address_from_session(json.loads(str(session)))
         if not address:
             missing += 1
             print(f"{order_number}: Stripe has no shipping address on {session_id}")

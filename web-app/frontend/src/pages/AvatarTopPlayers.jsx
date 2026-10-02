@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { getAvatarFilters, getAvatarTopPlayers } from '@/api/cards'
+import { getAvatarLeaderboards } from '@/api/leaderboard'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
+
+// Season Elo reads the running season's per-avatar ladder (Avatar-mode seasons only)
+const ELO_SORT = { value: 'elo', label: 'Season Elo' }
 
 const SORT_OPTIONS = [
   { value: 'avatar_score', label: 'Avatar Score' },
@@ -29,6 +33,60 @@ function sortPlayers(players, sortBy) {
   }
 }
 
+function SeasonEloTable({ avatar, entry }) {
+  if (!entry) {
+    return <p className="text-center text-text-muted py-10">No rated games on {avatar || 'this avatar'} this season yet.</p>
+  }
+  return (
+    <section className="bg-bg-surface border border-border rounded-soft overflow-hidden">
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 p-4 border-b border-border">
+        <div>
+          <h2 className="text-xl font-display text-text-primary">{avatar}</h2>
+          <p className="text-sm text-text-muted">
+            {entry.players} player{entry.players === 1 ? '' : 's'} rated on {avatar} this season
+          </p>
+        </div>
+        <Link to={`/avatar/${encodeURIComponent(avatar)}`} className="text-sm text-primary hover:underline">
+          View avatar profile
+        </Link>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-bg-elevated border-b border-border">
+            <tr>
+              <th className="px-3 py-3 text-left text-xs uppercase tracking-wide text-text-muted">Rank</th>
+              <th className="px-3 py-3 text-left text-xs uppercase tracking-wide text-text-muted">Player</th>
+              <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">Season Elo</th>
+              <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">Record</th>
+              <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">Win Rate</th>
+              <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">Games</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {entry.entries.map((player) => {
+              const winRate = player.games ? Math.round((player.wins / player.games) * 1000) / 10 : 0
+              return (
+                <tr key={player.user_id} className="hover:bg-bg-elevated transition-colors">
+                  <td className="px-3 py-3 font-semibold text-text-muted">#{player.rank}</td>
+                  <td className="px-3 py-3">
+                    <Link to={`/player/${player.user_id}`} className="text-primary hover:underline font-semibold">
+                      {player.display_name}
+                    </Link>
+                  </td>
+                  <td className="px-3 py-3 text-right font-bold text-secondary">{player.elo}</td>
+                  <td className="px-3 py-3 text-right">{player.wins}W-{player.losses}L</td>
+                  <td className={`px-3 py-3 text-right font-semibold ${getWinRateClass(winRate)}`}>{winRate}%</td>
+                  <td className="px-3 py-3 text-right text-text-muted">{player.games}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
 function getWinRateClass(winRate) {
   if (winRate >= 60) return 'text-emerald-400'
   if (winRate >= 50) return 'text-amber-300'
@@ -47,8 +105,10 @@ export default function AvatarTopPlayers() {
   const [selectedAvatar, setSelectedAvatarState] = useState(() => searchParams.get('avatar') || '')
   const [eventFilter, setEventFilterState] = useState(() => searchParams.get('event') || 'current')
   const [sourceFilter, setSourceFilter] = useState('discord')
-  const [sortBy, setSortBy] = useState('avatar_score')
+  // null = the page's default: Season Elo during an Avatar-mode season, else Avatar Score
+  const [sortChoice, setSortChoice] = useState(() => searchParams.get('sort'))
   const [minGames, setMinGames] = useState(10)
+  const [eloBoard, setEloBoard] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -69,6 +129,24 @@ export default function AvatarTopPlayers() {
     setEventFilterState(value)
     updateParam('event', value, 'current')
   }
+  const setSortBy = (value) => {
+    setSortChoice(value)
+    updateParam('sort', value, '')
+  }
+
+  // The running season's per-avatar Elo ladder, the same one the home page ranks by
+  useEffect(() => {
+    getAvatarLeaderboards()
+      .then(setEloBoard)
+      .catch(() => setEloBoard(null))
+  }, [])
+
+  const eloAvailable = eventFilter === 'current' && eloBoard?.elo_mode === 'avatar'
+  const sortOptions = eloAvailable ? [ELO_SORT, ...SORT_OPTIONS] : SORT_OPTIONS
+  const sortBy = sortOptions.some((option) => option.value === sortChoice)
+    ? sortChoice
+    : eloAvailable ? 'elo' : 'avatar_score'
+  const eloMode = sortBy === 'elo'
 
   useEffect(() => {
     // The current season is public on this page (the home leaderboard links here)
@@ -92,24 +170,27 @@ export default function AvatarTopPlayers() {
       limit: 16,
     })
       .then((result) => {
-        const avatars = result.avatars || []
-        setData({ ...result, avatars })
-        setSelectedAvatarState((current) => {
-          if (avatars.some((avatar) => avatar.name === current)) return current
-          return avatars[0]?.name || ''
-        })
+        setData({ ...result, avatars: result.avatars || [] })
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [eventFilter, sourceFilter, minGames])
 
+  // Season Elo lists every avatar with a rated game this season; the other
+  // sorts list avatars with a player past the minimum games
+  const avatarNames = useMemo(() => {
+    const source = eloMode ? eloBoard?.avatars || [] : data.avatars
+    return source.map((avatar) => avatar.avatar || avatar.name).sort((a, b) => a.localeCompare(b))
+  }, [eloMode, eloBoard, data.avatars])
+  const avatarName = avatarNames.includes(selectedAvatar) ? selectedAvatar : avatarNames[0] || ''
+
   const selected = useMemo(
-    () => data.avatars.find((avatar) => avatar.name === selectedAvatar) || data.avatars[0],
-    [data.avatars, selectedAvatar],
+    () => data.avatars.find((avatar) => avatar.name === avatarName),
+    [data.avatars, avatarName],
   )
-  const avatarOptions = useMemo(
-    () => [...data.avatars].sort((a, b) => a.name.localeCompare(b.name)),
-    [data.avatars],
+  const eloEntry = useMemo(
+    () => (eloBoard?.avatars || []).find((avatar) => avatar.avatar === avatarName),
+    [eloBoard, avatarName],
   )
   const players = useMemo(
     () => sortPlayers(selected?.players || [], sortBy).map((player, index) => ({ ...player, displayRank: index + 1 })),
@@ -125,9 +206,13 @@ export default function AvatarTopPlayers() {
       </div>
 
       <section className="text-center mb-6">
-        <h1 className="text-2xl font-display text-secondary">Top 16 Players by Avatar</h1>
+        <h1 className="text-2xl font-display text-secondary">
+          {eloMode ? 'Season Elo by Avatar' : 'Top 16 Players by Avatar'}
+        </h1>
         <p className="text-sm text-text-muted mt-1">
-          Pick an avatar to see its strongest pilots ranked by Avatar Score.
+          {eloMode
+            ? 'Every player rated on an avatar this season, ranked by their season Elo on it.'
+            : 'Pick an avatar to see its strongest pilots ranked by Avatar Score.'}
         </p>
       </section>
 
@@ -136,12 +221,12 @@ export default function AvatarTopPlayers() {
           <label className="block">
             <span className="text-xs uppercase tracking-wide text-text-muted">Avatar</span>
             <select
-              value={selectedAvatar}
+              value={avatarName}
               onChange={(e) => setSelectedAvatar(e.target.value)}
               className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm"
             >
-              {[...data.avatars].sort((a, b) => a.name.localeCompare(b.name)).map((avatar) => (
-                <option key={avatar.name} value={avatar.name}>{avatar.name}</option>
+              {avatarNames.map((name) => (
+                <option key={name} value={name}>{name}</option>
               ))}
             </select>
           </label>
@@ -167,7 +252,9 @@ export default function AvatarTopPlayers() {
             <select
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
-              className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm"
+              disabled={eloMode}
+              title={eloMode ? 'Season Elo is the ranked ladder (online games)' : undefined}
+              className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm disabled:opacity-50"
             >
               <option value="discord">Online</option>
               <option value="all">All Sources</option>
@@ -181,7 +268,7 @@ export default function AvatarTopPlayers() {
               onChange={(e) => setSortBy(e.target.value)}
               className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm"
             >
-              {SORT_OPTIONS.map((option) => (
+              {sortOptions.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
@@ -195,13 +282,17 @@ export default function AvatarTopPlayers() {
               max="100"
               value={minGames}
               onChange={(e) => setMinGames(Number(e.target.value) || 1)}
-              className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm"
+              disabled={eloMode}
+              title={eloMode ? 'Season Elo lists every rated player' : undefined}
+              className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm disabled:opacity-50"
             />
           </label>
         </div>
       </div>
 
-      {loading ? (
+      {eloMode ? (
+        <SeasonEloTable avatar={avatarName} entry={eloEntry} />
+      ) : loading ? (
         <Spinner className="py-20" />
       ) : !selected ? (
         <p className="text-center text-text-muted py-10">No avatar player records found for these filters.</p>

@@ -97,7 +97,8 @@ function Side({
  * involved - the buttons to settle it.
  *
  * With `onSwap` the two names become draggable: dropping one on another swaps
- * their seeds, which is how the admin arranges a draft before publishing.
+ * their seeds, which is how the admin arranges a draft before publishing - or,
+ * on a live bracket, trades two players' seats before either has played.
  */
 export default function MatchCard({
   match,
@@ -122,8 +123,10 @@ export default function MatchCard({
   const p1Elo = rated ? (p1Wins ? match.winner_elo_change : match.loser_elo_change) : null
   const p2Elo = rated ? (p2Wins ? match.winner_elo_change : match.loser_elo_change) : null
 
-  const dragFor = (seed) => {
-    if (!onSwap || !seed) return null
+  // A seat that has already been played, reported or given a table is a
+  // result rather than a pairing, so it cannot be dragged or dropped on.
+  const dragFor = (seed, slot) => {
+    if (!onSwap || !seed || match[`p${slot}_movable`] === false) return null
     return {
       props: {
         draggable: true,
@@ -166,7 +169,7 @@ export default function MatchCard({
         fromBye={match.p1_from_bye}
         eloChange={p1Elo}
         linkTo={!onSwap}
-        dragHandlers={dragFor(match.p1_seed)}
+        dragHandlers={dragFor(match.p1_seed, 1)}
       />
       <div className="border-t border-border" />
       <Side
@@ -180,7 +183,7 @@ export default function MatchCard({
         fromBye={match.p2_from_bye}
         eloChange={p2Elo}
         linkTo={!onSwap}
-        dragHandlers={dragFor(match.p2_seed)}
+        dragHandlers={dragFor(match.p2_seed, 2)}
       />
 
       {match.viewer_can_report && (

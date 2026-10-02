@@ -571,6 +571,110 @@ class TestAdminOverrides:
         assert repo.get_bracket(bracket_id=bracket_id)["status"] == "published"
 
 
+class TestSwappingPlayers:
+    """Re-pairing a published bracket before the affected matches are played.
+
+    An 8-player field opens 1v8, 4v5, 2v7, 3v6. A 6-player field gives seeds 1
+    and 2 byes, so it opens 4v5 and 3v6 with 1 and 2 waiting in round two.
+    """
+
+    def _pair(self, repo, bracket_id, match_no):
+        m = repo.get_match(bracket_id, match_no)
+        return (m["p1_seed"], m["p2_seed"])
+
+    def test_two_first_round_players_trade_seats(self, service, repo):
+        slug, bracket_id = published(service, repo, 8)
+
+        result = service.swap_players(slug, 8, 5)
+
+        assert self._pair(repo, bracket_id, 1) == (1, 5)
+        assert self._pair(repo, bracket_id, 2) == (4, 8)
+        stored = repo.get_match(bracket_id, 1)
+        assert stored["p2_user_id"] == "u5"
+        assert stored["p2_name"] == "P5"
+        assert result["swapped"] == ["P8", "P5"]
+
+    def test_a_swapped_player_can_report_their_new_match(self, service, repo):
+        slug, bracket_id = published(service, repo, 8)
+        service.swap_players(slug, 8, 5)
+
+        service.report_result(slug, 1, "u5", "u5")
+        service.confirm_result(slug, 1, "u1")
+        assert repo.get_match(bracket_id, 5)["p1_user_id"] == "u5"
+
+    def test_swapping_a_bye_moves_the_bye(self, service, repo):
+        slug, bracket_id = published(service, repo, 6)
+        # Round two, first match: seed 1 off a bye, waiting on 4v5.
+        assert self._pair(repo, bracket_id, 5) == (1, None)
+
+        service.swap_players(slug, 1, 6)
+
+        assert self._pair(repo, bracket_id, 5) == (6, None)
+        assert self._pair(repo, bracket_id, 4) == (3, 1)
+        bye = repo.get_match(bracket_id, 1)
+        assert bye["state"] == "bye"
+        assert (bye["winner_seed"], bye["winner_user_id"]) == (6, "u6")
+
+        rounds = rounds_for_display(repo.get_matches(bracket_id))
+        second_round = rounds[1]["matches"][0]
+        assert second_round["p1_from_bye"] is True
+        assert second_round["p1_name"] == "P6"
+
+    def test_a_played_match_cannot_be_re_paired(self, service, repo):
+        slug, bracket_id = published(service, repo, 8)
+        service.set_result(slug, 1, "u1", admin_id="a")
+
+        with pytest.raises(BracketError, match="already been played"):
+            service.swap_players(slug, 8, 5)
+        # The winner's round-two seat is a result, not a pairing.
+        with pytest.raises(BracketError, match="already"):
+            service.swap_players(slug, 1, 5)
+
+    def test_a_reported_match_cannot_be_re_paired(self, service, repo):
+        slug, _ = published(service, repo, 8)
+        service.report_result(slug, 1, "u1", "u1")
+
+        with pytest.raises(BracketError, match="waiting to be confirmed"):
+            service.swap_players(slug, 1, 5)
+
+    def test_a_match_with_a_table_cannot_be_re_paired(self, service, repo):
+        slug, bracket_id = published(service, repo, 8)
+        repo.update_match(bracket_id, 2, {"table_provisioned_at": "2026-10-01T12:00:00"})
+
+        with pytest.raises(BracketError, match="Sorcery Online table"):
+            service.swap_players(slug, 1, 5)
+        assert self._pair(repo, bracket_id, 1) == (1, 8)
+
+    def test_opponents_cannot_be_swapped_with_each_other(self, service, repo):
+        slug, _ = published(service, repo, 8)
+        with pytest.raises(BracketError, match="already playing each other"):
+            service.swap_players(slug, 1, 8)
+
+    def test_drafts_use_the_seeding_list(self, service):
+        created = service.create_bracket(name="Draft", size=8, source="overall")
+        with pytest.raises(BracketError, match="seeding list"):
+            service.swap_players(created["slug"], 1, 5)
+
+    def test_unknown_seed(self, service, repo):
+        slug, _ = published(service, repo, 8)
+        with pytest.raises(BracketError, match="not in this bracket"):
+            service.swap_players(slug, 1, 42)
+
+    def test_the_tree_marks_which_seats_can_move(self, service, repo):
+        slug, bracket_id = published(service, repo, 6)
+        service.set_result(slug, 2, "u4", admin_id="a")
+
+        rounds = rounds_for_display(repo.get_matches(bracket_id))
+        first = {m["match_no"]: m for m in rounds[0]["matches"]}
+        second = {m["match_no"]: m for m in rounds[1]["matches"]}
+
+        assert (first[2]["p1_movable"], first[2]["p2_movable"]) == (False, False)
+        assert (first[4]["p1_movable"], first[4]["p2_movable"]) == (True, True)
+        # Seed 1 came off a bye and can move; seed 4 got there by winning.
+        assert second[5]["p1_movable"] is True
+        assert second[5]["p2_movable"] is False
+
+
 class TestDecklists:
     def _publish(self, service, repo, count=4):
         return published(service, repo, count, name="Deck Cup")
@@ -1822,6 +1926,28 @@ class TestBracketApi:
             json={"entrants": [{"display_name": "Guest A"}, {"display_name": "Guest B"}]},
         )
         assert resp.get_json()["entrant_count"] == 2
+
+    def test_admin_swaps_players_in_a_published_bracket(self, admin_session, client):
+        created = admin_session.post(
+            "/api/admin/brackets", json={"name": "Swap Cup", "size": 2, "source": "overall"}
+        ).get_json()
+        slug = created["slug"]
+        admin_session.post(f"/api/admin/brackets/{slug}/publish")
+
+        # Two players are always opponents, so the only swap is refused.
+        resp = admin_session.post(
+            f"/api/admin/brackets/{slug}/swap", json={"seed": 1, "with_seed": 2}
+        )
+        assert resp.status_code == 400
+        assert "playing each other" in resp.get_json()["error"]
+
+        resp = admin_session.post(f"/api/admin/brackets/{slug}/swap", json={"seed": 1})
+        assert resp.status_code == 400
+
+        with client.session_transaction() as sess:
+            sess["user_id"] = "p_one"
+        resp = client.post(f"/api/admin/brackets/{slug}/swap", json={"seed": 1, "with_seed": 2})
+        assert resp.status_code in (401, 403)
 
     def test_seed_pool_endpoint(self, admin_session):
         pool = admin_session.get("/api/admin/brackets/seed-pool").get_json()

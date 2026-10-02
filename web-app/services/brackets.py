@@ -265,6 +265,74 @@ class BracketService:
             "byes": len([m for m in matches if m["state"] == "bye"]),
         }
 
+    def swap_players(self, slug: str, seed_a: int, seed_b: int) -> dict:
+        """Admin: trade two players' places in a published bracket.
+
+        Only the slot a player *entered* the bracket through can move - their
+        first-round seat, or the round-two seat a bye carried them to - and
+        only while neither match has been reported, settled or given a table.
+        Each player keeps their seed, so their decklist goes with them.
+        """
+        bracket = self._repo.get_bracket(slug=slug)
+        if not bracket:
+            raise BracketError("Bracket not found")
+        if bracket["status"] == "draft":
+            raise BracketError("Drafts are rearranged from the seeding list")
+        if bracket["status"] == "complete":
+            raise BracketError("This bracket is finished")
+
+        seed_a, seed_b = int(seed_a), int(seed_b)
+        if seed_a == seed_b:
+            raise BracketError("Pick two different players")
+
+        matches = {m["match_no"]: m for m in self._repo.get_matches(bracket["bracket_id"])}
+        a = _entry_slot(matches, seed_a)
+        b = _entry_slot(matches, seed_b)
+        if a["match"]["match_no"] == b["match"]["match_no"]:
+            raise BracketError("Those two are already playing each other")
+
+        for side in (a, b):
+            match, slot = side["match"], side["slot"]
+            side["player"] = {
+                "seed": match[f"p{slot}_seed"],
+                "user_id": match[f"p{slot}_user_id"],
+                "name": match[f"p{slot}_name"],
+            }
+
+        for side, other in ((a, b), (b, a)):
+            incoming = other["player"]
+            match, slot = side["match"], side["slot"]
+            self._repo.update_match(
+                bracket["bracket_id"],
+                match["match_no"],
+                {
+                    f"p{slot}_seed": incoming["seed"],
+                    f"p{slot}_user_id": incoming["user_id"],
+                    f"p{slot}_name": incoming["name"],
+                },
+            )
+            # A bye is recorded as a won round-one match, so the player who now
+            # holds the bye has to be the one it says advanced.
+            bye = side["bye"]
+            if bye:
+                bye_slot = 1 if bye["p1_seed"] == side["player"]["seed"] else 2
+                self._repo.update_match(
+                    bracket["bracket_id"],
+                    bye["match_no"],
+                    {
+                        f"p{bye_slot}_seed": incoming["seed"],
+                        f"p{bye_slot}_user_id": incoming["user_id"],
+                        f"p{bye_slot}_name": incoming["name"],
+                        "winner_seed": incoming["seed"],
+                        "winner_user_id": incoming["user_id"],
+                    },
+                )
+
+        return {
+            "swapped": [a["player"]["name"], b["player"]["name"]],
+            "matches": [a["match"]["match_no"], b["match"]["match_no"]],
+        }
+
     def unpublish(self, bracket_id: int) -> bool:
         """Send a bracket back to draft, discarding its match tree."""
         bracket = self._repo.get_bracket(bracket_id=bracket_id)
@@ -1347,6 +1415,61 @@ def _is_playable(match: dict) -> bool:
     return bool(match.get("p1_seed")) and bool(match.get("p2_seed"))
 
 
+def _entry_slot(matches: dict, seed: int) -> dict:
+    """Where a seed joined the tree, provided that seat can still be changed.
+
+    Returns ``{"match", "slot", "bye"}``: the first real match the player sits
+    in, which side of it, and the round-one bye that put them there (if any).
+    """
+    rows = sorted(matches.values(), key=lambda m: (m["round"], m["position"]))
+    match = next(
+        (
+            m
+            for m in rows
+            if m["state"] != "bye" and seed in (m["p1_seed"], m["p2_seed"])
+        ),
+        None,
+    )
+    if match is None:
+        raise BracketError(f"Seed {seed} is not in this bracket")
+
+    slot = 1 if match["p1_seed"] == seed else 2
+    bye = None
+    if match["round"] > 1:
+        bye = next(
+            (
+                m
+                for m in rows
+                if m["next_match_no"] == match["match_no"] and m["next_slot"] == slot
+            ),
+            None,
+        )
+        if not bye or bye["state"] != "bye":
+            # Carried here by a win, so this seat is a result, not a pairing.
+            raise BracketError(f"{match[f'p{slot}_name']} has already played")
+
+    name = match[f"p{slot}_name"]
+    if match["state"] == "complete":
+        raise BracketError(f"{name}'s match has already been played")
+    if match["state"] == "reported":
+        raise BracketError(f"{name}'s match has a result waiting to be confirmed")
+    if match.get("table_provisioned_at"):
+        # The Sorcery Online table is keyed to this pairing and preloaded with
+        # both decks, so it cannot be handed to somebody else.
+        raise BracketError(f"{name}'s match already has a Sorcery Online table open")
+    return {"match": match, "slot": slot, "bye": bye}
+
+
+def _movable(match: dict, slot: int, from_bye: bool) -> bool:
+    """Whether an admin may drag this seat to re-pair it."""
+    return bool(
+        match.get(f"p{slot}_seed")
+        and (match["round"] == 1 or from_bye)
+        and match["state"] == "pending"
+        and not match.get("table_provisioned_at")
+    )
+
+
 def rounds_for_display(matches: list[dict]) -> list[dict]:
     """Group matches into rounds for the bracket view.
 
@@ -1368,12 +1491,16 @@ def rounds_for_display(matches: list[dict]) -> list[dict]:
             match["round"],
             {"round": match["round"], "title": match["round_title"], "matches": []},
         )
+        p1_bye = from_bye.get((match["match_no"], 1), False)
+        p2_bye = from_bye.get((match["match_no"], 2), False)
         bucket["matches"].append(
             {
                 **match,
                 "playable": _is_playable(match),
-                "p1_from_bye": from_bye.get((match["match_no"], 1), False),
-                "p2_from_bye": from_bye.get((match["match_no"], 2), False),
+                "p1_from_bye": p1_bye,
+                "p2_from_bye": p2_bye,
+                "p1_movable": _movable(match, 1, p1_bye),
+                "p2_movable": _movable(match, 2, p2_bye),
             }
         )
 

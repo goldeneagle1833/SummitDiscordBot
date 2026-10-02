@@ -10,6 +10,7 @@ import {
   adminResetMatch,
   adminSetMatchReplay,
   adminClearMatchReplay,
+  adminSwapBracketPlayers,
 } from '@/api/brackets'
 import BracketTree from '@/components/bracket/BracketTree'
 import DeckPanel from '@/components/bracket/DeckPanel'
@@ -82,6 +83,7 @@ export default function Bracket() {
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
   const [reporting, setReporting] = useState(null)
+  const [editingPairings, setEditingPairings] = useState(false)
 
   usePageTitle(data?.bracket?.name || 'Bracket')
 
@@ -142,6 +144,16 @@ export default function Bracket() {
     }
   }
 
+  async function handleSwap(seed, withSeed) {
+    try {
+      const res = await adminSwapBracketPlayers(slug, seed, withSeed)
+      setNotice(`Swapped ${res.swapped.join(' and ')}.`)
+      load()
+    } catch (e) {
+      setNotice(e.message)
+    }
+  }
+
   if (error) {
     return (
       <div className="text-center py-12">
@@ -173,6 +185,10 @@ export default function Bracket() {
   const liveRound = rounds.find((r) =>
     r.matches.some((m) => m.playable && m.state !== 'complete'),
   )
+  const canEditPairings =
+    isAdmin &&
+    bracket.status === 'published' &&
+    allMatches.some((m) => m.p1_movable || m.p2_movable)
 
   return (
     <div className="max-w-full px-4 py-6 space-y-5">
@@ -192,10 +208,32 @@ export default function Bracket() {
             {!bracketHidden && ` · ${played}/${allMatches.length} matches played`}
           </p>
         </div>
-        <Link to="/brackets" className="text-sm text-secondary hover:underline">
-          All brackets
-        </Link>
+        <div className="flex items-center gap-4">
+          {canEditPairings && (
+            <button
+              onClick={() => setEditingPairings((on) => !on)}
+              className={`text-sm px-3 py-1 rounded border transition-colors ${
+                editingPairings
+                  ? 'bg-secondary text-black border-secondary'
+                  : 'border-border text-text-muted hover:text-text-primary'
+              }`}
+            >
+              {editingPairings ? 'Done editing' : 'Edit pairings'}
+            </button>
+          )}
+          <Link to="/brackets" className="text-sm text-secondary hover:underline">
+            All brackets
+          </Link>
+        </div>
       </div>
+
+      {canEditPairings && editingPairings && (
+        <div className="bg-secondary/10 border border-secondary/40 rounded-lg px-4 py-3 text-sm">
+          Drag a player onto another to swap their places. Players keep their seed and
+          decklist. Only seats that haven’t been played, reported or given a Sorcery Online
+          table can move.
+        </div>
+      )}
 
       {champion && (
         <div className="bg-gradient-to-r from-amber-400/10 to-transparent border border-amber-400/40 rounded-lg px-5 py-4 flex items-center gap-4">
@@ -263,6 +301,7 @@ export default function Bracket() {
           onOpenTable={handleOpenTable}
           onAdminAction={isAdmin ? handleAdminAction : null}
           isAdmin={isAdmin}
+          onSwap={canEditPairings && editingPairings ? handleSwap : undefined}
           avatars={avatars}
         />
       )}

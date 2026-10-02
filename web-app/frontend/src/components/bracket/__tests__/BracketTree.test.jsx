@@ -163,6 +163,42 @@ describe('BracketTree', () => {
     expect(onSwap).not.toHaveBeenCalled()
   })
 
+  it('keeps a seat that can no longer move out of a swap', () => {
+    const onSwap = vi.fn()
+    renderWithRouter(
+      <BracketTree
+        rounds={rounds([
+          match(),
+          match({
+            match_no: 2,
+            p1_seed: 4,
+            p1_name: 'Four',
+            p1_user_id: 'u4',
+            p2_seed: 5,
+            p2_name: 'Five',
+            p2_user_id: 'u5',
+            p1_movable: false,
+            p2_movable: false,
+          }),
+        ])}
+        onSwap={onSwap}
+      />,
+    )
+
+    const store = {}
+    const dataTransfer = {
+      setData: (_, value) => {
+        store.value = value
+      },
+      getData: () => store.value,
+    }
+
+    expect(screen.getByText('Four').closest('[draggable]')).toBeNull()
+    fireEvent.dragStart(screen.getByText('One'), { dataTransfer })
+    fireEvent.drop(screen.getByText('Four'), { dataTransfer })
+    expect(onSwap).not.toHaveBeenCalled()
+  })
+
   it('does not make names draggable without a swap handler', () => {
     renderWithRouter(<BracketTree rounds={rounds([match()])} />)
     // Names stay profile links when the tree is not being arranged.

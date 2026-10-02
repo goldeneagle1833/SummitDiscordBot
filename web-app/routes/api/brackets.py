@@ -314,6 +314,20 @@ def admin_unpublish(slug):
     return jsonify({"success": True}), 200
 
 
+@brackets_bp.route("/admin/brackets/<slug>/swap", methods=["POST"])
+@require_admin
+def admin_swap_players(slug):
+    """Re-pair a published bracket by trading two players' seats."""
+    data = request.get_json() or {}
+    try:
+        result = service.swap_players(slug, int(data.get("seed")), int(data.get("with_seed")))
+    except BracketError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "seed and with_seed are required"}), 400
+    return jsonify({"success": True, **result}), 200
+
+
 @brackets_bp.route("/admin/brackets/<slug>/matches/<int:match_no>/result", methods=["POST"])
 @require_admin
 def admin_set_result(slug, match_no):

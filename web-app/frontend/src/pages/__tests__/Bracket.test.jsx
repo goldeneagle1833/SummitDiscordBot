@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '@/test/test-utils'
 import Bracket from '../Bracket'
@@ -8,6 +8,7 @@ import {
   getBracketDecks,
   reportBracketMatch,
   confirmBracketMatch,
+  adminSwapBracketPlayers,
 } from '@/api/brackets'
 
 vi.mock('@/api/brackets', () => ({
@@ -21,6 +22,7 @@ vi.mock('@/api/brackets', () => ({
   confirmBracketMatch: vi.fn(),
   adminSetMatchResult: vi.fn(),
   adminResetMatch: vi.fn(),
+  adminSwapBracketPlayers: vi.fn(),
 }))
 
 const mockUser = { value: { user_id: 'u1', is_admin: false } }
@@ -295,6 +297,66 @@ describe('Bracket page', () => {
       img.src.includes('/avatars/u1/hash1.png'),
     )
     expect(avatar).toBeTruthy()
+  })
+
+  it('lets an admin re-pair seats that have not been played', async () => {
+    mockUser.value = { user_id: 'admin', is_admin: true }
+    const first = bracketData().rounds[0].matches[0]
+    const second = {
+      ...first,
+      match_no: 2,
+      p1_seed: 3,
+      p1_name: 'Three',
+      p1_user_id: 'u3',
+      p2_seed: 4,
+      p2_name: 'Four',
+      p2_user_id: 'u4',
+    }
+    getBracket.mockResolvedValue(
+      bracketData({
+        rounds: [
+          {
+            round: 1,
+            title: 'Semifinals',
+            matches: [
+              { ...first, p1_movable: true, p2_movable: true },
+              { ...second, p1_movable: true, p2_movable: true },
+            ],
+          },
+        ],
+      }),
+    )
+    adminSwapBracketPlayers.mockResolvedValue({ swapped: ['Two', 'Three'] })
+    renderWithRouter(<Bracket />)
+
+    // The tree comes before the deck list, so its seats are the first matches.
+    const seat = (name) => screen.getAllByText(name)[0]
+
+    // Names stay profile links until the admin asks to edit.
+    await screen.findByText('Season 7 Postseason')
+    expect(seat('Two').closest('a')).toHaveAttribute('href', '/player/u2')
+    await userEvent.click(screen.getByRole('button', { name: 'Edit pairings' }))
+    expect(seat('Two').closest('a')).toBeNull()
+
+    const store = {}
+    const dataTransfer = {
+      setData: (_, value) => {
+        store.value = value
+      },
+      getData: () => store.value,
+    }
+    fireEvent.dragStart(seat('Two'), { dataTransfer })
+    fireEvent.drop(seat('Three'), { dataTransfer })
+
+    await waitFor(() => expect(adminSwapBracketPlayers).toHaveBeenCalledWith('season-7', 2, 3))
+    expect(await screen.findByText('Swapped Two and Three.')).toBeInTheDocument()
+  })
+
+  it('offers no pairing editor to players', async () => {
+    getBracket.mockResolvedValue(bracketData())
+    renderWithRouter(<Bracket />)
+    await screen.findByText('Season 7 Postseason')
+    expect(screen.queryByRole('button', { name: 'Edit pairings' })).toBeNull()
   })
 
   it('asks a logged-out visitor to log in', async () => {

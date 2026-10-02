@@ -27,7 +27,7 @@ og_preview_bp = Blueprint("og_preview", __name__)
 
 SITE_URL = "https://sorcererssummit.com"
 SITE_NAME = "Sorcerers Summit"
-DEFAULT_IMAGE = f"{SITE_URL}/static/images/favicon.png"
+DEFAULT_IMAGE = f"{SITE_URL}/static/images/favicon-512.png"
 THEME_COLOR = "#1a1a2e"
 
 # Path to the React SPA build output

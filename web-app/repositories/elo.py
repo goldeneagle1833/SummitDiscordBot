@@ -102,9 +102,11 @@ class EloRepository:
             return None
 
         cur.execute("PRAGMA table_info(events)")
-        mode_column = "elo_mode" if "elo_mode" in {r[1] for r in cur.fetchall()} else "'player'"
+        columns = {r[1] for r in cur.fetchall()}
+        mode_column = "elo_mode" if "elo_mode" in columns else "'player'"
+        end_column = "scheduled_end_at" if "scheduled_end_at" in columns else "NULL"
         cur.execute(f"""
-            SELECT event_id, event_name, start_date, {mode_column}
+            SELECT event_id, event_name, start_date, {mode_column}, {end_column}
             FROM events
             WHERE is_active = 1
             LIMIT 1
@@ -119,6 +121,8 @@ class EloRepository:
                 "start_date": row[2],
                 # "player": one event ELO per player; "avatar": one per player and avatar
                 "elo_mode": row[3] or "player",
+                # Unix seconds the bot will end the event at, or None when unscheduled
+                "scheduled_end_at": row[4],
             }
         return None
 

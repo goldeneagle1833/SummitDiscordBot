@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '@/context/AuthContext'
 import { get } from '@/api/client'
 import { getEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
@@ -9,6 +10,11 @@ import { getAvatarImageFiles, getSeasonAvatarBadges } from '@/api/cards'
 import { badgesByPlayer, getAvatarImagePath } from '@/utils/avatarBadges'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
+
+const DISCORD_URL = 'https://discord.gg/ZDqHSK9VGx'
+const HERO_LOGO = '/static/images/summit-logo-hero.png'
+// Flip to true when the store opens to everyone
+const STORE_LIVE = false
 
 // ── Player Search ─────────────────────────────────────────────
 
@@ -95,7 +101,7 @@ function PlayerSearch() {
   }, [])
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-md mx-auto mt-6">
+    <div ref={containerRef} className="relative w-full max-w-md">
       <input
         type="text"
         role="combobox"
@@ -301,7 +307,7 @@ export function PromoCarousel() {
 
   return (
     <div
-      className="relative mt-4 h-48 sm:h-56 overflow-hidden"
+      className="relative h-56 sm:h-64 overflow-hidden rounded-[10px] border border-border"
       style={{ touchAction: 'pan-y' }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -364,7 +370,7 @@ export function PromoCarousel() {
                 <span className={`inline-block text-[10px] font-semibold px-2.5 py-0.5 ${badgeStyle} rounded-full uppercase tracking-wider`}>
                   {item.badge}
                 </span>
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-primary group-hover:text-primary-light transition-colors">
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-secondary group-hover:text-secondary-light transition-colors">
                   Learn more <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
                 </span>
               </div>
@@ -401,7 +407,7 @@ export function PromoCarousel() {
               key={s.key}
               onClick={() => goTo(i)}
               className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
-                i === active ? 'bg-primary w-4' : 'bg-text-muted/30 hover:bg-text-muted/50'
+                i === active ? 'bg-secondary w-4' : 'bg-text-muted/30 hover:bg-text-muted/50'
               }`}
               aria-label={`Go to slide ${i + 1}`}
             />
@@ -425,7 +431,7 @@ function StatBar({ leaderboard, eloKey = 'event_elo' }) {
   if (total !== players) stats.push(['Avatar Entries', total])
   stats.push(['Top ELO', top], ['Avg ELO', avg])
   return (
-    <div className="flex gap-6 mb-4 text-center">
+    <div className="flex flex-wrap gap-x-9 gap-y-3">
       {stats.map(([label, val]) => (
         <div key={label}>
           <div className="text-lg font-bold text-secondary">{val}</div>
@@ -491,7 +497,7 @@ function EloToggle({ source, onChange }) {
           onClick={() => onChange(s)}
           className={`px-4 py-1.5 text-sm font-medium transition-colors capitalize ${
             source === s
-              ? 'bg-primary text-black'
+              ? 'bg-brand-blue text-white'
               : 'text-text-muted hover:bg-bg-elevated hover:text-primary'
           }`}
         >
@@ -522,7 +528,23 @@ function avatarImageSrc(avatar, files) {
 
 const RANK_LABELS = { 1: 'I', 2: 'II', 3: 'III' }
 
-function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges = {}, avatarMode = false, avatarImageFiles = [] }) {
+function RankCell({ rank, pinned }) {
+  if (pinned) return <span className="font-display text-lg text-secondary">{rank}</span>
+  if (rank <= 3) {
+    return (
+      <span className={`inline-flex items-center justify-center w-7 h-7 rounded text-xs font-bold ${
+        rank === 1 ? 'bg-yellow-500/20 text-yellow-400' :
+        rank === 2 ? 'bg-gray-400/20 text-gray-300' :
+        'bg-amber-700/20 text-amber-600'
+      }`}>
+        {RANK_LABELS[rank]}
+      </span>
+    )
+  }
+  return <span className="text-text-muted">{rank}</span>
+}
+
+function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges = {}, avatarMode = false, avatarImageFiles = [], userId = null }) {
   if (!leaderboard.length) {
     return <p className="text-center text-text-muted py-8">No matches played yet</p>
   }
@@ -532,78 +554,131 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
   const showBadges = !avatarMode && Object.keys(avatarBadges || {}).length > 0
   const avatarRanks = avatarMode ? rankWithinAvatar(leaderboard) : null
   const badgesForRow = (player) => (avatarBadges || {})[String(player.id)] || []
+  const isMine = (player) => userId != null && String(player.id) === String(userId)
+  // The viewer's own entries (one per avatar in avatar mode) repeat above #1
+  // so they never have to scroll to find themselves.
+  const pinned = leaderboard
+    .map((player, index) => ({ player, index }))
+    .filter(({ player }) => isMine(player))
+
+  const renderRow = (player, index, isPinned) => {
+    const rank = index + 1
+    const mine = isMine(player)
+    const rowClass = isPinned
+      ? 'bg-brand-panel border-b border-brand-line'
+      : `border-b border-border/50 transition-colors ${mine ? 'bg-brand-panel/50' : 'hover:bg-bg-elevated/40'}`
+    return (
+      <tr
+        key={`${isPinned ? 'pinned' : 'row'}-${player.entry_id || player.id}`}
+        className={`${rowClass} ${rank <= 3 || isPinned ? 'font-semibold' : ''}`}
+      >
+        <td className="py-2.5 px-4">
+          <RankCell rank={isPinned ? `#${rank}` : rank} pinned={isPinned} />
+        </td>
+        <td className="py-2.5 px-4">
+          <span className="inline-flex items-center gap-2">
+            <PostseasonName playerId={player.id}>
+              <Link to={`/player/${player.id}`} className="hover:text-secondary transition-colors">
+                {player.name}
+              </Link>
+            </PostseasonName>
+            {isPinned && (
+              <span className="text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full bg-secondary text-bg-dark">YOU</span>
+            )}
+          </span>
+        </td>
+        {showBadges && (
+          <td className="py-2.5 px-4">
+            <AvatarBadges badges={badgesForRow(player)} withLabel />
+          </td>
+        )}
+        {avatarMode && (
+          <td className="py-2.5 px-4">
+            <AvatarCell
+              avatar={player.avatar}
+              rank={avatarRanks[index]}
+              imgSrc={avatarImageSrc(player.avatar, avatarImageFiles)}
+            />
+          </td>
+        )}
+        <td className="py-2.5 px-4 text-right">{player[eloKey]}</td>
+      </tr>
+    )
+  }
+
   return (
-    <div className="overflow-x-auto">
+    <div>
       <PostseasonLegend className="mb-2 px-1" />
-      {avatarMode && (
-        <p className="text-xs text-text-muted mb-2 px-1">
-          Each avatar is rated separately, so a player can appear once per avatar.
-          Top cut still gives each player one invite.
-        </p>
-      )}
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border text-left">
-            <th className="py-2 px-3 w-14 text-text-muted font-semibold">Rank</th>
-            <th className="py-2 px-3 text-text-muted font-semibold">Player</th>
-            {showBadges && <th className="py-2 px-3 text-text-muted font-semibold">Badge</th>}
-            {avatarMode && <th className="py-2 px-3 text-text-muted font-semibold">Avatar</th>}
-            <th className="py-2 px-3 text-right text-text-muted font-semibold">ELO</th>
-          </tr>
-        </thead>
-        <tbody>
-          {leaderboard.map((player, index) => {
-            const rank = index + 1
-            return (
-              <tr key={player.entry_id || player.id} className={`border-b border-border/50 hover:bg-bg-surface/50 transition-colors ${rank <= 3 ? `font-semibold` : ''}`}>
-                <td className="py-2 px-3">
-                  {rank <= 3 ? (
-                    <span className={`inline-flex items-center justify-center w-7 h-7 rounded text-xs font-bold ${
-                      rank === 1 ? 'bg-yellow-500/20 text-yellow-400' :
-                      rank === 2 ? 'bg-gray-400/20 text-gray-300' :
-                      'bg-amber-700/20 text-amber-600'
-                    }`}>
-                      {RANK_LABELS[rank]}
-                    </span>
-                  ) : (
-                    <span className="text-text-muted">{rank}</span>
-                  )}
-                </td>
-                <td className="py-2 px-3">
-                  <PostseasonName playerId={player.id}>
-                    <Link to={`/player/${player.id}`} className="hover:text-primary transition-colors">
-                      {player.name}
-                    </Link>
-                  </PostseasonName>
-                </td>
-                {showBadges && (
-                  <td className="py-2 px-3">
-                    <AvatarBadges badges={badgesForRow(player)} withLabel />
-                  </td>
-                )}
-                {avatarMode && (
-                  <td className="py-2 px-3">
-                    <AvatarCell
-                      avatar={player.avatar}
-                      rank={avatarRanks[index]}
-                      imgSrc={avatarImageSrc(player.avatar, avatarImageFiles)}
-                    />
-                  </td>
-                )}
-                <td className="py-2 px-3 text-right">{player[eloKey]}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+      <div className="overflow-x-auto bg-bg-surface border border-border rounded-[10px]">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-xs uppercase tracking-wider">
+              <th className="py-3 px-4 w-16 text-text-muted font-semibold">Rank</th>
+              <th className="py-3 px-4 text-text-muted font-semibold">Player</th>
+              {showBadges && <th className="py-3 px-4 text-text-muted font-semibold">Badge</th>}
+              {avatarMode && <th className="py-3 px-4 text-text-muted font-semibold">Avatar</th>}
+              <th className="py-3 px-4 text-right text-text-muted font-semibold">ELO</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pinned.map(({ player, index }) => renderRow(player, index, true))}
+            {leaderboard.map((player, index) => renderRow(player, index, false))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
+}
+
+// ── Store Card ────────────────────────────────────────────────
+
+function StoreCard() {
+  return (
+    <div className="flex flex-col justify-between gap-5 p-6 bg-brand-panel border border-brand-line rounded-[10px] lg:flex-1">
+      <div className="flex flex-col gap-2.5 items-start">
+        {!STORE_LIVE && (
+          <span className="text-xs font-bold tracking-[0.12em] uppercase px-2.5 py-1 rounded-full border border-secondary text-secondary">
+            Coming soon
+          </span>
+        )}
+        <h2 className="font-display text-3xl text-secondary">Summit Store</h2>
+        <p className="text-text/80 leading-relaxed">
+          Support the Summit and other Sorcery groups by picking up tokens or merch.
+        </p>
+      </div>
+      {STORE_LIVE ? (
+        <Link
+          to="/store"
+          className="inline-flex items-center justify-center h-12 px-6 rounded-soft bg-brand-blue hover:bg-brand-blue-light text-white font-semibold transition-colors"
+        >
+          Shop Summit Store
+        </Link>
+      ) : (
+        <button
+          type="button"
+          disabled
+          className="inline-flex items-center justify-center h-12 px-6 rounded-soft border border-border bg-bg-elevated text-text-muted font-semibold cursor-not-allowed"
+        >
+          Shop Summit Store
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** "Event ends Oct 31." from the bot's scheduled end (unix seconds), or null when unscheduled. */
+function eventEndsText(scheduledEndAt) {
+  if (!scheduledEndAt) return null
+  const date = new Date(scheduledEndAt * 1000)
+  if (Number.isNaN(date.getTime())) return null
+  return `Event ends ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}.`
 }
 
 // ── Home Page ─────────────────────────────────────────────────
 
 export default function Home() {
   usePageTitle('Sorcerers Summit')
+  const { user } = useAuth()
   const [source, setSource] = useState(() => {
     try {
       return localStorage.getItem(STORAGE_KEY) === 'limited' ? 'limited' : 'online'
@@ -677,20 +752,57 @@ export default function Home() {
   const isLimited = eventData?.limited === true
   const hasEvent = isLimited || eventData?.event != null
   const leaderboard = eventData?.leaderboard || []
+  const avatarMode = eventData?.event?.elo_mode === 'avatar'
+  const endsText = eventEndsText(eventData?.event?.scheduled_end_at)
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       {/* Hero */}
-      <section className="text-center pt-6">
-        <h1
-          onClick={handleTitleClick}
-          className="text-4xl sm:text-5xl font-display text-secondary mb-2 cursor-default select-none"
-        >
-          Welcome to the Sorcery Community Leaderboard
-        </h1>
+      <section className="grid lg:grid-cols-2 gap-8 items-center pt-2">
+        <div className="flex flex-col gap-6 order-2 lg:order-1">
+          <p className="text-[13px] font-semibold tracking-[0.16em] uppercase text-brand-sky">Sorcery: Community</p>
+          <h1
+            onClick={handleTitleClick}
+            className="text-5xl sm:text-7xl font-display font-bold text-white leading-none cursor-default select-none"
+          >
+            Climb the Summit.
+          </h1>
+          <p className="max-w-lg text-lg leading-relaxed text-text/80">
+            Ranked ladders, event standings, decklists and stats for every Sorcery player in the community.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              to="/elo"
+              className="inline-flex items-center h-12 px-6 rounded-soft border border-white text-white font-semibold hover:bg-white/10 transition-colors"
+            >
+              View past leaderboards
+            </Link>
+            <a
+              href={DISCORD_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center h-12 px-6 rounded-soft bg-secondary hover:bg-secondary-light text-bg-dark font-bold transition-colors"
+            >
+              Join the Discord
+            </a>
+          </div>
+          <PlayerSearch />
+        </div>
+        <img
+          src={HERO_LOGO}
+          alt="Sorcerers Summit mountain logo"
+          width={1063}
+          height={776}
+          className="order-1 lg:order-2 w-full max-w-[280px] sm:max-w-[420px] lg:max-w-[580px] h-auto mx-auto lg:mr-0"
+        />
+      </section>
 
-        <PromoCarousel />
-        <PlayerSearch />
+      {/* Promos + store */}
+      <section className="flex flex-col lg:flex-row gap-5">
+        <div className="lg:flex-[2] min-w-0 empty:hidden">
+          <PromoCarousel />
+        </div>
+        <StoreCard />
       </section>
 
       {/* Event Leaderboard or No-Event */}
@@ -698,22 +810,22 @@ export default function Home() {
         <Spinner className="py-16" />
       ) : hasEvent ? (
         <section>
-          <div className="flex flex-wrap justify-between items-start gap-4 mb-4">
-            <div>
-              {isLimited ? (
-                <>
-                  <h2 className="text-xl font-display text-secondary">Limited Format Leaderboard</h2>
-                  <p className="text-sm text-text-muted mt-0.5">Rankings for limited format matches</p>
-                </>
-              ) : (
-                <>
-                  <h2 className="text-xl font-display text-secondary">{eventData.event.event_name}</h2>
-                  <p className="text-sm text-text-muted mt-0.5">
-                    Started: {new Date(eventData.event.start_date).toLocaleDateString()}
-                  </p>
-                </>
-              )}
-            </div>
+          <div className="flex flex-wrap justify-between items-end gap-4 mb-5">
+            {isLimited ? (
+              <div>
+                <h2 className="text-3xl font-display text-white">Limited Format Leaderboard</h2>
+                <p className="text-sm text-text-muted mt-1">Rankings for limited format matches</p>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="text-3xl font-display text-white">{eventData.event.event_name}</h2>
+                {avatarMode && (
+                  <span className="text-[11px] font-bold tracking-[0.12em] uppercase px-2.5 py-1 rounded-full bg-brand-panel border border-brand-line text-brand-sky">
+                    Avatar mode
+                  </span>
+                )}
+              </div>
+            )}
             <EloToggle source={source} onChange={handleSourceChange} />
           </div>
           {isLimited ? (
@@ -731,27 +843,48 @@ export default function Home() {
             </>
           ) : (
             <>
-              <StatBar leaderboard={leaderboard} />
+              <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
+                <StatBar leaderboard={leaderboard} />
+                {(avatarMode || endsText) && (
+                  <p className="max-w-lg text-[13px] leading-relaxed text-text-muted md:text-right">
+                    {avatarMode && 'Each avatar is rated separately, so a player can appear once per avatar. Top cut still gives each player one invite. '}
+                    {endsText && <span className="text-text font-semibold">{endsText}</span>}
+                  </p>
+                )}
+              </div>
               <EventLeaderboardTable
                 leaderboard={leaderboard}
                 avatarBadges={source === 'online' ? avatarBadges : undefined}
                 avatarImageFiles={avatarImageFiles}
-                avatarMode={eventData.event?.elo_mode === 'avatar'}
+                avatarMode={avatarMode}
+                userId={user ? user.user_id : null}
               />
             </>
           )}
         </section>
       ) : (
-        <section className="text-center py-8">
-          <div className="flex justify-center mb-4">
+        <section className="text-center py-4">
+          <div className="flex justify-center mb-6">
             <EloToggle source={source} onChange={handleSourceChange} />
           </div>
-          <h2 className="text-xl font-display text-secondary mb-2">No Active Event</h2>
-          <p className="text-text-muted mb-2">Check back soon for the next event leaderboard!</p>
-          <p className="text-text-muted text-sm mb-4">
-            In the meantime, check out the{' '}
-            <Link to="/avatars" className="text-primary hover:text-primary/80">Avatar Win Rates</Link>.
-          </p>
+          <div className="max-w-2xl mx-auto px-6 py-10 mb-8 bg-bg-surface border border-border rounded-[10px]">
+            <h2 className="text-3xl font-display text-white mb-2">No Active Event</h2>
+            <p className="text-text-muted mb-6">Check back soon for the next event leaderboard!</p>
+            <div className="flex flex-wrap justify-center gap-3">
+              <Link
+                to="/elo"
+                className="inline-flex items-center h-11 px-5 rounded-soft border border-white text-white font-semibold hover:bg-white/10 transition-colors"
+              >
+                View past leaderboards
+              </Link>
+              <Link
+                to="/avatars"
+                className="inline-flex items-center h-11 px-5 rounded-soft bg-brand-blue hover:bg-brand-blue-light text-white font-semibold transition-colors"
+              >
+                Avatar Win Rates
+              </Link>
+            </div>
+          </div>
           <YouTubeVideos />
         </section>
       )}

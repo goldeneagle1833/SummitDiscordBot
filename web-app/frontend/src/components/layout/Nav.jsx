@@ -568,7 +568,8 @@ export default function Nav() {
             >
               <span className="text-2xl font-bold leading-none text-white">☰</span>
             </button>
-            <Link to="/" className="font-display text-lg md:text-xl text-secondary hover:text-text transition-colors">
+            <Link to="/" className="flex items-center gap-2.5 whitespace-nowrap font-display text-lg md:text-xl text-secondary hover:text-text transition-colors">
+              <img src="/static/images/favicon-32.png" alt="" width={28} height={28} className="w-7 h-7 rounded" />
               Sorcerers Summit
             </Link>
           </div>
@@ -659,7 +660,7 @@ export default function Nav() {
                 ) : (
                   <Link
                     to={`/login?next=${encodeURIComponent(window.location.href)}`}
-                    className="text-sm bg-primary/20 text-primary hover:bg-primary/30 px-3 py-1.5 rounded-soft transition-colors"
+                    className="text-sm bg-brand-blue text-white hover:bg-brand-blue-light px-4 py-1.5 rounded-soft transition-colors"
                   >
                     Login
                   </Link>
@@ -677,7 +678,8 @@ export default function Nav() {
         }`}
       >
         <div className="p-4 border-b border-border flex items-center justify-between">
-          <Link to="/" className="font-display text-lg text-secondary" onClick={close}>
+          <Link to="/" className="flex items-center gap-2.5 font-display text-lg text-secondary" onClick={close}>
+            <img src="/static/images/favicon-32.png" alt="" width={28} height={28} className="w-7 h-7 rounded" />
             Sorcerers Summit
           </Link>
           <button className="p-1 text-text-muted hover:text-text" onClick={close}>
@@ -725,7 +727,7 @@ export default function Nav() {
             ) : (
               <Link
                 to={`/login?next=${encodeURIComponent(window.location.href)}`}
-                className="block mx-4 my-3 text-center bg-primary/20 text-primary hover:bg-primary/30 px-3 py-2 rounded-soft transition-colors font-medium"
+                className="block mx-4 my-3 text-center bg-brand-blue text-white hover:bg-brand-blue-light px-3 py-2 rounded-soft transition-colors font-medium"
                 onClick={close}
               >
                 Login

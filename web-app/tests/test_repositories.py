@@ -68,6 +68,21 @@ class TestEloRepository:
         event = repo.get_active_event()
         assert event is not None
         assert event["event_name"] == "Test Event"
+        # The fixture's events table predates the bot's scheduled-end column
+        assert event["scheduled_end_at"] is None
+
+    def test_get_active_event_scheduled_end(self, elo_db):
+        conn = sqlite3.connect(str(elo_db))
+        conn.execute("ALTER TABLE events ADD COLUMN scheduled_end_at INTEGER")
+        conn.execute("""
+            INSERT INTO events (event_name, start_date, is_active, scheduled_end_at)
+            VALUES ('Test Event', '2025-01-01', 1, 1767225600)
+        """)
+        conn.commit()
+        conn.close()
+
+        event = EloRepository(db_path=elo_db).get_active_event()
+        assert event["scheduled_end_at"] == 1767225600
 
     def test_get_all_events(self, elo_db):
         conn = sqlite3.connect(str(elo_db))

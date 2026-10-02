@@ -18,6 +18,14 @@ export default {
           light: '#ffed4e',
           hover: '#ffed4a',
         },
+        // The blue of the mountain logo's sky, and the panels built from it
+        brand: {
+          blue: '#3653a0',
+          'blue-light': '#4a68b8',
+          line: '#2c4790',
+          panel: '#16213f',
+          sky: '#a8bcf0',
+        },
         summit: {
           DEFAULT: '#5b8db8',
           light: '#7aaed4',

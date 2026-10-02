@@ -93,11 +93,18 @@ function EloDistribution({ elos }) {
 
 // ── Archived Events Section ───────────────────────────────────
 
+function formatDateRange(start, end) {
+  const from = start ? new Date(start).toLocaleDateString() : 'N/A'
+  const to = end ? new Date(end).toLocaleDateString() : 'N/A'
+  return `${from} - ${to}`
+}
+
 function ArchivedEvents() {
   const [events, setEvents] = useState([])
   const [selectedEvent, setSelectedEvent] = useState('')
   const [archivedData, setArchivedData] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     getEvents()
@@ -109,21 +116,29 @@ function ArchivedEvents() {
   }, [])
 
   useEffect(() => {
-    if (!selectedEvent) { setArchivedData(null); return }
+    if (!selectedEvent) { setArchivedData(null); setError(false); return }
+    let active = true
     setLoading(true)
+    setError(false)
     getArchivedLeaderboard(selectedEvent)
-      .then(setArchivedData)
-      .catch(() => setArchivedData(null))
-      .finally(() => setLoading(false))
+      .then((data) => { if (active) setArchivedData(data) })
+      .catch(() => { if (active) { setArchivedData(null); setError(true) } })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
   }, [selectedEvent])
+
+  const info = archivedData?.event_info
+  const rows = archivedData?.leaderboard || []
+  const totalMatches = archivedData?.total_matches || 0
 
   return (
     <section className="mb-8">
       <h2 className="text-xl font-display text-secondary mb-1">Past Event Leaderboards</h2>
       <p className="text-sm text-text-muted mb-4">View final standings from completed events</p>
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <label className="text-sm text-text-muted">Select Event:</label>
+        <label htmlFor="past-event-select" className="text-sm text-text-muted">Select Event:</label>
         <select
+          id="past-event-select"
           value={selectedEvent}
           onChange={(e) => setSelectedEvent(e.target.value)}
           className="bg-bg-surface border border-border rounded px-2 py-1 text-sm"
@@ -131,14 +146,33 @@ function ArchivedEvents() {
           <option value="">-- Select a Past Event --</option>
           {events.map((ev) => (
             <option key={ev.event_id} value={ev.event_id}>
-              {ev.event_name} ({new Date(ev.start_date).toLocaleDateString()} - {ev.end_date ? new Date(ev.end_date).toLocaleDateString() : 'N/A'})
+              {ev.event_name} ({formatDateRange(ev.start_date, ev.end_date)})
             </option>
           ))}
         </select>
       </div>
       {loading && <Spinner className="py-8" />}
+      {error && !loading && (
+        <p className="text-text-muted text-center py-8">Couldn't load standings for this event.</p>
+      )}
       {archivedData && !loading && (
-        <LeaderboardTable data={archivedData.leaderboard || []} columns="event" />
+        <>
+          {info && (
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-3 text-sm">
+              <span className="font-display text-base text-text">{info.event_name}</span>
+              <span className="text-text-muted">{formatDateRange(info.start_date, info.end_date)}</span>
+              <span className="text-text-muted">
+                {rows.length} {rows.length === 1 ? 'player' : 'players'}
+                {totalMatches > 0 && ` \u00b7 ${totalMatches} ${totalMatches === 1 ? 'match' : 'matches'}`}
+              </span>
+            </div>
+          )}
+          {rows.length > 0 ? (
+            <LeaderboardTable data={rows} columns="event" eloLabel={info?.value_label || 'Event ELO'} />
+          ) : (
+            <p className="text-text-muted text-center py-8">No standings were archived for this event.</p>
+          )}
+        </>
       )}
     </section>
   )

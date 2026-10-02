@@ -364,6 +364,48 @@ class MatchRepository:
         conn.close()
         return records
 
+    def get_event_archive_records(self, event_id: int) -> dict[str, dict[str, int]]:
+        """Every player's win/loss record in an ended event.
+
+        Ending an event moves its matches to match_records_archive, tagged
+        with the event id. Returns {} when the table is missing or holds
+        nothing for the event.
+        """
+        conn = self._get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(match_records_archive)")
+            columns = {row[1] for row in cur.fetchall()}
+            if not {"event_id", "winner_id", "losser_id"} <= columns:
+                return {}
+            # The bot's archive copy carries no source column, so bracket
+            # games can only be left out where one exists
+            not_season = self._NOT_SEASON if "source" in columns else ""
+            cur.execute(
+                f"""
+                SELECT user_id, SUM(wins), SUM(losses)
+                FROM (
+                    SELECT winner_id AS user_id, COUNT(*) AS wins, 0 AS losses
+                    FROM match_records_archive
+                    WHERE event_id = ? AND winner_id IS NOT NULL {not_season}
+                    GROUP BY winner_id
+                    UNION ALL
+                    SELECT losser_id AS user_id, 0 AS wins, COUNT(*) AS losses
+                    FROM match_records_archive
+                    WHERE event_id = ? AND losser_id IS NOT NULL {not_season}
+                    GROUP BY losser_id
+                )
+                GROUP BY user_id
+                """,
+                (event_id, event_id),
+            )
+            return {
+                str(row[0]): {"wins": int(row[1]), "losses": int(row[2])}
+                for row in cur.fetchall()
+            }
+        finally:
+            conn.close()
+
     def get_season_avatar_records(self, event_start: str) -> dict[tuple[str, str], dict[str, int]]:
         """Win/loss per (player, avatar) since the event started (Avatar-mode events).
 

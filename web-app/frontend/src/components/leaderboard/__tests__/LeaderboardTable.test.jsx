@@ -49,6 +49,28 @@ describe('LeaderboardTable', () => {
     expect(screen.getByText('1600')).toBeInTheDocument()
   })
 
+  it('shows a W/L column for event rows that carry a record', () => {
+    const eventData = [
+      { id: '1', name: 'Alice', event_elo: 1600, wins: 3, losses: 1 },
+      { id: '2', name: 'Bob', event_elo: 1480, wins: 0, losses: 2 },
+    ]
+    renderWithRouter(<LeaderboardTable data={eventData} columns="event" />)
+    expect(screen.getByText('W/L')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Bob' }).closest('tr')).toHaveTextContent('0-2')
+    expect(screen.getByRole('link', { name: 'Bob' }).closest('tr')).toHaveTextContent('1480')
+  })
+
+  it('hides the W/L column when event rows have no record', () => {
+    renderWithRouter(<LeaderboardTable data={[{ id: '1', name: 'Alice', event_elo: 1600 }]} columns="event" />)
+    expect(screen.queryByText('W/L')).not.toBeInTheDocument()
+  })
+
+  it('labels the event column with eloLabel', () => {
+    renderWithRouter(<LeaderboardTable data={[{ id: '1', name: 'Alice', event_elo: 12 }]} columns="event" eloLabel="Wins" />)
+    expect(screen.getByText('Wins')).toBeInTheDocument()
+    expect(screen.queryByText('Event ELO')).not.toBeInTheDocument()
+  })
+
   it('uses display_name as fallback for name', () => {
     const data = [{ user_id: '99', display_name: 'DisplayUser', elo: 1500, wins: 1, losses: 0 }]
     renderWithRouter(<LeaderboardTable data={data} />)

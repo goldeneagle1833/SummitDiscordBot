@@ -13,10 +13,18 @@ const SHOW_OPTIONS = [
 
 const RANK_MEDALS = ['\u{1F947}', '\u{1F948}', '\u{1F949}']
 
-export default function LeaderboardTable({ data = [], columns = 'lifetime', voiceRequirement = null }) {
+export default function LeaderboardTable({
+  data = [],
+  columns = 'lifetime',
+  voiceRequirement = null,
+  eloLabel = 'Event ELO',
+}) {
   const [showCount, setShowCount] = useState(16)
   // Avatar-mode seasons rate each player/avatar pair: rows carry an avatar
   const showAvatar = columns === 'event' && data.some((entry) => entry.avatar)
+  // Event rows carry a season record once the API has one (live events and
+  // archived events with their matches on file)
+  const showRecord = columns === 'event' && data.some((entry) => entry.wins != null || entry.losses != null)
 
   const visible = data.slice(0, showCount === Infinity ? data.length : showCount)
 
@@ -59,8 +67,11 @@ export default function LeaderboardTable({ data = [], columns = 'lifetime', voic
               {columns === 'event' && voiceRequirement && (
                 <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider" title="Ranked voice games this season">Voice</th>
               )}
+              {showRecord && (
+                <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">W/L</th>
+              )}
               {columns === 'event' && (
-                <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">Event ELO</th>
+                <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">{eloLabel}</th>
               )}
             </tr>
           </thead>
@@ -101,6 +112,13 @@ export default function LeaderboardTable({ data = [], columns = 'lifetime', voic
                   {columns === 'event' && voiceRequirement && (
                     <td className="px-3 py-2 text-sm text-right">
                       <VoiceGamesCell count={entry.voice_games} requirement={voiceRequirement} />
+                    </td>
+                  )}
+                  {showRecord && (
+                    <td className="px-3 py-2 text-sm text-right whitespace-nowrap">
+                      <span className="text-accent-green">{entry.wins || 0}</span>
+                      {'-'}
+                      <span className="text-accent-red">{entry.losses || 0}</span>
                     </td>
                   )}
                   {columns === 'event' && (

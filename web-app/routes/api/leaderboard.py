@@ -280,21 +280,29 @@ def get_archived_event_leaderboard(event_id):
     """Get full leaderboard for a specific archived event."""
     try:
         from repositories.elo import EloRepository
+        from repositories.matches import MatchRepository
 
         repo = EloRepository()
         leaderboard = repo.get_archived_event_leaderboard(event_id)
-        event_info = None
 
-        # Get event info
-        all_events = repo.get_all_events()
-        for event in all_events:
+        # Season records come from the match archive (older events may have none)
+        records = MatchRepository().get_event_archive_records(event_id)
+        for row in leaderboard:
+            record = records.get(str(row["user_id"]))
+            if record:
+                row["wins"] = record["wins"]
+                row["losses"] = record["losses"]
+
+        event_info = None
+        for event in repo.get_all_events():
             if event["event_id"] == event_id:
-                event_info = event
+                event_info = dict(event, value_label="Event ELO")
                 break
 
         return jsonify({
             "event_info": event_info,
-            "leaderboard": leaderboard
+            "leaderboard": leaderboard,
+            "total_matches": sum(r["wins"] for r in records.values()),
         })
     except Exception as e:
         logger.error(f"Error fetching archived event leaderboard: {e}", exc_info=True)
@@ -317,6 +325,7 @@ def get_season_leaderboard(season_id):
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
         player_stats = Counter()
+        player_losses = Counter()
         player_names = {}
 
         # Query match_records within date range
@@ -335,17 +344,22 @@ def get_season_leaderboard(season_id):
                         player_names[str(winner_id)] = winner_name or str(winner_id)
                     if loser_id:
                         player_stats[str(loser_id)] += 0
+                        player_losses[str(loser_id)] += 1
                         player_names[str(loser_id)] = loser_name or str(loser_id)
             except sqlite3.OperationalError:
                 pass
 
-        # Build leaderboard sorted by wins
+        # Build leaderboard sorted by wins. These seasons predate standings
+        # archiving, so the win count stands in for the event rating.
         leaderboard = []
-        for pid, wins in player_stats.most_common():
+        for rank, (pid, wins) in enumerate(player_stats.most_common(), start=1):
             leaderboard.append({
                 "user_id": pid,
                 "display_name": player_names.get(pid, pid),
-                "event_elo": wins,  # Using wins count as the displayed value
+                "event_elo": wins,
+                "rank": rank,
+                "wins": wins,
+                "losses": player_losses.get(pid, 0),
             })
 
         conn.close()
@@ -356,11 +370,13 @@ def get_season_leaderboard(season_id):
             "start_date": season["start_date"],
             "end_date": season["end_date"],
             "is_active": False,
+            "value_label": "Wins",
         }
 
         return jsonify({
             "event_info": event_info,
-            "leaderboard": leaderboard
+            "leaderboard": leaderboard,
+            "total_matches": sum(player_stats.values()),
         })
     except Exception as e:
         logger.error(f"Error fetching season leaderboard: {e}", exc_info=True)

@@ -119,3 +119,48 @@ def test_end_event_creates_missing_archive_table():
     assert summary["total_matches"] == 1
     assert len(_archive_rows()) == 1
     assert get_active_event() is None
+
+
+def _set_online_event_elo(user_id: int, name: str, elo: int):
+    conn = sqlite3.connect("elo.db")
+    conn.execute(
+        """INSERT OR REPLACE INTO overall_standings
+           (user_id, user_display_name, online_elo, online_event_elo)
+           VALUES (?, ?, ?, ?)""",
+        (user_id, name, elo, elo),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_end_event_archives_the_online_ladder():
+    """A player who finished below 1500 online keeps that rating and rank.
+
+    The archive used to store max(paper, online). Paper event ELO is never
+    rated on Discord (it only ever resets to 1500), so everyone below 1500
+    online was archived as a 1500 and ranked among the all-tied paper list,
+    which scattered 1500s through the past event leaderboard.
+    """
+    start_new_event("Season 3")
+    _set_online_event_elo(101, "Winner", 1516)
+    _set_online_event_elo(202, "Loser", 1484)
+    played_at = (datetime.datetime.now() + datetime.timedelta(minutes=1)).isoformat()
+    _insert_match(played_at)
+
+    summary = end_current_event()
+
+    conn = sqlite3.connect("elo.db")
+    rows = conn.execute(
+        """SELECT user_id, final_event_elo, final_rank,
+                  final_online_event_elo, final_online_rank, final_paper_event_elo
+           FROM event_standings_archive
+           ORDER BY final_rank"""
+    ).fetchall()
+    conn.close()
+
+    assert rows == [
+        (101, 1516, 1, 1516, 1, 1500),
+        (202, 1484, 2, 1484, 2, 1500),
+    ]
+    assert summary["total_players"] == 2
+    assert summary["top_players"] == [("Winner", 1516), ("Loser", 1484)]

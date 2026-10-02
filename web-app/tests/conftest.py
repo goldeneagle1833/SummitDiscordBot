@@ -63,6 +63,9 @@ def _patch_db_paths(elo_db, match_db, tmp_path):
     import routes.api.players
     routes.api.players.MATCH_RECORDS_DB_PATH = match_db
     routes.api.players.ELO_DB_PATH = elo_db
+    # The season-filter leaderboard opens the match DB directly too.
+    import routes.api.leaderboard
+    routes.api.leaderboard.MATCH_RECORDS_DB_PATH = match_db
     # Explorer code reads this at module level; repoint it so tests never
     # touch the real explorer.db.
     repositories.explorer.EXPLORER_DB_PATH = webapp_config.EXPLORER_DB_PATH

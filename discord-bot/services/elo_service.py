@@ -1462,7 +1462,7 @@ def end_current_event():
                    for uid, name, paper_elo, online_elo in cur_elo.fetchall()
                    if uid in event_participants]
 
-    # Build separate rankings for paper and online (include all participants)
+    # Paper and online are separate ladders, so each keeps its own ranking
     paper_standings = [(uid, name, paper_elo) for uid, name, paper_elo, _ in all_players]
     online_standings = [(uid, name, online_elo) for uid, name, _, online_elo in all_players]
 
@@ -1470,32 +1470,28 @@ def end_current_event():
     paper_standings.sort(key=lambda x: x[2], reverse=True)
     online_standings.sort(key=lambda x: x[2], reverse=True)
 
-    # Build combined standings using max(paper_elo, online_elo) for each player
-    standings = [(uid, name, max(paper_elo, online_elo)) for uid, name, paper_elo, online_elo in all_players]
-    standings.sort(key=lambda x: x[2], reverse=True)
+    # The event's standings are the online ladder: participants come from
+    # Discord match records, and overall_standings.paper_event_elo is only
+    # ever reset to 1500 (paper ratings live in the web app's paper_standings).
+    # This used to archive max(paper, online), which turned every player who
+    # finished below 1500 online into a "1500" ranked by the all-tied paper
+    # list, scattering 1500s through the past event leaderboard.
+    standings = list(online_standings)
 
     # Create rank maps
     paper_ranks = {uid: rank for rank, (uid, _, _) in enumerate(paper_standings, start=1)}
     online_ranks = {uid: rank for rank, (uid, _, _) in enumerate(online_standings, start=1)}
 
-    # Archive combined standings (one row per player with both paper and online data)
+    # Archive standings (one row per player with both paper and online data)
     archived_at = datetime.datetime.now().isoformat()
     for user_id, display_name, paper_elo, online_elo in all_players:
-        # Legacy event_elo = max of paper and online
-        final_event_elo = max(paper_elo, online_elo)
-        # Rank by whichever ELO is higher
-        if paper_elo > online_elo:
-            final_rank = paper_ranks.get(user_id, 0)
-        else:
-            final_rank = online_ranks.get(user_id, 0)
-
         cur_elo.execute(
             """INSERT INTO event_standings_archive
                (event_id, user_id, user_display_name, final_event_elo, final_rank,
                 final_paper_event_elo, final_paper_rank, final_online_event_elo, final_online_rank, archived_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (event_id, user_id, display_name, final_event_elo, final_rank,
-             paper_elo, paper_ranks.get(user_id, None), online_elo, online_ranks.get(user_id, None), archived_at),
+            (event_id, user_id, display_name, online_elo, online_ranks[user_id],
+             paper_elo, paper_ranks.get(user_id), online_elo, online_ranks.get(user_id), archived_at),
         )
 
     # Mark event as ended

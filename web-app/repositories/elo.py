@@ -327,74 +327,104 @@ class EloRepository:
             for row in rows
         ]
 
-    def get_player_event_elo(self, user_id: int | str, event_id: int) -> dict | None:
-        """Get a player's ELO and rank for a specific past event (handles both int and str)."""
-        conn = self._get_connection()
-        cur = conn.cursor()
+    # The archive keeps the legacy final_event_elo/final_rank pair and, since
+    # dual ELO, the online pair. Events are rated on the online ladder, and the
+    # legacy columns were once filled with max(paper, online), which archived
+    # every sub-1500 player as a 1500, so readers prefer the online columns.
+    _ARCHIVE_ELO = "COALESCE(final_online_event_elo, final_event_elo)"
+    _ARCHIVE_RANK = "COALESCE(final_online_rank, final_rank)"
 
-        # Check if event_standings_archive table exists
+    def _archive_exprs(self, cur: sqlite3.Cursor) -> tuple[str, str] | None:
+        """SQL for a row's (elo, rank) in event_standings_archive; None without the table."""
         cur.execute("""
             SELECT name FROM sqlite_master
             WHERE type='table' AND name='event_standings_archive'
         """)
         if not cur.fetchone():
-            conn.close()
             return None
+        cur.execute("PRAGMA table_info(event_standings_archive)")
+        columns = {row[1] for row in cur.fetchall()}
+        if {"final_online_event_elo", "final_online_rank"} <= columns:
+            return self._ARCHIVE_ELO, self._ARCHIVE_RANK
+        return "final_event_elo", "final_rank"
 
-        cur.execute(
-            """
-            SELECT final_event_elo, final_rank, user_display_name
-            FROM event_standings_archive
-            WHERE event_id = ? AND user_id = ?
-        """,
-            (event_id, user_id),
-        )
-        row = cur.fetchone()
-        conn.close()
+    def get_player_event_elo(self, user_id: int | str, event_id: int) -> dict | None:
+        """Get a player's final ELO and rank for a past event (handles both int and str).
 
-        if row:
+        The rank is the player's place in get_archived_event_leaderboard(),
+        not the stored final_rank.
+        """
+        conn = self._get_connection()
+        try:
+            cur = conn.cursor()
+            exprs = self._archive_exprs(cur)
+            if not exprs:
+                return None
+            elo_expr, rank_expr = exprs
+
+            cur.execute(
+                f"""
+                SELECT {elo_expr}, {rank_expr}, user_display_name
+                FROM event_standings_archive
+                WHERE event_id = ? AND user_id = ?
+                """,
+                (event_id, user_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            elo, stored_rank, display_name = row
+
+            # Players ahead on the leaderboard: higher ELO, or the same ELO and
+            # an earlier stored rank (the leaderboard's tie-break)
+            cur.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM event_standings_archive
+                WHERE event_id = ?
+                  AND ({elo_expr} > ? OR ({elo_expr} = ? AND {rank_expr} < ?))
+                """,
+                (event_id, elo, elo, stored_rank),
+            )
+            ahead = cur.fetchone()[0]
             return {
-                "elo": row[0],
-                "rank": row[1],
-                "display_name": row[2],
+                "elo": elo,
+                "rank": ahead + 1,
+                "display_name": display_name,
             }
-        return None
+        finally:
+            conn.close()
 
     def get_archived_event_leaderboard(self, event_id: int) -> list[dict]:
-        """Get full leaderboard for a specific archived event."""
+        """Get full leaderboard for a specific archived event, best first."""
         conn = self._get_connection()
-        cur = conn.cursor()
+        try:
+            cur = conn.cursor()
+            exprs = self._archive_exprs(cur)
+            if not exprs:
+                return []
+            elo_expr, rank_expr = exprs
 
-        # Check if event_standings_archive table exists
-        cur.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name='event_standings_archive'
-        """)
-        if not cur.fetchone():
+            cur.execute(
+                f"""
+                SELECT user_id, user_display_name, {elo_expr}
+                FROM event_standings_archive
+                WHERE event_id = ?
+                ORDER BY {elo_expr} DESC, {rank_expr} ASC, user_display_name COLLATE NOCASE ASC
+                """,
+                (event_id,),
+            )
+            return [
+                {
+                    "user_id": row[0],
+                    "display_name": row[1],
+                    "event_elo": row[2],
+                    "rank": rank,
+                }
+                for rank, row in enumerate(cur.fetchall(), start=1)
+            ]
+        finally:
             conn.close()
-            return []
-
-        cur.execute(
-            """
-            SELECT user_id, user_display_name, final_event_elo, final_rank
-            FROM event_standings_archive
-            WHERE event_id = ?
-            ORDER BY final_rank ASC
-        """,
-            (event_id,),
-        )
-        rows = cur.fetchall()
-        conn.close()
-
-        return [
-            {
-                "user_id": row[0],
-                "display_name": row[1],
-                "event_elo": row[2],
-                "rank": row[3],
-            }
-            for row in rows
-        ]
 
     def delete_player(self, user_id: int) -> bool:
         """Delete a player from overall_standings. Returns True if deleted."""

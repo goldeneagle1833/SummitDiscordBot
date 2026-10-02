@@ -679,23 +679,27 @@ def get_event_archive_standings(event_id: int):
         event_id: The event ID to get standings for
 
     Returns:
-        List of tuples (rank, display_name, final_elo)
+        List of tuples (rank, display_name, final_elo), best first
     """
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
+    # Events are rated on the online ladder. Older archives filled the legacy
+    # final_event_elo column with max(paper, online), so prefer the online
+    # columns and fall back to the legacy ones where they are NULL.
     cur.execute(
-        """SELECT final_rank, user_display_name, final_event_elo
+        """SELECT user_display_name, COALESCE(final_online_event_elo, final_event_elo)
                    FROM event_standings_archive
                    WHERE event_id = ?
-                   ORDER BY final_rank ASC
+                   ORDER BY COALESCE(final_online_event_elo, final_event_elo) DESC,
+                            COALESCE(final_online_rank, final_rank) ASC
                    LIMIT 16""",
         (event_id,),
     )
     rows = cur.fetchall()
     conn.close()
 
-    return rows
+    return [(rank, name, elo) for rank, (name, elo) in enumerate(rows, start=1)]
 
 
 def get_top_16_user_ids():

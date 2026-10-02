@@ -14,6 +14,7 @@ from cogs.lfg.pairing_messages import (
 from utils.database import save_pairing, get_pairing_ban, pairing_ban_message
 from utils.deck_checker import clean_deck_url
 from services.avatar_mode import check_join_deck, lock_match_avatar, needs_avatar
+from services.ranked_eligibility import ranked_block_message
 
 
 def _require_deck_in_avatar_mode(deck_input):
@@ -369,6 +370,11 @@ class ChallengeButtons(discord.ui.View):
         ban = get_pairing_ban(interaction.user.id)
         if ban:
             await interaction.response.send_message(pairing_ban_message(ban), ephemeral=True)
+            return
+        # A challenge is a ranked game; brand-new players can't accept one yet
+        new_player_message = ranked_block_message(interaction.user.id)
+        if new_player_message:
+            await interaction.response.send_message(new_player_message, ephemeral=True)
             return
         # Open modal for deck URL entry
         modal = ChallengeAcceptModal(

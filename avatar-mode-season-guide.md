@@ -116,6 +116,14 @@ entries in that match** are 100 or more Elo apart.
 
 ---
 
+## New players
+
+Ranked opens after a player's **first two games**. Any games count: Casual, Rumble,
+Limited, games reported on the website, and games from past seasons. A brand-new player
+who tries to join Ranked (or to send or accept a `!challenge`) is told to play a couple of
+Casual games first. This applies in both season types and never affects anyone with a
+match history.
+
 ## Top cut
 
 Top-cut qualification belongs to the **player**, not the avatar.
@@ -171,7 +179,10 @@ avatar shown isn't the one you played.
 |------|---------|
 | Start an Avatar-mode season | `!start_event avatar <season name>` |
 | Start a Player-mode season | `!start_event <season name>` (or `!start_event player <season name>`) |
-| See the running season's mode | `!event_status` |
+| Start a season that ends by itself | Add a Discord timestamp: `!start_event avatar <season name> <t:1794805140:F>` |
+| Change or clear the automatic end | `!set_event_end <t:1794805140:F>` or `!set_event_end clear` |
+| End the season now | `!end_event` |
+| See the running season's mode and end time | `!event_status` |
 | Report a match by hand | `/admin-report winner loser`, then enter both avatars in the form |
 | Report a ladder challenge by hand | `/admin-challenge-report winner loser top16_player`, then both avatars |
 | Set one avatar entry's Elo | `!spot_elo_reset @player 1500 <avatar name>` |
@@ -180,6 +191,21 @@ avatar shown isn't the one you played.
 
 - **The mode is locked once the season starts.** To change it, end the season and start a
   new one.
+- **When a season ends** (at its scheduled time, or with `!end_event`), the bot takes the
+  top cut and drafts the postseason bracket:
+  - Top cut is the first **24 unique ticket holders** on the final ladder. A ticket holder
+    is anyone with a ticket role in Discord at that moment. The voice-game count is not
+    applied.
+  - The bracket is named `<season name> Post Season Bracket`. Seeds 1–8 are the top eight
+    in ladder order and get a round-one bye; seeds 9–24 are drawn at random and play round
+    one.
+  - The bracket is created as a **draft**. Review it and press Publish on the website
+    (Admin → Brackets) to make it public.
+  - The 24 qualifiers get the **Top Cut role**, which opens the Top Cut channel. Last
+    season's top cut lose the role first. If nobody qualified, the role is left alone.
+  - The bot posts the season result and the seeded top cut in the leaderboard channel.
+  - Starting a new season while one is still running ends the old one **without** a top
+    cut or bracket; use `!end_event` first if you want them.
 - Avatar names typed in admin forms are checked against the official avatar list. A typo
   is rejected with a suggestion ("did you mean Imposter?") and nothing is recorded.
 - The prefix commands `!admin_report` and `!admin_challenge_report` point you to the slash

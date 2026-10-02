@@ -68,6 +68,12 @@ deck link.
   afterwards doesn't change the avatar the game is rated on.
 - Nothing else about joining changes. Other queues don't need a deck.
 
+**New players.** A player needs two recorded games of any kind (casual, rumble, limited,
+past seasons) before joining `ranked`. A brand-new player's ranked join returns `403` with
+`{"error": "Ranked opens after your first 2 games. You've played 0 so far, so play 2 more
+games in the Casual queue (or any other queue) and then join Ranked."}`. This applies in
+both season types; other queues are open to everyone.
+
 New `400` responses (body is `{"error": "<message>"}`, suitable to show the player):
 
 | Situation                                   | Message                                                                                                                      |
@@ -201,7 +207,8 @@ ticket-holder endpoint for anything top-cut related.
 
 1. Read `deck_mode` (or `elo_mode`) from the status call and, when ranked needs a deck,
    collect a deck link in your ranked join form and send it as `deck_url`.
-2. Show the `error` message from a `400` on join; both messages are written for players.
+2. Show the `error` message from a `400` or `403` on join; the messages are written for
+   players.
 3. Optionally show `avatar` next to names on the ticket-holder leaderboard, and use
    `/api/leaderboard/avatars` for per-avatar standings.
 

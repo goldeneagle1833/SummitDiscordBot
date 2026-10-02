@@ -90,12 +90,56 @@ from services.avatar_mode import (
     needs_avatar,
     set_avatar_ladder_stakes,
 )
+from services.ranked_eligibility import MIN_GAMES_FOR_RANKED, ranked_block_message
+from services.postseason import (
+    DEFAULT_TOP_CUT_ROLE_ID,
+    TOP_CUT_BYES,
+    TOP_CUT_SIZE,
+    bracket_name,
+    create_draft_bracket,
+    extract_end_time,
+    final_ladder,
+    seed_top_cut,
+    select_top_cut,
+)
 from utils.checks import is_bot_admin
 from services.pilots_service import is_pilot_active
 from services.limited_service import limited_winner_report, limited_elo_only_report, get_run_summary, forfeit_arena_run, close_arena_run, start_arena_run
 from repositories.limited_repo import get_active_arena_run, get_limited_elo, upsert_limited_elo, get_all_limited_standings, get_limited_wins_count, get_limited_losses_count
 
 logger = logging.getLogger("discord_bot")
+
+
+def _season_end_text(scheduled_end_at) -> str:
+    """How a season's end is described in admin messages."""
+    if not scheduled_end_at:
+        return "No end time set; the season runs until `!end_event`."
+    return (
+        f"Ends <t:{scheduled_end_at}:F> (<t:{scheduled_end_at}:R>). The top {TOP_CUT_SIZE} ticket holders "
+        "make top cut and the postseason bracket is drafted automatically."
+    )
+
+
+def _top_cut_role_text(result) -> str:
+    """Admin summary of the Top Cut role swap."""
+    if not result:
+        return "Not changed."
+    if result.get("error"):
+        return f"Not changed: {result['error']}"
+    if not (result["added"] or result["removed"] or result["kept"] or result["failed"]):
+        return "Not changed (nobody qualified)."
+    text = (
+        f"Removed from {result['removed']} previous player(s), given to {result['added']} new qualifier(s)"
+        + (f", {result['kept']} already had it" if result["kept"] else "")
+        + "."
+    )
+    if result["failed"]:
+        text += (
+            f"\nCould not update {len(result['failed'])} member(s): "
+            + ", ".join(f"<@{uid}>" for uid in result["failed"])
+            + ". Check that the bot's role sits above the Top Cut role."
+        )
+    return text
 
 
 def _avatar_suffix(avatar):
@@ -119,12 +163,14 @@ class LFGCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.lfg_channel_id = config.LFG_CHANNEL_ID
+        self._season_end_retry_after = None  # set when a scheduled season end fails
         create_blocked_users_table()
         self.check_expired_queue.start()  # Start the background task
         self.cleanup_old_status_messages.start()  # Clean up old messages on startup
         self.cleanup_old_leaderboard_messages.start()  # Clean up old leaderboard on startup
         self.cleanup_old_limited_leaderboard_messages.start()  # Clean up old limited leaderboard on startup
         self.cleanup_database_pairings.start()  # Clean up old pairings periodically
+        self.check_scheduled_event_end.start()  # End the season at its scheduled time
 
     def cog_unload(self):
         """Clean up when cog is unloaded"""
@@ -133,6 +179,7 @@ class LFGCog(commands.Cog):
         self.cleanup_old_leaderboard_messages.cancel()
         self.cleanup_old_limited_leaderboard_messages.cancel()
         self.cleanup_database_pairings.cancel()
+        self.check_scheduled_event_end.cancel()
 
     @tasks.loop(count=1)
     async def cleanup_old_status_messages(self):
@@ -613,6 +660,222 @@ class LFGCog(commands.Cog):
         """Wait for bot to be ready before starting the loop"""
         await self.bot.wait_until_ready()
 
+    @tasks.loop(minutes=1)
+    async def check_scheduled_event_end(self):
+        """End the running season once its scheduled end time has passed."""
+        from utils.database import get_active_event
+
+        try:
+            active_event = get_active_event()
+            ends_at = (active_event or {}).get("scheduled_end_at")
+            if not ends_at or datetime.datetime.now().timestamp() < ends_at:
+                return
+            # A failed attempt isn't retried every minute
+            if self._season_end_retry_after and datetime.datetime.now() < self._season_end_retry_after:
+                return
+
+            logger.info("Scheduled end reached for event '%s'; ending the season", active_event["event_name"])
+            summary, seeded, bracket, bracket_error = await self._end_season_with_top_cut(active_event)
+            if not summary:
+                raise RuntimeError("end_current_event returned no summary")
+            self._season_end_retry_after = None
+
+            await self._announce_season_end(summary, seeded, bracket, bracket_error)
+            await self.update_leaderboard()
+            log_admin_action(
+                self.bot.user.id,
+                "Scheduled season end",
+                "end_event",
+                previous_state={
+                    "event_name": summary["event_name"],
+                    "total_matches": summary["total_matches"],
+                    "total_players": summary["total_players"],
+                    "scheduled_end_at": ends_at,
+                },
+                new_state={
+                    "result": "event archived",
+                    "top_cut": [str(entry.user_id) for entry in seeded],
+                    "bracket": bracket,
+                    "bracket_error": bracket_error,
+                    "top_cut_role": summary.get("top_cut_role"),
+                },
+                details=(
+                    f"Season '{summary['event_name']}' ended on schedule; "
+                    f"{len(seeded)} ticket holders made top cut"
+                ),
+            )
+        except Exception as e:
+            self._season_end_retry_after = datetime.datetime.now() + datetime.timedelta(minutes=10)
+            logger.error(f"Scheduled season end failed (retrying in 10 minutes): {e}", exc_info=True)
+
+    @check_scheduled_event_end.before_loop
+    async def before_check_scheduled_event_end(self):
+        await self.bot.wait_until_ready()
+
+    async def _ticket_holder_ids(self, user_ids) -> set:
+        """Which of these players hold a ticket role right now."""
+        guild = self.bot.get_guild(config.GUILD_ID)
+        if not guild:
+            return set()
+        holders = set()
+        for user_id in user_ids:
+            member = guild.get_member(user_id)
+            if member is None:
+                try:
+                    member = await guild.fetch_member(user_id)
+                except (discord.NotFound, discord.HTTPException):
+                    continue
+            if any(role.id in config.TICKET_HOLDER_ROLE_IDS for role in member.roles):
+                holders.add(user_id)
+        return holders
+
+    async def _assign_top_cut_role(self, qualifier_ids) -> dict:
+        """Hand the Top Cut role to this season's qualifiers.
+
+        Last season's holders lose the role first, so the Top Cut channel only
+        ever holds the current top cut. Returns counts (and any failures) for
+        the admin summary. Nothing is touched when nobody qualified.
+        """
+        result = {"added": 0, "removed": 0, "kept": 0, "failed": [], "role_id": None, "error": None}
+        qualifier_ids = {int(uid) for uid in qualifier_ids}
+        if not qualifier_ids:
+            return result
+
+        role_id = getattr(config, "TOP_CUT_ROLE_ID", None) or DEFAULT_TOP_CUT_ROLE_ID
+        guild = self.bot.get_guild(config.GUILD_ID)
+        role = guild.get_role(role_id) if guild else None
+        if role is None:
+            result["error"] = f"Top Cut role {role_id} was not found in the server."
+            logger.error(result["error"])
+            return result
+        result["role_id"] = role.id
+
+        reason = "Season ended: Top Cut role moved to the new qualifiers"
+        holders_before = list(role.members)
+        for member in holders_before:
+            if member.id in qualifier_ids:
+                result["kept"] += 1
+                continue
+            try:
+                await member.remove_roles(role, reason=reason)
+                result["removed"] += 1
+            except discord.HTTPException as e:
+                result["failed"].append(member.id)
+                logger.error(f"Could not remove the Top Cut role from {member.id}: {e}")
+
+        for user_id in qualifier_ids - {member.id for member in holders_before}:
+            member = guild.get_member(user_id)
+            try:
+                if member is None:
+                    member = await guild.fetch_member(user_id)
+                await member.add_roles(role, reason=reason)
+                result["added"] += 1
+            except discord.HTTPException as e:
+                result["failed"].append(user_id)
+                logger.error(f"Could not give the Top Cut role to {user_id}: {e}")
+        return result
+
+    async def _end_season_with_top_cut(self, active_event, created_by=None):
+        """End the season, take the top cut and draft its postseason bracket.
+
+        Top cut is the first 24 unique ticket holders on the final ladder.
+        Seeds 1-8 keep ladder order (they get the round-one byes); seeds 9-24
+        are drawn at random. The bracket is left as a draft for an admin to
+        publish on the website.
+
+        Returns (summary, seeded_entries, bracket_or_None, bracket_error_or_None).
+        """
+        from utils.database import end_current_event
+
+        # The ladder has to be read before the event is archived
+        ladder = final_ladder(active_event)
+        holders = await self._ticket_holder_ids({entry.user_id for entry in ladder})
+        qualifiers = select_top_cut(ladder, holders)
+
+        summary = end_current_event()
+        if not summary:
+            return None, [], None, None
+
+        seeded = seed_top_cut(qualifiers)
+
+        # Top Cut channel access: last season's players out, this season's in
+        try:
+            summary["top_cut_role"] = await self._assign_top_cut_role(e.user_id for e in seeded)
+        except Exception as e:
+            summary["top_cut_role"] = {"error": str(e), "added": 0, "removed": 0, "kept": 0, "failed": []}
+            logger.error(f"Top Cut role update failed: {e}", exc_info=True)
+
+        bracket = bracket_error = None
+        if len(seeded) < 2:
+            bracket_error = "Fewer than 2 ticket holders qualified."
+        else:
+            try:
+                bracket = create_draft_bracket(summary["event_name"], seeded, created_by=created_by)
+            except Exception as e:
+                bracket_error = str(e)
+                logger.error(f"Could not draft the postseason bracket: {e}", exc_info=True)
+        return summary, seeded, bracket, bracket_error
+
+    def _season_end_embed(self, summary, seeded, bracket, bracket_error) -> discord.Embed:
+        """The public season-end message: final numbers and the seeded top cut."""
+
+        def line(seed, entry):
+            avatar = f" ({entry.avatar})" if entry.avatar else ""
+            return f"`{seed:>2}` <@{entry.user_id}>{avatar} — {entry.event_elo}"
+
+        parts = [
+            f"**{summary['event_name']}** is over: "
+            f"{summary['total_matches']} matches, {summary['total_players']} ranked players."
+        ]
+        if seeded:
+            byes = seeded[:TOP_CUT_BYES]
+            rest = seeded[TOP_CUT_BYES:]
+            parts.append(
+                f"**Top cut: the top {len(seeded)} ticket holders**\n"
+                f"__Seeds 1–{len(byes)} (round one bye)__\n"
+                + "\n".join(line(seed, entry) for seed, entry in enumerate(byes, start=1))
+            )
+            if rest:
+                parts.append(
+                    f"__Seeds {TOP_CUT_BYES + 1}–{len(seeded)} (random draw for round one)__\n"
+                    + "\n".join(line(seed, entry) for seed, entry in enumerate(rest, start=TOP_CUT_BYES + 1))
+                )
+            role_id = (summary.get("top_cut_role") or {}).get("role_id")
+            if role_id:
+                parts.append(f"Qualifiers now have the <@&{role_id}> role and access to the Top Cut channel.")
+        else:
+            parts.append("No ticket holders played this season, so there is no top cut.")
+
+        if bracket:
+            parts.append(
+                f"The **{bracket['name']}** has been drafted. It goes live on the website "
+                "once the admins have reviewed and published it."
+            )
+        elif seeded:
+            parts.append(
+                f"The **{bracket_name(summary['event_name'])}** could not be drafted automatically; "
+                "an admin will set it up on the website."
+            )
+        return discord.Embed(
+            title=f"🏁 {summary['event_name']} has ended",
+            description="\n\n".join(parts),
+            color=discord.Color.orange(),
+        )
+
+    async def _announce_season_end(self, summary, seeded, bracket, bracket_error):
+        """Post the season-end message in the leaderboard channel."""
+        channel = self.bot.get_channel(config.LEADERBOARD_CHANNEL_ID)
+        if not channel:
+            logger.warning("Leaderboard channel not found; season-end message not posted")
+            return
+        try:
+            await channel.send(
+                embed=self._season_end_embed(summary, seeded, bracket, bracket_error),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except Exception as e:
+            logger.error(f"Could not post the season-end message: {e}", exc_info=True)
+
     @tasks.loop(hours=6)
     async def cleanup_database_pairings(self):
         """Background task to clean up old database pairings every 6 hours"""
@@ -1045,6 +1308,20 @@ class LFGCog(commands.Cog):
             await ctx.send(
                 f"{opponent.mention} is currently blocked from the pairing service and can't be challenged.",
                 delete_after=30,
+            )
+            return
+
+        # Direct challenges are ranked games, so brand-new players can't use them yet
+        new_player_message = ranked_block_message(ctx.author.id)
+        if new_player_message:
+            await ctx.send(f"{ctx.author.mention}, {new_player_message}", delete_after=60)
+            return
+        if ranked_block_message(opponent.id):
+            await ctx.send(
+                f"{opponent.mention} is new and hasn't played their first "
+                f"{MIN_GAMES_FOR_RANKED} games yet, so they can't be challenged to a ranked match. "
+                "Play them in the Casual queue first.",
+                delete_after=60,
             )
             return
 
@@ -1656,7 +1933,8 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="Event Management",
             value=(
-                "`!start_event [player|avatar] <event_name>` - Start a new event/season (mode is locked once started)\n"
+                "`!start_event [player|avatar] <event_name> [<t:unix:F>]` - Start a new event/season (mode is locked once started; the timestamp ends it automatically)\n"
+                "`!set_event_end <t:unix:F>|clear` - Set, change or clear the season's automatic end\n"
                 "`!end_event` - End the current event\n"
                 "`!event_status` - View current event status\n"
                 "`!recalculate_event_elo` - Recalculate all event ELO from match records\n"
@@ -2648,12 +2926,17 @@ class LFGCog(commands.Cog):
     async def start_event(self, ctx, *, event_name: str = None):
         """
         Start a new event/season. Archives current event and resets event ELO.
-        Usage: !start_event [player|avatar] Event Name Here
+        Usage: !start_event [player|avatar] Event Name Here [<t:unix:F>]
 
         The first word picks the ELO mode (Player mode when left out):
         - player: one event ELO per player
         - avatar: one event ELO per player and avatar (ranked needs a deck link)
         The mode is locked once the event starts.
+
+        Add a Discord timestamp (e.g. <t:1794805140:F>) to end the season by
+        itself at that time. When it ends, the top 24 ticket holders make top
+        cut and the postseason bracket is drafted on the website. Change it
+        later with !set_event_end.
         """
         from utils.database import (
             start_new_event,
@@ -2662,9 +2945,11 @@ class LFGCog(commands.Cog):
         )
 
         usage = (
-            "Usage: `!start_event [player|avatar] Event Name Here` "
-            "(Player mode when the mode is left out; it can't change after the event starts)"
+            "Usage: `!start_event [player|avatar] Event Name Here [<t:unix:F>]` "
+            "(Player mode when the mode is left out; it can't change after the event starts. "
+            "The optional Discord timestamp ends the season automatically.)"
         )
+        scheduled_end_at, event_name = extract_end_time(event_name or "")
         elo_mode = "player"
         if event_name:
             first, _, rest = event_name.partition(" ")
@@ -2676,9 +2961,15 @@ class LFGCog(commands.Cog):
             await ctx.send(f"Please provide an event name. {usage}")
             return
 
+        if scheduled_end_at is not None and scheduled_end_at <= datetime.datetime.now().timestamp():
+            await ctx.send(
+                f"The end time <t:{scheduled_end_at}:F> is in the past. Nothing was started. {usage}"
+            )
+            return
+
         try:
             # Start the new event
-            result = start_new_event(event_name, elo_mode=elo_mode)
+            result = start_new_event(event_name, elo_mode=elo_mode, scheduled_end_at=scheduled_end_at)
 
             # Build response embed
             embed = discord.Embed(
@@ -2708,6 +2999,7 @@ class LFGCog(commands.Cog):
             embed.add_field(
                 name="ELO Mode (locked for this event)", value=mode_text, inline=False,
             )
+            embed.add_field(name="Season End", value=_season_end_text(scheduled_end_at), inline=False)
 
             # Add previous event summary if there was one
             if result.get("previous_event"):
@@ -2747,7 +3039,10 @@ class LFGCog(commands.Cog):
                 previous_state={
                     "previous_event": _prev_event["event_name"] if _prev_event else None
                 },
-                new_state={"event_name": event_name, "event_id": result["event_id"], "elo_mode": elo_mode},
+                new_state={
+                    "event_name": event_name, "event_id": result["event_id"],
+                    "elo_mode": elo_mode, "scheduled_end_at": scheduled_end_at,
+                },
                 details=f"Started event '{event_name}' in {elo_mode} mode"
                 + (f" (archived '{_prev_event['event_name']}')" if _prev_event else ""),
             )
@@ -2775,12 +3070,69 @@ class LFGCog(commands.Cog):
 
     @commands.command()
     @is_bot_admin()
+    async def set_event_end(self, ctx, *, when: str = None):
+        """Set, change or clear when the running season ends by itself.
+
+        Usage: !set_event_end <t:1794805140:F>   (or: !set_event_end clear)
+        """
+        from utils.database import get_active_event, set_event_scheduled_end
+
+        usage = "Usage: `!set_event_end <t:1794805140:F>` or `!set_event_end clear`"
+        active_event = get_active_event()
+        if not active_event:
+            await ctx.send("There is no active event.")
+            return
+        if not when:
+            await ctx.send(
+                f"**{active_event['event_name']}** — "
+                f"{_season_end_text(active_event.get('scheduled_end_at'))}\n{usage}"
+            )
+            return
+
+        previous = active_event.get("scheduled_end_at")
+        if when.strip().lower() in ("clear", "none", "off", "cancel"):
+            new_end = None
+        else:
+            new_end, _ = extract_end_time(when)
+            if new_end is None:
+                await ctx.send(f"I couldn't find a timestamp in that. {usage}")
+                return
+            if new_end <= datetime.datetime.now().timestamp():
+                await ctx.send(f"<t:{new_end}:F> is in the past. Nothing was changed. {usage}")
+                return
+
+        set_event_scheduled_end(active_event["event_id"], new_end)
+        self._season_end_retry_after = None
+        await ctx.send(f"**{active_event['event_name']}** — {_season_end_text(new_end)}")
+        log_admin_action(
+            ctx.author.id,
+            ctx.author.display_name,
+            "set_event_end",
+            target_name=active_event["event_name"],
+            previous_state={"scheduled_end_at": previous},
+            new_state={"scheduled_end_at": new_end},
+            details=f"Changed the scheduled end of '{active_event['event_name']}' from {previous} to {new_end}",
+        )
+
+    @set_event_end.error
+    async def set_event_end_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"set_event_end error: {error}")
+            await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
     async def end_event(self, ctx):
         """
         End the current event without starting a new one.
         Archives standings and matches, then leaves no active event.
+
+        The top 24 ticket holders make top cut and the postseason bracket is
+        drafted on the website, the same as when a season ends on schedule.
         """
-        from utils.database import get_active_event, end_current_event
+        from utils.database import get_active_event
 
         active_event = get_active_event()
         if not active_event:
@@ -2788,8 +3140,10 @@ class LFGCog(commands.Cog):
             return
 
         try:
-            # End and archive the current event
-            summary = end_current_event()
+            # End and archive the current event, take top cut, draft the bracket
+            summary, seeded, bracket, bracket_error = await self._end_season_with_top_cut(
+                active_event, created_by=ctx.author.id
+            )
 
             if not summary:
                 await ctx.send("Failed to end event - no data returned.")
@@ -2833,8 +3187,29 @@ class LFGCog(commands.Cog):
                 inline=False,
             )
 
+            if bracket:
+                bracket_text = (
+                    f"**{bracket['name']}** drafted with {bracket['entrant_count']} ticket holders "
+                    f"(seeds 1–{min(TOP_CUT_BYES, bracket['entrant_count'])} by ladder rank with a round-one bye, "
+                    "the rest drawn at random).\nReview and publish it on the website: Admin → Brackets."
+                )
+            elif seeded:
+                bracket_text = (
+                    f"{len(seeded)} ticket holders made top cut, but the bracket could not be drafted: "
+                    f"{bracket_error}\nCreate it on the website: Admin → Brackets."
+                )
+            else:
+                bracket_text = "No ticket holders played this season, so no bracket was drafted."
+            embed.add_field(name="Postseason Bracket", value=bracket_text, inline=False)
+            embed.add_field(
+                name="Top Cut Role", value=_top_cut_role_text(summary.get("top_cut_role")), inline=False
+            )
+
             embed.set_footer(text=f"Ended by {ctx.author.display_name}")
             await ctx.send(embed=embed)
+
+            # Tell the server who made top cut
+            await self._announce_season_end(summary, seeded, bracket, bracket_error)
 
             # Update leaderboard
             await self.update_leaderboard()
@@ -2848,7 +3223,13 @@ class LFGCog(commands.Cog):
                     "total_matches": summary["total_matches"],
                     "total_players": summary["total_players"],
                 },
-                new_state={"result": "event archived"},
+                new_state={
+                    "result": "event archived",
+                    "top_cut": [str(entry.user_id) for entry in seeded],
+                    "bracket": bracket,
+                    "bracket_error": bracket_error,
+                    "top_cut_role": summary.get("top_cut_role"),
+                },
                 details=f"Ended event '{summary['event_name']}' ({summary['total_matches']} matches, {summary['total_players']} players archived)",
             )
 
@@ -2915,7 +3296,8 @@ class LFGCog(commands.Cog):
                 f"**Started:** {start_date.strftime('%Y-%m-%d %H:%M')}\n"
                 f"**Days Elapsed:** {days_elapsed}\n"
                 f"**Matches Played:** {match_count}\n"
-                f"**ELO Mode:** {'Avatar (one event ELO per player and avatar)' if active_event.get('elo_mode') == 'avatar' else 'Player'}"
+                f"**ELO Mode:** {'Avatar (one event ELO per player and avatar)' if active_event.get('elo_mode') == 'avatar' else 'Player'}\n"
+                f"**Season End:** {_season_end_text(active_event.get('scheduled_end_at'))}"
             ),
             inline=False,
         )

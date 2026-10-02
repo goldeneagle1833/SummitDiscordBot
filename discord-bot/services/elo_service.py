@@ -1333,7 +1333,7 @@ async def record_match(
 # --- Event Management ---
 
 
-def start_new_event(event_name, elo_mode=PLAYER_MODE):
+def start_new_event(event_name, elo_mode=PLAYER_MODE, scheduled_end_at=None):
     """
     Start a new event, archiving any active event first.
 
@@ -1341,6 +1341,9 @@ def start_new_event(event_name, elo_mode=PLAYER_MODE):
         event_name: Name for the new event
         elo_mode: "player" (one event ELO per player) or "avatar" (one per
             player and avatar). Locked for the life of the event.
+        scheduled_end_at: Unix seconds at which the season ends by itself
+            (the bot then takes the top cut and drafts the postseason
+            bracket), or None to end it by hand.
 
     Returns:
         dict with new event info and optional previous event summary
@@ -1366,8 +1369,9 @@ def start_new_event(event_name, elo_mode=PLAYER_MODE):
 
     start_date = datetime.datetime.now().isoformat()
     cur.execute(
-        "INSERT INTO events (event_name, start_date, is_active, elo_mode) VALUES (?, ?, 1, ?)",
-        (event_name, start_date, elo_mode),
+        "INSERT INTO events (event_name, start_date, is_active, elo_mode, scheduled_end_at) "
+        "VALUES (?, ?, 1, ?, ?)",
+        (event_name, start_date, elo_mode, scheduled_end_at),
     )
     event_id = cur.lastrowid
 
@@ -1383,6 +1387,7 @@ def start_new_event(event_name, elo_mode=PLAYER_MODE):
         "event_name": event_name,
         "start_date": datetime.datetime.fromisoformat(start_date),
         "elo_mode": elo_mode,
+        "scheduled_end_at": scheduled_end_at,
         "previous_event": previous_event_summary,
     }
 

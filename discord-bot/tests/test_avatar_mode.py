@@ -282,6 +282,13 @@ async def test_lock_uses_the_match_time_read_and_falls_back_to_the_join_read():
 # ── Queue join (Avatar mode) ──
 
 
+@pytest.fixture(autouse=True)
+def established_players():
+    """These tests are about decks, not the new-player ranked check."""
+    with patch("cogs.lfg.queue.ranked_block_message", return_value=None):
+        yield
+
+
 @pytest.mark.asyncio
 async def test_ranked_join_without_a_deck_is_refused_in_avatar_mode(mock_bot, mock_interaction):
     from cogs.lfg.queue import _process_queue_join

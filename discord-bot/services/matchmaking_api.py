@@ -27,6 +27,7 @@ from services.avatar_mode import (
     active_event_mode,
 )
 from services.card_points_service import validate_deck_points
+from services.ranked_eligibility import ranked_block_message
 from services.summit_result_reporting import record_sorcery_online_result
 from cogs.lfg.voice import SUMMIT_VOICE_URL
 from services.voice_presence import parse_user_ids, voice_session
@@ -246,6 +247,10 @@ async def start_matchmaking_api(bot):
         run_id = None
         if definition["deck_mode"] == "required" and not deck_url:
             raise web.HTTPBadRequest(text="A deck is required for this queue")
+        if queue_type == "ranked":
+            new_player_message = ranked_block_message(user_id)
+            if new_player_message:
+                raise web.HTTPForbidden(text=new_player_message.replace("**", ""))
         avatar_required = queue_type in AVATAR_QUEUE_TYPES and active_event_mode() == "avatar"
         if avatar_required and not deck_url:
             raise web.HTTPBadRequest(text=DECK_REQUIRED_MESSAGE)

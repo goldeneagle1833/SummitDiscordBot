@@ -40,6 +40,7 @@ from services.avatar_mode import (
     needs_avatar,
     set_avatar_ladder_stakes,
 )
+from services.ranked_eligibility import ranked_block_message
 from utils.deck_checker import clean_deck_url
 
 logger = logging.getLogger("discord_bot")
@@ -450,6 +451,13 @@ async def _process_queue_join(
         await interaction.followup.send(pairing_ban_message(ban), ephemeral=True)
         return
 
+    # Brand-new players play a couple of games elsewhere before ranked
+    if queue_type == "ranked":
+        new_player_message = ranked_block_message(interaction.user.id)
+        if new_player_message:
+            await interaction.followup.send(new_player_message, ephemeral=True)
+            return
+
     # Avatar-mode season: the deck must be readable before the player is
     # queued, so a bad link fails now instead of after they're paired.
     join_avatar = None
@@ -844,6 +852,11 @@ class JoinQueueButtons(discord.ui.View):
                 f"You're already in the {queue_type.capitalize()} queue!", ephemeral=True
             )
             return
+        if queue_type == "ranked":
+            new_player_message = ranked_block_message(interaction.user.id)
+            if new_player_message:
+                await interaction.response.send_message(new_player_message, ephemeral=True)
+                return
         if queue_type == "limited":
             modal = LimitedQueueModal(self.bot)
         elif queue_type == "points":

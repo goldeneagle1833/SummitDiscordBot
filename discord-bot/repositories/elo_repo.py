@@ -279,6 +279,11 @@ def create_events_table():
     # Player/Avatar mode per event, and the per-avatar ladder
     ensure_avatar_elo_schema(conn)
 
+    # When the season ends by itself (unix seconds; NULL = ends only by hand)
+    cur.execute("PRAGMA table_info(events)")
+    if "scheduled_end_at" not in {col[1] for col in cur.fetchall()}:
+        cur.execute("ALTER TABLE events ADD COLUMN scheduled_end_at INTEGER")
+
     conn.commit()
     conn.close()
 
@@ -508,7 +513,7 @@ def get_active_event():
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
-    cur.execute("""SELECT event_id, event_name, start_date, elo_mode
+    cur.execute("""SELECT event_id, event_name, start_date, elo_mode, scheduled_end_at
                    FROM events
                    WHERE is_active = 1
                    LIMIT 1""")
@@ -521,8 +526,23 @@ def get_active_event():
             "event_name": row[1],
             "start_date": datetime.datetime.fromisoformat(row[2]),
             "elo_mode": row[3] or "player",
+            "scheduled_end_at": row[4],
         }
     return None
+
+
+def set_event_scheduled_end(event_id: int, scheduled_end_at: int | None) -> None:
+    """Set (or clear, with None) when an event ends by itself, as unix seconds."""
+    create_events_table()
+    conn = sqlite3.connect("elo.db")
+    try:
+        conn.execute(
+            "UPDATE events SET scheduled_end_at = ? WHERE event_id = ?",
+            (scheduled_end_at, event_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_user_elo(user_id: int) -> int:

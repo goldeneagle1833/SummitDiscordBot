@@ -425,7 +425,7 @@ class TestEnforcement:
     @pytest.mark.asyncio
     async def test_join_button_unaffected_without_ban(self, mock_bot, mock_interaction):
         view = JoinQueueButtons(mock_bot)
-        with patch("cogs.lfg.queue.queue_is_enabled", return_value=True):
+        with patch("cogs.lfg.queue.queue_is_enabled", return_value=True),              patch("cogs.lfg.queue.ranked_block_message", return_value=None):
             await view._handle_join(mock_interaction, "ranked")
         mock_interaction.response.send_modal.assert_awaited_once()
 

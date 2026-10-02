@@ -19,6 +19,7 @@ from repositories.elo_repo import (  # noqa: F401
     create_active_pairings_table,
     migrate_to_dual_elo_system,
     get_active_event,
+    set_event_scheduled_end,
     get_user_elo,
     get_user_event_elo,
     get_user_paper_elo,

@@ -87,8 +87,11 @@ confirming and an admin will sort it out.
 It's the same Elo formula as always, applied to the two avatar entries in the match:
 
 - A new avatar entry starts at **1500**, even for an experienced player.
-- The season K-factor starts at 16 on day one and rises by 2 a day to 32, exactly as in
-  past seasons.
+- **Your K-value is your own.** Your first ranked game of the season is played at K = 16,
+  and your K rises by 2 after each ranked game, up to 32 (from your 9th game on). It counts
+  your ranked games across all your avatars, and restarts each season.
+- When two players have different K-values, **the lower one is used** for that match, for
+  both players. A veteran facing someone on their first game also plays at K = 16.
 - Each ranked game moves three numbers for each player:
   1. **Lifetime Elo** (one per player), as always.
   2. **The avatar entry** you played. This is the season ladder.
@@ -156,8 +159,8 @@ If you're chasing top cut, concentrating games on one avatar gives that entry th
 chances to climb. Other avatars you try can't hurt it.
 
 **I'm good, and my new avatar starts at 1500. Is that fair to my opponents?**
-A new entry rises quickly: beating established entries is worth around 20 points a win
-until it settles. The community preferred one simple rule (every avatar starts at 1500)
+A new entry rises quickly: once you're past your first few games of the season, beating
+established entries is worth around 20 points a win until it settles. The community preferred one simple rule (every avatar starts at 1500)
 over special cases.
 
 **Can people see what I'm playing?**

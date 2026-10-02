@@ -177,8 +177,9 @@ def create_db():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
-    # Avatar-mode events: each side's avatar and its per-avatar event ELO
-    for col in AVATAR_MATCH_COLUMNS:
+    # Avatar-mode events: each side's avatar and its per-avatar event ELO.
+    # event_k is the K-factor the season ladder used for this match.
+    for col in (*AVATAR_MATCH_COLUMNS, "event_k INTEGER"):
         try:
             cur.execute(f"ALTER TABLE match_records ADD COLUMN {col}")
         except sqlite3.OperationalError:
@@ -359,7 +360,7 @@ def create_match_records_archive():
         cur.execute("ALTER TABLE match_records_archive ADD COLUMN voice INTEGER NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass  # Column already exists
-    for col in AVATAR_MATCH_COLUMNS:
+    for col in (*AVATAR_MATCH_COLUMNS, "event_k INTEGER"):
         try:
             cur.execute(f"ALTER TABLE match_records_archive ADD COLUMN {col}")
         except sqlite3.OperationalError:
@@ -476,6 +477,13 @@ def migrate_to_dual_elo_system():
         except sqlite3.OperationalError:
             pass  # Column already exists
 
+    # Rated games this season: the player's event K-factor ramps up with it
+    try:
+        cur.execute("ALTER TABLE overall_standings ADD COLUMN online_event_games INTEGER DEFAULT 0")
+        logger.info("Added online_event_games column to overall_standings")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     conn.commit()
     conn.close()
     _dual_elo_migrated = True
@@ -581,6 +589,19 @@ def get_user_event_elo(user_id: int) -> int:
     row = cur.fetchone()
     conn.close()
     return row[0] if row and row[0] else 1500
+
+
+def get_user_event_games(user_id: int) -> int:
+    """Rated games a player has played this season (sets their event K-factor)."""
+    migrate_to_dual_elo_system()
+    conn = sqlite3.connect("elo.db")
+    try:
+        row = conn.execute(
+            "SELECT online_event_games FROM overall_standings WHERE user_id=?", (user_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    return (row[0] or 0) if row else 0
 
 
 def get_user_paper_elo(user_id: int) -> int:
@@ -972,7 +993,8 @@ def update_both_player_elos(
     """Update winner and loser ELO in elo.db in a single transaction.
 
     Handles new-player INSERT and existing-player UPDATE for both players
-    without opening a second connection.
+    without opening a second connection. Each player's season game count
+    (which sets their event K-factor) goes up by one.
 
     Raises sqlite3.Error on failure (caller should not swallow it).
     """
@@ -987,15 +1009,16 @@ def update_both_player_elos(
             if cur.fetchone():
                 cur.execute(
                     "UPDATE overall_standings "
-                    "SET online_elo=?, online_event_elo=?, user_display_name=? "
+                    "SET online_elo=?, online_event_elo=?, user_display_name=?, "
+                    "online_event_games = COALESCE(online_event_games, 0) + 1 "
                     "WHERE user_id=?",
                     (new_elo, new_event_elo, name, uid),
                 )
             else:
                 cur.execute(
                     "INSERT INTO overall_standings "
-                    "(user_id, user_display_name, online_elo, online_event_elo) "
-                    "VALUES (?,?,?,?)",
+                    "(user_id, user_display_name, online_elo, online_event_elo, online_event_games) "
+                    "VALUES (?,?,?,?,1)",
                     (uid, name, new_elo, new_event_elo),
                 )
         conn.commit()

@@ -189,6 +189,17 @@ class EloCog(commands.Cog):
             if check_is_admin(ctx):
                 msg += f"**Lifetime ELO:** {lifetime_elo} (Rank #{lifetime_rank})\n"
 
+            if active_event:
+                from utils.database import calculate_player_event_k, get_user_event_games
+
+                season_games = get_user_event_games(target_user.id)
+                k_line = (
+                    f"\n**K-value:** {calculate_player_event_k(season_games)} "
+                    f"({season_games} ranked game{'s' if season_games != 1 else ''} this season)"
+                )
+            else:
+                k_line = ""
+
             if active_event and active_event.get("elo_mode") == "avatar":
                 msg += _avatar_rank_lines(active_event, target_user.id)
             elif active_event:
@@ -199,7 +210,7 @@ class EloCog(commands.Cog):
             else:
                 msg += "*No active event*"
 
-            await ctx.send(msg)
+            await ctx.send(msg + k_line)
         else:
             if is_self:
                 await ctx.send(

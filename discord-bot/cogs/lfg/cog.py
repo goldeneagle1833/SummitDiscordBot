@@ -2983,7 +2983,7 @@ class LFGCog(commands.Cog):
                 value=(
                     f"**Event ID:** {result['event_id']}\n"
                     f"**Started:** {result['start_date'].strftime('%Y-%m-%d %H:%M')}\n"
-                    f"**Starting K-Value:** 16\n"
+                    f"**K-Value:** each player starts at 16 and gains 2 per game, up to 32\n"
                     f"**All event ELO reset to:** 1500"
                 ),
                 inline=False,
@@ -3257,7 +3257,7 @@ class LFGCog(commands.Cog):
     @commands.command()
     async def event_status(self, ctx):
         """View current event status including K-value and days elapsed."""
-        from utils.database import get_active_event, calculate_event_k_value
+        from utils.database import get_active_event, calculate_player_event_k, get_user_event_games
 
         active_event = get_active_event()
 
@@ -3273,7 +3273,8 @@ class LFGCog(commands.Cog):
         # Calculate event stats
         start_date = active_event["start_date"]
         days_elapsed = (datetime.datetime.now() - start_date).days
-        current_k = calculate_event_k_value(start_date)
+        your_games = get_user_event_games(ctx.author.id)
+        your_k = calculate_player_event_k(your_games)
 
         # Get match count for current event
         import sqlite3
@@ -3305,19 +3306,20 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="K-Value Info",
             value=(
-                f"**Current K-Value:** {current_k}\n"
-                f"**K-Value Range:** 16 \u2192 32\n"
-                f"**Increases:** +2 per day"
+                "**Each player has their own K-value.**\n"
+                "**Range:** 16 \u2192 32, +2 after each ranked game this season\n"
+                "**In a match:** the lower of the two players' K-values is used\n"
+                f"**Your K-value:** {your_k} ({your_games} ranked game{'s' if your_games != 1 else ''} this season)"
             ),
             inline=False,
         )
 
         # K-value progression
-        if current_k < 32:
-            days_to_max = (32 - current_k) // 2
+        if your_k < 32:
+            games_to_max = (32 - your_k) // 2
             embed.add_field(
                 name="K-Value Progression",
-                value=f"K-value will reach maximum (32) in {days_to_max} day(s)",
+                value=f"Your K-value reaches the maximum (32) after {games_to_max} more ranked game(s)",
                 inline=False,
             )
 

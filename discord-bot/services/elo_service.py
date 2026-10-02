@@ -56,9 +56,26 @@ def update_elo(player_elo, opponent_elo, did_win, k=32):
     return round(new_elo)
 
 
+EVENT_K_START = 16
+EVENT_K_STEP = 2
+EVENT_K_MAX = 32
+
+
+def calculate_player_event_k(games_played: int) -> int:
+    """A player's season K-factor: 16 for their first rated game of the season,
+    2 more after each game, capped at 32 (reached from the 9th game)."""
+    return min(EVENT_K_START + EVENT_K_STEP * max(games_played or 0, 0), EVENT_K_MAX)
+
+
+def match_event_k(winner_games: int, loser_games: int) -> int:
+    """The K-factor a season match is played at: the lower of the two players'."""
+    return min(calculate_player_event_k(winner_games), calculate_player_event_k(loser_games))
+
+
 def calculate_event_k_value(start_date):
     """
-    Calculate K-value based on days since event started.
+    Legacy day-based K-value (no longer used for rating: season K is now per
+    player, see calculate_player_event_k). Kept for the legacy helpers below.
 
     Day 0: K=16, Day 1: K=18, ... Day 8+: K=32 (capped)
 
@@ -510,7 +527,7 @@ def get_current_event_match_elo_snapshot(match_id: int):
         SELECT rowid as match_id, winner_id, winner_display_name, losser_id, losser_display_name,
                timestamp, match_type, did_win,
                winner_elo_change, loser_elo_change,
-               winner_lifetime_elo_change, loser_lifetime_elo_change
+               winner_lifetime_elo_change, loser_lifetime_elo_change, event_k
         FROM match_records
         WHERE timestamp >= ?
         ORDER BY timestamp ASC, rowid ASC
@@ -654,6 +671,7 @@ def get_current_event_match_elo_snapshot(match_id: int):
     )
 
     event_state = {user_id: 1500 for user_id in participant_ids}
+    season_games = {}  # rated games so far, per player: sets each player's K
     event_snapshots = {}
 
     for operation in operations:
@@ -667,7 +685,10 @@ def get_current_event_match_elo_snapshot(match_id: int):
         winner_id = row["winner_id"]
         loser_id = row["losser_id"]
         match_timestamp = operation["timestamp"]
-        event_k = _calculate_event_k_value_for_time(event_start, match_timestamp)
+        # The K the match was recorded at; rows from before K was stored are replayed
+        event_k = row.get("event_k") or match_event_k(
+            season_games.get(winner_id, 0), season_games.get(loser_id, 0)
+        )
         challenger_info = ladder_challengers.get(match_id_value)
         challenger_id = challenger_info["challenger_id"] if challenger_info else None
         winner_before_event = event_state.get(winner_id, 1500)
@@ -712,6 +733,9 @@ def get_current_event_match_elo_snapshot(match_id: int):
 
         event_state[winner_id] = event_result["winner_after"]
         event_state[loser_id] = event_result["loser_after"]
+        if not (is_casual or is_top_cut):
+            season_games[winner_id] = season_games.get(winner_id, 0) + 1
+            season_games[loser_id] = season_games.get(loser_id, 0) + 1
 
         event_snapshots[match_id_value] = {
             "winner_before": event_result["winner_before"],
@@ -1122,6 +1146,8 @@ async def record_match(
         winner_global, winner_id, loser_global, loser_id, match_type,
     )
 
+    event_k = None  # the season K-factor this match was played at (rated season games only)
+
     # Per-avatar ladder (Avatar-mode events only; stays None otherwise)
     avatar_event_id = None
     winner_avatar_change = loser_avatar_change = None
@@ -1145,20 +1171,22 @@ async def record_match(
         conn_elo = sqlite3.connect("elo.db")
         cur_elo = conn_elo.cursor()
         cur_elo.execute(
-            "SELECT online_elo, online_event_elo FROM overall_standings WHERE user_id=?",
+            "SELECT online_elo, online_event_elo, online_event_games FROM overall_standings WHERE user_id=?",
             (winner_id,),
         )
         row = cur_elo.fetchone()
         winner_elo = (row[0] or 1500) if row else 1500
         winner_event_elo = (row[1] or 1500) if row else 1500
+        winner_event_games = (row[2] or 0) if row else 0
 
         cur_elo.execute(
-            "SELECT online_elo, online_event_elo FROM overall_standings WHERE user_id=?",
+            "SELECT online_elo, online_event_elo, online_event_games FROM overall_standings WHERE user_id=?",
             (loser_id,),
         )
         row = cur_elo.fetchone()
         loser_elo = (row[0] or 1500) if row else 1500
         loser_event_elo = (row[1] or 1500) if row else 1500
+        loser_event_games = (row[2] or 0) if row else 0
         conn_elo.close()
 
         if not event_active:
@@ -1169,7 +1197,9 @@ async def record_match(
             winner_new_elo = winner_new_event_elo = None
             loser_new_elo = loser_new_event_elo = None
         else:
-            event_k = calculate_event_k_value(active_event["start_date"])
+            # Each player's season K ramps up with their own games; the match
+            # is played at the lower of the two
+            event_k = match_event_k(winner_event_games, loser_event_games)
             winner_lifetime_change, winner_elo_change, loser_lifetime_change, loser_elo_change = (
                 _calculate_both_elo_changes(
                     winner_elo, winner_event_elo,
@@ -1281,9 +1311,9 @@ async def record_match(
             "winner_went_first, loser_went_first, match_type, "
             "winner_lifetime_elo_after, loser_lifetime_elo_after, pairing_id, voice, "
             "winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, "
-            "winner_avatar_elo_after, loser_avatar_elo_after) "
+            "winner_avatar_elo_after, loser_avatar_elo_after, event_k) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "?, ?, ?, ?, ?, ?)",
+            "?, ?, ?, ?, ?, ?, ?)",
             (
                 reporter_id,
                 winner_id, winner_global,
@@ -1316,6 +1346,7 @@ async def record_match(
                 loser_avatar_change,
                 winner_avatar_after,
                 loser_avatar_after,
+                event_k,
             ),
         )
         table_name = "match_records"
@@ -1377,7 +1408,9 @@ def start_new_event(event_name, elo_mode=PLAYER_MODE, scheduled_end_at=None):
 
     # Reset all players' event ELOs to 1500 (both paper and online). Avatar
     # entries need no reset: they're keyed by event, so a new event starts empty.
-    cur.execute("UPDATE overall_standings SET paper_event_elo = 1500, online_event_elo = 1500")
+    cur.execute(
+        "UPDATE overall_standings SET paper_event_elo = 1500, online_event_elo = 1500, online_event_games = 0"
+    )
 
     conn.commit()
     conn.close()
@@ -1501,9 +1534,9 @@ def end_current_event():
                 winner_lifetime_elo_after, loser_lifetime_elo_after,
                 match_type, voice, archived_at,
                 winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change,
-                winner_avatar_elo_after, loser_avatar_elo_after)
+                winner_avatar_elo_after, loser_avatar_elo_after, event_k)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                       ?, ?, ?, ?, ?, ?)""",
+                       ?, ?, ?, ?, ?, ?, ?)""",
             (
                 event_id,
                 match_dict.get("match_id"),
@@ -1535,6 +1568,7 @@ def end_current_event():
                 match_dict.get("voice") or 0,
                 archived_at,
                 *(match_dict.get(col) for col in AVATAR_MATCH_COLUMN_NAMES),
+                match_dict.get("event_k"),
             ),
         )
 
@@ -1572,8 +1606,12 @@ def end_current_event():
 def recalculate_event_elo() -> dict:
     """Recalculate all event ELO from scratch by replaying match records.
 
-    Uses per-match K-values based on when each match was played (same logic
-    as get_current_event_match_elo_snapshot).  Requires an active event.
+    Replays the season's rated matches in order. Each match is played at the
+    lower of the two players' K-factors, and a player's K ramps up with their
+    own games (16 for their first game of the season, +2 per game, max 32).
+    The K each match used and every player's season game count are rewritten
+    along the way. In an Avatar-mode event the avatar entries are rebuilt too.
+    Requires an active event.
 
     Returns:
         dict with keys: event_name, players_reset, matches_replayed, players_updated,
@@ -1586,53 +1624,48 @@ def recalculate_event_elo() -> dict:
     if not active_event:
         raise ValueError("No active event. Nothing to recalculate.")
 
-    event_start = active_event["start_date"]
-    event_start_str = event_start.isoformat()
+    migrate_to_dual_elo_system()
+    create_db()
+    event_start_str = active_event["start_date"].isoformat()
     event_name = active_event["event_name"]
-
-    elo_conn = sqlite3.connect("elo.db")
-    elo_cur = elo_conn.cursor()
 
     match_conn = sqlite3.connect("match_records.db")
     match_cur = match_conn.cursor()
-
-    # Step 1: Reset all event ELO to 1500
-    elo_cur.execute("UPDATE overall_standings SET online_event_elo = 1500")
-    players_reset = elo_cur.rowcount
-    elo_conn.commit()
-
-    # Step 2: Get all ranked/ladder matches since event start (skip non-ELO types)
     match_cur.execute(
         f"""
-        SELECT rowid, winner_id, winner_display_name, losser_id, losser_display_name,
-               timestamp, match_type
+        SELECT rowid, winner_id, losser_id
         FROM match_records
-        WHERE timestamp >= ?
-          AND (match_type IS NULL OR match_type NOT IN ({NON_ELO_MATCH_TYPES_SQL}))
-        ORDER BY timestamp ASC
+        WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
+        ORDER BY timestamp ASC, rowid ASC
         """,
         (event_start_str,),
     )
     matches = match_cur.fetchall()
-    match_conn.close()
 
-    # Step 3: Replay each match with per-match K-value
+    # Replay each match at the K its two players had reached
     player_elos: dict[int, int] = {}
-    for _, winner_id, _, loser_id, _, timestamp, _ in matches:
-        match_time = datetime.datetime.fromisoformat(timestamp)
-        days_elapsed = max(0, (match_time - event_start).days)
-        k_value = min(16 + (days_elapsed * 2), 32)
-
+    player_games: dict[int, int] = {}
+    for rowid, winner_id, loser_id in matches:
+        k_value = match_event_k(player_games.get(winner_id, 0), player_games.get(loser_id, 0))
         w_elo = player_elos.get(winner_id, 1500)
         l_elo = player_elos.get(loser_id, 1500)
-        player_elos[winner_id] = update_elo(w_elo, l_elo, True, k=k_value)
-        player_elos[loser_id] = update_elo(l_elo, w_elo, False, k=k_value)
+        w_change, l_change = _calculate_event_changes(w_elo, l_elo, k_value)
+        player_elos[winner_id] = w_elo + w_change
+        player_elos[loser_id] = l_elo + l_change
+        player_games[winner_id] = player_games.get(winner_id, 0) + 1
+        player_games[loser_id] = player_games.get(loser_id, 0) + 1
+        match_cur.execute("UPDATE match_records SET event_k = ? WHERE rowid = ?", (k_value, rowid))
+    match_conn.commit()
+    match_conn.close()
 
-    # Step 4: Write updated ELOs
+    elo_conn = sqlite3.connect("elo.db")
+    elo_cur = elo_conn.cursor()
+    elo_cur.execute("UPDATE overall_standings SET online_event_elo = 1500, online_event_games = 0")
+    players_reset = elo_cur.rowcount
     for user_id, elo_val in player_elos.items():
         elo_cur.execute(
-            "UPDATE overall_standings SET online_event_elo = ? WHERE user_id = ?",
-            (elo_val, user_id),
+            "UPDATE overall_standings SET online_event_elo = ?, online_event_games = ? WHERE user_id = ?",
+            (elo_val, player_games[user_id], user_id),
         )
     elo_conn.commit()
 
@@ -1664,9 +1697,9 @@ def recalculate_event_elo() -> dict:
 def _recalculate_avatar_event_elo(active_event) -> list:
     """Rebuild an Avatar-mode event's avatar entries by replaying its matches.
 
-    Replays in order with each match's own K and stored ladder multiplier
-    ratio, rewriting every match's avatar change/after columns. Returns the
-    top 5 entries as (label, elo).
+    Replays in order at each match's stored K (recalculate_event_elo has just
+    rewritten it), rewriting every match's avatar change/after columns.
+    Returns the top 5 entries as (label, elo).
     """
     event_id = active_event["event_id"]
     event_start = active_event["start_date"]
@@ -1675,11 +1708,11 @@ def _recalculate_avatar_event_elo(active_event) -> list:
     try:
         matches = match_conn.execute(
             f"""SELECT rowid, winner_id, losser_id, winner_display_name, losser_display_name,
-                       timestamp, winner_avatar, loser_avatar
+                       timestamp, winner_avatar, loser_avatar, event_k
                 FROM match_records
                 WHERE timestamp >= ? AND winner_avatar IS NOT NULL AND loser_avatar IS NOT NULL
                   AND {ELO_COUNTING_MATCH_FILTER}
-                ORDER BY timestamp ASC""",
+                ORDER BY timestamp ASC, rowid ASC""",
             (event_start.isoformat(),),
         ).fetchall()
 
@@ -1687,9 +1720,7 @@ def _recalculate_avatar_event_elo(active_event) -> list:
         games: dict[tuple[int, str], int] = {}
         names: dict[int, str] = {}
         for m in matches:
-            k_value = _calculate_event_k_value_for_time(
-                event_start, datetime.datetime.fromisoformat(m["timestamp"])
-            )
+            k_value = m["event_k"] or EVENT_K_MAX
             w_key = (m["winner_id"], m["winner_avatar"])
             l_key = (m["losser_id"], m["loser_avatar"])
             w_before, l_before = elos.get(w_key, 1500), elos.get(l_key, 1500)
@@ -1757,7 +1788,7 @@ def get_match_players(match_id: int) -> dict:
 _ADMIN_MATCH_COLUMNS = """rowid AS row_id, winner_id, losser_id, winner_display_name, losser_display_name,
        timestamp, match_type, winner_elo_change, loser_elo_change,
        winner_lifetime_elo_change, loser_lifetime_elo_change,
-       winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change"""
+       winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, event_k"""
 
 
 def _load_admin_match_rows(match_cur, where: str, params) -> list[dict]:
@@ -1814,11 +1845,16 @@ def _current_avatar_elo(elo_cur, event_id: int, user_id: int, avatar: str) -> in
 def _replay_match_elo(elo_cur, match_cur, row: dict, active_event, avatar_event_id) -> None:
     """Apply one match again from the players' current ELOs and store the new changes."""
     winner_id, loser_id = row["winner_id"], row["losser_id"]
-    match_time = datetime.datetime.fromisoformat(row["timestamp"])
-    event_k = (
-        _calculate_event_k_value_for_time(active_event["start_date"], match_time)
-        if active_event else 32
-    )
+    # Flipping a result doesn't change how many games anyone had played, so
+    # the match keeps the K it was recorded at. Rows from before K was stored
+    # fall back to the old day-based value.
+    event_k = row.get("event_k")
+    if event_k is None:
+        match_time = datetime.datetime.fromisoformat(row["timestamp"])
+        event_k = (
+            _calculate_event_k_value_for_time(active_event["start_date"], match_time)
+            if active_event else 32
+        )
     w_elo, w_event = _current_elos(elo_cur, winner_id)
     l_elo, l_event = _current_elos(elo_cur, loser_id)
     w_life, w_ev, l_life, l_ev = _calculate_both_elo_changes(w_elo, w_event, l_elo, l_event, event_k)
@@ -1998,6 +2034,13 @@ def remove_match_record(match_id: int) -> dict:
             raise ValueError(f"Match ID #{match_id} not found.")
         match = rows[0]
         _revert_match_elo(elo_cur, match, avatar_event_id)
+        if match["event_k"] is not None:
+            # A rated season game: both players have one game fewer toward their K ramp
+            elo_cur.execute(
+                "UPDATE overall_standings SET online_event_games = MAX(COALESCE(online_event_games, 0) - 1, 0) "
+                "WHERE user_id IN (?, ?)",
+                (match["winner_id"], match["losser_id"]),
+            )
 
         reverted_info = []
         for side, name_col, sign in (("winner", "winner_display_name", -1), ("loser", "losser_display_name", 1)):
@@ -2073,6 +2116,12 @@ def remove_player(user_id: int, user_name: str) -> dict:
             adj, name = elo_adjustments.get(opp_id, (0, opp_name))
             elo_adjustments[opp_id] = (adj - event, name)
             lifetime_adjustments[opp_id] = lifetime_adjustments.get(opp_id, 0) - lifetime
+            if m["event_k"] is not None:
+                elo_cur.execute(
+                    "UPDATE overall_standings SET online_event_games = "
+                    "MAX(COALESCE(online_event_games, 0) - 1, 0) WHERE user_id = ?",
+                    (opp_id,),
+                )
 
             avatar, avatar_change = m[f"{opp_side}_avatar"], m[f"{opp_side}_avatar_elo_change"]
             if avatar_event_id and avatar and avatar_change is not None:

@@ -22,6 +22,7 @@ from repositories.elo_repo import (  # noqa: F401
     set_event_scheduled_end,
     get_user_elo,
     get_user_event_elo,
+    get_user_event_games,
     get_user_paper_elo,
     get_user_paper_event_elo,
     get_past_events,
@@ -57,6 +58,8 @@ from repositories.elo_repo import (  # noqa: F401
 from services.elo_service import (  # noqa: F401
     update_elo,
     calculate_event_k_value,
+    calculate_player_event_k,
+    match_event_k,
     update_elo_db,
     update_elo_db_lifetime_only,
     update_elo_db_ladder,

@@ -2808,6 +2808,84 @@ paths:
             application/json:
               schema:
                 type: object
+  /api/leaderboard/avatars:
+    get:
+      tags:
+      - leaderboard
+      summary: The current season's ladder split per avatar (Avatar-mode seasons).
+      operationId: leaderboard_get_avatar_leaderboards
+      parameters:
+      - name: avatar
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Only this avatar (case-insensitive).
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+        description: Cap each avatar's list.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - success
+                - elo_mode
+                - avatars
+                properties:
+                  success:
+                    type: boolean
+                  event:
+                    type:
+                    - object
+                    - 'null'
+                  elo_mode:
+                    type: string
+                    enum:
+                    - player
+                    - avatar
+                  avatars:
+                    type: array
+                    description: Empty in Player-mode seasons.
+                    items:
+                      type: object
+                      properties:
+                        avatar:
+                          type: string
+                        players:
+                          type: integer
+                        entries:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              rank:
+                                type: integer
+                              overall_rank:
+                                type: integer
+                              user_id:
+                                type: string
+                              display_name:
+                                type: string
+                              elo:
+                                type: integer
+                              games:
+                                type: integer
+                              wins:
+                                type: integer
+                              losses:
+                                type: integer
+                              voice_games:
+                                type: integer
+        '400':
+          description: limit is not a positive integer
   /api/leaderboard/combined:
     get:
       tags:

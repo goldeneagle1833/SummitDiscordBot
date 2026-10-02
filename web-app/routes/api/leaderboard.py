@@ -39,6 +39,27 @@ def get_event_leaderboard():
         return jsonify({"error": str(e)}), 500
 
 
+@leaderboard_bp.route("/leaderboard/avatars")
+def get_avatar_leaderboards():
+    """The current season's ladder split per avatar (Avatar-mode seasons).
+
+    Public, like /leaderboard/event. Query params:
+        avatar: only this avatar (case-insensitive)
+        limit: cap each avatar's list
+    """
+    limit = request.args.get("limit", type=int)
+    if limit is not None and limit < 1:
+        return jsonify({"success": False, "error": "limit must be a positive integer"}), 400
+    try:
+        data = LeaderboardService().get_avatar_leaderboards(
+            avatar=request.args.get("avatar"), limit=limit
+        )
+        return jsonify({"success": True, **data})
+    except Exception as e:
+        logger.error(f"Error fetching avatar leaderboards: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "Could not build leaderboard"}), 500
+
+
 @leaderboard_bp.route("/leaderboard/combined")
 def get_combined_leaderboard():
     """Get both lifetime and event leaderboards."""

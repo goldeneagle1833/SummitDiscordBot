@@ -263,3 +263,39 @@ def test_top_players_page_lists_the_current_season_for_everyone(client, avatar_d
     # Other avatar pages still keep the running season to admins
     default = client.get("/api/avatars/filters").get_json()
     assert not any(e["is_active"] for e in default["events"])
+
+
+# ── Per-avatar leaderboards (PSO pulls these instead of per-player calls) ──
+
+
+def test_avatar_leaderboards_split_the_ladder_per_avatar(client, avatar_db):
+    elo_db, _ = avatar_db
+    _seed_entries(elo_db, [
+        ("1", "Imposter", "Alice", 1600, 5),
+        ("2", "Witch", "Bob", 1580, 4),
+        ("3", "Imposter", "Cara", 1540, 3),
+        ("1", "Witch", "Alice", 1490, 2),
+    ])
+
+    data = client.get("/api/leaderboard/avatars").get_json()
+
+    assert data["success"] and data["elo_mode"] == "avatar"
+    assert [a["avatar"] for a in data["avatars"]] == ["Imposter", "Witch"]
+    imposter = data["avatars"][0]
+    assert imposter["players"] == 2
+    assert [(e["rank"], e["overall_rank"], e["user_id"], e["elo"]) for e in imposter["entries"]] == [
+        (1, 1, "1", 1600), (2, 3, "3", 1540),
+    ]
+
+    one = client.get("/api/leaderboard/avatars?avatar=witch&limit=1").get_json()
+    assert [a["avatar"] for a in one["avatars"]] == ["Witch"]
+    assert [e["user_id"] for e in one["avatars"][0]["entries"]] == ["2"]
+    assert one["avatars"][0]["players"] == 2
+
+    assert client.get("/api/leaderboard/avatars?limit=0").status_code == 400
+
+
+def test_avatar_leaderboards_are_empty_in_player_mode(client, elo_db):
+    _start_event(elo_db, mode="player")
+    data = client.get("/api/leaderboard/avatars").get_json()
+    assert data["elo_mode"] == "player" and data["avatars"] == []

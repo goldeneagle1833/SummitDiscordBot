@@ -160,6 +160,50 @@ class LeaderboardService:
             "voice_requirement": voice_requirement(),
         }
 
+    def get_avatar_leaderboards(self, avatar: str | None = None, limit: int | None = None) -> dict:
+        """The season ladder split per avatar (Avatar-mode events).
+
+        One list per avatar, best entry first, each entry numbered within its
+        avatar and carrying its place on the full ladder too. Player-mode
+        events have no per-avatar ladder, so ``avatars`` is empty then.
+        ``avatar`` narrows to one avatar (case-insensitive); ``limit`` caps
+        each list.
+        """
+        data = self.get_event_leaderboard()
+        event = data["event"]
+        groups: dict[str, list[dict]] = {}
+        if is_avatar_mode(event):
+            for overall_rank, row in enumerate(data["leaderboard"], 1):
+                groups.setdefault(row["avatar"], []).append(
+                    {
+                        "rank": len(groups.get(row["avatar"], [])) + 1,
+                        "overall_rank": overall_rank,
+                        "user_id": row["id"],
+                        "display_name": row["name"],
+                        "elo": row["event_elo"],
+                        "games": row["wins"] + row["losses"],
+                        "wins": row["wins"],
+                        "losses": row["losses"],
+                        "voice_games": row["voice_games"],
+                    }
+                )
+        wanted = avatar.strip().casefold() if avatar else None
+        avatars = [
+            {
+                "avatar": name,
+                "players": len(entries),
+                "entries": entries[:limit] if limit else entries,
+            }
+            for name, entries in sorted(groups.items())
+            if wanted is None or name.casefold() == wanted
+        ]
+        return {
+            "event": event,
+            "elo_mode": (event or {}).get("elo_mode", "player"),
+            "avatars": avatars,
+            "voice_requirement": voice_requirement(),
+        }
+
     def get_combined_leaderboard(self) -> dict:
         """Get unified lifetime and event leaderboards."""
         active_event = self._elo_repo.get_active_event()

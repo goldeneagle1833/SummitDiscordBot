@@ -31,6 +31,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # -- Leaderboards (public read-only) --
     "api.leaderboard.get_leaderboard",
     "api.leaderboard.get_event_leaderboard",
+    "api.leaderboard.get_avatar_leaderboards",
     "api.leaderboard.get_combined_leaderboard",
     "api.leaderboard.get_paper_leaderboard",
     "api.leaderboard.get_paper_event_leaderboard",

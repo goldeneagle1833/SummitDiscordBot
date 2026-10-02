@@ -106,6 +106,12 @@ from utils.checks import is_bot_admin
 # EST timezone for daily action resets
 EST = ZoneInfo("America/New_York")
 
+# Role granted to anyone who uses a fart game command (FunCog / ShopCog)
+FART_PLAYER_ROLE_ID = getattr(config, "FART_PLAYER_ROLE_ID", 1555565625278205982)
+FART_GAME_COGS = frozenset({"FunCog", "ShopCog"})
+# Admin-only tools shouldn't tag the admin as a player
+FART_ROLE_EXEMPT_COMMANDS = frozenset({"reset_fart_cooldown"})
+
 
 def get_est_now():
     """Get the current datetime in EST timezone."""
@@ -262,6 +268,29 @@ class FunCog(commands.Cog):
     def cog_unload(self):
         if self.yourt_rampage_ticker.is_running():
             self.yourt_rampage_ticker.cancel()
+
+    @commands.Cog.listener()
+    async def on_command(self, ctx):
+        """Give the fart player role to anyone who uses a fart game command."""
+        command = ctx.command
+        if command is None or command.cog_name not in FART_GAME_COGS:
+            return
+        if command.name in FART_ROLE_EXEMPT_COMMANDS:
+            return
+        member = ctx.author
+        if ctx.guild is None or not isinstance(member, discord.Member) or member.bot:
+            return
+        if any(role.id == FART_PLAYER_ROLE_ID for role in member.roles):
+            return
+        role = ctx.guild.get_role(FART_PLAYER_ROLE_ID)
+        if role is None:
+            logger.warning(f"Fart player role {FART_PLAYER_ROLE_ID} not found in guild")
+            return
+        try:
+            await member.add_roles(role, reason=f"Used fart command !{command.name}")
+            logger.info(f"Added fart player role to {member} (used !{command.name})")
+        except discord.HTTPException as e:
+            logger.error(f"Failed to add fart player role to {member}: {e}")
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):

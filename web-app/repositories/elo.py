@@ -395,6 +395,37 @@ class EloRepository:
         finally:
             conn.close()
 
+    def get_archive_summaries(self) -> dict[int, dict]:
+        """Per archived event: how many players finished and who won.
+
+        {event_id: {"players", "champion", "champion_id"}}, the champion
+        being the first row of get_archived_event_leaderboard() for that event.
+        """
+        conn = self._get_connection()
+        try:
+            cur = conn.cursor()
+            exprs = self._archive_exprs(cur)
+            if not exprs:
+                return {}
+            elo_expr, rank_expr = exprs
+            cur.execute(
+                f"""
+                SELECT event_id, user_id, user_display_name
+                FROM event_standings_archive
+                ORDER BY event_id, {elo_expr} DESC, {rank_expr} ASC, user_display_name COLLATE NOCASE ASC
+                """
+            )
+            summaries: dict[int, dict] = {}
+            for event_id, user_id, display_name in cur.fetchall():
+                summary = summaries.get(event_id)
+                if summary is None:
+                    summaries[event_id] = {"players": 1, "champion": display_name, "champion_id": user_id}
+                else:
+                    summary["players"] += 1
+            return summaries
+        finally:
+            conn.close()
+
     def get_archived_event_leaderboard(self, event_id: int) -> list[dict]:
         """Get full leaderboard for a specific archived event, best first."""
         conn = self._get_connection()

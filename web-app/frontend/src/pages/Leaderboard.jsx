@@ -1,17 +1,36 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import LeaderboardTable from '@/components/leaderboard/LeaderboardTable'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
 import Spinner from '@/components/ui/Spinner'
 import {
   getCombinedLeaderboard,
-  getLeaderboard,
   getLimitedLeaderboard,
   getEvents,
   getArchivedLeaderboard,
   browseSeasons,
 } from '@/api/leaderboard'
 import usePageTitle from '@/hooks/usePageTitle'
+
+// The page shows one board at a time, picked from the sidebar (a select on
+// phones). The pick lives in the URL (?board=...) so a board can be linked.
+const CURRENT = 'current'
+const LIFETIME = 'lifetime'
+const LIMITED = 'limited'
+const SEASONS = 'seasons'
+const eventKey = (eventId) => `event:${eventId}`
+
+function formatDate(value) {
+  return value ? new Date(value).toLocaleDateString() : 'N/A'
+}
+
+function formatDateRange(start, end) {
+  return `${formatDate(start)} - ${formatDate(end)}`
+}
+
+function plural(count, word, words = `${word}s`) {
+  return `${count} ${count === 1 ? word : words}`
+}
 
 // ── ELO Distribution helpers ──────────────────────────────────
 
@@ -45,8 +64,8 @@ function EloDistribution({ elos }) {
   const bands = calculateDistribution(elos, start, size)
 
   return (
-    <section className="mb-8">
-      <h2 className="text-xl font-display text-secondary mb-2">ELO Distribution</h2>
+    <section className="mt-8">
+      <h3 className="text-lg font-display text-secondary mb-2">ELO Distribution</h3>
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <label className="text-sm text-text-muted">Grouping:</label>
         <select
@@ -91,88 +110,192 @@ function EloDistribution({ elos }) {
   )
 }
 
-// ── Archived Events Section ───────────────────────────────────
+// ── Board navigation ──────────────────────────────────────────
 
-function formatDateRange(start, end) {
-  const from = start ? new Date(start).toLocaleDateString() : 'N/A'
-  const to = end ? new Date(end).toLocaleDateString() : 'N/A'
-  return `${from} - ${to}`
-}
-
-function ArchivedEvents() {
-  const [events, setEvents] = useState([])
-  const [selectedEvent, setSelectedEvent] = useState('')
-  const [archivedData, setArchivedData] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(false)
-
-  useEffect(() => {
-    getEvents()
-      .then((data) => {
-        const past = (data.events || []).filter((e) => !e.is_active)
-        setEvents(past)
-      })
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    if (!selectedEvent) { setArchivedData(null); setError(false); return }
-    let active = true
-    setLoading(true)
-    setError(false)
-    getArchivedLeaderboard(selectedEvent)
-      .then((data) => { if (active) setArchivedData(data) })
-      .catch(() => { if (active) { setArchivedData(null); setError(true) } })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [selectedEvent])
-
-  const info = archivedData?.event_info
-  const rows = archivedData?.leaderboard || []
-  const totalMatches = archivedData?.total_matches || 0
-
+function BoardNav({ groups, selected, onSelect }) {
   return (
-    <section className="mb-8">
-      <h2 className="text-xl font-display text-secondary mb-1">Past Event Leaderboards</h2>
-      <p className="text-sm text-text-muted mb-4">View final standings from completed events</p>
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <label htmlFor="past-event-select" className="text-sm text-text-muted">Select Event:</label>
+    <>
+      {/* Phones: one picker */}
+      <div className="lg:hidden mb-6">
+        <label htmlFor="board-select" className="sr-only">Leaderboard</label>
         <select
-          id="past-event-select"
-          value={selectedEvent}
-          onChange={(e) => setSelectedEvent(e.target.value)}
-          className="bg-bg-surface border border-border rounded px-2 py-1 text-sm"
+          id="board-select"
+          value={selected}
+          onChange={(e) => onSelect(e.target.value)}
+          className="w-full bg-bg-surface border border-border rounded px-3 py-2 text-sm"
         >
-          <option value="">-- Select a Past Event --</option>
-          {events.map((ev) => (
-            <option key={ev.event_id} value={ev.event_id}>
-              {ev.event_name} ({formatDateRange(ev.start_date, ev.end_date)})
-            </option>
+          {groups.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.items.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.title}{item.meta ? ` · ${item.meta}` : ''}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </div>
+
+      {/* Desktop: sidebar */}
+      <nav aria-label="Leaderboards" className="hidden lg:flex flex-col gap-6 w-72 shrink-0">
+        {groups.map((group) => (
+          <div key={group.label}>
+            <div className="text-[10px] uppercase tracking-wider text-text-muted mb-2 px-1">{group.label}</div>
+            <div className="flex flex-col gap-2">
+              {group.items.map((item) => {
+                const active = item.key === selected
+                return (
+                  <button
+                    type="button"
+                    key={item.key}
+                    aria-current={active ? 'true' : undefined}
+                    onClick={() => onSelect(item.key)}
+                    className={`text-left rounded-soft border px-4 py-3 transition-colors ${
+                      active ? 'bg-bg-elevated border-primary' : 'bg-bg-surface border-border hover:border-primary/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold">{item.title}</span>
+                      {item.badge && (
+                        <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-green-900/30 text-green-400">{item.badge}</span>
+                      )}
+                    </div>
+                    {item.meta && <div className="text-xs text-text-muted mt-0.5">{item.meta}</div>}
+                    {item.detail && <div className="text-xs text-text-muted">{item.detail}</div>}
+                    {item.champion && (
+                      <div className="text-xs text-yellow-300 mt-1 inline-flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-yellow-300" aria-hidden="true" />
+                        {item.champion}
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
+    </>
+  )
+}
+
+function BoardHeader({ title, meta, badge, children }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 className="text-xl font-display text-secondary">{title}</h2>
+      {badge && (
+        <span className="self-center text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-green-900/30 text-green-400">{badge}</span>
+      )}
+      {meta && <span className="text-sm text-text-muted">{meta}</span>}
+      {children}
+    </div>
+  )
+}
+
+// ── Boards ────────────────────────────────────────────────────
+
+function CurrentEventBoard({ eventData }) {
+  const info = eventData?.info
+  const rows = eventData?.leaderboard || []
+  if (!info) {
+    return (
+      <section>
+        <BoardHeader title="No Active Event" meta="ELO tracking is paused between events" />
+        <p className="text-text-muted text-center py-8">The next event's standings will appear here once it starts.</p>
+      </section>
+    )
+  }
+  const players = new Set(rows.map((p) => p.id || p.user_id)).size
+  const matches = rows.reduce((n, p) => n + (p.wins || 0), 0)
+  return (
+    <section>
+      <BoardHeader
+        title={info.event_name}
+        badge="Live"
+        meta={`Started ${formatDate(info.start_date)} · ${plural(players, 'player')} · ${plural(matches, 'match', 'matches')}`}
+      />
+      {rows.length > 0 ? (
+        <LeaderboardTable data={rows} columns="event" voiceRequirement={eventData?.voice_requirement} />
+      ) : (
+        <p className="text-text-muted text-center py-8">No matches played yet</p>
+      )}
+    </section>
+  )
+}
+
+function LifetimeBoard({ lifetimeData, elos }) {
+  return (
+    <section>
+      <BoardHeader title="Lifetime ELO Leaderboard" meta="Cumulative rankings across all events" />
+      <LeaderboardTable data={lifetimeData} columns="lifetime" />
+      <EloDistribution elos={elos} />
+    </section>
+  )
+}
+
+function LimitedBoard({ limitedData }) {
+  const leaderboard = limitedData.leaderboard || limitedData
+  const trophyRuns = limitedData.trophy_runs || []
+  const stats = limitedData.stats || {}
+  return (
+    <section>
+      <BoardHeader title="Limited Format Leaderboard" meta="Arena draft rankings - lifetime ELO">
+        <Link to="/elo/limited" className="text-sm text-primary hover:text-primary-light transition-colors">Full limited page</Link>
+      </BoardHeader>
+      {stats.unique_players > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <StatBox label="Players" value={stats.unique_players} />
+          <StatBox label="Runs Completed" value={stats.total_runs} />
+          <StatBox label="Matches Played" value={stats.total_matches} />
+          <StatBox label="Trophy Runs (4-0)" value={stats.trophy_runs} />
+        </div>
+      )}
+      <LimitedLeaderboardTable data={Array.isArray(leaderboard) ? leaderboard : []} />
+      <TrophyRuns runs={trophyRuns} />
+    </section>
+  )
+}
+
+function ArchivedEventBoard({ event }) {
+  const [archivedData, setArchivedData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+  const eventId = event.event_id
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError(false)
+    setArchivedData(null)
+    getArchivedLeaderboard(eventId)
+      .then((data) => { if (active) setArchivedData(data) })
+      .catch(() => { if (active) setError(true) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [eventId])
+
+  const info = archivedData?.event_info || event
+  const rows = archivedData?.leaderboard || []
+  const totalMatches = archivedData?.total_matches || 0
+  const meta = [formatDateRange(info.start_date, info.end_date)]
+  if (archivedData) {
+    meta.push(plural(rows.length, 'player'))
+    if (totalMatches > 0) meta.push(plural(totalMatches, 'match', 'matches'))
+  }
+
+  return (
+    <section>
+      <BoardHeader title={info.event_name} meta={meta.join(' · ')} />
       {loading && <Spinner className="py-8" />}
       {error && !loading && (
         <p className="text-text-muted text-center py-8">Couldn't load standings for this event.</p>
       )}
       {archivedData && !loading && (
-        <>
-          {info && (
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-3 text-sm">
-              <span className="font-display text-base text-text">{info.event_name}</span>
-              <span className="text-text-muted">{formatDateRange(info.start_date, info.end_date)}</span>
-              <span className="text-text-muted">
-                {rows.length} {rows.length === 1 ? 'player' : 'players'}
-                {totalMatches > 0 && ` \u00b7 ${totalMatches} ${totalMatches === 1 ? 'match' : 'matches'}`}
-              </span>
-            </div>
-          )}
-          {rows.length > 0 ? (
-            <LeaderboardTable data={rows} columns="event" eloLabel={info?.value_label || 'Event ELO'} />
-          ) : (
-            <p className="text-text-muted text-center py-8">No standings were archived for this event.</p>
-          )}
-        </>
+        rows.length > 0 ? (
+          <LeaderboardTable data={rows} columns="event" eloLabel={info.value_label || 'Event ELO'} />
+        ) : (
+          <p className="text-text-muted text-center py-8">No standings were archived for this event.</p>
+        )
       )}
     </section>
   )
@@ -200,9 +323,8 @@ function SeasonSearch() {
   }
 
   return (
-    <section className="mb-8">
-      <h2 className="text-xl font-display text-secondary mb-1">Season Leaderboards</h2>
-      <p className="text-sm text-text-muted mb-4">Search for user-created seasons</p>
+    <section>
+      <BoardHeader title="Season Leaderboards" meta="Search for user-created seasons" />
       <input
         type="text"
         value={query}
@@ -233,7 +355,7 @@ function SeasonSearch() {
                   </span>
                 </div>
                 <div className="text-xs text-text-muted">
-                  {s.start_date} &mdash; {s.end_date} &middot; {memberText}{s.region ? ` \u00b7 ${s.region}` : ''} &middot; by {s.creator_name}
+                  {s.start_date} &mdash; {s.end_date} &middot; {memberText}{s.region ? ` · ${s.region}` : ''} &middot; by {s.creator_name}
                 </div>
               </Link>
             )
@@ -246,19 +368,30 @@ function SeasonSearch() {
 
 // ── Main Leaderboard Page ─────────────────────────────────────
 
+function pastEventSummary(ev) {
+  const parts = []
+  if (ev.players != null) parts.push(plural(ev.players, 'player'))
+  if (ev.matches != null) parts.push(plural(ev.matches, 'match', 'matches'))
+  if (ev.value_label === 'Wins' || String(ev.event_id).startsWith('season_')) parts.push('ranked by wins')
+  return parts.join(' · ')
+}
+
 export default function Leaderboard() {
   usePageTitle('ELO Leaderboards')
+  const [searchParams, setSearchParams] = useSearchParams()
   const [lifetimeData, setLifetimeData] = useState([])
   const [eloValues, setEloValues] = useState([])
   const [eventData, setEventData] = useState(null)
   const [limitedData, setLimitedData] = useState(null)
+  const [pastEvents, setPastEvents] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchAll = async () => {
-      const [combined, limited] = await Promise.allSettled([
+      const [combined, limited, events] = await Promise.allSettled([
         getCombinedLeaderboard(),
         getLimitedLeaderboard(),
+        getEvents(),
       ])
       if (combined.status === 'fulfilled') {
         const data = combined.value
@@ -268,86 +401,98 @@ export default function Leaderboard() {
       }
       if (limited.status === 'fulfilled') setLimitedData(limited.value)
       else setLimitedData(null)
+      if (events.status === 'fulfilled') {
+        setPastEvents((events.value.events || []).filter((e) => !e.is_active))
+      }
     }
     fetchAll().finally(() => setLoading(false))
   }, [])
-
-  if (loading) return <Spinner className="py-20" />
 
   const elos = eloValues.length > 0 ? eloValues : lifetimeData.map((p) => p.elo)
   const eventInfo = eventData?.info
   const eventLeaderboard = eventData?.leaderboard || []
 
+  const groups = useMemo(() => {
+    const result = []
+    if (eventInfo) {
+      const players = new Set(eventLeaderboard.map((p) => p.id || p.user_id)).size
+      const matches = eventLeaderboard.reduce((n, p) => n + (p.wins || 0), 0)
+      result.push({
+        label: 'Now',
+        items: [{
+          key: CURRENT,
+          title: eventInfo.event_name,
+          badge: 'Live',
+          meta: `Started ${formatDate(eventInfo.start_date)}`,
+          detail: `${plural(players, 'player')} · ${plural(matches, 'match', 'matches')}`,
+        }],
+      })
+    } else {
+      result.push({
+        label: 'Now',
+        items: [{ key: CURRENT, title: 'No active event', meta: 'ELO tracking is paused between events' }],
+      })
+    }
+    const allTime = [{ key: LIFETIME, title: 'Lifetime ELO', meta: `${plural(lifetimeData.length, 'player')} · every event` }]
+    if (limitedData) {
+      const stats = limitedData.stats || {}
+      allTime.push({
+        key: LIMITED,
+        title: 'Limited format',
+        meta: stats.unique_players ? `Arena draft · ${plural(stats.unique_players, 'player')}` : 'Arena draft',
+      })
+    }
+    result.push({ label: 'All time', items: allTime })
+    if (pastEvents.length > 0) {
+      result.push({
+        label: 'Past events',
+        items: pastEvents.map((ev) => ({
+          key: eventKey(ev.event_id),
+          title: ev.event_name,
+          meta: formatDateRange(ev.start_date, ev.end_date),
+          detail: pastEventSummary(ev),
+          champion: ev.champion,
+        })),
+      })
+    }
+    result.push({ label: 'Community', items: [{ key: SEASONS, title: 'Season leaderboards', meta: 'User-created seasons' }] })
+    return result
+  }, [eventInfo, eventLeaderboard, lifetimeData, limitedData, pastEvents])
+
+  const keys = useMemo(() => groups.flatMap((g) => g.items.map((i) => i.key)), [groups])
+  const requested = searchParams.get('board') || CURRENT
+  const selected = keys.includes(requested) ? requested : CURRENT
+
+  const selectBoard = (key) => {
+    const next = new URLSearchParams(searchParams)
+    if (key === CURRENT) next.delete('board')
+    else next.set('board', key)
+    setSearchParams(next)
+  }
+
+  if (loading) return <Spinner className="py-20" />
+
+  const selectedEvent = selected.startsWith('event:')
+    ? pastEvents.find((ev) => eventKey(ev.event_id) === selected)
+    : null
+
   return (
     <div>
-      <section className="text-center mb-8">
+      <section className="mb-6">
         <h1 className="text-2xl font-display text-secondary">ELO Leaderboards</h1>
         <p className="text-sm text-text-muted">Track player rankings across events</p>
       </section>
 
-      {/* ELO Distribution */}
-      <EloDistribution elos={elos} />
-
-      {/* Lifetime Leaderboard */}
-      <section className="mb-8">
-        <h2 className="text-xl font-display text-secondary mb-1">Lifetime ELO Leaderboard</h2>
-        <p className="text-sm text-text-muted mb-4">Cumulative rankings across all events</p>
-        <LeaderboardTable data={lifetimeData} columns="lifetime" />
-      </section>
-
-      {/* Event Leaderboard */}
-      <section className="mb-8">
-        <h2 className="text-xl font-display text-secondary mb-1">
-          {eventInfo ? eventInfo.event_name : 'No Active Event'}
-        </h2>
-        <p className="text-sm text-text-muted mb-4">
-          {eventInfo
-            ? `Started: ${new Date(eventInfo.start_date).toLocaleDateString()}`
-            : 'ELO tracking is paused between events'}
-        </p>
-        {eventLeaderboard.length > 0 ? (
-          <LeaderboardTable data={eventLeaderboard} columns="event" voiceRequirement={eventData?.voice_requirement} />
-        ) : (
-          <p className="text-text-muted text-center py-8">No matches played yet</p>
-        )}
-      </section>
-
-      {/* Limited Leaderboard */}
-      {limitedData !== null && (() => {
-        const leaderboard = limitedData.leaderboard || limitedData
-        const trophyRuns = limitedData.trophy_runs || []
-        const stats = limitedData.stats || {}
-
-        return (
-          <>
-            <section className="mb-8">
-              <Link to="/elo/limited" className="hover:text-primary transition-colors">
-                <h2 className="text-xl font-display text-secondary mb-1">Limited Format Leaderboard</h2>
-              </Link>
-              <p className="text-sm text-text-muted mb-4">Arena draft rankings - lifetime ELO</p>
-
-              {stats.unique_players > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-                  <StatBox label="Players" value={stats.unique_players} />
-                  <StatBox label="Runs Completed" value={stats.total_runs} />
-                  <StatBox label="Matches Played" value={stats.total_matches} />
-                  <StatBox label="Trophy Runs (4-0)" value={stats.trophy_runs} />
-                </div>
-              )}
-
-              <LimitedLeaderboardTable data={Array.isArray(leaderboard) ? leaderboard : []} />
-            </section>
-
-            <TrophyRuns runs={trophyRuns} />
-          </>
-        )
-      })()}
-
-      {/* Archived Events */}
-      <ArchivedEvents />
-
-      {/* Season Search */}
-      <SeasonSearch />
+      <div className="lg:flex lg:gap-8 lg:items-start">
+        <BoardNav groups={groups} selected={selected} onSelect={selectBoard} />
+        <div className="flex-1 min-w-0">
+          {selected === CURRENT && <CurrentEventBoard eventData={eventData} />}
+          {selected === LIFETIME && <LifetimeBoard lifetimeData={lifetimeData} elos={elos} />}
+          {selected === LIMITED && limitedData && <LimitedBoard limitedData={limitedData} />}
+          {selectedEvent && <ArchivedEventBoard key={selectedEvent.event_id} event={selectedEvent} />}
+          {selected === SEASONS && <SeasonSearch />}
+        </div>
+      </div>
     </div>
   )
 }

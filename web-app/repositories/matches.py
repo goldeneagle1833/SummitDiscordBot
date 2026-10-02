@@ -406,6 +406,28 @@ class MatchRepository:
         finally:
             conn.close()
 
+    def get_archive_match_counts(self) -> dict[int, int]:
+        """Matches archived per ended event: {event_id: count}."""
+        conn = self._get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(match_records_archive)")
+            columns = {row[1] for row in cur.fetchall()}
+            if not {"event_id", "winner_id"} <= columns:
+                return {}
+            not_season = self._NOT_SEASON if "source" in columns else ""
+            cur.execute(
+                f"""
+                SELECT event_id, COUNT(*)
+                FROM match_records_archive
+                WHERE winner_id IS NOT NULL {not_season}
+                GROUP BY event_id
+                """
+            )
+            return {row[0]: int(row[1]) for row in cur.fetchall()}
+        finally:
+            conn.close()
+
     def get_season_avatar_records(self, event_start: str) -> dict[tuple[str, str], dict[str, int]]:
         """Win/loss per (player, avatar) since the event started (Avatar-mode events).
 

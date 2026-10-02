@@ -228,9 +228,21 @@ def get_events():
     try:
         from repositories.elo import EloRepository
 
+        from repositories.matches import MatchRepository
+
         repo = EloRepository()
         events = repo.get_all_events()
         active_event = repo.get_active_event()
+
+        # Ended events carry a summary of their archive for the event picker
+        summaries = repo.get_archive_summaries()
+        match_counts = MatchRepository().get_archive_match_counts()
+        for event in events:
+            summary = summaries.get(event["event_id"])
+            event["players"] = summary["players"] if summary else None
+            event["champion"] = summary["champion"] if summary else None
+            event["champion_id"] = summary["champion_id"] if summary else None
+            event["matches"] = match_counts.get(event["event_id"])
 
         # Append season date-range filters at the end
         for sf in SEASON_FILTERS:

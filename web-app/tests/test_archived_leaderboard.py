@@ -242,3 +242,39 @@ class TestArchivedLeaderboardRoute:
             (2, "Ben", 1, 1, 1),
             (3, "Cy", 0, 0, 2),
         ]
+
+
+class TestEventsSummaries:
+    def test_ended_events_carry_players_champion_and_matches(self, client, elo_db, match_db):
+        _add_online_columns(elo_db)
+        _archive(elo_db, SEASON_7)
+        _archive(elo_db, [("9", "Old", 1900, 1, 1900, 1), ("8", "Older", 1700, 2, 1700, 2)], event_id=6)
+        _add_event(elo_db, 6, "Season 6")
+        _add_event(elo_db, 7, "Season 7")
+        conn = sqlite3.connect(str(elo_db))
+        conn.execute("INSERT INTO events (event_id, event_name, start_date, is_active) VALUES (8, 'Season 8', '2026-09-29', 1)")
+        conn.commit()
+        conn.close()
+        _create_match_archive(match_db)
+        _archive_match(match_db, 7, "1", "3")
+        _archive_match(match_db, 7, "2", "3")
+        _archive_match(match_db, 7, "1", "2", source="Bracket")
+        _archive_match(match_db, 6, "9", "8")
+
+        data = client.get("/api/events").get_json()
+
+        by_id = {e["event_id"]: e for e in data["events"]}
+        assert (by_id[7]["players"], by_id[7]["champion"], by_id[7]["champion_id"], by_id[7]["matches"]) == (5, "duckworthy_", "1", 2)
+        assert (by_id[6]["players"], by_id[6]["champion"], by_id[6]["matches"]) == (2, "Old", 1)
+        assert (by_id[8]["players"], by_id[8]["champion"], by_id[8]["matches"]) == (None, None, None)
+        # Season date-range filters have no archive
+        assert by_id["season_gothic_1"]["is_active"] is False
+        assert "players" not in by_id["season_gothic_1"]
+
+    def test_events_without_any_archive(self, client, elo_db, match_db):
+        _add_event(elo_db, 7, "Season 7")
+
+        data = client.get("/api/events").get_json()
+
+        season_7 = next(e for e in data["events"] if e["event_id"] == 7)
+        assert (season_7["players"], season_7["champion"], season_7["matches"]) == (None, None, None)

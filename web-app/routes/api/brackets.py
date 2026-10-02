@@ -328,6 +328,21 @@ def admin_swap_players(slug):
     return jsonify({"success": True, **result}), 200
 
 
+@brackets_bp.route("/admin/brackets/<slug>/top8", methods=["POST"])
+@require_admin
+def admin_publish_to_top8(slug):
+    """Write (or rewrite) a finished bracket's event on the Top 8 page."""
+    bracket, error = _resolve(slug)
+    if error:
+        return error
+
+    try:
+        result = service.publish_to_top8(bracket["bracket_id"])
+    except BracketError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    return jsonify({"success": True, **result}), 200
+
+
 @brackets_bp.route("/admin/brackets/<slug>/matches/<int:match_no>/result", methods=["POST"])
 @require_admin
 def admin_set_result(slug, match_no):

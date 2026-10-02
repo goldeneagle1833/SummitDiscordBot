@@ -26,6 +26,22 @@ def make_entrants(count):
     ]
 
 
+@pytest.fixture(autouse=True)
+def events_dir(tmp_path, monkeypatch):
+    """Where a finished bracket's Top 8 event lands.
+
+    Finishing a bracket writes an event folder, so every test here - the
+    route tests included - must point that at a temp folder rather than the
+    real top-8-decks-by-event directory.
+    """
+    import repositories.events as events_module
+
+    path = tmp_path / "top-8-decks-by-event"
+    path.mkdir()
+    monkeypatch.setattr(events_module, "TOP_8_DIR", path)
+    return path
+
+
 @pytest.fixture()
 def repo(tmp_path):
     repository = BracketRepository(db_path=tmp_path / "brackets.db")
@@ -673,6 +689,150 @@ class TestSwappingPlayers:
         # Seed 1 came off a bye and can move; seed 4 got there by winning.
         assert second[5]["p1_movable"] is True
         assert second[5]["p2_movable"] is False
+
+
+class TestTop8Event:
+    """A finished bracket is written out as an event on the Top 8 page."""
+
+    def _deck(self, seed):
+        return {
+            "id": f"deck{seed}",
+            "name": f"Deck {seed}",
+            "username": f"curiosa_builder_{seed}",
+            "avatar": [{"name": "Sparkmage", "identifier": "sparkmage"}],
+            "spellbook": [{"name": "Spark", "quantity": 4, "elements": "Fire"}],
+        }
+
+    def _finish(self, service, repo, count, winners):
+        """Publish a bracket, file every deck, and play it out.
+
+        ``winners`` names the winning seed of each match in match order.
+        """
+        slug, bracket_id = published(service, repo, count)
+        for entrant in repo.get_entrants(bracket_id):
+            repo.upsert_deck(
+                bracket_id,
+                entrant["seed"],
+                {
+                    "user_id": entrant["user_id"],
+                    "deck_url": f"https://curiosa.io/decks/deck{entrant['seed']}",
+                    "deck_json": json.dumps(self._deck(entrant["seed"])),
+                },
+            )
+        for match_no, seed in winners:
+            service.set_result(slug, match_no, f"u{seed}", admin_id="a")
+        return slug, bracket_id
+
+    def _events(self, events_dir):
+        from repositories.events import EventRepository
+
+        return EventRepository(events_dir=events_dir)
+
+    def test_finishing_the_final_adds_the_event(self, service, repo, events_dir):
+        # 1v8, 4v5, 2v7, 3v6 -> 1 beats 4, 2 beats 3 -> 2 wins the final.
+        _, bracket_id = self._finish(
+            service, repo, 8, [(1, 1), (2, 4), (3, 2), (4, 3), (5, 1), (6, 2), (7, 2)]
+        )
+
+        folder = repo.get_bracket(bracket_id=bracket_id)["event_folder"]
+        assert folder and folder.startswith("Test Cup ")
+
+        events = self._events(events_dir)
+        listed = next(e for e in events.get_all_events() if e["folder"] == folder)
+        assert listed["name"] == "Test Cup"
+        assert listed["winner_username"] == "P2"
+        assert listed["event_date"] == repo.get_bracket(bracket_id=bracket_id)["completed_at"][:10]
+
+        top8 = events.get_event_decks(folder)["top8_decks"]
+        # Champion, finalist, semifinal losers by seed, quarterfinal losers by seed.
+        assert [d["player"] for d in top8] == ["P2", "P1", "P3", "P4", "P5", "P6", "P7", "P8"]
+        assert top8[0]["deck_name"] == "Deck 2"
+
+    def test_the_bracket_games_become_the_match_history(self, service, repo, events_dir):
+        _, bracket_id = self._finish(service, repo, 4, [(1, 1), (2, 2), (3, 1)])
+        folder = repo.get_bracket(bracket_id=bracket_id)["event_folder"]
+
+        history = self._events(events_dir).get_event_match_history(folder)
+        champion_row = history["by_deck_id"]["deck1"]
+        assert (champion_row["wins"], champion_row["losses"]) == (2, 0)
+        final, semi = champion_row["matches"]
+        assert final["result"] == "Win"
+        assert final["opponent"]["display_name"] == "P2"
+        assert semi["opponent"]["deck_id"] == "deck4"
+        assert semi["phase"] == "SingleElimination"
+
+    def test_a_field_past_eight_keeps_the_rest_as_all_decks(self, service, repo, events_dir):
+        slug, bracket_id = published(service, repo, 10)
+        for entrant in repo.get_entrants(bracket_id):
+            repo.upsert_deck(
+                bracket_id,
+                entrant["seed"],
+                {"user_id": entrant["user_id"], "deck_json": json.dumps(self._deck(entrant["seed"]))},
+            )
+        # Play every match the moment both seats are filled, top seed winning.
+        while repo.get_bracket(bracket_id=bracket_id)["status"] != "complete":
+            for m in repo.get_matches(bracket_id):
+                if m["state"] == "pending" and m["p1_seed"] and m["p2_seed"]:
+                    winner = min(m["p1_seed"], m["p2_seed"])
+                    service.set_result(slug, m["match_no"], f"u{winner}", admin_id="a")
+                    break
+
+        folder = repo.get_bracket(bracket_id=bracket_id)["event_folder"]
+        decks = self._events(events_dir).get_event_decks(folder)
+        assert len(decks["top8_decks"]) == 8
+        assert len(decks["all_decks"]) == 10
+        assert decks["top8_decks"][0]["player"] == "P1"
+
+    def test_a_corrected_final_rewrites_the_same_event(self, service, repo, events_dir):
+        slug, bracket_id = self._finish(service, repo, 4, [(1, 1), (2, 2), (3, 1)])
+        folder = repo.get_bracket(bracket_id=bracket_id)["event_folder"]
+        events = self._events(events_dir)
+        events.update_event_metadata(folder, rating=3, description="Season finale")
+
+        service.set_result(slug, 3, "u2", admin_id="a")
+
+        assert repo.get_bracket(bracket_id=bracket_id)["event_folder"] == folder
+        assert [p.name for p in events_dir.iterdir() if p.is_dir()] == [folder]
+        top8 = events.get_event_decks(folder)["top8_decks"]
+        assert [d["player"] for d in top8[:2]] == ["P2", "P1"]
+        listed = next(e for e in events.get_all_events() if e["folder"] == folder)
+        assert listed["rating"] == 3
+        assert events.get_event_description(folder) == "Season finale"
+
+    def test_an_unfinished_bracket_is_not_added(self, service, repo, events_dir):
+        slug, bracket_id = published(service, repo, 4)
+        with pytest.raises(BracketError, match="finished"):
+            service.publish_to_top8(bracket_id)
+        assert not any(events_dir.iterdir())
+
+    def test_a_bracket_without_decks_still_finishes(self, service, repo, events_dir):
+        slug, bracket_id = published(service, repo, 2)
+        service.set_result(slug, 1, "u1", admin_id="a")
+
+        bracket = repo.get_bracket(bracket_id=bracket_id)
+        assert bracket["status"] == "complete"
+        assert bracket["event_folder"] is None
+        with pytest.raises(BracketError, match="decklist"):
+            service.publish_to_top8(bracket_id)
+
+    def test_folder_names_do_not_collide(self, service, repo, events_dir):
+        (events_dir / "placeholder").mkdir()
+        _, first = self._finish(service, repo, 2, [(1, 1)])
+        folder = repo.get_bracket(bracket_id=first)["event_folder"]
+
+        from services.brackets import BracketService as Service
+        bracket = {**repo.get_bracket(bracket_id=first), "event_folder": None}
+        assert Service._top8_folder_name(bracket, self._events(events_dir)) == f"{folder} 2"
+
+    def test_unsafe_characters_are_dropped_from_the_folder(self, service, repo, events_dir):
+        created = service.create_bracket(name="Summit: Finals / 2026!", size=2, source="overall")
+        service.publish(created["bracket_id"])
+        repo.upsert_deck(created["bracket_id"], 1, {"deck_json": json.dumps(self._deck(1))})
+        service.set_result(created["slug"], 1, "u1", admin_id="a")
+
+        folder = repo.get_bracket(bracket_id=created["bracket_id"])["event_folder"]
+        assert folder.startswith("Summit Finals 2026 ")
+        assert (events_dir / folder).is_dir()
 
 
 class TestDecklists:
@@ -1948,6 +2108,26 @@ class TestBracketApi:
             sess["user_id"] = "p_one"
         resp = client.post(f"/api/admin/brackets/{slug}/swap", json={"seed": 1, "with_seed": 2})
         assert resp.status_code in (401, 403)
+
+    def test_admin_adds_a_finished_bracket_to_the_top8_page(self, admin_session, events_dir):
+        created = admin_session.post(
+            "/api/admin/brackets", json={"name": "Top Cup", "size": 2, "source": "overall"}
+        ).get_json()
+        slug = created["slug"]
+        admin_session.post(f"/api/admin/brackets/{slug}/publish")
+
+        resp = admin_session.post(f"/api/admin/brackets/{slug}/top8")
+        assert resp.status_code == 400
+        assert "finished" in resp.get_json()["error"]
+
+        admin_session.post(
+            f"/api/admin/brackets/{slug}/matches/1/result", json={"winner_user_id": "p_one"}
+        )
+        # Nobody filed a deck, so finishing had nothing to publish.
+        resp = admin_session.post(f"/api/admin/brackets/{slug}/top8")
+        assert resp.status_code == 400
+        assert "decklist" in resp.get_json()["error"]
+        assert not any(events_dir.iterdir())
 
     def test_seed_pool_endpoint(self, admin_session):
         pool = admin_session.get("/api/admin/brackets/seed-pool").get_json()

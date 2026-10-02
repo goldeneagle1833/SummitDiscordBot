@@ -9,6 +9,7 @@ import {
   reportBracketMatch,
   confirmBracketMatch,
   adminSwapBracketPlayers,
+  adminPublishBracketToTop8,
 } from '@/api/brackets'
 
 vi.mock('@/api/brackets', () => ({
@@ -23,6 +24,7 @@ vi.mock('@/api/brackets', () => ({
   adminSetMatchResult: vi.fn(),
   adminResetMatch: vi.fn(),
   adminSwapBracketPlayers: vi.fn(),
+  adminPublishBracketToTop8: vi.fn(),
 }))
 
 const mockUser = { value: { user_id: 'u1', is_admin: false } }
@@ -357,6 +359,42 @@ describe('Bracket page', () => {
     renderWithRouter(<Bracket />)
     await screen.findByText('Season 7 Postseason')
     expect(screen.queryByRole('button', { name: 'Edit pairings' })).toBeNull()
+  })
+
+  it('links a finished bracket to its Top 8 event', async () => {
+    getBracket.mockResolvedValue(
+      bracketData({
+        bracket: {
+          slug: 'season-7',
+          name: 'Season 7 Postseason',
+          status: 'complete',
+          event_folder: 'Season 7 Postseason 10-2-2026',
+        },
+        champion: { display_name: 'One', seed: 1, user_id: 'u1' },
+      }),
+    )
+    renderWithRouter(<Bracket />)
+
+    const link = await screen.findByRole('link', { name: 'Decklists on the Top 8 page' })
+    expect(link).toHaveAttribute('href', '/top-8/Season%207%20Postseason%2010-2-2026')
+    // Only admins get to rebuild it.
+    expect(screen.queryByRole('button', { name: 'Rebuild Top 8 event' })).toBeNull()
+  })
+
+  it('lets an admin add a finished bracket to the Top 8 page', async () => {
+    mockUser.value = { user_id: 'admin', is_admin: true }
+    getBracket.mockResolvedValue(
+      bracketData({
+        bracket: { slug: 'season-7', name: 'Season 7 Postseason', status: 'complete' },
+        champion: { display_name: 'One', seed: 1, user_id: 'u1' },
+      }),
+    )
+    adminPublishBracketToTop8.mockResolvedValue({ folder: 'x', top8: 2, rest: 0 })
+    renderWithRouter(<Bracket />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Add to Top 8 page' }))
+    expect(adminPublishBracketToTop8).toHaveBeenCalledWith('season-7')
+    expect(await screen.findByText('Top 8 page updated with 2 decklists.')).toBeInTheDocument()
   })
 
   it('asks a logged-out visitor to log in', async () => {

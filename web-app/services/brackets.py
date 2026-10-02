@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 from repositories.brackets import BracketRepository
 from repositories.elo import EloRepository
+from repositories.events import EventRepository
 from repositories.matches import MatchRepository
 from repositories.user_profiles import UserProfileRepository
 from services.bracket_builder import (
@@ -55,6 +56,7 @@ class BracketService:
         elo_repo=None,
         match_repo=None,
         profile_repo=None,
+        events_repo=None,
     ):
         self._repo = repo or BracketRepository()
         self._leaderboard_override = leaderboard_service
@@ -62,6 +64,7 @@ class BracketService:
         self._elo_repo_override = elo_repo
         self._match_repo_override = match_repo
         self._profile_repo_override = profile_repo
+        self._events_repo_override = events_repo
 
     @property
     def _leaderboard(self):
@@ -86,6 +89,11 @@ class BracketService:
     def _profile_repo(self):
         """Site profiles, for the names players have chosen for themselves."""
         return self._profile_repo_override or UserProfileRepository()
+
+    @property
+    def _events_repo(self):
+        """The Top 8 event folders a finished bracket is written into."""
+        return self._events_repo_override or EventRepository()
 
     # -- Seed pool ------------------------------------------------
 
@@ -1004,6 +1012,155 @@ class BracketService:
 
         return out
 
+    # -- Top 8 page ----------------------------------------------
+
+    TOP8_PHASE = "SingleElimination"
+
+    def publish_to_top8(self, bracket_id: int) -> dict:
+        """Write a finished bracket out as an event on the Top 8 page.
+
+        Decklists go in finishing order - champion, finalist, the two semifinal
+        losers, then the quarterfinal losers, ties broken by seed - with the
+        first eight as the top 8 and anyone further down as the rest of the
+        field. The bracket games become the event's match history.
+
+        Running it again rewrites the same event, so a corrected result
+        carries through without losing the rating or description an admin has
+        given the event since.
+        """
+        bracket = self._repo.get_bracket(bracket_id=bracket_id)
+        if not bracket:
+            raise BracketError("Bracket not found")
+        if bracket["status"] != "complete":
+            raise BracketError("Only a finished bracket can go on the Top 8 page")
+
+        entrants = self._repo.get_entrants(bracket_id)
+        stored_decks = {d["seed"]: d for d in self._repo.get_decks(bracket_id)}
+        placements = self.placements(bracket_id)
+        names = self._site_names([e.get("user_id") for e in entrants])
+
+        def name_of(entrant):
+            return names.get(str(entrant.get("user_id") or "")) or entrant["display_name"]
+
+        decks = {}
+        for entrant in entrants:
+            stored = stored_decks.get(entrant["seed"])
+            try:
+                deck = json.loads(stored["deck_json"] or "{}") if stored else {}
+            except (TypeError, ValueError):
+                deck = {}
+            if deck:
+                # The page lists decks by player, and the Curiosa username is
+                # whoever built the list - so use the name the site knows them by.
+                deck["username"] = name_of(entrant)
+                decks[entrant["seed"]] = deck
+
+        if not decks:
+            raise BracketError("Nobody in this bracket has a decklist to show")
+
+        unplaced = len(entrants) + 1
+        ranked = sorted(
+            (e for e in entrants if e["seed"] in decks),
+            key=lambda e: (placements.get(e["seed"], unplaced), e["seed"]),
+        )
+        lists = [decks[e["seed"]] for e in ranked]
+        top8, rest = lists[:8], lists[8:]
+
+        events = self._events_repo
+        folder = bracket.get("event_folder")
+        existing = events._validate_event_folder(folder) if folder else None
+        if existing is not None and existing.exists():
+            result = events.update_event_decks(folder, "top8", top8, "replace")
+            if result.get("success") and rest:
+                result = events.update_event_decks(folder, "all", rest, "replace")
+        else:
+            folder = self._top8_folder_name(bracket, events)
+            result = events.create_event(folder, top8, rest or None)
+        if not result.get("success"):
+            raise BracketError(result.get("error") or "Could not write the Top 8 event")
+
+        finished = (bracket.get("completed_at") or datetime.now().isoformat())[:10]
+        events.update_event_metadata(folder, name=bracket["name"], event_date=finished)
+        events.save_match_history(
+            folder, self._top8_match_history(bracket, entrants, decks, name_of)
+        )
+        self._repo.set_event_folder(bracket_id, folder)
+
+        return {"folder": folder, "top8": len(top8), "rest": len(rest)}
+
+    def _add_to_top8(self, bracket_id: int):
+        """Publish to the Top 8 page as the final settles, without risking it."""
+        try:
+            self.publish_to_top8(bracket_id)
+        except Exception as e:
+            logger.error(
+                "Bracket %s finished but could not go on the Top 8 page: %s",
+                bracket_id, e, exc_info=True,
+            )
+
+    @staticmethod
+    def _top8_folder_name(bracket: dict, events) -> str:
+        """A folder name the events page accepts, dated the way the others are."""
+        base = re.sub(r"[^a-zA-Z0-9 _\-']+", " ", bracket["name"] or "")
+        base = re.sub(r"\s+", " ", base).strip() or f"Bracket {bracket['bracket_id']}"
+        finished = datetime.fromisoformat(
+            bracket.get("completed_at") or datetime.now().isoformat()
+        )
+        base = f"{base} {finished.month}-{finished.day}-{finished.year}"
+
+        folder, suffix = base, 2
+        while (events._events_dir / folder).exists():
+            folder = f"{base} {suffix}"
+            suffix += 1
+        return folder
+
+    def _top8_match_history(self, bracket, entrants, decks, name_of) -> dict:
+        """The bracket games, shaped like an imported sorcerytcg.com history."""
+        by_seed = {e["seed"]: e for e in entrants}
+
+        def person(seed):
+            entrant = by_seed.get(seed)
+            return {
+                "display_name": name_of(entrant) if entrant else "Unknown",
+                "username": "",
+                "deck_id": (decks.get(seed) or {}).get("id", ""),
+                "profile_image": "",
+            }
+
+        players = {}
+        for match in self._repo.get_matches(bracket["bracket_id"]):
+            if match["state"] != "complete" or match["winner_seed"] is None:
+                continue
+            for slot, other in ((1, 2), (2, 1)):
+                seed = match[f"p{slot}_seed"]
+                entry = players.setdefault(
+                    seed, {**person(seed), "wins": 0, "losses": 0, "draws": 0, "matches": []}
+                )
+                won = seed == match["winner_seed"]
+                entry["wins" if won else "losses"] += 1
+                entry["matches"].append(
+                    {
+                        "round": match["round"],
+                        "phase": self.TOP8_PHASE,
+                        "result": "Win" if won else "Loss",
+                        "is_bye": False,
+                        "opponent": person(match[f"p{other}_seed"]),
+                    }
+                )
+
+        for entry in players.values():
+            entry["matches"].sort(key=lambda m: m["round"], reverse=True)
+
+        return {
+            "event_id": f"bracket-{bracket['bracket_id']}",
+            "event_url": "",
+            "event_title": bracket["name"],
+            "bracket_slug": bracket["slug"],
+            "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "players": list(players.values()),
+            "errors": [],
+        }
+
     # -- Sorcery Online tables ------------------------------------
 
     def open_table(self, slug: str, match_no: int, user_id: str) -> dict:
@@ -1187,6 +1344,7 @@ class BracketService:
         else:
             # No next match means that was the final.
             self._repo.set_status(bracket_id, "complete")
+            self._add_to_top8(bracket_id)
 
     K_FACTOR = 32
 

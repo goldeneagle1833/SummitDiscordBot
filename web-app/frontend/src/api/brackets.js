@@ -39,7 +39,9 @@ export const adminPublishBracket = (slug) => post(`/api/admin/brackets/${slug}/p
 export const adminUnpublishBracket = (slug) => post(`/api/admin/brackets/${slug}/unpublish`, {})
 export const adminSwapBracketPlayers = (slug, seed, withSeed) =>
   post(`/api/admin/brackets/${slug}/swap`, { seed, with_seed: withSeed })
-export const adminSetMatchResult =(slug, matchNo, winnerUserId) =>
+export const adminPublishBracketToTop8 = (slug) =>
+  post(`/api/admin/brackets/${slug}/top8`, {})
+export const adminSetMatchResult = (slug, matchNo, winnerUserId) =>
   post(`/api/admin/brackets/${slug}/matches/${matchNo}/result`, { winner_user_id: winnerUserId })
 export const adminResetMatch = (slug, matchNo) =>
   post(`/api/admin/brackets/${slug}/matches/${matchNo}/reset`, {})

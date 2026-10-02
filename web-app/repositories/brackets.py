@@ -118,6 +118,16 @@ class BracketRepository:
         conn.commit()
         conn.close()
 
+    def set_event_folder(self, bracket_id: int, folder: str | None):
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE brackets SET event_folder = ?, updated_at = ? WHERE bracket_id = ?",
+            (folder, datetime.now().isoformat(), bracket_id),
+        )
+        conn.commit()
+        conn.close()
+
     def get_bracket(self, bracket_id=None, slug=None) -> dict | None:
         conn = self._get_connection()
         cur = conn.cursor()

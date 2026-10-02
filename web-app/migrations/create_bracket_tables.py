@@ -164,6 +164,11 @@ def create_bracket_tables(db_path=None):
         if column not in existing:
             cursor.execute(f"ALTER TABLE bracket_matches ADD COLUMN {column} INTEGER")
 
+    # The Top 8 event folder a finished bracket was written out to.
+    cursor.execute("PRAGMA table_info(brackets)")
+    if "event_folder" not in {row[1] for row in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE brackets ADD COLUMN event_folder TEXT")
+
     conn.commit()
     conn.close()
     logger.info("Bracket tables ensured")

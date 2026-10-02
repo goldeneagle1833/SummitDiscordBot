@@ -11,6 +11,7 @@ import {
   adminSetMatchReplay,
   adminClearMatchReplay,
   adminSwapBracketPlayers,
+  adminPublishBracketToTop8,
 } from '@/api/brackets'
 import BracketTree from '@/components/bracket/BracketTree'
 import DeckPanel from '@/components/bracket/DeckPanel'
@@ -154,6 +155,17 @@ export default function Bracket() {
     }
   }
 
+  async function handlePublishToTop8() {
+    setNotice('Writing the Top 8 event…')
+    try {
+      const res = await adminPublishBracketToTop8(slug)
+      setNotice(`Top 8 page updated with ${res.top8 + res.rest} decklists.`)
+      load()
+    } catch (e) {
+      setNotice(e.message)
+    }
+  }
+
   if (error) {
     return (
       <div className="text-center py-12">
@@ -259,6 +271,26 @@ export default function Bracket() {
             </p>
             <p className="text-sm text-text-muted">Seed {champion.seed}</p>
           </div>
+          {(bracket.event_folder || (isAdmin && bracket.status === 'complete')) && (
+            <div className="ml-auto flex flex-col items-end gap-1 text-sm">
+              {bracket.event_folder && (
+                <Link
+                  to={`/top-8/${encodeURIComponent(bracket.event_folder)}`}
+                  className="text-secondary hover:underline"
+                >
+                  Decklists on the Top 8 page
+                </Link>
+              )}
+              {isAdmin && bracket.status === 'complete' && (
+                <button
+                  onClick={handlePublishToTop8}
+                  className="text-xs text-text-muted hover:text-text-primary"
+                >
+                  {bracket.event_folder ? 'Rebuild Top 8 event' : 'Add to Top 8 page'}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 

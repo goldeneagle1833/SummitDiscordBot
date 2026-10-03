@@ -1350,7 +1350,7 @@ class TestReplayLinks:
 
 
 class TestBracketElo:
-    """Postseason games count as ranked, against lifetime ELO only."""
+    """Top cut games are history only: they move no ELO on any ladder."""
 
     def _elos(self, elo_db, *user_ids):
         import sqlite3
@@ -1366,7 +1366,7 @@ class TestBracketElo:
         conn.close()
         return out
 
-    def test_a_confirmed_result_moves_lifetime_elo(self, service, repo, elo_db):
+    def test_a_confirmed_result_moves_no_elo(self, service, repo, elo_db):
         slug, bracket_id = published(service, repo, 4)
         match = repo.get_matches(bracket_id)[0]  # seed 1 v seed 4
 
@@ -1374,67 +1374,18 @@ class TestBracketElo:
         service.confirm_result(slug, match["match_no"], "u4", agree=True)
 
         (winner, loser) = self._elos(elo_db, "u1", "u4")
-        # Even ratings and K=32 is a 16 point swing.
-        assert winner[0] == 1516
-        assert loser[0] == 1484
+        assert winner == (1500, 1500)
+        assert loser == (1500, 1500)
 
-    def test_the_event_ladder_is_left_alone(self, service, repo, elo_db):
-        slug, bracket_id = published(service, repo, 4)
-        match = repo.get_matches(bracket_id)[0]
-        service.set_result(slug, match["match_no"], "u1", admin_id="a")
-
-        (winner, loser) = self._elos(elo_db, "u1", "u4")
-        assert (winner[1], loser[1]) == (1500, 1500)
-
-    def test_the_change_is_recorded_on_the_match(self, service, repo):
+    def test_nothing_is_flagged_as_applied(self, service, repo):
         slug, bracket_id = published(service, repo, 4)
         match = repo.get_matches(bracket_id)[0]
         service.set_result(slug, match["match_no"], "u1", admin_id="a")
 
         stored = repo.get_match(bracket_id, match["match_no"])
-        assert stored["elo_applied_at"]
-        assert (stored["winner_elo_change"], stored["loser_elo_change"]) == (16, -16)
+        assert stored["elo_applied_at"] is None
 
-    def test_a_bye_moves_nothing(self, service, repo, elo_db):
-        slug, bracket_id = published(service, repo, 3)  # seed 1 gets a bye
-        bye = next(m for m in repo.get_matches(bracket_id) if m["state"] == "bye")
-
-        assert bye["elo_applied_at"] is None
-        assert self._elos(elo_db, "u1")[0][0] == 1500
-
-    def test_resetting_gives_the_points_back(self, service, repo, elo_db):
-        slug, bracket_id = published(service, repo, 4)
-        match = repo.get_matches(bracket_id)[0]
-        service.set_result(slug, match["match_no"], "u1", admin_id="a")
-
-        service.reset_match(slug, match["match_no"])
-
-        (winner, loser) = self._elos(elo_db, "u1", "u4")
-        assert (winner[0], loser[0]) == (1500, 1500)
-        assert repo.get_match(bracket_id, match["match_no"])["elo_applied_at"] is None
-
-    def test_correcting_a_result_swings_it_the_other_way(self, service, repo, elo_db):
-        slug, bracket_id = published(service, repo, 4)
-        match = repo.get_matches(bracket_id)[0]
-
-        service.set_result(slug, match["match_no"], "u1", admin_id="a")
-        service.set_result(slug, match["match_no"], "u4", admin_id="a")
-
-        (one, four) = self._elos(elo_db, "u1", "u4")
-        # The first result is undone before the second is applied.
-        assert (one[0], four[0]) == (1484, 1516)
-
-    def test_a_result_is_only_counted_once(self, service, repo, elo_db):
-        slug, bracket_id = published(service, repo, 4)
-        match = repo.get_matches(bracket_id)[0]
-
-        service.set_result(slug, match["match_no"], "u1", admin_id="a")
-        # Re-applying the same winner must not stack another swing.
-        service.set_result(slug, match["match_no"], "u1", admin_id="a")
-
-        assert self._elos(elo_db, "u1")[0][0] == 1516
-
-    def test_resetting_an_early_round_undoes_the_later_ones(self, service, repo, elo_db):
+    def test_a_full_run_moves_no_elo(self, service, repo, elo_db):
         slug, bracket_id = published(service, repo, 4)
         first, second = repo.get_matches(bracket_id)[0], repo.get_matches(bracket_id)[1]
 
@@ -1442,54 +1393,73 @@ class TestBracketElo:
         service.set_result(slug, second["match_no"], "u2", admin_id="a")
         final = repo.get_match(bracket_id, first["next_match_no"])
         service.set_result(slug, final["match_no"], "u1", admin_id="a")
-
-        # u1 won twice.
-        assert self._elos(elo_db, "u1")[0][0] > 1516
-
+        service.set_result(slug, final["match_no"], "u2", admin_id="a")
         service.reset_match(slug, first["match_no"])
 
-        # Both of u1's wins are gone: the reset one and the final it fed.
-        assert self._elos(elo_db, "u1")[0][0] == 1500
+        for row in self._elos(elo_db, "u1", "u2", "u3", "u4"):
+            assert row == (1500, 1500)
 
-    def test_an_auto_confirmed_result_counts_too(self, service, repo, elo_db):
-        slug, bracket_id = published(service, repo, 4)
-        match = repo.get_matches(bracket_id)[0]
 
-        service.report_result(slug, match["match_no"], "u1", "u1")
-        repo.update_match(bracket_id, match["match_no"], {"expires_at": int(time.time()) - 1})
-        service.auto_confirm_expired()
+class TestBracketEloRefund:
+    """Games settled while brackets still moved ELO get their points back."""
 
-        assert self._elos(elo_db, "u1")[0][0] == 1516
-
-    def test_a_guest_entrant_is_not_rated(self, service, repo, elo_db):
-        created = service.create_bracket(name="Guest Elo", size=2, source="overall")
-        service.set_entrants(created["bracket_id"], [
-            {"user_id": "u1", "display_name": "P1"},
-            {"display_name": "Guest B"},
-        ])
-        service.publish(created["bracket_id"])
-        match = repo.get_matches(created["bracket_id"])[0]
-
-        service.set_result("guest-elo", match["match_no"], "u1", admin_id="a")
-
-        # Nothing to rate the guest against, so nobody moves.
-        assert self._elos(elo_db, "u1")[0][0] == 1500
-        assert repo.get_match(created["bracket_id"], match["match_no"])["elo_applied_at"] is None
-
-    def test_a_player_off_the_ladder_is_skipped(self, service, repo, elo_db):
-        import sqlite3
-
-        conn = sqlite3.connect(str(elo_db))
-        conn.execute("DELETE FROM overall_standings WHERE user_id = 'u4'")
-        conn.commit()
-        conn.close()
-
-        slug, bracket_id = published(service, repo, 4)
+    def _legacy_result(self, service, repo, ladder):
+        """A settled match as the old code left it: +16/-16 applied."""
+        slug, bracket_id = published(service, repo, 4, name="Old Cup")
         match = repo.get_matches(bracket_id)[0]
         service.set_result(slug, match["match_no"], "u1", admin_id="a")
+        ladder.set_user_elo("u1", 1516)
+        ladder.set_user_elo("u4", 1484)
+        repo.update_match(
+            bracket_id,
+            match["match_no"],
+            {"elo_applied_at": "2026-09-01T00:00:00", "winner_elo_change": 16, "loser_elo_change": -16},
+        )
+        stored = repo.get_match(bracket_id, match["match_no"])
+        service._match_repo.update_match_row(
+            stored["match_record_id"],
+            {"winner_elo_change": 16, "loser_elo_change": -16, "match_comment": "Old Cup - Round 1"},
+        )
+        return slug, bracket_id, stored
 
-        assert self._elos(elo_db, "u1")[0][0] == 1500
-        assert repo.get_match(bracket_id, match["match_no"])["elo_applied_at"] is None
+    def test_the_points_come_back(self, service, repo, ladder):
+        self._legacy_result(service, repo, ladder)
+
+        assert service.refund_applied_elo() == 1
+        assert ladder.get_user_elo("u1") == 1500
+        assert ladder.get_user_elo("u4") == 1500
+
+    def test_it_only_refunds_once(self, service, repo, ladder):
+        self._legacy_result(service, repo, ladder)
+
+        service.refund_applied_elo()
+        assert service.refund_applied_elo() == 0
+        assert ladder.get_user_elo("u1") == 1500
+
+    def test_the_history_row_is_relabelled(self, service, repo, ladder, match_db):
+        import sqlite3
+
+        _, _, stored = self._legacy_result(service, repo, ladder)
+        service.refund_applied_elo()
+
+        conn = sqlite3.connect(str(match_db))
+        row = conn.execute(
+            "SELECT match_comment, winner_elo_change, loser_elo_change FROM match_records"
+            " WHERE rowid = ?",
+            (stored["match_record_id"],),
+        ).fetchone()
+        conn.close()
+        assert row[0].startswith("Top cut game")
+        assert (row[1], row[2]) == (0, 0)
+
+    def test_resetting_a_legacy_result_refunds_it(self, service, repo, ladder):
+        slug, _, stored = self._legacy_result(service, repo, ladder)
+
+        service.reset_match(slug, stored["match_no"])
+
+        assert ladder.get_user_elo("u1") == 1500
+        assert ladder.get_user_elo("u4") == 1500
+        assert service.refund_applied_elo() == 0
 
 
 class TestBracketMatchRecords:
@@ -1522,15 +1492,16 @@ class TestBracketMatchRecords:
         assert rows[0]["losser_id"] == "u4"
         assert rows[0]["match_type"] == "ranked"
         assert "Log Cup" in rows[0]["match_comment"]
+        assert rows[0]["match_comment"].startswith("Top cut game")
 
-    def test_the_logged_match_carries_the_rating_change(self, service, repo, match_db):
+    def test_the_logged_match_carries_no_rating_change(self, service, repo, match_db):
         slug, bracket_id = published(service, repo, 4, name="Log Cup")
         match = repo.get_matches(bracket_id)[0]
         service.set_result(slug, match["match_no"], "u1", admin_id="a")
 
         row = self._rows(match_db)[0]
-        assert (row["winner_elo_change"], row["loser_elo_change"]) == (16, -16)
-        assert row["winner_lifetime_elo_after"] == 1516
+        assert (row["winner_elo_change"], row["loser_elo_change"]) == (0, 0)
+        assert row["winner_lifetime_elo_after"] == 1500
 
     def test_the_logged_match_carries_both_decks(self, service, repo, match_db):
         slug, bracket_id = published(service, repo, 4, name="Log Cup")
@@ -1859,15 +1830,15 @@ class TestPlayersKeepTheirName:
 
         assert ladder.get_display_names(["u1"]) == {"u1": "Gwendolyn"}
 
-    def test_the_rating_still_moves(self, service, repo, ladder):
+    def test_the_rating_stays_put(self, service, repo, ladder):
         slug, bracket_id = published(service, repo, 4)
         ladder.rename_player("u1", "Gwendolyn")
 
         match = repo.get_matches(bracket_id)[0]
         service.set_result(slug, match["match_no"], "u1", admin_id="a")
 
-        assert ladder.get_user_elo("u1") == 1516
-        assert ladder.get_user_elo("u4") == 1484
+        assert ladder.get_user_elo("u1") == 1500
+        assert ladder.get_user_elo("u4") == 1500
 
     def test_the_logged_match_uses_the_current_name(self, service, repo, ladder, match_db):
         import sqlite3

@@ -28,7 +28,6 @@ from services.bracket_builder import (
 )
 from services.curiosa import CuriosaService
 from services.leaderboard import LeaderboardService, unique_players
-from services.paper_elo import calculate_elo
 from services.sorcery_online_table import TableUnavailable, provision_match_table
 from services.ticket_holders import ticket_holder_ids
 from utils.card_images import attach_images
@@ -1327,7 +1326,7 @@ class BracketService:
             },
         )
 
-        self._apply_elo(bracket, match)
+        # Top cut games are history only: no ELO moves, on any ladder.
         self._record_match(bracket, match)
 
         parent = advance_winner(match, matches)
@@ -1346,96 +1345,34 @@ class BracketService:
             self._repo.set_status(bracket_id, "complete")
             self._add_to_top8(bracket_id)
 
-    K_FACTOR = 32
-
-    def _apply_elo(self, bracket: dict, match: dict):
-        try:
-            self._apply_elo_inner(bracket, match)
-        except Exception as e:
-            logger.error(
-                "Bracket %s match %s: rating failed, result still stands: %s",
-                bracket.get("slug"), match.get("match_no"), e,
-            )
-
     def _reverse_elo(self, bracket: dict, match: dict):
         try:
             self._withdraw_match(bracket, match)
-            self._reverse_elo_inner(bracket, match)
+            self._refund_elo(bracket, match)
         except Exception as e:
             logger.error(
                 "Bracket %s match %s: rating reversal failed: %s",
                 bracket.get("slug"), match.get("match_no"), e,
             )
 
-    def _apply_elo_inner(self, bracket: dict, match: dict):
-        """Move both players' online lifetime ELO for a decided bracket match.
+    def _refund_elo(self, bracket: dict, match: dict) -> bool:
+        """Give back the lifetime ELO a result moved before top cut stopped counting.
 
-        Postseason games count as ranked, but only against lifetime ELO - the
-        event ladder is left alone. Byes never get here, and entrants without a
-        site account cannot be rated.
-        """
-        if match.get("elo_applied_at"):
-            return
-
-        winner_id = str(match["winner_user_id"] or "")
-        loser_id = str(
-            match["p2_user_id"] if winner_id == str(match["p1_user_id"] or "") else match["p1_user_id"]
-            or ""
-        )
-        if not winner_id or not loser_id or winner_id == loser_id:
-            return
-
-        elo_repo = self._elo_repo
-        try:
-            winner_elo = elo_repo.get_user_elo(winner_id)
-            loser_elo = elo_repo.get_user_elo(loser_id)
-        except Exception as e:
-            logger.warning("Bracket ELO lookup failed: %s", e)
-            return
-        if winner_elo is None or loser_elo is None:
-            logger.info(
-                "Bracket %s match %s: no ladder rating for one of the players, ELO skipped",
-                bracket["slug"], match["match_no"],
-            )
-            return
-
-        winner_new = calculate_elo(winner_elo, loser_elo, True, k=self.K_FACTOR)
-        loser_new = calculate_elo(loser_elo, winner_elo, False, k=self.K_FACTOR)
-
-        try:
-            # Rating only. The names on a bracket were recorded when it was
-            # seeded, so writing them back would rename a player who has
-            # since chosen a different one.
-            elo_repo.set_user_elo(winner_id, winner_new)
-            elo_repo.set_user_elo(loser_id, loser_new)
-        except Exception as e:
-            logger.error("Bracket ELO update failed: %s", e)
-            return
-
-        self._repo.update_match(
-            bracket["bracket_id"],
-            match["match_no"],
-            {
-                "elo_applied_at": datetime.now().isoformat(),
-                "winner_elo_change": winner_new - winner_elo,
-                "loser_elo_change": loser_new - loser_elo,
-            },
-        )
-
-    def _reverse_elo_inner(self, bracket: dict, match: dict):
-        """Give back what a result took, when it is reset or corrected.
-
-        The deltas are stored per match, so undoing restores exactly the points
-        that were moved even if other games have happened since.
+        Bracket games used to be rated; those matches still carry the stored
+        change. The flag is cleared first, in one conditional update, so two
+        workers running this at once can only refund a match once.
         """
         if not match.get("elo_applied_at"):
-            return
+            return False
 
         winner_id = str(match["winner_user_id"] or "")
         if not winner_id:
-            return
+            return False
         on_p1 = winner_id == str(match["p1_user_id"] or "")
         loser_id = str((match["p2_user_id"] if on_p1 else match["p1_user_id"]) or "")
+
+        if not self._repo.claim_elo_refund(bracket["bracket_id"], match["match_no"]):
+            return False
 
         elo_repo = self._elo_repo
         for user_id, change in (
@@ -1448,22 +1385,55 @@ class BracketService:
                     continue
                 elo_repo.set_user_elo(user_id, current - change)
             except Exception as e:
-                logger.error("Bracket ELO reversal failed for %s: %s", user_id, e)
+                logger.error("Bracket ELO refund failed for %s: %s", user_id, e)
 
         self._repo.update_match(
             bracket["bracket_id"],
             match["match_no"],
-            {"elo_applied_at": None, "winner_elo_change": None, "loser_elo_change": None},
+            {"winner_elo_change": None, "loser_elo_change": None},
         )
+        return True
+
+    def refund_applied_elo(self) -> int:
+        """Undo the ELO every already-played bracket game moved.
+
+        Runs at startup. Each refunded game's history row is relabelled as a
+        top cut game with no rating change. Returns how many were refunded.
+        """
+        refunded = 0
+        for bracket in self._repo.list_brackets(published_only=False):
+            for match in self._repo.get_matches(bracket["bracket_id"]):
+                if not self._refund_elo(bracket, match):
+                    continue
+                refunded += 1
+                row_id = match.get("match_record_id")
+                if row_id:
+                    self._match_repo.update_match_row(
+                        row_id,
+                        {
+                            "match_comment": self._match_comment(bracket, match),
+                            "winner_elo_change": 0,
+                            "loser_elo_change": 0,
+                            "winner_lifetime_elo_after": None,
+                            "loser_lifetime_elo_after": None,
+                        },
+                    )
+        if refunded:
+            logger.info("Refunded ELO for %d bracket matches", refunded)
+        return refunded
+
+    @staticmethod
+    def _match_comment(bracket: dict, match: dict) -> str:
+        return f"Top cut game - {bracket['name']} - {match['round_title']}"
 
     MATCH_SOURCE = "Bracket"
 
     def _record_match(self, bracket: dict, match: dict):
         """Log a settled bracket game as a played match.
 
-        Without this a postseason win moves a player's rating while leaving no
-        trace in their history, so the change looks like it came from nowhere.
-        The decks are the ones submitted to the bracket.
+        It counts toward the players' history and record, but is a top cut
+        game: no ELO moves, and the match notes say so. The decks are the
+        ones submitted to the bracket.
         """
         try:
             if match.get("match_record_id"):
@@ -1496,13 +1466,13 @@ class BracketService:
                     "losser_display_name": names.get(loser_id)
                     or (stored["p2_name"] if on_p1 else stored["p1_name"]),
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "match_comment": f"{bracket['name']} - {stored['round_title']}",
+                    "match_comment": self._match_comment(bracket, stored),
                     "curiosa_url_winner": winner_deck.get("deck_url"),
                     "curiosa_url_loser": loser_deck.get("deck_url"),
                     "json_deck_data_winner": winner_deck.get("deck_json"),
                     "json_deck_data_loser": loser_deck.get("deck_json"),
-                    "winner_elo_change": stored.get("winner_elo_change"),
-                    "loser_elo_change": stored.get("loser_elo_change"),
+                    "winner_elo_change": 0,
+                    "loser_elo_change": 0,
                     "winner_lifetime_elo_after": elo_repo.get_user_elo(winner_id),
                     "loser_lifetime_elo_after": elo_repo.get_user_elo(loser_id),
                     "source": self.MATCH_SOURCE,

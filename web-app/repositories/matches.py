@@ -945,6 +945,25 @@ class MatchRepository:
         conn.close()
         return row_id
 
+    def update_match_row(self, row_id: int, fields: dict) -> bool:
+        """Set columns on one match by row id, skipping any the table lacks."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(match_records)")
+        available = {row[1] for row in cur.fetchall()}
+        columns = [c for c in fields if c in available]
+        if not columns:
+            conn.close()
+            return False
+        cur.execute(
+            f"UPDATE match_records SET {', '.join(f'{c} = ?' for c in columns)} WHERE rowid = ?",
+            [*(fields[c] for c in columns), row_id],
+        )
+        changed = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return changed
+
     def delete_match_row(self, row_id: int) -> bool:
         """Remove a match by row id. Bracket rows carry no match_id."""
         conn = self._get_connection()

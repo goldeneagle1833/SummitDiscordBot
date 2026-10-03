@@ -32,6 +32,8 @@ from repositories.elo_repo import (
     update_both_player_elos,
     NON_ELO_MATCH_TYPES,
     NON_ELO_MATCH_TYPES_SQL,
+    NON_SEASON_SOURCES,
+    NON_SEASON_SOURCES_SQL,
 )
 
 logger = logging.getLogger("discord_bot")
@@ -1784,7 +1786,8 @@ def get_match_players(match_id: int) -> dict:
 _ADMIN_MATCH_COLUMNS = """rowid AS row_id, winner_id, losser_id, winner_display_name, losser_display_name,
        timestamp, match_type, winner_elo_change, loser_elo_change,
        winner_lifetime_elo_change, loser_lifetime_elo_change,
-       winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, event_k"""
+       winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, event_k,
+       source"""
 
 
 def _load_admin_match_rows(match_cur, where: str, params) -> list[dict]:
@@ -1934,7 +1937,11 @@ def correct_match_record(match_id: int) -> dict:
         if not rows:
             raise ValueError(f"Match ID #{match_id} not found.")
         target = rows[0]
-        rated = target["match_type"] not in NON_ELO_MATCH_TYPES
+        # Top cut (bracket) games never move ELO, so flipping one only swaps sides
+        rated = (
+            target["match_type"] not in NON_ELO_MATCH_TYPES
+            and target["source"] not in NON_SEASON_SOURCES
+        )
 
         orig_winner_id, orig_loser_id = target["winner_id"], target["losser_id"]
         orig_winner_name, orig_loser_name = target["winner_display_name"], target["losser_display_name"]
@@ -1946,6 +1953,7 @@ def correct_match_record(match_id: int) -> dict:
                 match_cur,
                 f"""timestamp > ? AND (winner_id IN (?, ?) OR losser_id IN (?, ?))
                     AND (match_type IS NULL OR match_type NOT IN ({NON_ELO_MATCH_TYPES_SQL}))
+                    AND (source IS NULL OR source NOT IN ({NON_SEASON_SOURCES_SQL}))
                     ORDER BY timestamp ASC""",
                 (target["timestamp"], orig_winner_id, orig_loser_id, orig_winner_id, orig_loser_id),
             )

@@ -383,6 +383,20 @@ class BracketRepository:
         conn.close()
         return changed
 
+    def claim_elo_refund(self, bracket_id: int, match_no: int) -> bool:
+        """Clear a match's applied-ELO flag; True only for the caller that cleared it."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE bracket_matches SET elo_applied_at = NULL"
+            " WHERE bracket_id = ? AND match_no = ? AND elo_applied_at IS NOT NULL",
+            (bracket_id, match_no),
+        )
+        claimed = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return claimed
+
     def get_expired_reports(self, now_ts: int) -> list[dict]:
         """Reported matches whose confirmation window has run out."""
         conn = self._get_connection()

@@ -136,6 +136,7 @@ def _convert_trpc_to_legacy(trpc_response: dict) -> dict:
     spellbook = []
     atlas = []
     sideboard = []
+    maybeboard = []
 
     for entry in deck.get("decklist", []):
         board = entry.get("board", "")
@@ -169,8 +170,12 @@ def _convert_trpc_to_legacy(trpc_response: dict) -> dict:
                 atlas.append(card)
             else:
                 spellbook.append(card)
-        elif board in ("Maybeboard", "Collection", "Sideboard"):
+        elif board in ("Collection", "Sideboard"):
             sideboard.append(card)
+        elif board == "Maybeboard":
+            # Cards the owner is only considering. Kept apart so they never
+            # show up as part of the Collection.
+            maybeboard.append(card)
 
     owner = deck.get("owner", {})
     return {
@@ -181,6 +186,7 @@ def _convert_trpc_to_legacy(trpc_response: dict) -> dict:
         "spellbook": spellbook,
         "atlas": atlas,
         "sideboard": sideboard,
+        "maybeboard": maybeboard,
     }
 
 

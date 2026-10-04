@@ -10,7 +10,7 @@ import DeckVisualizer from '@/components/deck/DeckVisualizer'
 import Spinner from '@/components/ui/Spinner'
 import { avatarUrl } from '@/utils/avatar'
 
-const INPUT = 'w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm'
+const INPUT = 'w-full bg-bg-raised border border-border rounded-sm px-3 py-2 text-sm'
 
 /** When the list was captured. Decks are stored as submitted, not read live. */
 function snapshotDate(value) {
@@ -133,7 +133,7 @@ function SubmitForm({ slug, seed, isAdmin, onDone }) {
       <button
         type="submit"
         disabled={busy}
-        className="px-3 py-1 rounded bg-secondary text-black text-sm font-medium disabled:opacity-50"
+        className="px-3 py-1 rounded-sm bg-secondary text-black text-sm font-medium disabled:opacity-50"
       >
         {busy ? 'Saving…' : 'Save deck'}
       </button>
@@ -158,7 +158,7 @@ export default function DeckPanel({ slug, roster, isAdmin = false, onChanged }) 
   const mine = players.find((p) => p.can_submit)
 
   return (
-    <div className="bg-bg-surface border border-border rounded-lg">
+    <div className="bg-bg-surface border border-border rounded-sm">
       <div className="px-5 py-3 border-b border-border flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="font-display">Decklists</h2>
         <p className="text-xs text-text-muted">
@@ -188,9 +188,9 @@ export default function DeckPanel({ slug, roster, isAdmin = false, onChanged }) 
               <div className="flex flex-wrap items-center gap-3">
                 <span className="w-5 text-xs text-text-muted">{player.seed}</span>
                 {avatar ? (
-                  <img src={avatar} alt="" className="w-6 h-6 rounded-full object-cover" />
+                  <img src={avatar} alt="" className="w-6 h-6 rounded-sm object-cover" />
                 ) : (
-                  <span className="w-6 h-6 rounded-full bg-bg-elevated" />
+                  <span className="w-6 h-6 rounded-sm bg-bg-elevated" />
                 )}
 
                 <span className="flex-1 min-w-0 truncate text-sm">

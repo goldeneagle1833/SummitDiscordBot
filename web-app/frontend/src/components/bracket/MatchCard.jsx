@@ -17,45 +17,46 @@ function Side({
   if (!name) {
     return (
       <div
-        className="flex items-center gap-2 px-2.5 py-2 text-sm text-text-muted italic"
+        className="flex items-center gap-2 pr-2.5 py-2 text-sm text-text-muted border-l-2 border-transparent"
         {...(dragHandlers?.dropOnly || {})}
       >
-        <span className="w-5 h-5 shrink-0 rounded-full border border-dashed border-border" />
-        <span className="text-xs">Waiting</span>
+        <span className="w-7 shrink-0 text-right text-[11px] font-mono text-text-muted/50">–</span>
+        <span className="w-5 h-5 shrink-0 rounded-sm border border-dashed border-border" />
+        <span className="text-xs uppercase tracking-wider">TBD</span>
       </div>
     )
   }
 
   return (
     <div
-      className={`flex items-center gap-2 px-2.5 py-2 text-sm transition-colors ${
-        isWinner ? 'bg-accent-green/5 font-semibold text-text-primary' : ''
+      className={`flex items-center gap-2 pr-2.5 py-2 text-sm border-l-2 transition-colors ${
+        isWinner ? 'border-secondary bg-secondary/[0.04] font-semibold text-text-primary' : 'border-transparent'
       } ${isLoser ? 'text-text-muted' : ''} ${
         dragHandlers ? 'cursor-grab active:cursor-grabbing hover:bg-bg-elevated' : ''
       }`}
       {...(dragHandlers?.props || {})}
     >
+      <span
+        className={`w-7 shrink-0 text-right text-[11px] font-mono tabular-nums ${
+          isWinner ? 'text-secondary' : 'text-text-muted'
+        }`}
+      >
+        {seed}
+      </span>
+
       {avatar ? (
         <img
           src={avatar}
           alt=""
           loading="lazy"
-          className={`w-5 h-5 shrink-0 rounded-full object-cover ${isLoser ? 'grayscale opacity-60' : ''}`}
+          className={`w-5 h-5 shrink-0 rounded-sm object-cover ${isLoser ? 'grayscale opacity-60' : ''}`}
           onError={(e) => {
             e.target.style.visibility = 'hidden'
           }}
         />
       ) : (
-        <span className="w-5 h-5 shrink-0 rounded-full bg-bg-elevated" />
+        <span className="w-5 h-5 shrink-0 rounded-sm bg-bg-elevated" />
       )}
-
-      <span
-        className={`w-5 shrink-0 text-[10px] text-center rounded bg-bg-raised text-text-muted ${
-          isWinner ? 'text-text-primary' : ''
-        }`}
-      >
-        {seed}
-      </span>
 
       {userId && linkTo ? (
         <Link
@@ -86,7 +87,7 @@ function Side({
         </span>
       )}
       {isWinner && !reported && eloChange == null && (
-        <span className="ml-auto text-xs text-accent-green">W</span>
+        <span className="ml-auto text-[11px] font-bold tracking-wider text-secondary">W</span>
       )}
     </div>
   )
@@ -150,9 +151,9 @@ export default function MatchCard({
 
   return (
     <div
-      className={`bg-bg-surface border rounded-soft overflow-hidden w-60 transition-shadow ${
+      className={`bg-bg-surface border rounded-sm overflow-hidden w-60 transition-colors ${
         needsViewer
-          ? 'border-secondary shadow-[0_0_0_1px_rgba(212,175,55,0.35)]'
+          ? 'border-secondary'
           : match.playable && !complete
             ? 'border-border hover:border-text-muted'
             : 'border-border'
@@ -310,12 +311,12 @@ export default function MatchCard({
             onChange={(e) => setReplayInput(e.target.value)}
             placeholder="Sorcery Online replay link"
             aria-label={`Replay link for match ${match.match_no}`}
-            className="w-full bg-bg-raised border border-border rounded px-2 py-1 text-xs"
+            className="w-full bg-bg-raised border border-border rounded-sm px-2 py-1 text-xs"
           />
           <div className="flex gap-1">
             <button
               type="submit"
-              className="flex-1 px-1 py-1 text-xs rounded bg-secondary text-black font-medium"
+              className="flex-1 px-1 py-1 text-xs rounded-sm bg-secondary text-black font-medium"
             >
               Save
             </button>

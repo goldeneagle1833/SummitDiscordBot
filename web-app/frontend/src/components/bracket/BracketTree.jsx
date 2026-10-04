@@ -28,9 +28,11 @@ export default function BracketTree({
 
           return (
             <div key={round.round} className="flex flex-col">
-              <div className="mb-3 text-center">
-                <h3 className="text-xs uppercase tracking-wider text-text-muted">{round.title}</h3>
-                <p className="text-[10px] text-text-muted/70">
+              <div className="mb-3 flex items-baseline justify-between gap-2 border-b border-border pb-1.5">
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-text-primary">
+                  {round.title}
+                </h3>
+                <p className="text-[10px] font-mono tabular-nums text-text-muted">
                   {played}/{round.matches.length} done
                 </p>
               </div>

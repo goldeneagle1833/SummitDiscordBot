@@ -30,8 +30,7 @@ export const THEMES = {
     muted: '#a8bcf0',
     dim: '#5d6b8f',
     accent: '#ffd700',
-    winnerBg: 'rgba(255, 215, 0, 0.12)',
-    seedBg: '#22326a',
+    winnerBg: 'rgba(255, 215, 0, 0.06)',
     line: '#4a68b8',
     live: '#58a6ff',
     avatarBg: '#22326a',
@@ -46,7 +45,6 @@ export const THEMES = {
     dim: '#484f58',
     accent: '#2a9c4a',
     winnerBg: 'rgba(42, 156, 74, 0.14)',
-    seedBg: '#21262d',
     line: '#484f58',
     live: '#ffd700',
     avatarBg: '#21262d',
@@ -61,7 +59,6 @@ export const THEMES = {
     dim: '#a8977a',
     accent: '#9a6b00',
     winnerBg: 'rgba(154, 107, 0, 0.12)',
-    seedBg: '#efe1bf',
     line: '#b8955a',
     live: '#3653a0',
     avatarBg: '#efe1bf',
@@ -92,6 +89,7 @@ function frame(width, height) {
 
 const DISPLAY_FONT = 'Almendra, Georgia, "Times New Roman", serif'
 const BODY_FONT = 'Figtree, -apple-system, "Segoe UI", sans-serif'
+const MONO_FONT = '"Fira Code", ui-monospace, "Courier New", monospace'
 
 /** "Quarterfinals in progress · 5/7 matches played", or how it ended. */
 export function describeProgress(data) {
@@ -289,11 +287,12 @@ function fitText(ctx, text, maxWidth) {
   return `${cut}…`
 }
 
+/** Corners stay crisp: just enough rounding to take the edge off. */
+const CORNER = 2
+
 function drawAvatar(ctx, image, cx, cy, r, theme, faded) {
   ctx.save()
-  ctx.beginPath()
-  ctx.arc(cx, cy, r, 0, Math.PI * 2)
-  ctx.closePath()
+  roundRect(ctx, cx - r, cy - r, r * 2, r * 2, CORNER)
   ctx.fillStyle = theme.avatarBg
   ctx.fill()
   if (image) {
@@ -318,25 +317,21 @@ function drawSide(ctx, { x, y, width, height }, side, theme, opts, avatars) {
     ctx.fillRect(x, y, Math.max(3, Math.round(height * 0.08)), height)
   }
 
-  if (opts.showAvatars) {
-    const r = Math.round(height * 0.32)
-    drawAvatar(ctx, name ? avatars?.get(String(userId || '')) : null, cursor + r, cy, r, theme, loser)
-    cursor += r * 2 + Math.round(pad * 0.6)
+  if (opts.showSeeds) {
+    // Seeds sit in a fixed, right-aligned column so the names line up.
+    ctx.font = `600 ${Math.round(fontSize * 0.72)}px ${MONO_FONT}`
+    const w = Math.round(fontSize * 1.3)
+    ctx.fillStyle = winner ? theme.accent : theme.muted
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(name && seed != null ? String(seed) : '–', cursor + w, cy + 1)
+    cursor += w + Math.round(pad * 0.7)
   }
 
-  if (opts.showSeeds && seed != null && name) {
-    ctx.font = `600 ${Math.round(fontSize * 0.72)}px ${BODY_FONT}`
-    const label = String(seed)
-    const w = Math.max(Math.round(height * 0.62), ctx.measureText(label).width + 10)
-    const h = Math.round(height * 0.56)
-    ctx.fillStyle = theme.seedBg
-    roundRect(ctx, cursor, cy - h / 2, w, h, Math.round(h * 0.25))
-    ctx.fill()
-    ctx.fillStyle = winner ? theme.text : theme.muted
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(label, cursor + w / 2, cy + 1)
-    cursor += w + Math.round(pad * 0.6)
+  if (opts.showAvatars) {
+    const r = Math.round(height * 0.3)
+    drawAvatar(ctx, name ? avatars?.get(String(userId || '')) : null, cursor + r, cy, r, theme, loser)
+    cursor += r * 2 + Math.round(pad * 0.6)
   }
 
   const markW = winner ? Math.round(fontSize * 1.4) : fromBye ? Math.round(fontSize * 2.2) : 0
@@ -371,14 +366,11 @@ function drawSide(ctx, { x, y, width, height }, side, theme, opts, avatars) {
 
 function drawCard(ctx, card, theme, opts, avatars) {
   const { x, y, width, height, match } = card
-  const radius = Math.round(height * 0.12)
+  const radius = CORNER
   const complete = match.state === 'complete' || match.state === 'bye'
   const live = opts.highlightLive && match.playable && !complete && match.p1_name && match.p2_name
 
   ctx.save()
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.25)'
-  ctx.shadowBlur = Math.round(height * 0.15)
-  ctx.shadowOffsetY = Math.round(height * 0.04)
   roundRect(ctx, x, y, width, height, radius)
   ctx.fillStyle = theme.panel
   ctx.fill()
@@ -428,9 +420,8 @@ function drawCard(ctx, card, theme, opts, avatars) {
     const h = Math.round(size * 1.5)
     const lx = x + width - w - Math.round(height * 0.1)
     const ly = y - h / 2
-    roundRect(ctx, lx, ly, w, h, h / 2)
     ctx.fillStyle = theme.live
-    ctx.fill()
+    ctx.fillRect(lx, ly, w, h)
     ctx.fillStyle = theme.panel
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -440,24 +431,21 @@ function drawCard(ctx, card, theme, opts, avatars) {
 
 function drawChampion(ctx, box, champion, theme, avatars) {
   const { x, y, width, height } = box
-  const radius = Math.round(height * 0.12)
-  roundRect(ctx, x, y, width, height, radius)
+  roundRect(ctx, x, y, width, height, CORNER)
   ctx.fillStyle = theme.panel
   ctx.fill()
-  ctx.lineWidth = Math.max(2, Math.round(height * 0.035))
-  ctx.strokeStyle = theme.accent
+  ctx.strokeStyle = theme.panelBorder
+  ctx.lineWidth = 1
   ctx.stroke()
+  // A heavy gold rule down the left edge marks the winner, as on the site.
+  ctx.fillStyle = theme.accent
+  ctx.fillRect(x, y, Math.max(4, Math.round(height * 0.06)), height)
 
   const pad = Math.round(height * 0.16)
   const r = Math.round(height * 0.3)
   const cy = y + height / 2
   let cursor = x + pad
   drawAvatar(ctx, champion ? avatars?.get(String(champion.user_id || '')) : null, cursor + r, cy, r, theme)
-  ctx.strokeStyle = theme.accent
-  ctx.lineWidth = Math.max(2, Math.round(r * 0.1))
-  ctx.beginPath()
-  ctx.arc(cursor + r, cy, r, 0, Math.PI * 2)
-  ctx.stroke()
   cursor += r * 2 + pad
 
   const maxW = x + width - pad - cursor
@@ -465,7 +453,7 @@ function drawChampion(ctx, box, champion, theme, avatars) {
   ctx.textBaseline = 'alphabetic'
   ctx.fillStyle = theme.muted
   ctx.font = `700 ${Math.round(height * 0.16)}px ${BODY_FONT}`
-  ctx.fillText(fitText(ctx, '🏆 CHAMPION', maxW), cursor, cy - Math.round(height * 0.06))
+  ctx.fillText(fitText(ctx, 'CHAMPION', maxW), cursor, cy - Math.round(height * 0.06))
   ctx.fillStyle = champion ? theme.accent : theme.dim
   ctx.font = `700 ${Math.round(height * 0.24)}px ${DISPLAY_FONT}`
   ctx.textBaseline = 'top'
@@ -499,7 +487,7 @@ export function drawBracket(ctx, data, options = {}, avatars = new Map()) {
   ctx.fillText(fitText(ctx, title, width - pad * 2), pad, pad + titleSize * 0.9)
 
   ctx.fillStyle = theme.accent
-  ctx.fillRect(pad, pad + titleSize * 1.2, Math.round(titleSize * 2.2), Math.max(3, Math.round(titleSize * 0.07)))
+  ctx.fillRect(pad, pad + titleSize * 1.2, Math.round(titleSize * 1.2), Math.max(3, Math.round(titleSize * 0.06)))
 
   if (subtitle) {
     ctx.fillStyle = theme.muted

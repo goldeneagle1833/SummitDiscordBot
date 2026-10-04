@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
+  listBrackets,
   getBracket,
   getBracketDecks,
   reportBracketMatch,
@@ -15,6 +16,7 @@ import {
 } from '@/api/brackets'
 import BracketTree from '@/components/bracket/BracketTree'
 import DeckPanel from '@/components/bracket/DeckPanel'
+import BracketSwitcher from '@/components/bracket/BracketSwitcher'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
@@ -38,7 +40,7 @@ function ReportModal({ match, slug, onClose, onDone }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="bg-bg-surface border border-border rounded-lg p-5 w-full max-w-sm">
+      <div className="bg-bg-surface border border-border rounded-sm p-5 w-full max-w-sm">
         <h2 className="text-lg font-display mb-1">Report your result</h2>
         <p className="text-sm text-text-muted mb-4">
           {match.round_title}. Your opponent confirms it before the winner moves on.
@@ -53,7 +55,7 @@ function ReportModal({ match, slug, onClose, onDone }) {
               key={player.id}
               disabled={busy}
               onClick={() => submit(player.id)}
-              className="w-full px-3 py-2 rounded bg-bg-raised border border-border text-sm text-left hover:border-secondary disabled:opacity-50"
+              className="w-full px-3 py-2 rounded-sm bg-bg-raised border border-border text-sm text-left hover:border-secondary disabled:opacity-50"
             >
               <span className="text-text-muted text-xs mr-2">{player.seed}</span>
               {player.name} won
@@ -75,8 +77,15 @@ function ReportModal({ match, slug, onClose, onDone }) {
   )
 }
 
-export default function Bracket() {
-  const { slug } = useParams()
+/**
+ * One bracket, with tabs across the top to switch to any other.
+ *
+ * `/brackets` renders this with the active bracket's slug passed in (and the
+ * list it already loaded); `/brackets/:slug` takes the slug from the URL.
+ */
+export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {}) {
+  const params = useParams()
+  const slug = slugProp || params.slug
   const { user } = useAuth()
   const isAdmin = Boolean(user?.is_admin)
   const [data, setData] = useState(null)
@@ -85,6 +94,15 @@ export default function Bracket() {
   const [notice, setNotice] = useState(null)
   const [reporting, setReporting] = useState(null)
   const [editingPairings, setEditingPairings] = useState(false)
+  const [fetchedBrackets, setFetchedBrackets] = useState(null)
+  const brackets = bracketsProp || fetchedBrackets
+
+  useEffect(() => {
+    if (bracketsProp) return
+    Promise.resolve(listBrackets())
+      .then((res) => setFetchedBrackets(res?.brackets || []))
+      .catch(() => setFetchedBrackets([]))
+  }, [bracketsProp])
 
   usePageTitle(data?.bracket?.name || 'Bracket')
 
@@ -168,15 +186,25 @@ export default function Bracket() {
 
   if (error) {
     return (
-      <div className="text-center py-12">
-        <p className="text-accent-red">{error}</p>
-        <Link to="/brackets" className="text-secondary hover:underline text-sm">
-          All brackets
-        </Link>
+      <div className="max-w-full px-4 py-6 space-y-5">
+        <BracketSwitcher brackets={brackets} currentSlug={slug} />
+        <div className="text-center py-12">
+          <p className="text-accent-red">{error}</p>
+          <Link to="/brackets" className="text-secondary hover:underline text-sm">
+            Back to the current bracket
+          </Link>
+        </div>
       </div>
     )
   }
-  if (!data) return <Spinner />
+  if (!data || data.bracket?.slug !== slug) {
+    return (
+      <div className="max-w-full px-4 py-6 space-y-5">
+        <BracketSwitcher brackets={brackets} currentSlug={slug} />
+        <Spinner />
+      </div>
+    )
+  }
 
   const { bracket, rounds, champion, entrants } = data
   // Nobody scouts their draw before the field is locked: the tree stays
@@ -204,10 +232,23 @@ export default function Bracket() {
 
   return (
     <div className="max-w-full px-4 py-6 space-y-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
+      <BracketSwitcher brackets={brackets} currentSlug={slug} />
+
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-display text-text-primary">{bracket.name}</h1>
-          <p className="text-sm text-text-muted">
+          <p
+            className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${
+              bracket.status === 'complete' ? 'text-text-muted' : 'text-accent-green'
+            }`}
+          >
+            {bracket.status === 'complete'
+              ? 'Final results'
+              : liveRound
+                ? `Live · ${liveRound.title}`
+                : 'Live'}
+          </p>
+          <h1 className="text-3xl font-display text-text-primary leading-tight">{bracket.name}</h1>
+          <p className="text-sm text-text-muted tabular-nums">
             {entrants.length} players
             {bracket.elo_event_name ? ` · seeded from ${bracket.elo_event_name}` : ''}
             {bracketHidden
@@ -224,7 +265,7 @@ export default function Bracket() {
           {canEditPairings && (
             <button
               onClick={() => setEditingPairings((on) => !on)}
-              className={`text-sm px-3 py-1 rounded border transition-colors ${
+              className={`text-sm px-3 py-1 rounded-sm border transition-colors ${
                 editingPairings
                   ? 'bg-secondary text-black border-secondary'
                   : 'border-border text-text-muted hover:text-text-primary'
@@ -233,14 +274,11 @@ export default function Bracket() {
               {editingPairings ? 'Done editing' : 'Edit pairings'}
             </button>
           )}
-          <Link to="/brackets" className="text-sm text-secondary hover:underline">
-            All brackets
-          </Link>
         </div>
       </div>
 
       {canEditPairings && editingPairings && (
-        <div className="bg-secondary/10 border border-secondary/40 rounded-lg px-4 py-3 text-sm">
+        <div className="bg-secondary/10 border-l-2 border-secondary px-4 py-3 text-sm">
           Drag a player onto another to swap their places. Players keep their seed and
           decklist. Only seats that haven’t been played, reported or given a Sorcery Online
           table can move.
@@ -248,19 +286,19 @@ export default function Bracket() {
       )}
 
       {champion && (
-        <div className="bg-gradient-to-r from-amber-400/10 to-transparent border border-amber-400/40 rounded-lg px-5 py-4 flex items-center gap-4">
+        <div className="bg-bg-surface border border-border border-l-4 border-l-amber-400 px-5 py-4 flex items-center gap-4">
           {avatarUrl(championEntrant, 128) ? (
             <img
               src={avatarUrl(championEntrant, 128)}
               alt=""
-              className="w-14 h-14 rounded-full object-cover ring-2 ring-amber-400/60"
+              className="w-14 h-14 rounded-sm object-cover"
             />
           ) : (
-            <span className="w-14 h-14 rounded-full bg-bg-elevated ring-2 ring-amber-400/60" />
+            <span className="w-14 h-14 rounded-sm bg-bg-elevated" />
           )}
           <div>
-            <p className="text-xs uppercase tracking-wider text-text-muted">Winner</p>
-            <p className="text-xl font-semibold text-amber-400">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-muted">Champion</p>
+            <p className="text-2xl font-display text-amber-400 leading-tight">
               {champion.user_id ? (
                 <Link to={`/player/${champion.user_id}`} className="hover:underline">
                   {champion.display_name}
@@ -302,14 +340,14 @@ export default function Bracket() {
       )}
 
       {!bracketHidden && needsYou.length > 0 && (
-        <div className="bg-secondary/10 border border-secondary/40 rounded-lg px-4 py-3 text-sm">
+        <div className="bg-secondary/10 border-l-2 border-secondary px-4 py-3 text-sm">
           You have {needsYou.length} match{needsYou.length > 1 ? 'es' : ''} waiting on you —
           the highlighted one{needsYou.length > 1 ? 's' : ''} below.
         </div>
       )}
 
       {isAdmin && decksMissing > 0 && bracket.status !== 'complete' && (
-        <div className="bg-amber-400/10 border border-amber-400/40 rounded-lg px-4 py-3 text-sm">
+        <div className="bg-amber-400/10 border-l-2 border-amber-400 px-4 py-3 text-sm">
           Players can’t see the bracket yet — {decksMissing} decklist
           {decksMissing > 1 ? 's are' : ' is'} still to come. Only admins see the tree below.
         </div>
@@ -318,7 +356,7 @@ export default function Bracket() {
       {notice && <p className="text-sm text-text-muted">{notice}</p>}
 
       {bracketHidden ? (
-        <div className="bg-bg-surface border border-border rounded-lg px-5 py-8 text-center space-y-1">
+        <div className="bg-bg-surface border border-border px-5 py-8 text-center space-y-1">
           <p className="font-display text-lg">The bracket is revealed once every decklist is in</p>
           <p className="text-sm text-text-muted">
             {decksMissing} of {entrants.length} players still

@@ -41,7 +41,7 @@ describe('BracketTree', () => {
     renderWithRouter(
       <BracketTree rounds={rounds([match({ p2_seed: null, p2_name: null, playable: false })])} />,
     )
-    expect(screen.getByText('Waiting')).toBeInTheDocument()
+    expect(screen.getByText('TBD')).toBeInTheDocument()
   })
 
   it('strikes through the loser of a finished match', () => {

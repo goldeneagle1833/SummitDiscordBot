@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor, fireEvent } from '@testing-library/react'
+import { screen, waitFor, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '@/test/test-utils'
 import Bracket from '../Bracket'
@@ -13,6 +13,7 @@ import {
 } from '@/api/brackets'
 
 vi.mock('@/api/brackets', () => ({
+  listBrackets: vi.fn(() => Promise.resolve({ brackets: [] })),
   getBracket: vi.fn(),
   getBracketDecks: vi.fn(),
   getBracketDeck: vi.fn(),
@@ -222,7 +223,7 @@ describe('Bracket page', () => {
       }),
     )
     renderWithRouter(<Bracket />)
-    expect(await screen.findByText('Winner')).toBeInTheDocument()
+    expect(await screen.findByText('Champion')).toBeInTheDocument()
     expect(screen.getByText('Seed 1')).toBeInTheDocument()
   })
 
@@ -271,7 +272,7 @@ describe('Bracket page', () => {
     )
     renderWithRouter(<Bracket />)
 
-    expect(await screen.findByText('Winner')).toBeInTheDocument()
+    expect(await screen.findByText('Champion')).toBeInTheDocument()
     expect(screen.queryByText(/revealed once every decklist is in/i)).not.toBeInTheDocument()
   })
 
@@ -294,7 +295,7 @@ describe('Bracket page', () => {
     )
     const { container } = renderWithRouter(<Bracket />)
 
-    expect(await screen.findByText('Winner')).toBeInTheDocument()
+    expect(await screen.findByText('Champion')).toBeInTheDocument()
     const avatar = [...container.querySelectorAll('img')].find((img) =>
       img.src.includes('/avatars/u1/hash1.png'),
     )
@@ -409,5 +410,40 @@ describe('Bracket page', () => {
     getBracket.mockRejectedValue(error)
     renderWithRouter(<Bracket />)
     expect(await screen.findByText('Bracket not found.')).toBeInTheDocument()
+  })
+})
+
+describe('Bracket page switcher', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUser.value = null
+    getBracket.mockResolvedValue(bracketData())
+    getBracketDecks.mockResolvedValue({ submitted: 2, missing: 0, players: [] })
+  })
+
+  it('shows a tab for every bracket, marking the one on screen', async () => {
+    renderWithRouter(
+      <Bracket
+        brackets={[
+          { slug: 'season-7', name: 'Season 7 Postseason', status: 'published' },
+          { slug: 'season-6', name: 'Season 6 Postseason', status: 'complete' },
+        ]}
+      />,
+    )
+    const tabs = await screen.findByRole('navigation', { name: 'Brackets' })
+    const current = within(tabs).getByRole('link', { name: /Season 7 Postseason/ })
+    expect(current).toHaveAttribute('aria-current', 'page')
+    expect(current).toHaveTextContent('Live')
+    const other = within(tabs).getByRole('link', { name: /Season 6 Postseason/ })
+    expect(other).toHaveAttribute('href', '/brackets/season-6')
+    expect(other).toHaveTextContent('Final')
+  })
+
+  it('hides the tabs when there is only one bracket', async () => {
+    renderWithRouter(
+      <Bracket brackets={[{ slug: 'season-7', name: 'Season 7 Postseason', status: 'published' }]} />,
+    )
+    await screen.findByRole('heading', { name: 'Season 7 Postseason' })
+    expect(screen.queryByRole('navigation', { name: 'Brackets' })).not.toBeInTheDocument()
   })
 })

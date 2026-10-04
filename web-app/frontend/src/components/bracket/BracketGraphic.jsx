@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { adminGetBracket, adminPreviewBracket } from '@/api/brackets'
 import Spinner from '@/components/ui/Spinner'
+import { pickActiveBracket } from './BracketSwitcher'
 import { avatarUrl } from '@/utils/avatar'
 import {
   FORMATS,
@@ -22,19 +23,6 @@ const TOGGLES = [
   ['showRoundTitles', 'Round names'],
 ]
 
-/**
- * The bracket to open on: the top cut being played right now, else the most
- * recently finished one, else whatever is first.
- */
-export function pickActiveBracket(brackets = []) {
-  return (
-    brackets.find((b) => b.status === 'published') ||
-    brackets.find((b) => b.status === 'complete') ||
-    brackets[0] ||
-    null
-  )
-}
-
 /** Load every avatar the graphic needs. Ones that won't load are left out. */
 function loadAvatars(entrants = []) {
   return Promise.all(
@@ -53,6 +41,8 @@ function loadAvatars(entrants = []) {
       ),
   ).then((pairs) => new Map(pairs.filter(Boolean)))
 }
+
+export { pickActiveBracket }
 
 function slugToFilename(slug, format) {
   return `${slug || 'bracket'}-${format}.png`

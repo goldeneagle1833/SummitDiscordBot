@@ -383,6 +383,33 @@ class BracketRepository:
         conn.close()
         return changed
 
+    def find_table_match(self, user_a, user_b, settled_since: str) -> dict | None:
+        """The bracket match these two players were given a Sorcery Online table for.
+
+        Only a match still being played, or one settled since `settled_since`
+        (ISO time), so an old bracket meeting never claims a later ladder game.
+        """
+        a, b = str(user_a), str(user_b)
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT m.* FROM bracket_matches m
+            JOIN brackets b ON b.bracket_id = m.bracket_id
+            WHERE b.status != 'draft'
+              AND m.table_provisioned_at IS NOT NULL
+              AND ((m.p1_user_id = ? AND m.p2_user_id = ?)
+                   OR (m.p1_user_id = ? AND m.p2_user_id = ?))
+              AND (m.state != 'complete' OR m.resolved_at >= ?)
+            ORDER BY m.table_provisioned_at DESC
+            LIMIT 1
+            """,
+            (a, b, b, a, settled_since),
+        )
+        row = cur.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
     def claim_elo_refund(self, bracket_id: int, match_no: int) -> bool:
         """Clear a match's applied-ELO flag; True only for the caller that cleared it."""
         conn = self._get_connection()

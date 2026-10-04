@@ -3,6 +3,7 @@
 import logging
 import re
 import os
+from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, request
 
@@ -80,6 +81,15 @@ def report_external_match():
         if data.get("match_time") is not None:
             match_time = int(data["match_time"])
 
+        # Bracket (top cut) games never move ELO and must never reach a
+        # ranked pipeline. They are recognised by the pairing id we gave the
+        # table, or - when the report carries no pairing id - by the two
+        # players having an open bracket table. The players settle the game
+        # on the bracket page, which logs it to their history as top cut.
+        bracket_ack = _acknowledge_bracket_pairing(data, winner_id, loser_id)
+        if bracket_ack is not None:
+            return bracket_ack
+
         # Summit-queued games go through the bot pipeline, same as a
         # Discord Report-button match. Resolve this before the standalone
         # PSO Ranked pipeline so an explicitly identified Summit pairing is
@@ -87,13 +97,6 @@ def report_external_match():
         pairing = _resolve_summit_pairing(data, winner_id, loser_id)
         if pairing is not None:
             return _record_via_bot(pairing, data, winner_id, loser_id, source)
-
-        # Bracket tables carry their own pairing id. The bracket is the record
-        # for those games - the players settle them there, and that is what
-        # moves ELO - so acknowledge the report instead of failing it.
-        bracket_ack = _acknowledge_bracket_pairing(data, winner_id, loser_id)
-        if bracket_ack is not None:
-            return bracket_ack
 
         # An explicit pairing is authoritative. Never silently turn a stale,
         # mistyped, or player-mismatched pairing callback into an unrelated
@@ -272,33 +275,53 @@ def _notify_pso_loser_discord(loser_id: str, result: dict, *, winner_deck_url: s
         logger.error(f"Failed to send Discord DM to loser {loser_id}: {e}", exc_info=True)
 
 
-BRACKET_PAIRING = re.compile(r"^bracket-(\d+)-m(\d+)$")
+BRACKET_PAIRING = re.compile(r"bracket-(\d+)-m(\d+)")
+_PAIRING_KEYS = ("pairing_id", "pairingId", "match_id", "matchId", "table_id", "tableId")
+# How long after a bracket game is settled a late table report still belongs to it.
+BRACKET_REPORT_WINDOW = timedelta(hours=48)
 
 
 def _acknowledge_bracket_pairing(data: dict, winner_id: str, loser_id: str):
     """Answer a report for a bracket table, or None when it is not one.
 
-    Bracket results are settled on the bracket page and rated from there, so
-    there is nothing to record here. Returning 200 keeps the integration
-    healthy instead of leaving PSO retrying a report we deliberately ignore.
+    Bracket results are settled on the bracket page, so there is nothing to
+    record here - and above all nothing to rate. Returning 200 keeps the
+    integration healthy instead of leaving PSO retrying a report we
+    deliberately ignore.
     """
-    pairing_id = str(data.get("pairing_id") or data.get("pairingId") or "")
-    match = BRACKET_PAIRING.match(pairing_id)
-    if not match:
-        return None
+    from repositories.brackets import BracketRepository
 
-    bracket_id, match_no = int(match.group(1)), int(match.group(2))
+    pairing_id = ""
+    found = None
+    for key in _PAIRING_KEYS:
+        value = str(data.get(key) or "")
+        found = BRACKET_PAIRING.search(value)
+        if found:
+            pairing_id = value
+            break
+    explicit_pairing = any(data.get(k) is not None for k in ("pairing_id", "pairingId"))
+
     try:
-        from repositories.brackets import BracketRepository
-
         repo = BracketRepository()
-        bracket = repo.get_bracket(bracket_id=bracket_id)
-        bracket_match = repo.get_match(bracket_id, match_no) if bracket else None
+        if found:
+            bracket_id, match_no = int(found.group(1)), int(found.group(2))
+            bracket = repo.get_bracket(bracket_id=bracket_id)
+            bracket_match = repo.get_match(bracket_id, match_no) if bracket else None
+            if not bracket_match:
+                return None
+        elif explicit_pairing:
+            # A Summit queue pairing; that pipeline decides.
+            return None
+        else:
+            since = (datetime.now() - BRACKET_REPORT_WINDOW).isoformat()
+            bracket_match = repo.find_table_match(winner_id, loser_id, since)
+            if not bracket_match:
+                return None
+            bracket = repo.get_bracket(bracket_id=bracket_match["bracket_id"])
+            match_no = bracket_match["match_no"]
+            pairing_id = f"bracket-{bracket_match['bracket_id']}-m{match_no}"
     except Exception as e:
-        logger.error("Could not look up bracket pairing %s: %s", pairing_id, e)
-        return None
-
-    if not bracket_match:
+        logger.error("Could not look up bracket pairing %s: %s", pairing_id or "(by players)", e)
         return None
 
     players = {

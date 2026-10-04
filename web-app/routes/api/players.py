@@ -2178,6 +2178,13 @@ def player_api(player_id):
         # Only the reporter commented (or bot match with single comment)
         return comment if player_is_reporter else None
 
+    def _top_cut_note(comment):
+        """A bracket game's note is site-written, not a player's, so both players
+        and visitors see it."""
+        if comment and str(comment).startswith("Top cut game"):
+            return comment
+        return None
+
     # Profile visibility: needed by _build_match_entry for deck URL/snapshot gating
     profile_repo_vis = UserProfileRepository()
     visibility = profile_repo_vis.get_profile_visibility(player_id_normalized)
@@ -2289,11 +2296,12 @@ def player_api(player_id):
             "deck_elements": deck_elements,
             "opponent_avatar": opponent_avatar_name,
             "opponent_elements": opponent_elements,
-            "match_comment": _clean_match_comment(
+            "match_comment": _top_cut_note(row[22] if len(row) > 22 else None)
+            or (_clean_match_comment(
                 row[22] if len(row) > 22 else None,
                 row[23] if len(row) > 23 else None,
                 query_player_id,
-            ) if is_owner else None,
+            ) if is_owner else None),
             "match_source": source if is_owner else None,
             "voice": _match_voice(row),
         }

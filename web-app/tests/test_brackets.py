@@ -2206,6 +2206,71 @@ class TestBracketApi:
         assert body["pipeline"] == "bracket"
         assert body["bracket_slug"] == slug
 
+    def _report(self, app, **overrides):
+        payload = {
+            "winner_id": "p_one",
+            "loser_id": "p_two",
+            "winner_deck_url": "https://curiosa.io/decks/a",
+            "loser_deck_url": "https://curiosa.io/decks/b",
+            "source": "PSO Ranked",
+        }
+        payload.update(overrides)
+        return app.test_client().post(
+            "/api/report-external-match",
+            headers={"X-API-Key": "test-api-key-123"},
+            json=payload,
+        )
+
+    def _open_table(self, admin_session, slug):
+        from repositories.brackets import BracketRepository
+
+        bracket_id = admin_session.get(f"/api/admin/brackets/{slug}").get_json()["bracket"][
+            "bracket_id"
+        ]
+        BracketRepository().update_match(
+            bracket_id, 1, {"table_provisioned_at": "2026-10-03T12:00:00"}
+        )
+        return bracket_id
+
+    def test_a_bracket_table_report_without_a_pairing_id_is_never_rated(
+        self, admin_session, app
+    ):
+        """PSO may drop our pairing id; the open table still marks it top cut."""
+        from unittest.mock import patch
+
+        slug = self._create_and_publish(admin_session)
+        self._open_table(admin_session, slug)
+
+        with patch("routes.api.external_matches._record_pso_ranked") as ranked:
+            resp = self._report(app)
+
+        assert resp.status_code == 200
+        assert resp.get_json()["pipeline"] == "bracket"
+        ranked.assert_not_called()
+
+    def test_the_bracket_pairing_id_is_found_under_other_keys(self, admin_session, app):
+        from unittest.mock import patch
+
+        slug = self._create_and_publish(admin_session)
+        bracket_id = self._open_table(admin_session, slug)
+
+        with patch("routes.api.external_matches._record_pso_ranked") as ranked:
+            resp = self._report(app, matchId=f"summit:bracket-{bracket_id}-m1")
+
+        assert resp.get_json()["pipeline"] == "bracket"
+        ranked.assert_not_called()
+
+    def test_players_without_a_bracket_table_still_play_ranked(self, admin_session, app):
+        from unittest.mock import patch
+
+        self._create_and_publish(admin_session)  # no table opened
+
+        with patch("routes.api.external_matches._record_pso_ranked") as ranked:
+            ranked.return_value = ({"pipeline": "pso_ranked"}, 200)
+            self._report(app)
+
+        ranked.assert_called_once()
+
     def test_a_bracket_report_naming_the_wrong_players_is_refused(self, admin_session, app):
         slug = self._create_and_publish(admin_session)
         bracket_id = admin_session.get(f"/api/admin/brackets/{slug}").get_json()["bracket"][

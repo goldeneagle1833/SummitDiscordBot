@@ -425,7 +425,8 @@ class LFGCog(commands.Cog):
                     player_data.append(
                         {
                             "user_id": user_id,
-                            "display_name": f"{display_name} ({avatar})" if avatar else display_name,
+                            "display_name": display_name,
+                            "avatar": avatar,
                             "elo": elo,
                             "games": total_games,
                             "has_ticket": has_ticket,
@@ -434,12 +435,14 @@ class LFGCog(commands.Cog):
 
                 conn_matches.close()
 
+                def format_row(idx, p):
+                    # `rank` **name** *avatar* — elo (games) so each part reads apart
+                    name = discord.utils.escape_markdown(str(p["display_name"]))
+                    avatar = f" *{discord.utils.escape_markdown(p['avatar'])}*" if p["avatar"] else ""
+                    return f"`{idx:>2}.` **{name}**{avatar} — {p['elo']} ({p['games']}g)"
+
                 # Overall Rankings (top 8 of all players)
-                overall_text = []
-                for idx, p in enumerate(player_data[:8], 1):
-                    overall_text.append(
-                        f"{idx}. {p['display_name']} - {p['elo']} ({p['games']}g)"
-                    )
+                overall_text = [format_row(idx, p) for idx, p in enumerate(player_data[:8], 1)]
                 embed.add_field(
                     name="Overall Rankings",
                     value="\n".join(overall_text)
@@ -454,26 +457,26 @@ class LFGCog(commands.Cog):
                 from services.avatar_mode import unique_players
 
                 ticket_players = unique_players([p for p in player_data if p["has_ticket"]])
-                ticket_text = []
-                for idx, p in enumerate(ticket_players[:24], 1):
-                    ticket_text.append(
-                        f"{idx}. {p['display_name']} - {p['elo']} ({p['games']}g)"
+                ticket_text = [format_row(idx, p) for idx, p in enumerate(ticket_players[:24], 1)]
+                # Split into chunks of 12 so each field stays under Discord's
+                # 1024-character field limit with the added markdown.
+                if ticket_text:
+                    for start in range(0, len(ticket_text), 12):
+                        embed.add_field(
+                            name="Ticket Holders" if start == 0 else "\u200b",
+                            value="\n".join(ticket_text[start:start + 12]),
+                            inline=False,
+                        )
+                else:
+                    embed.add_field(
+                        name="Ticket Holders",
+                        value="No ticket holders ranked yet.",
+                        inline=False,
                     )
-                embed.add_field(
-                    name="Ticket Holders",
-                    value="\n".join(ticket_text)
-                    if ticket_text
-                    else "No ticket holders ranked yet.",
-                    inline=False,
-                )
 
                 # Free Play section (top 8 from non-ticket holders)
                 free_players = unique_players([p for p in player_data if not p["has_ticket"]])
-                free_text = []
-                for idx, p in enumerate(free_players[:8], 1):
-                    free_text.append(
-                        f"{idx}. {p['display_name']} - {p['elo']} ({p['games']}g)"
-                    )
+                free_text = [format_row(idx, p) for idx, p in enumerate(free_players[:8], 1)]
                 embed.add_field(
                     name="Free Play",
                     value="\n".join(free_text)

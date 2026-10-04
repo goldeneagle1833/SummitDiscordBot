@@ -2296,3 +2296,99 @@ class TestBracketApi:
         slug = self._create_and_publish(admin_session)
         assert admin_session.delete(f"/api/admin/brackets/{slug}").status_code == 200
         assert admin_session.delete(f"/api/admin/brackets/{slug}").status_code == 404
+
+
+# -- Card set grouping --------------------------------------------
+
+
+class TestSetName:
+    def test_a_bracket_is_created_with_its_set(self, service, repo):
+        created = service.create_bracket(
+            name="Spring Cup", size=4, source="overall", set_name="  Gothic  "
+        )
+        assert repo.get_bracket(bracket_id=created["bracket_id"])["set_name"] == "Gothic"
+
+    def test_a_blank_set_is_stored_as_none(self, service, repo):
+        created = service.create_bracket(name="Spring Cup", size=4, source="overall", set_name=" ")
+        assert repo.get_bracket(bracket_id=created["bracket_id"])["set_name"] is None
+
+    def test_the_set_can_be_changed_and_cleared(self, service, repo):
+        created = service.create_bracket(name="Spring Cup", size=4, source="overall")
+        bracket_id = created["bracket_id"]
+
+        assert service.update_bracket(bracket_id, {"set_name": "Arthurian   Legends"})
+        assert repo.get_bracket(bracket_id=bracket_id)["set_name"] == "Arthurian Legends"
+
+        assert service.update_bracket(bracket_id, {"set_name": ""})
+        assert repo.get_bracket(bracket_id=bracket_id)["set_name"] is None
+
+    def test_the_set_travels_with_the_public_list(self, service, repo):
+        published(service, repo, count=4, name="Gothic Season 1")
+        bracket = service.list_brackets()[0]
+        assert "set_name" in bracket
+
+    def test_existing_gothic_brackets_are_tagged_when_the_column_arrives(self, tmp_path):
+        import sqlite3
+
+        from migrations.create_bracket_tables import create_bracket_tables
+
+        db = tmp_path / "old.db"
+        conn = sqlite3.connect(db)
+        conn.execute(
+            """CREATE TABLE brackets (
+                bracket_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, description TEXT,
+                entrant_count INTEGER NOT NULL, bracket_size INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'draft', seeded_from TEXT,
+                elo_event_name TEXT, confirm_hours INTEGER NOT NULL DEFAULT 48,
+                created_by TEXT, created_at TEXT NOT NULL, published_at TEXT,
+                completed_at TEXT, updated_at TEXT
+            )"""
+        )
+        for slug, name in (("g1", "Gothic Season 1 Top Cut"), ("x", "Summer Open")):
+            conn.execute(
+                "INSERT INTO brackets (slug, name, entrant_count, bracket_size, created_at)"
+                " VALUES (?, ?, 8, 8, 'now')",
+                (slug, name),
+            )
+        conn.commit()
+        conn.close()
+
+        create_bracket_tables(db)
+        conn = sqlite3.connect(db)
+        tagged = dict(conn.execute("SELECT slug, set_name FROM brackets").fetchall())
+        assert tagged == {"g1": "Gothic", "x": None}
+
+        # A second run must not re-tag a bracket the admin has since cleared.
+        conn.execute("UPDATE brackets SET set_name = NULL WHERE slug = 'g1'")
+        conn.commit()
+        conn.close()
+        create_bracket_tables(db)
+
+        conn = sqlite3.connect(db)
+        rows = dict(conn.execute("SELECT slug, set_name FROM brackets").fetchall())
+        conn.close()
+        assert rows == {"g1": None, "x": None}
+
+
+class TestSetNameApi:
+    @pytest.fixture(autouse=True)
+    def _seed_players(self, elo_db):
+        seed_elo_data(elo_db, [
+            {"user_id": "p_one", "name": "One", "online_event_elo": 1900},
+            {"user_id": "p_two", "name": "Two", "online_event_elo": 1800},
+        ])
+
+    def test_create_and_patch_the_set(self, admin_session):
+        created = admin_session.post(
+            "/api/admin/brackets",
+            json={"name": "Set Cup", "size": 2, "source": "overall", "set_name": "Gothic"},
+        ).get_json()
+        slug = created["slug"]
+        detail = admin_session.get(f"/api/admin/brackets/{slug}").get_json()
+        assert detail["bracket"]["set_name"] == "Gothic"
+
+        resp = admin_session.patch(f"/api/admin/brackets/{slug}", json={"set_name": "Beta"})
+        assert resp.status_code == 200
+        detail = admin_session.get(f"/api/admin/brackets/{slug}").get_json()
+        assert detail["bracket"]["set_name"] == "Beta"

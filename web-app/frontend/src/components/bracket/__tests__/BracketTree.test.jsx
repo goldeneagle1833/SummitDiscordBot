@@ -394,3 +394,54 @@ describe('BracketTree', () => {
     expect(screen.getByText(/no matches yet/i)).toBeInTheDocument()
   })
 })
+
+describe('BracketTree following a player', () => {
+  const path = [
+    {
+      round: 1,
+      title: 'Semifinals',
+      matches: [
+        { match_no: 1, position: 1, state: 'complete', p1_seed: 1, p1_name: 'Ash', p2_seed: 4, p2_name: 'Dee', winner_seed: 1 },
+        { match_no: 2, position: 2, state: 'complete', p1_seed: 2, p1_name: 'Bo', p2_seed: 3, p2_name: 'Cy', winner_seed: 3 },
+      ],
+    },
+    {
+      round: 2,
+      title: 'Final',
+      matches: [{ match_no: 3, position: 1, state: 'pending', playable: true, p1_seed: 1, p1_name: 'Ash', p2_seed: 3, p2_name: 'Cy' }],
+    },
+  ]
+
+  const highlighted = () =>
+    Array.from(document.querySelectorAll('[data-highlighted]')).map((el) => el.textContent)
+
+  it('lights up every seat a player has on hover', () => {
+    renderWithRouter(<BracketTree rounds={path} />)
+    fireEvent.mouseEnter(screen.getAllByText('Ash')[0].closest('div'))
+    const lit = highlighted()
+    expect(lit).toHaveLength(2)
+    expect(lit.every((text) => text.includes('Ash'))).toBe(true)
+
+    fireEvent.mouseLeave(screen.getAllByText('Ash')[0].closest('div'))
+    expect(highlighted()).toHaveLength(0)
+  })
+
+  it('pins the path on a tap until it is cleared', () => {
+    renderWithRouter(<BracketTree rounds={path} />)
+    const seat = screen.getAllByText('Cy')[0].closest('div')
+    fireEvent.click(seat)
+    fireEvent.mouseLeave(seat)
+    expect(highlighted()).toHaveLength(2)
+    expect(screen.getByText(/Following/)).toHaveTextContent('Following Cy')
+
+    fireEvent.click(screen.getByRole('button', { name: 'clear' }))
+    expect(highlighted()).toHaveLength(0)
+  })
+
+  it('stays out of the way while seats are being dragged', () => {
+    renderWithRouter(<BracketTree rounds={path} onSwap={() => {}} />)
+    fireEvent.mouseEnter(screen.getAllByText('Ash')[0].closest('div'))
+    expect(highlighted()).toHaveLength(0)
+    expect(screen.queryByText(/follow their path/)).not.toBeInTheDocument()
+  })
+})

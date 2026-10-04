@@ -90,3 +90,20 @@ describe('BracketGraphic', () => {
     expect(await screen.findByText(/Posting this graphic reveals the draw/)).toBeInTheDocument()
   })
 })
+
+describe('groupBrackets', () => {
+  it('groups by set, case-insensitively, with unset brackets last', async () => {
+    const { groupBrackets } = await import('../BracketSwitcher')
+    const groups = groupBrackets([
+      { slug: 'a', set_name: 'Gothic' },
+      { slug: 'b' },
+      { slug: 'c', set_name: 'Beta' },
+      { slug: 'd', set_name: 'gothic ' },
+    ])
+    expect(groups.map((g) => [g.label, g.brackets.map((b) => b.slug)])).toEqual([
+      ['Gothic', ['a', 'd']],
+      ['Beta', ['c']],
+      ['Other', ['b']],
+    ])
+  })
+})

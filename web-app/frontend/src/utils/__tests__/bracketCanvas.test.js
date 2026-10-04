@@ -21,7 +21,7 @@ const ROUNDS = [
 
 describe('layoutBracket', () => {
   it('lays rounds out left to right with a champion column', () => {
-    const layout = layoutBracket(ROUNDS, { layout: 'ltr', format: 'landscape' })
+    const layout = layoutBracket(ROUNDS, { format: 'landscape' })
     expect(layout.cards).toHaveLength(7)
     const xs = (round) => [...new Set(layout.cards.filter((c) => c.round === round).map((c) => c.x))]
     expect(xs(1)).toHaveLength(1)
@@ -32,29 +32,14 @@ describe('layoutBracket', () => {
     expect(layout.lines).toHaveLength(7)
   })
 
-  it('puts the final in the middle when mirrored', () => {
-    const layout = layoutBracket(ROUNDS, { layout: 'mirrored', format: 'landscape' })
-    const final = layout.cards.find((c) => c.round === 3)
-    expect(final.side).toBe('center')
-    const left = layout.cards.filter((c) => c.round === 1 && c.side === 'left')
-    const right = layout.cards.filter((c) => c.round === 1 && c.side === 'right')
-    expect(left.map((c) => c.match.position)).toEqual([1, 2])
-    expect(right.map((c) => c.match.position)).toEqual([3, 4])
-    expect(left[0].x).toBeLessThan(final.x)
-    expect(right[0].x).toBeGreaterThan(final.x)
-    expect(layout.lines).toHaveLength(6)
-  })
-
   it('keeps every card inside the canvas', () => {
     for (const format of ['landscape', 'square', 'portrait', 'story']) {
-      for (const mode of ['ltr', 'mirrored']) {
-        const layout = layoutBracket(ROUNDS, { layout: mode, format })
-        for (const card of layout.cards) {
-          expect(card.x).toBeGreaterThanOrEqual(0)
-          expect(card.y).toBeGreaterThanOrEqual(0)
-          expect(card.x + card.width).toBeLessThanOrEqual(layout.width)
-          expect(card.y + card.height).toBeLessThanOrEqual(layout.height)
-        }
+      const layout = layoutBracket(ROUNDS, { format })
+      for (const card of layout.cards) {
+        expect(card.x).toBeGreaterThanOrEqual(0)
+        expect(card.y).toBeGreaterThanOrEqual(0)
+        expect(card.x + card.width).toBeLessThanOrEqual(layout.width)
+        expect(card.y + card.height).toBeLessThanOrEqual(layout.height)
       }
     }
   })
@@ -64,7 +49,7 @@ describe('layoutBracket', () => {
       { round: 1, title: 'Round 1', matches: [match(2)] },
       { round: 2, title: 'Final', matches: [match(1)] },
     ]
-    const layout = layoutBracket(rounds, { layout: 'ltr' })
+    const layout = layoutBracket(rounds, {})
     const first = layout.cards.find((c) => c.round === 1)
     const final = layout.cards.find((c) => c.round === 2)
     // Position 2 of 2 sits in the lower half.
@@ -72,7 +57,7 @@ describe('layoutBracket', () => {
   })
 
   it('can start from a later round', () => {
-    const layout = layoutBracket(ROUNDS, { layout: 'ltr', startRound: 2, showChampion: false })
+    const layout = layoutBracket(ROUNDS, { startRound: 2, showChampion: false })
     expect(layout.cards.map((c) => c.round)).toEqual([2, 2, 3])
     expect(layout.labels.map((l) => l.text)).toEqual(['Semifinals', 'Final'])
   })

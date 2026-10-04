@@ -5,7 +5,6 @@ import { pickActiveBracket } from './BracketSwitcher'
 import { avatarUrl } from '@/utils/avatar'
 import {
   FORMATS,
-  LAYOUTS,
   THEMES,
   DEFAULT_OPTIONS,
   describeProgress,
@@ -196,20 +195,6 @@ export default function BracketGraphic({ brackets, selectedSlug, onSelect }) {
           >
             {Object.entries(FORMATS).map(([key, f]) => (
               <option key={key} value={key}>{f.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className={LABEL} htmlFor="graphic-layout">Layout</label>
-          <select
-            id="graphic-layout"
-            className={INPUT}
-            value={options.layout}
-            onChange={(e) => set('layout', e.target.value)}
-          >
-            {Object.entries(LAYOUTS).map(([key, label]) => (
-              <option key={key} value={key}>{label}</option>
             ))}
           </select>
         </div>

@@ -14,6 +14,7 @@ import {
   adminMoveEntrant,
   adminPublishBracket,
   adminPreviewBracket,
+  adminUpdateBracket,
 } from '@/api/brackets'
 
 vi.mock('@/api/brackets', () => ({
@@ -27,6 +28,7 @@ vi.mock('@/api/brackets', () => ({
   adminMoveEntrant: vi.fn(),
   adminPublishBracket: vi.fn(),
   adminPreviewBracket: vi.fn(),
+  adminUpdateBracket: vi.fn(),
   adminUnpublishBracket: vi.fn(),
   adminDeleteBracket: vi.fn(),
 }))
@@ -130,6 +132,7 @@ describe('BracketsAdmin', () => {
         name: 'New Cup',
         size: 24,
         source: 'ticket_holders',
+        set_name: '',
       }),
     )
     expect(await screen.findByText(/Created with 24 seeded players/)).toBeInTheDocument()
@@ -299,5 +302,44 @@ describe('BracketsAdmin', () => {
     expect(await screen.findByText('View')).toHaveAttribute('href', '/brackets/season-7')
     expect(screen.getByRole('button', { name: 'Unpublish' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /edit seeds/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('BracketsAdmin card sets', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    adminListBrackets.mockResolvedValue({
+      brackets: [{ ...DRAFT, set_name: 'Gothic' }],
+    })
+    adminGetSeedPool.mockResolvedValue({ players: [], event: null, ticket_filter_applied: true })
+    adminUpdateBracket.mockResolvedValue({ success: true })
+  })
+
+  it('files a new bracket under the set already in use', async () => {
+    adminCreateBracket.mockResolvedValue({ slug: 'new', entrant_count: 2, short_by: 0 })
+    renderWithRouter(<BracketsAdmin />)
+    await screen.findByText('Season 7 Postseason')
+    expect(screen.getByLabelText('Set', { selector: '#bracket-set' })).toHaveValue('Gothic')
+
+    await userEvent.type(screen.getByLabelText('Name'), 'New Cup')
+    await userEvent.click(screen.getByRole('button', { name: /create draft/i }))
+    await waitFor(() =>
+      expect(adminCreateBracket).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'New Cup', set_name: 'Gothic' }),
+      ),
+    )
+  })
+
+  it('moves a bracket to another set', async () => {
+    renderWithRouter(<BracketsAdmin />)
+    const field = await screen.findByLabelText('Set for Season 7 Postseason')
+    expect(field).toHaveValue('Gothic')
+
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Beta{Enter}')
+    await waitFor(() =>
+      expect(adminUpdateBracket).toHaveBeenCalledWith('season-7', { set_name: 'Beta' }),
+    )
+    expect(adminListBrackets).toHaveBeenCalledTimes(2)
   })
 })

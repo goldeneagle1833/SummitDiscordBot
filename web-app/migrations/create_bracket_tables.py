@@ -166,8 +166,19 @@ def create_bracket_tables(db_path=None):
 
     # The Top 8 event folder a finished bracket was written out to.
     cursor.execute("PRAGMA table_info(brackets)")
-    if "event_folder" not in {row[1] for row in cursor.fetchall()}:
+    bracket_columns = {row[1] for row in cursor.fetchall()}
+    if "event_folder" not in bracket_columns:
         cursor.execute("ALTER TABLE brackets ADD COLUMN event_folder TEXT")
+
+    # The card set a bracket belongs to ("Gothic", ...), which the brackets
+    # page groups by. Brackets that came before it were all Gothic seasons
+    # and say so in their names, so they are tagged once, as the column
+    # arrives; after that the admin sets it.
+    if "set_name" not in bracket_columns:
+        cursor.execute("ALTER TABLE brackets ADD COLUMN set_name TEXT")
+        cursor.execute(
+            "UPDATE brackets SET set_name = 'Gothic' WHERE LOWER(name) LIKE '%gothic%'"
+        )
 
     conn.commit()
     conn.close()

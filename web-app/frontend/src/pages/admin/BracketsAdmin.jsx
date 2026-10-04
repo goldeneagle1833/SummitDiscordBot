@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import {
   adminListBrackets,
@@ -13,6 +13,7 @@ import {
   adminUnpublishBracket,
   adminDeleteBracket,
   adminPreviewBracket,
+  adminUpdateBracket,
   getBracketDecks,
 } from '@/api/brackets'
 import { searchUsers } from '@/api/admin'
@@ -32,10 +33,43 @@ const SOURCES = [
   { value: 'manual', label: 'Empty (add players myself)' },
 ]
 
-function CreateForm({ onCreated }) {
-  const [form, setForm] = useState({ name: '', size: 16, source: 'ticket_holders' })
+/** The card sets brackets are tagged with so far, for the set pickers. */
+function knownSets(brackets = []) {
+  const seen = new Map()
+  for (const b of brackets) {
+    const name = b.set_name?.trim()
+    if (name && !seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name)
+  }
+  return [...seen.values()]
+}
+
+function SetOptions({ id, sets }) {
+  return (
+    <datalist id={id}>
+      {sets.map((set) => (
+        <option key={set} value={set} />
+      ))}
+    </datalist>
+  )
+}
+
+function CreateForm({ onCreated, sets = [] }) {
+  const [form, setForm] = useState({
+    name: '',
+    size: 16,
+    source: 'ticket_holders',
+    set_name: sets[0] || '',
+  })
   const [pool, setPool] = useState(null)
   const [busy, setBusy] = useState(false)
+  const setTouched = useRef(false)
+  const latestSet = sets[0] || ''
+
+  // The bracket list arrives after the form: start on the newest set in use,
+  // unless the admin has already typed one.
+  useEffect(() => {
+    if (latestSet && !setTouched.current) setForm((f) => ({ ...f, set_name: latestSet }))
+  }, [latestSet])
   const [message, setMessage] = useState(null)
 
   const loadPool = useCallback(() => {
@@ -70,6 +104,7 @@ function CreateForm({ onCreated }) {
         name: form.name,
         size: Number(form.size),
         source: form.source,
+        set_name: form.set_name,
       })
       onCreated(res.slug)
       setForm((f) => ({ ...f, name: '' }))
@@ -114,7 +149,22 @@ function CreateForm({ onCreated }) {
             onChange={(e) => setForm((f) => ({ ...f, size: e.target.value }))}
           />
         </div>
-        <div className="sm:col-span-3">
+        <div>
+          <label className={LABEL} htmlFor="bracket-set">Set</label>
+          <input
+            id="bracket-set"
+            className={INPUT}
+            list="bracket-set-options"
+            value={form.set_name}
+            onChange={(e) => {
+              setTouched.current = true
+              setForm((f) => ({ ...f, set_name: e.target.value }))
+            }}
+            placeholder="Gothic"
+          />
+          <SetOptions id="bracket-set-options" sets={sets} />
+        </div>
+        <div className="sm:col-span-2">
           <label className={LABEL} htmlFor="bracket-source">Seed from</label>
           <select
             id="bracket-source"
@@ -398,7 +448,50 @@ function SeedEditor({ slug, entrants, preview, onChanged }) {
   )
 }
 
-function BracketRow({ bracket, onChanged, onGraphic }) {
+/** The set a bracket is filed under, edited in place and saved on blur. */
+function SetField({ bracket, sets, onSaved }) {
+  const [value, setValue] = useState(bracket.set_name || '')
+  const [state, setState] = useState(null)
+
+  useEffect(() => setValue(bracket.set_name || ''), [bracket.set_name])
+
+  async function save() {
+    if (value.trim() === (bracket.set_name || '')) return
+    setState('saving')
+    try {
+      await adminUpdateBracket(bracket.slug, { set_name: value })
+      setState(null)
+      await onSaved()
+    } catch {
+      setState('error')
+    }
+  }
+
+  const listId = `set-options-${bracket.slug}`
+  return (
+    <label className="inline-flex items-center gap-1.5 text-xs text-text-muted">
+      Set
+      <input
+        className={`w-28 bg-bg-raised border rounded-sm px-2 py-0.5 text-xs text-text-primary ${
+          state === 'error' ? 'border-accent-red' : 'border-border'
+        }`}
+        list={listId}
+        value={value}
+        placeholder="None"
+        aria-label={`Set for ${bracket.name}`}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+        }}
+        disabled={state === 'saving'}
+      />
+      <SetOptions id={listId} sets={sets} />
+    </label>
+  )
+}
+
+function BracketRow({ bracket, onChanged, onGraphic, sets = [] }) {
   const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState(null)
   const [preview, setPreview] = useState(null)
@@ -459,6 +552,9 @@ function BracketRow({ bracket, onChanged, onGraphic }) {
             {bracket.champion ? ` · won by ${bracket.champion.display_name}` : ''}
             {decks ? ` · ${decks.submitted}/${decks.players.length} decks in` : ''}
           </p>
+          <div className="mt-1">
+            <SetField bracket={bracket} sets={sets} onSaved={onChanged} />
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {isDraft ? (
@@ -596,7 +692,10 @@ export default function BracketsAdmin() {
         </Link>
       </div>
 
-      <CreateForm onCreated={load} />
+      <CreateForm
+        onCreated={load}
+        sets={knownSets(brackets || [])}
+      />
 
       {brackets?.length > 0 &&
         (graphicOpen ? (
@@ -631,6 +730,7 @@ export default function BracketsAdmin() {
           bracket={bracket}
           onChanged={load}
           onGraphic={openGraphic}
+          sets={knownSets(brackets)}
         />
       ))}
     </div>

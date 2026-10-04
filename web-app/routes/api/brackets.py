@@ -191,6 +191,7 @@ def admin_create_bracket():
             source=data.get("source", "ticket_holders"),
             created_by=_current_user_id(),
             confirm_hours=int(data.get("confirm_hours", 48)),
+            set_name=data.get("set_name"),
         )
     except BracketError as e:
         return jsonify({"success": False, "error": str(e)}), 400

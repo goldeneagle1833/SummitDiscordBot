@@ -41,8 +41,8 @@ class BracketRepository:
             INSERT INTO brackets (
                 slug, name, description, entrant_count, bracket_size, status,
                 seeded_from, elo_event_name, confirm_hours, created_by,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)
+                created_at, updated_at, set_name
+            ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data["slug"],
@@ -56,6 +56,7 @@ class BracketRepository:
                 data.get("created_by"),
                 now,
                 now,
+                data.get("set_name"),
             ),
         )
         bracket_id = cur.lastrowid
@@ -63,7 +64,7 @@ class BracketRepository:
         conn.close()
         return bracket_id
 
-    EDITABLE_FIELDS = ("name", "description", "confirm_hours")
+    EDITABLE_FIELDS = ("name", "description", "confirm_hours", "set_name")
 
     def update_bracket(self, bracket_id: int, fields: dict) -> bool:
         updates = {k: v for k, v in fields.items() if k in self.EDITABLE_FIELDS}

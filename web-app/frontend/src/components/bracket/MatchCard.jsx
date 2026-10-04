@@ -13,6 +13,8 @@ function Side({
   eloChange,
   linkTo = true,
   dragHandlers,
+  highlighted = false,
+  followHandlers,
 }) {
   if (!name) {
     return (
@@ -33,8 +35,10 @@ function Side({
         isWinner ? 'border-secondary bg-secondary/[0.04] font-semibold text-text-primary' : 'border-transparent'
       } ${isLoser ? 'text-text-muted' : ''} ${
         dragHandlers ? 'cursor-grab active:cursor-grabbing hover:bg-bg-elevated' : ''
-      }`}
+      } ${highlighted ? '!bg-primary/15 !text-primary' : ''} ${followHandlers ? 'cursor-pointer' : ''}`}
+      data-highlighted={highlighted || undefined}
       {...(dragHandlers?.props || {})}
+      {...(followHandlers || {})}
     >
       <span
         className={`w-7 shrink-0 text-right text-[11px] font-mono tabular-nums ${
@@ -110,6 +114,8 @@ export default function MatchCard({
   isAdmin,
   onSwap,
   avatars = {},
+  followSeed = null,
+  onFollow,
 }) {
   const [replayInput, setReplayInput] = useState(null)
   const complete = match.state === 'complete' || match.state === 'bye'
@@ -149,9 +155,30 @@ export default function MatchCard({
     }
   }
 
+  // Following a player: their seats light up and every match they are not in
+  // fades back, which leaves their path through the bracket standing out.
+  const following = followSeed != null
+  const isFollowed = (seed) => following && seed != null && String(seed) === String(followSeed)
+  const onPath = isFollowed(match.p1_seed) || isFollowed(match.p2_seed)
+  const followFor = (seed) => {
+    if (!onFollow || !seed || onSwap) return undefined
+    return {
+      onMouseEnter: () => onFollow('hover', seed),
+      onMouseLeave: () => onFollow('hover', null),
+      // A tap pins the path (and a second tap lets it go). Taps on the name
+      // itself still open the player's profile.
+      onClick: (e) => {
+        if (e.target.closest('a')) return
+        onFollow('pin', seed)
+      },
+    }
+  }
+
   return (
     <div
-      className={`bg-bg-surface border rounded-sm overflow-hidden w-60 transition-colors ${
+      className={`bg-bg-surface border rounded-sm overflow-hidden w-60 transition-[opacity,border-color] ${
+        following && !onPath ? 'opacity-35' : ''
+      } ${onPath ? '!border-primary' : ''} ${
         needsViewer
           ? 'border-secondary'
           : match.playable && !complete
@@ -171,6 +198,8 @@ export default function MatchCard({
         eloChange={p1Elo}
         linkTo={!onSwap}
         dragHandlers={dragFor(match.p1_seed, 1)}
+        highlighted={isFollowed(match.p1_seed)}
+        followHandlers={followFor(match.p1_seed)}
       />
       <div className="border-t border-border" />
       <Side
@@ -185,6 +214,8 @@ export default function MatchCard({
         eloChange={p2Elo}
         linkTo={!onSwap}
         dragHandlers={dragFor(match.p2_seed, 2)}
+        highlighted={isFollowed(match.p2_seed)}
+        followHandlers={followFor(match.p2_seed)}
       />
 
       {match.viewer_can_report && (

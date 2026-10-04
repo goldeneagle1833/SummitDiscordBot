@@ -160,7 +160,7 @@ export default function DeckPanel({ slug, roster, isAdmin = false, onChanged }) 
   return (
     <div className="bg-bg-surface border border-border rounded-sm">
       <div className="px-5 py-3 border-b border-border flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-display">Decklists</h2>
+        <h2 className="font-semibold">Decklists</h2>
         <p className="text-xs text-text-muted">
           {roster.submitted} of {players.length} submitted
           {roster.missing ? ` · ${roster.missing} still to come` : ''}

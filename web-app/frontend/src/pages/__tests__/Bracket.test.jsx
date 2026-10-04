@@ -447,3 +447,39 @@ describe('Bracket page switcher', () => {
     expect(screen.queryByRole('navigation', { name: 'Brackets' })).not.toBeInTheDocument()
   })
 })
+
+describe('Bracket page set filter', () => {
+  const SETS = [
+    { slug: 'season-7', name: 'Season 7 Postseason', status: 'published', set_name: 'Gothic' },
+    { slug: 'season-6', name: 'Season 6 Postseason', status: 'complete', set_name: 'Gothic' },
+    { slug: 'beta-open', name: 'Beta Open', status: 'complete', set_name: 'Beta' },
+  ]
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUser.value = null
+    getBracket.mockResolvedValue(bracketData())
+    getBracketDecks.mockResolvedValue({ submitted: 2, missing: 0, players: [] })
+  })
+
+  it('shows only the current set until another is picked', async () => {
+    renderWithRouter(<Bracket brackets={SETS} />)
+    const filter = await screen.findByRole('group', { name: 'Filter by set' })
+    expect(within(filter).getByRole('button', { name: /Gothic/ })).toHaveAttribute('aria-pressed', 'true')
+
+    const tabs = screen.getByRole('navigation', { name: 'Brackets' })
+    expect(within(tabs).getAllByRole('link')).toHaveLength(2)
+    expect(within(tabs).queryByRole('link', { name: /Beta Open/ })).not.toBeInTheDocument()
+
+    await userEvent.click(within(filter).getByRole('button', { name: 'All' }))
+    expect(within(tabs).getAllByRole('link')).toHaveLength(3)
+  })
+
+  it('hides the set filter when no bracket has a set', async () => {
+    renderWithRouter(
+      <Bracket brackets={SETS.map(({ set_name: _unused, ...rest }) => rest)} />,
+    )
+    await screen.findByRole('navigation', { name: 'Brackets' })
+    expect(screen.queryByRole('group', { name: 'Filter by set' })).not.toBeInTheDocument()
+  })
+})

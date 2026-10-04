@@ -15,11 +15,6 @@ export const FORMATS = {
   wide: { label: 'Wide 2560×1440', width: 2560, height: 1440 },
 }
 
-export const LAYOUTS = {
-  mirrored: 'Mirrored (final in the middle)',
-  ltr: 'Left to right',
-}
-
 export const THEMES = {
   summit: {
     label: 'Summit night',
@@ -67,7 +62,6 @@ export const THEMES = {
 
 export const DEFAULT_OPTIONS = {
   format: 'landscape',
-  layout: 'mirrored',
   theme: 'summit',
   startRound: null,
   title: '',
@@ -140,11 +134,7 @@ export function layoutBracket(rounds, options = {}) {
   // Slots in a round of the shown tree: the last one has a single match.
   const slotsIn = (round) => 2 ** (last - round)
 
-  const mirrored = opts.layout === 'mirrored' && roundCount > 1
-  const withChampionColumn = opts.showChampion && !mirrored
-  const columns = mirrored
-    ? roundCount * 2 - 1
-    : roundCount + (withChampionColumn ? 1 : 0)
+  const columns = roundCount + (opts.showChampion ? 1 : 0)
 
   const { pad, headerH } = frame(width, height)
   const footerH = opts.footer ? Math.round(height * 0.05) : Math.round(pad / 2)
@@ -156,52 +146,30 @@ export function layoutBracket(rounds, options = {}) {
   const gapX = Math.max(16, Math.round((areaW / columns) * 0.16))
   const cardW = Math.floor((areaW - gapX * (columns - 1)) / columns)
 
-  // The tallest column sets the card height: in the mirrored layout each side
-  // holds half the first round.
-  const tallest = mirrored ? slotsIn(first) / 2 : slotsIn(first)
-  const slotH = areaH / tallest
+  // The first round is the tallest column, so it sets the card height.
+  const slotH = areaH / slotsIn(first)
   const cardH = Math.max(28, Math.min(Math.round(slotH * 0.82), Math.round(height * 0.12), Math.round(cardW * 0.42)))
 
   result.card = { width: cardW, height: cardH, rowHeight: cardH / 2 }
 
   const columnX = (index) => pad + index * (cardW + gapX)
-
-  /** Column index and side for a match, and its vertical slot. */
-  const place = (round, position) => {
-    const k = round - first
-    const slots = slotsIn(round)
-    if (!mirrored) {
-      return { column: k, side: 'left', slot: position - 1, slots }
-    }
-    if (round === last) {
-      return { column: roundCount - 1, side: 'center', slot: 0, slots: 1 }
-    }
-    const half = slots / 2
-    if (position <= half) {
-      return { column: k, side: 'left', slot: position - 1, slots: half }
-    }
-    return { column: columns - 1 - k, side: 'right', slot: position - 1 - half, slots: half }
-  }
-
   const centerY = (slot, slots) => top + areaH * ((slot + 0.5) / slots)
 
   const byKey = new Map()
   for (const round of shown) {
+    const slots = slotsIn(round.round)
     for (const match of round.matches) {
-      const where = place(round.round, match.position || 1)
-      const x = columnX(where.column)
-      const cy = centerY(where.slot, where.slots)
+      const position = match.position || 1
       const card = {
-        x,
-        y: Math.round(cy - cardH / 2),
+        x: columnX(round.round - first),
+        y: Math.round(centerY(position - 1, slots) - cardH / 2),
         width: cardW,
         height: cardH,
-        side: where.side,
         round: round.round,
         match,
       }
       result.cards.push(card)
-      byKey.set(`${round.round}:${match.position || 1}`, card)
+      byKey.set(`${round.round}:${position}`, card)
     }
   }
 
@@ -210,34 +178,20 @@ export function layoutBracket(rounds, options = {}) {
     if (card.round === last) continue
     const parent = byKey.get(`${card.round + 1}:${Math.ceil((card.match.position || 1) / 2)}`)
     if (!parent) continue
+    const fromX = card.x + card.width
     const fromY = card.y + card.height / 2
-    const toY =
-      parent.side === 'center'
-        ? parent.y + (card.side === 'left' ? cardH * 0.25 : cardH * 0.75)
-        : parent.y + parent.height / 2
-    if (card.side === 'right') {
-      const fromX = card.x
-      const toX = parent.x + parent.width
-      const midX = Math.round((fromX + toX) / 2)
-      result.lines.push([[fromX, fromY], [midX, fromY], [midX, toY], [toX, toY]])
-    } else {
-      const fromX = card.x + card.width
-      const toX = parent.x
-      const midX = Math.round((fromX + toX) / 2)
-      result.lines.push([[fromX, fromY], [midX, fromY], [midX, toY], [toX, toY]])
-    }
+    const toX = parent.x
+    const toY = parent.y + parent.height / 2
+    const midX = Math.round((fromX + toX) / 2)
+    result.lines.push([[fromX, fromY], [midX, fromY], [midX, toY], [toX, toY]])
   }
 
   if (opts.showRoundTitles) {
     const labelY = headerH + roundLabelH / 2
     for (const round of shown) {
-      const k = round.round - first
-      const columnsFor = mirrored && round.round !== last ? [k, columns - 1 - k] : [mirrored ? roundCount - 1 : k]
-      for (const column of columnsFor) {
-        result.labels.push({ x: columnX(column) + cardW / 2, y: labelY, text: round.title })
-      }
+      result.labels.push({ x: columnX(round.round - first) + cardW / 2, y: labelY, text: round.title })
     }
-    if (withChampionColumn) {
+    if (opts.showChampion) {
       result.labels.push({ x: columnX(columns - 1) + cardW / 2, y: labelY, text: 'Champion' })
     }
   }
@@ -245,22 +199,11 @@ export function layoutBracket(rounds, options = {}) {
   if (opts.showChampion) {
     const final = byKey.get(`${last}:1`)
     if (final) {
-      if (withChampionColumn) {
-        const x = columnX(columns - 1)
-        const h = Math.round(cardH * 1.1)
-        result.champion = { x, y: Math.round(final.y + cardH / 2 - h / 2), width: cardW, height: h }
-        result.lines.push([
-          [final.x + final.width, final.y + cardH / 2],
-          [x, final.y + cardH / 2],
-        ])
-      } else {
-        // Above the final there is only open space, so the box can run wider
-        // than a column and keep the winner's name readable.
-        const w = Math.round(cardW * 1.8)
-        const h = Math.round(cardH * 1.3)
-        const y = Math.max(top, final.y - h - Math.round(cardH * 0.5))
-        result.champion = { x: Math.round(final.x + cardW / 2 - w / 2), y, width: w, height: h }
-      }
+      const x = columnX(columns - 1)
+      const h = Math.round(cardH * 1.1)
+      const midY = final.y + cardH / 2
+      result.champion = { x, y: Math.round(midY - h / 2), width: cardW, height: h }
+      result.lines.push([[final.x + final.width, midY], [x, midY]])
     }
   }
 
@@ -455,7 +398,7 @@ function drawChampion(ctx, box, champion, theme, avatars) {
   ctx.font = `700 ${Math.round(height * 0.16)}px ${BODY_FONT}`
   ctx.fillText(fitText(ctx, 'CHAMPION', maxW), cursor, cy - Math.round(height * 0.06))
   ctx.fillStyle = champion ? theme.accent : theme.dim
-  ctx.font = `700 ${Math.round(height * 0.24)}px ${DISPLAY_FONT}`
+  ctx.font = `700 ${Math.round(height * 0.24)}px ${BODY_FONT}`
   ctx.textBaseline = 'top'
   ctx.fillText(fitText(ctx, champion?.display_name || 'To be decided', maxW), cursor, cy + Math.round(height * 0.02))
 }

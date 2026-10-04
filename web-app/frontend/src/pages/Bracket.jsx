@@ -41,7 +41,7 @@ function ReportModal({ match, slug, onClose, onDone }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="bg-bg-surface border border-border rounded-sm p-5 w-full max-w-sm">
-        <h2 className="text-lg font-display mb-1">Report your result</h2>
+        <h2 className="text-lg font-semibold mb-1">Report your result</h2>
         <p className="text-sm text-text-muted mb-4">
           {match.round_title}. Your opponent confirms it before the winner moves on.
         </p>
@@ -298,7 +298,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
           )}
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-muted">Champion</p>
-            <p className="text-2xl font-display text-amber-400 leading-tight">
+            <p className="text-2xl font-semibold text-amber-400 leading-tight">
               {champion.user_id ? (
                 <Link to={`/player/${champion.user_id}`} className="hover:underline">
                   {champion.display_name}
@@ -357,7 +357,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
 
       {bracketHidden ? (
         <div className="bg-bg-surface border border-border px-5 py-8 text-center space-y-1">
-          <p className="font-display text-lg">The bracket is revealed once every decklist is in</p>
+          <p className="text-lg font-semibold">The bracket is revealed once every decklist is in</p>
           <p className="text-sm text-text-muted">
             {decksMissing} of {entrants.length} players still
             {decksMissing === 1 ? ' needs' : ' need'} to submit a deck.

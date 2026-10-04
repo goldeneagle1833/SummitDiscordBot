@@ -150,6 +150,7 @@ class BracketService:
         source: str = "ticket_holders",
         created_by: str | None = None,
         confirm_hours: int = 48,
+        set_name: str | None = None,
     ) -> dict:
         """Create a draft bracket seeded with the top `size` players."""
         name = (name or "").strip()
@@ -178,6 +179,7 @@ class BracketService:
                 "elo_event_name": (pool.get("event") or {}).get("event_name"),
                 "confirm_hours": confirm_hours,
                 "created_by": created_by,
+                "set_name": clean_set_name(set_name),
             }
         )
         if entrants:
@@ -362,6 +364,9 @@ class BracketService:
         return self._repo.get_bracket(slug=slug)
 
     def update_bracket(self, bracket_id: int, fields: dict) -> bool:
+        fields = dict(fields)
+        if "set_name" in fields:
+            fields["set_name"] = clean_set_name(fields["set_name"])
         return self._repo.update_bracket(bracket_id, fields)
 
     def delete_bracket(self, bracket_id: int) -> bool:
@@ -1596,6 +1601,14 @@ def _movable(match: dict, slot: int, from_bye: bool) -> bool:
         and match["state"] == "pending"
         and not match.get("table_provisioned_at")
     )
+
+
+def clean_set_name(value) -> str | None:
+    """Tidy a set name for grouping: trimmed, single-spaced, blank as None."""
+    if value is None:
+        return None
+    cleaned = " ".join(str(value).split())[:40]
+    return cleaned or None
 
 
 def rounds_for_display(matches: list[dict]) -> list[dict]:

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { get } from '@/api/client'
 import { getEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
@@ -15,6 +15,8 @@ const DISCORD_URL = 'https://discord.gg/ZDqHSK9VGx'
 const HERO_LOGO = '/static/images/summit-logo-hero.png'
 // Flip to true when the store opens to everyone
 const STORE_LIVE = false
+// Anchor for shareable links straight to the leaderboard (e.g. /#leaderboard)
+const LEADERBOARD_ANCHOR = 'leaderboard'
 
 // ── Player Search ─────────────────────────────────────────────
 
@@ -717,6 +719,16 @@ export default function Home() {
     fetchLeaderboard(source)
   }, [source, fetchLeaderboard])
 
+  // The leaderboard renders after an async fetch, so the browser's native
+  // hash jump fires before the target exists. Scroll once it has loaded.
+  const { hash } = useLocation()
+  const scrolledToAnchor = useRef(false)
+  useEffect(() => {
+    if (loading || scrolledToAnchor.current || hash !== `#${LEADERBOARD_ANCHOR}`) return
+    scrolledToAnchor.current = true
+    document.getElementById(LEADERBOARD_ANCHOR)?.scrollIntoView?.({ block: 'start' })
+  }, [loading, hash])
+
   // Current-season "top player with this avatar" badges (online leaderboard)
   const [avatarBadges, setAvatarBadges] = useState({})
   const [avatarImageFiles, setAvatarImageFiles] = useState([])
@@ -809,7 +821,7 @@ export default function Home() {
       {loading ? (
         <Spinner className="py-16" />
       ) : hasEvent ? (
-        <section>
+        <section id={LEADERBOARD_ANCHOR} className="scroll-mt-20">
           <div className="flex flex-wrap justify-between items-end gap-4 mb-5">
             {isLimited ? (
               <div>
@@ -863,7 +875,7 @@ export default function Home() {
           )}
         </section>
       ) : (
-        <section className="text-center py-4">
+        <section id={LEADERBOARD_ANCHOR} className="text-center py-4 scroll-mt-20">
           <div className="flex justify-center mb-6">
             <EloToggle source={source} onChange={handleSourceChange} />
           </div>

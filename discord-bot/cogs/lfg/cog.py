@@ -436,20 +436,16 @@ class LFGCog(commands.Cog):
                 conn_matches.close()
 
                 def format_row(idx, p):
-                    # `rank` **name** *avatar* — elo (games) so each part reads apart
+                    # rank. **name** *avatar* — elo (games) so each part reads apart
                     name = discord.utils.escape_markdown(str(p["display_name"]))
                     avatar = f" *{discord.utils.escape_markdown(p['avatar'])}*" if p["avatar"] else ""
-                    return f"`{idx:>2}.` **{name}**{avatar} — {p['elo']} ({p['games']}g)"
+                    return f"{idx}. **{name}**{avatar} — {p['elo']} ({p['games']}g)"
+
+                def section(title, rows, empty):
+                    return f"**{title}**\n" + ("\n".join(rows) if rows else empty)
 
                 # Overall Rankings (top 8 of all players)
                 overall_text = [format_row(idx, p) for idx, p in enumerate(player_data[:8], 1)]
-                embed.add_field(
-                    name="Overall Rankings",
-                    value="\n".join(overall_text)
-                    if overall_text
-                    else "No players ranked yet.",
-                    inline=False,
-                )
 
                 # Ticket Holders section (top 24 players with the ticket holder role).
                 # Top cut belongs to the player: each player appears once, at their
@@ -458,32 +454,18 @@ class LFGCog(commands.Cog):
 
                 ticket_players = unique_players([p for p in player_data if p["has_ticket"]])
                 ticket_text = [format_row(idx, p) for idx, p in enumerate(ticket_players[:24], 1)]
-                # Split into chunks of 12 so each field stays under Discord's
-                # 1024-character field limit with the added markdown.
-                if ticket_text:
-                    for start in range(0, len(ticket_text), 12):
-                        embed.add_field(
-                            name="Ticket Holders" if start == 0 else "\u200b",
-                            value="\n".join(ticket_text[start:start + 12]),
-                            inline=False,
-                        )
-                else:
-                    embed.add_field(
-                        name="Ticket Holders",
-                        value="No ticket holders ranked yet.",
-                        inline=False,
-                    )
 
                 # Free Play section (top 8 from non-ticket holders)
                 free_players = unique_players([p for p in player_data if not p["has_ticket"]])
                 free_text = [format_row(idx, p) for idx, p in enumerate(free_players[:8], 1)]
-                embed.add_field(
-                    name="Free Play",
-                    value="\n".join(free_text)
-                    if free_text
-                    else "No free play players ranked yet.",
-                    inline=False,
-                )
+
+                # One description instead of fields: the 4096-char description
+                # limit fits all 24 ticket rows without splitting them up.
+                embed.description = "\n\n".join([
+                    section("Overall Rankings", overall_text, "No players ranked yet."),
+                    section("Ticket Holders", ticket_text, "No ticket holders ranked yet."),
+                    section("Free Play", free_text, "No free play players ranked yet."),
+                ])[:4096]
             else:
                 embed.add_field(
                     name="Rankings", value="No players ranked yet.", inline=False

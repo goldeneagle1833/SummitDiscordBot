@@ -18,6 +18,7 @@ import {
 import { searchUsers } from '@/api/admin'
 import BracketTree from '@/components/bracket/BracketTree'
 import DeckPanel from '@/components/bracket/DeckPanel'
+import BracketGraphic from '@/components/bracket/BracketGraphic'
 import { avatarMap } from '@/utils/avatar'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -397,7 +398,7 @@ function SeedEditor({ slug, entrants, preview, onChanged }) {
   )
 }
 
-function BracketRow({ bracket, onChanged }) {
+function BracketRow({ bracket, onChanged, onGraphic }) {
   const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState(null)
   const [preview, setPreview] = useState(null)
@@ -503,6 +504,12 @@ function BracketRow({ bracket, onChanged }) {
             </button>
           )}
           <button
+            onClick={() => onGraphic(bracket.slug)}
+            className="px-3 py-1 rounded border border-border text-xs"
+          >
+            Graphic
+          </button>
+          <button
             onClick={() => {
               if (window.confirm(`Delete "${bracket.name}"?`)) {
                 act(() => adminDeleteBracket(bracket.slug))
@@ -555,6 +562,17 @@ export default function BracketsAdmin() {
   usePageTitle('Brackets Admin')
   const [brackets, setBrackets] = useState(null)
   const [error, setError] = useState(null)
+  const [graphicOpen, setGraphicOpen] = useState(false)
+  const [graphicSlug, setGraphicSlug] = useState(null)
+
+  function openGraphic(slug) {
+    setGraphicSlug(slug)
+    setGraphicOpen(true)
+    // Wait a frame so the panel is there to scroll to.
+    requestAnimationFrame(() =>
+      document.getElementById('bracket-graphic')?.scrollIntoView?.({ behavior: 'smooth' }),
+    )
+  }
 
   const load = useCallback(async () => {
     try {
@@ -580,11 +598,40 @@ export default function BracketsAdmin() {
 
       <CreateForm onCreated={load} />
 
+      {brackets?.length > 0 &&
+        (graphicOpen ? (
+          <div className="space-y-2">
+            <BracketGraphic
+              brackets={brackets}
+              selectedSlug={graphicSlug}
+              onSelect={setGraphicSlug}
+            />
+            <button
+              onClick={() => setGraphicOpen(false)}
+              className="text-sm text-text-muted hover:text-text-primary"
+            >
+              Hide graphic
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setGraphicOpen(true)}
+            className="w-full px-4 py-3 rounded-lg border border-dashed border-border text-sm text-text-muted hover:text-text-primary hover:border-secondary"
+          >
+            Make a bracket graphic of the active top cut
+          </button>
+        ))}
+
       {error && <p className="text-accent-red text-sm">{error}</p>}
       {!brackets && !error && <Spinner />}
       {brackets?.length === 0 && <p className="text-text-muted text-sm">No brackets yet.</p>}
       {brackets?.map((bracket) => (
-        <BracketRow key={bracket.slug} bracket={bracket} onChanged={load} />
+        <BracketRow
+          key={bracket.slug}
+          bracket={bracket}
+          onChanged={load}
+          onGraphic={openGraphic}
+        />
       ))}
     </div>
   )

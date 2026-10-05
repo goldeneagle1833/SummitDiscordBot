@@ -2256,69 +2256,98 @@ def get_avatar_deck_composition(avatar_name):
 
 @avatars_bp.route("/avatars/play-draw-stats")
 def get_play_draw_stats():
-    """API endpoint for overall on-the-play vs on-the-draw win rates.
+    """API endpoint for on-the-play vs on-the-draw win rates.
 
-    Returns aggregate stats from all matches from 2/7/2026 onward.
+    Only matches from 2/7/2026 onward count (when play/draw was tracked).
+
+    Supports optional query param, matching the avatar table's event filter:
+      ?event=all (default) | current | season_<id> | <event_id>
     """
     cutoff_date = "2026-02-07"
+    event_filter = request.args.get("event", "all")
+
+    # Only admins can query the active event
+    if event_filter == "current" and not is_admin():
+        event_filter = "all"
+
+    # Which tables to read, and the extra WHERE clause for each.
+    # None means "skip this table".
+    current_where, current_params = "", ()
+    archive_where, archive_params = "", ()
+    if event_filter == "current":
+        archive_where = None
+    elif isinstance(event_filter, str) and event_filter.startswith("season_"):
+        start_date, end_date = _get_event_date_range(event_filter)
+        if not (start_date and end_date):
+            current_where = archive_where = None
+        else:
+            current_where = archive_where = " AND timestamp >= ? AND timestamp <= ?"
+            current_params = archive_params = (start_date, end_date)
+    elif event_filter != "all":
+        try:
+            event_id = int(event_filter)
+        except ValueError:
+            return jsonify({"error": "Invalid event"}), 400
+        current_where = None
+        archive_where, archive_params = " AND event_id = ?", (event_id,)
 
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
 
         all_rows = []
-        use_new_columns = True
 
         # Query current match_records with date filter
-        try:
-            cur.execute("""
-                SELECT
-                    winner_went_first,
-                    loser_went_first,
-                    first_player,
-                    timestamp
-                FROM match_records
-                WHERE timestamp >= ?
-            """, (cutoff_date,))
-            all_rows.extend(cur.fetchall())
-        except sqlite3.OperationalError:
-            # Fallback to old schema
+        if current_where is not None:
             try:
-                cur.execute("""
+                cur.execute(f"""
                     SELECT
-                        first_player,
-                        NULL as loser_went_first,
+                        winner_went_first,
+                        loser_went_first,
                         first_player,
                         timestamp
                     FROM match_records
-                    WHERE timestamp >= ?
-                """, (cutoff_date,))
+                    WHERE timestamp >= ?{current_where}
+                """, (cutoff_date, *current_params))
                 all_rows.extend(cur.fetchall())
-                use_new_columns = False
-            except sqlite3.OperationalError as e:
-                logger.error(f"Failed to query match_records: {e}")
-                conn.close()
-                return jsonify({"error": "Database error"}), 500
+            except sqlite3.OperationalError:
+                # Fallback to old schema
+                try:
+                    cur.execute(f"""
+                        SELECT
+                            first_player,
+                            NULL as loser_went_first,
+                            first_player,
+                            timestamp
+                        FROM match_records
+                        WHERE timestamp >= ?{current_where}
+                    """, (cutoff_date, *current_params))
+                    all_rows.extend(cur.fetchall())
+                except sqlite3.OperationalError as e:
+                    logger.error(f"Failed to query match_records: {e}")
+                    conn.close()
+                    return jsonify({"error": "Database error"}), 500
 
         # Query archive table with date filter
         # Use winner_went_first/loser_went_first if available (new records),
         # otherwise derive from first_player (old records)
-        try:
-            cur.execute("""
-                SELECT
-                    COALESCE(winner_went_first, first_player) as winner_went_first,
-                    COALESCE(loser_went_first,
-                        CASE WHEN first_player = 'y' THEN 'n'
-                             WHEN first_player = 'n' THEN 'y'
-                             ELSE NULL END) as loser_went_first,
-                    first_player,
-                    timestamp
-                FROM match_records_archive
-                WHERE timestamp >= ?
-            """, (cutoff_date,))
-            all_rows.extend(cur.fetchall())
-        except sqlite3.OperationalError:
-            pass  # Archive may not exist
+        if archive_where is not None:
+            try:
+                cur.execute(f"""
+                    SELECT
+                        COALESCE(winner_went_first, first_player) as winner_went_first,
+                        COALESCE(loser_went_first,
+                            CASE WHEN first_player = 'y' THEN 'n'
+                                 WHEN first_player = 'n' THEN 'y'
+                                 ELSE NULL END) as loser_went_first,
+                        first_player,
+                        timestamp
+                    FROM match_records_archive
+                    WHERE timestamp >= ?{archive_where}
+                """, (cutoff_date, *archive_params))
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass  # Archive may not exist
 
         conn.close()
     except sqlite3.OperationalError as e:
@@ -2374,6 +2403,7 @@ def get_play_draw_stats():
 
     return jsonify({
         "cutoff_date": cutoff_date,
+        "event": event_filter,
         "play_stats": {
             "wins": play_wins,
             "losses": play_losses,

@@ -310,12 +310,10 @@ export default function Avatars() {
     Promise.allSettled([
       getAvatarImageFiles(),
       getAvatarFilters(),
-      getPlayDrawStats(),
       getSeasonStats(),
-    ]).then(([imgs, flt, pd, ss]) => {
+    ]).then(([imgs, flt, ss]) => {
       if (imgs.status === "fulfilled") setImageFiles(imgs.value);
       if (flt.status === "fulfilled") setFilters(flt.value);
-      if (pd.status === "fulfilled") setPlayDraw(pd.value);
       if (ss.status === "fulfilled") setSeasonStats(ss.value);
     });
   }, []);
@@ -345,6 +343,21 @@ export default function Avatars() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [eventFilter, sourceFilter]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPlayDrawStats(eventFilter !== "all" ? { event: eventFilter } : undefined)
+      .then((pd) => { if (!cancelled) setPlayDraw(pd); })
+      .catch(() => { if (!cancelled) setPlayDraw(null); });
+    return () => { cancelled = true; };
+  }, [eventFilter]);
+
+  const playDrawLabel = useMemo(() => {
+    if (eventFilter === "all") return "Overall (from 2/7/2026 onward)";
+    const ev = (filters.events || []).find((e) =>
+      (e.is_active ? "current" : String(e.event_id)) === eventFilter);
+    return ev ? ev.event_name : "Selected event";
+  }, [eventFilter, filters.events]);
 
   const sorted = useMemo(() => sortAvatars(avatars, sortBy), [avatars, sortBy]);
   const totalGames = useMemo(
@@ -377,9 +390,9 @@ export default function Avatars() {
         <Link to="/avatars/top-players" className="inline-block text-sm text-primary hover:underline mt-2">
           View Top 16 Players by Avatar
         </Link>
-        {playDraw?.play_stats && playDraw?.draw_stats && (
+        {playDraw?.play_stats && playDraw?.draw_stats && playDraw.play_stats.total > 0 && (
           <p className="text-xs text-text-muted mt-2">
-            Overall (from 2/7/2026 onward):&nbsp; On the Play:{" "}
+            {playDrawLabel}:&nbsp; On the Play:{" "}
             <span
               style={{ color: getWinRateColor(playDraw.play_stats.win_rate) }}>
               {playDraw.play_stats.win_rate}%

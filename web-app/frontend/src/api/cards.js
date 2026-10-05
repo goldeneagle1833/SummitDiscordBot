@@ -14,7 +14,10 @@ export const getAvatarFilters = (params) => {
   const query = params ? `?${new URLSearchParams(params)}` : ''
   return get(`/api/avatars/filters${query}`)
 }
-export const getPlayDrawStats = () => get('/api/avatars/play-draw-stats')
+export const getPlayDrawStats = (params) => {
+  const query = params ? `?${new URLSearchParams(params)}` : ''
+  return get(`/api/avatars/play-draw-stats${query}`)
+}
 export const getSeasonStats = () => get('/api/avatars/season-stats')
 export const getSeasonAvatarBadges = () => get('/api/avatars/season-top-players')
 export const getCards = (params) => {

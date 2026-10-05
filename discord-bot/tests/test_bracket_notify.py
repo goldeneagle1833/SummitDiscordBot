@@ -69,3 +69,13 @@ async def test_a_closed_dm_or_google_player_does_not_stop_the_other():
 
     assert results[0]["reason"] == "dms_disabled"
     assert results[1]["reason"] == "not_discord_id"
+
+
+def test_round_one_and_later_rounds_read_differently():
+    payload = _payload()
+    later = build_pairing_embed(payload, payload["players"][0]).description
+    payload["first_round"] = True
+    first = build_pairing_embed(payload, payload["players"][0]).description
+
+    assert "You advanced" in later
+    assert "first-round match" in first and "You advanced" not in first

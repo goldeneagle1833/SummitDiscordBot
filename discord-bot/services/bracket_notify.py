@@ -27,10 +27,15 @@ def build_pairing_embed(payload: dict, player: dict) -> discord.Embed:
     round_title = payload.get("round_title") or "Next round"
     bracket_url = payload.get("bracket_url") or ""
 
+    intro = (
+        "The bracket is live! Your first-round match is ready."
+        if payload.get("first_round")
+        else "You advanced! Your next match is ready."
+    )
     embed = discord.Embed(
         title=f"{bracket_name}: {round_title}",
         description=(
-            f"You advanced! Your next match is ready.\n\n"
+            f"{intro}\n\n"
             f"**You** (seed {player.get('seed')}) vs "
             f"**{opponent.get('name') or 'TBD'}** (seed {opponent.get('seed')})"
         ),

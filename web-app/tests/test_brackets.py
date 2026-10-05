@@ -1477,6 +1477,7 @@ class TestPairingAnnouncements:
 
     def test_one_side_decided_announces_nothing(self, service, repo, announcements):
         slug, bracket_id = published(service, repo, 4)
+        announcements.clear()  # round one, covered below
         first = self._first_round(repo, bracket_id)[0]
 
         service.set_result(slug, first["match_no"], first["p1_user_id"], admin_id="a")
@@ -1485,6 +1486,7 @@ class TestPairingAnnouncements:
 
     def test_both_sides_decided_announces_the_pairing(self, service, repo, announcements):
         slug, bracket_id = published(service, repo, 4, name="Gothic Cup")
+        announcements.clear()
         first, second = self._first_round(repo, bracket_id)[:2]
         service.submit_deck(slug, "https://curiosa.io/decks/one", actor_id=first["p1_user_id"])
 
@@ -1495,6 +1497,7 @@ class TestPairingAnnouncements:
         final = repo.get_match(bracket_id, first["next_match_no"])
         assert sent["bracket_name"] == "Gothic Cup"
         assert sent["round_title"] == final["round_title"]
+        assert sent["first_round"] is False
         assert sent["bracket_url"].endswith(f"/brackets/{slug}")
         players = {p["user_id"]: p for p in sent["players"]}
         assert set(players) == {first["p1_user_id"], second["p1_user_id"]}
@@ -1506,6 +1509,7 @@ class TestPairingAnnouncements:
         self, service, repo, announcements
     ):
         slug, bracket_id = published(service, repo, 3)  # seed 1 has a bye
+        announcements.clear()
         playable = next(
             m for m in self._first_round(repo, bracket_id) if m["state"] != "bye"
         )
@@ -1519,6 +1523,7 @@ class TestPairingAnnouncements:
         self, service, repo, announcements
     ):
         slug, bracket_id = published(service, repo, 4)
+        announcements.clear()  # round one, covered below
         first, second = self._first_round(repo, bracket_id)[:2]
         service.set_result(slug, first["match_no"], first["p1_user_id"], admin_id="a")
         service.set_result(slug, second["match_no"], second["p1_user_id"], admin_id="a")
@@ -1529,6 +1534,7 @@ class TestPairingAnnouncements:
 
     def test_a_corrected_result_announces_the_new_pairing(self, service, repo, announcements):
         slug, bracket_id = published(service, repo, 4)
+        announcements.clear()  # round one, covered below
         first, second = self._first_round(repo, bracket_id)[:2]
         service.set_result(slug, first["match_no"], first["p1_user_id"], admin_id="a")
         service.set_result(slug, second["match_no"], second["p1_user_id"], admin_id="a")
@@ -1551,6 +1557,34 @@ class TestPairingAnnouncements:
 
         final = repo.get_match(bracket_id, first["next_match_no"])
         assert final["p1_user_id"] and final["p2_user_id"]
+
+
+    def test_publishing_announces_every_first_round_pairing(
+        self, service, repo, announcements
+    ):
+        slug, bracket_id = published(service, repo, 8)
+
+        assert len(announcements) == 4
+        assert all(a["first_round"] for a in announcements)
+        paired = [{p["user_id"] for p in a["players"]} for a in announcements]
+        assert {"u1", "u8"} in paired
+
+    def test_a_bye_is_not_announced_as_a_pairing(self, service, repo, announcements):
+        published(service, repo, 3)  # seed 1 has a bye; only 2 v 3 is played
+
+        [sent] = announcements
+        assert {p["user_id"] for p in sent["players"]} == {"u2", "u3"}
+
+    def test_swapping_players_announces_the_new_pairings(self, service, repo, announcements):
+        slug, bracket_id = published(service, repo, 4)
+        announcements.clear()
+
+        service.swap_players(slug, 1, 2)
+
+        paired = [{p["user_id"] for p in a["players"]} for a in announcements]
+        assert len(paired) == 2
+        assert {"u2", "u4"} in paired
+        assert {"u1", "u3"} in paired
 
 
 class TestBracketMatchRecords:

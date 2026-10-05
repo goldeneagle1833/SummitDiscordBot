@@ -271,6 +271,8 @@ class BracketService:
         self._repo.replace_matches(bracket_id, matches)
         self._repo.set_counts(bracket_id, len(entrants), bracket_size_for(len(entrants)))
         self._repo.set_status(bracket_id, "published")
+        # Round one is paired the moment the bracket goes live.
+        self._announce_open_matches(bracket_id)
 
         return {
             "slug": bracket["slug"],
@@ -342,6 +344,11 @@ class BracketService:
                         "winner_user_id": incoming["user_id"],
                     },
                 )
+
+        # Both matches now have a different pairing to tell the players about.
+        self._announce_open_matches(
+            bracket["bracket_id"], {a["match"]["match_no"], b["match"]["match_no"]}
+        )
 
         return {
             "swapped": [a["player"]["name"], b["player"]["name"]],
@@ -1385,6 +1392,20 @@ class BracketService:
                 bracket.get("slug"), match.get("match_no"), e,
             )
 
+    def _announce_open_matches(self, bracket_id: int, match_nos=None):
+        """Announce every match (or just `match_nos`) waiting to be played."""
+        try:
+            bracket = self._repo.get_bracket(bracket_id=bracket_id)
+            for match in self._repo.get_matches(bracket_id):
+                if match_nos is not None and match["match_no"] not in match_nos:
+                    continue
+                if match["state"] not in ("bye", "complete", "empty") and (
+                    match["p1_user_id"] and match["p2_user_id"]
+                ):
+                    self._announce_pairing(bracket, match)
+        except Exception as e:
+            logger.error("Bracket %s: could not announce pairings: %s", bracket_id, e)
+
     def _pairing_payload(self, bracket: dict, match: dict) -> dict:
         ids = [str(match["p1_user_id"]), str(match["p2_user_id"])]
         names = self._site_names(ids)
@@ -1408,6 +1429,7 @@ class BracketService:
             "bracket_name": bracket["name"],
             "round_title": match["round_title"],
             "match_no": match["match_no"],
+            "first_round": match.get("round") == 1,
             "bracket_url": f"{site}/brackets/{bracket['slug']}",
             "players": [
                 {**seat, "opponent": other}

@@ -28,6 +28,8 @@ TOP_CUT_BYES = 8
 # overrides it; the default is the Summit server's role, so the live config
 # file (which isn't in git) needs no change.
 DEFAULT_TOP_CUT_ROLE_ID = 1342136670866374706
+# Where new bracket pairings are posted. config.TOP_CUT_CHANNEL_ID overrides it.
+DEFAULT_TOP_CUT_CHANNEL_ID = 1365487028115996692
 BRACKET_NAME_SUFFIX = "Post Season Bracket"
 
 # <t:1794805140:F>, <t:1794805140>, or a bare unix timestamp

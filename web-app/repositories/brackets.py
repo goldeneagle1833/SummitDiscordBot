@@ -411,6 +411,21 @@ class BracketRepository:
         conn.close()
         return dict(row) if row else None
 
+    def claim_pairing_announcement(self, bracket_id: int, match_no: int, pairing: str) -> bool:
+        """Mark a pairing as announced; True only the first time for that pairing."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE bracket_matches SET pairing_announced = ?"
+            " WHERE bracket_id = ? AND match_no = ?"
+            " AND (pairing_announced IS NULL OR pairing_announced != ?)",
+            (pairing, bracket_id, match_no, pairing),
+        )
+        claimed = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return claimed
+
     def claim_elo_refund(self, bracket_id: int, match_no: int) -> bool:
         """Clear a match's applied-ELO flag; True only for the caller that cleared it."""
         conn = self._get_connection()

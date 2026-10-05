@@ -156,6 +156,7 @@ def create_bracket_tables(db_path=None):
         "replay_added_by",
         "replay_added_at",
         "elo_applied_at",
+        "pairing_announced",
     ):
         if column not in existing:
             cursor.execute(f"ALTER TABLE bracket_matches ADD COLUMN {column} TEXT")

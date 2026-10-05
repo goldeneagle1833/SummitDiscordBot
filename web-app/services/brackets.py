@@ -8,8 +8,10 @@ site's existing 48-hour match confirmation flow.
 
 import json
 import logging
+import os
 import random
 import re
+import threading
 import time
 from datetime import datetime
 from urllib.parse import urlparse
@@ -35,6 +37,7 @@ from utils.card_images import attach_images
 logger = logging.getLogger(__name__)
 
 SEED_SOURCES = ("ticket_holders", "overall", "manual")
+PUBLIC_SITE_URL = "https://sorcererssummit.com"
 
 
 class BracketError(Exception):
@@ -56,6 +59,7 @@ class BracketService:
         match_repo=None,
         profile_repo=None,
         events_repo=None,
+        pairing_notifier=None,
     ):
         self._repo = repo or BracketRepository()
         self._leaderboard_override = leaderboard_service
@@ -64,6 +68,8 @@ class BracketService:
         self._match_repo_override = match_repo
         self._profile_repo_override = profile_repo
         self._events_repo_override = events_repo
+        # Tests swap in a callable to capture pairing announcements.
+        self._pairing_notifier = pairing_notifier
 
     @property
     def _leaderboard(self):
@@ -1345,10 +1351,69 @@ class BracketService:
                     f"p{match['next_slot']}_name": winner_name(match),
                 },
             )
+            if parent["p1_user_id"] and parent["p2_user_id"]:
+                self._announce_pairing(bracket, parent)
         else:
             # No next match means that was the final.
             self._repo.set_status(bracket_id, "complete")
             self._add_to_top8(bracket_id)
+
+    def _announce_pairing(self, bracket: dict, match: dict):
+        """DM both players their new pairing, once both seats are filled.
+
+        Each pairing is announced once: an admin re-entering the same result
+        clears and refills the seat, but the same two players are not DMed
+        again. Sent from a background thread, and never allowed to fail the
+        result that produced the pairing.
+        """
+        try:
+            pairing = "|".join(sorted((str(match["p1_user_id"]), str(match["p2_user_id"]))))
+            if not self._repo.claim_pairing_announcement(
+                bracket["bracket_id"], match["match_no"], pairing
+            ):
+                return
+            payload = self._pairing_payload(bracket, match)
+            if self._pairing_notifier:
+                self._pairing_notifier(payload)
+                return
+            threading.Thread(
+                target=_send_pairing_to_bot, args=(payload,), daemon=True
+            ).start()
+        except Exception as e:
+            logger.error(
+                "Bracket %s match %s: could not announce the pairing: %s",
+                bracket.get("slug"), match.get("match_no"), e,
+            )
+
+    def _pairing_payload(self, bracket: dict, match: dict) -> dict:
+        ids = [str(match["p1_user_id"]), str(match["p2_user_id"])]
+        names = self._site_names(ids)
+        decks = {d["seed"]: d for d in self._repo.get_decks(bracket["bracket_id"])}
+        seats = [
+            {
+                "user_id": ids[0],
+                "name": names.get(ids[0]) or match["p1_name"],
+                "seed": match["p1_seed"],
+                "deck_submitted": bool((decks.get(match["p1_seed"]) or {}).get("deck_url")),
+            },
+            {
+                "user_id": ids[1],
+                "name": names.get(ids[1]) or match["p2_name"],
+                "seed": match["p2_seed"],
+                "deck_submitted": bool((decks.get(match["p2_seed"]) or {}).get("deck_url")),
+            },
+        ]
+        site = (os.environ.get("PUBLIC_SITE_URL") or PUBLIC_SITE_URL).rstrip("/")
+        return {
+            "bracket_name": bracket["name"],
+            "round_title": match["round_title"],
+            "match_no": match["match_no"],
+            "bracket_url": f"{site}/brackets/{bracket['slug']}",
+            "players": [
+                {**seat, "opponent": other}
+                for seat, other in ((seats[0], seats[1]), (seats[1], seats[0]))
+            ],
+        }
 
     def _reverse_elo(self, bracket: dict, match: dict):
         try:
@@ -1541,6 +1606,25 @@ class BracketService:
         if str(match["p1_user_id"]) == str(user_id):
             return match["p2_name"]
         return match["p1_name"]
+
+
+def _send_pairing_to_bot(payload: dict):
+    """Ask the bot to DM both players their new bracket pairing."""
+    from routes.api.matchmaking import relay_to_bot
+
+    try:
+        body, status = relay_to_bot(
+            "POST",
+            "/bracket-match-notify",
+            payload,
+            unavailable_body={"sent": 0, "reason": "bot_unavailable"},
+        )
+        logger.info(
+            "Bracket pairing DM for %s %s: status=%s %s",
+            payload.get("bracket_name"), payload.get("round_title"), status, body,
+        )
+    except Exception as e:
+        logger.error("Bracket pairing DM failed: %s", e)
 
 
 def _is_playable(match: dict) -> bool:

@@ -112,13 +112,20 @@ def match_log(match_db):
 
 
 @pytest.fixture()
-def service(repo, curiosa, ladder, match_log):
+def announcements():
+    """Pairing DMs the service asked the bot to send."""
+    return []
+
+
+@pytest.fixture()
+def service(repo, curiosa, ladder, match_log, announcements):
     return BracketService(
         repo=repo,
         leaderboard_service=FakeLeaderboard(),
         curiosa_service=curiosa,
         elo_repo=ladder,
         match_repo=match_log,
+        pairing_notifier=announcements.append,
     )
 
 
@@ -1460,6 +1467,90 @@ class TestBracketEloRefund:
         assert ladder.get_user_elo("u1") == 1500
         assert ladder.get_user_elo("u4") == 1500
         assert service.refund_applied_elo() == 0
+
+
+class TestPairingAnnouncements:
+    """Both players are DMed once their next match has both seats filled."""
+
+    def _first_round(self, repo, bracket_id):
+        return [m for m in repo.get_matches(bracket_id) if m["round"] == 1]
+
+    def test_one_side_decided_announces_nothing(self, service, repo, announcements):
+        slug, bracket_id = published(service, repo, 4)
+        first = self._first_round(repo, bracket_id)[0]
+
+        service.set_result(slug, first["match_no"], first["p1_user_id"], admin_id="a")
+
+        assert announcements == []
+
+    def test_both_sides_decided_announces_the_pairing(self, service, repo, announcements):
+        slug, bracket_id = published(service, repo, 4, name="Gothic Cup")
+        first, second = self._first_round(repo, bracket_id)[:2]
+        service.submit_deck(slug, "https://curiosa.io/decks/one", actor_id=first["p1_user_id"])
+
+        service.set_result(slug, first["match_no"], first["p1_user_id"], admin_id="a")
+        service.set_result(slug, second["match_no"], second["p1_user_id"], admin_id="a")
+
+        [sent] = announcements
+        final = repo.get_match(bracket_id, first["next_match_no"])
+        assert sent["bracket_name"] == "Gothic Cup"
+        assert sent["round_title"] == final["round_title"]
+        assert sent["bracket_url"].endswith(f"/brackets/{slug}")
+        players = {p["user_id"]: p for p in sent["players"]}
+        assert set(players) == {first["p1_user_id"], second["p1_user_id"]}
+        assert players[first["p1_user_id"]]["opponent"]["user_id"] == second["p1_user_id"]
+        assert players[first["p1_user_id"]]["deck_submitted"] is True
+        assert players[second["p1_user_id"]]["deck_submitted"] is False
+
+    def test_a_bye_holder_is_announced_when_their_opponent_arrives(
+        self, service, repo, announcements
+    ):
+        slug, bracket_id = published(service, repo, 3)  # seed 1 has a bye
+        playable = next(
+            m for m in self._first_round(repo, bracket_id) if m["state"] != "bye"
+        )
+
+        service.set_result(slug, playable["match_no"], playable["p1_user_id"], admin_id="a")
+
+        [sent] = announcements
+        assert "u1" in {p["user_id"] for p in sent["players"]}
+
+    def test_re_confirming_the_same_result_does_not_repeat_it(
+        self, service, repo, announcements
+    ):
+        slug, bracket_id = published(service, repo, 4)
+        first, second = self._first_round(repo, bracket_id)[:2]
+        service.set_result(slug, first["match_no"], first["p1_user_id"], admin_id="a")
+        service.set_result(slug, second["match_no"], second["p1_user_id"], admin_id="a")
+
+        service.set_result(slug, second["match_no"], second["p1_user_id"], admin_id="a")
+
+        assert len(announcements) == 1
+
+    def test_a_corrected_result_announces_the_new_pairing(self, service, repo, announcements):
+        slug, bracket_id = published(service, repo, 4)
+        first, second = self._first_round(repo, bracket_id)[:2]
+        service.set_result(slug, first["match_no"], first["p1_user_id"], admin_id="a")
+        service.set_result(slug, second["match_no"], second["p1_user_id"], admin_id="a")
+
+        service.set_result(slug, second["match_no"], second["p2_user_id"], admin_id="a")
+
+        assert len(announcements) == 2
+        assert second["p2_user_id"] in {p["user_id"] for p in announcements[-1]["players"]}
+
+    def test_a_failed_notifier_never_blocks_the_result(self, service, repo):
+        def broken(payload):
+            raise RuntimeError("bot is down")
+
+        service._pairing_notifier = broken
+        slug, bracket_id = published(service, repo, 4)
+        first, second = self._first_round(repo, bracket_id)[:2]
+        service.set_result(slug, first["match_no"], first["p1_user_id"], admin_id="a")
+
+        service.set_result(slug, second["match_no"], second["p1_user_id"], admin_id="a")
+
+        final = repo.get_match(bracket_id, first["next_match_no"])
+        assert final["p1_user_id"] and final["p2_user_id"]
 
 
 class TestBracketMatchRecords:

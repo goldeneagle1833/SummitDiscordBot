@@ -420,6 +420,23 @@ async def start_matchmaking_api(bot):
             logger.warning(f"PSO notify: cannot DM user {loser_discord_id} (DMs disabled)")
             return web.json_response({"sent": False, "reason": "dms_disabled"})
 
+    async def bracket_match_notify(request):
+        """DM both players of a bracket match that just got its pairing."""
+        from services.bracket_notify import send_pairing_dms
+
+        try:
+            payload = await request.json()
+        except ValueError:
+            raise web.HTTPBadRequest(text="Request body must be JSON")
+        if not isinstance(payload, dict) or not payload.get("players"):
+            raise web.HTTPBadRequest(text="players are required")
+
+        results = await send_pairing_dms(bot, payload)
+        return web.json_response({
+            "sent": sum(1 for r in results if r["sent"]),
+            "results": results,
+        })
+
     async def explorer_application_notify(request):
         """DM Explorer admins that a new host application has come in."""
         try:
@@ -499,6 +516,7 @@ async def start_matchmaking_api(bot):
     )
     app.router.add_get("/voice", voice)
     app.router.add_post("/pso-match-notify", pso_match_notify)
+    app.router.add_post("/bracket-match-notify", bracket_match_notify)
     app.router.add_post(
         "/explorer-application-notify", explorer_application_notify
     )

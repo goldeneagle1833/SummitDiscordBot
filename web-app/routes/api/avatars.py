@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 avatars_bp = Blueprint("avatars", __name__)
 
 Z_SCORE = 1.96
+
+# Who went first is only trusted for matches from this date onward
+PLAY_DRAW_CUTOFF = "2026-02-07"
 M_VALUE = 10
 
 
@@ -409,14 +412,22 @@ def _collect_external_rows(cur, source_filter, event_start=None, event_end=None)
     return rows
 
 
-def _collect_discord_rows_with_players(cur, event_filter):
+def _collect_discord_rows_with_players(cur, event_filter, play_draw=False):
     """Like _collect_discord_rows but also includes player IDs and names.
 
     Returns (rows, use_new_columns) where rows are tuples of
     (winner_deck_json, loser_deck_json, winner_id, winner_name, loser_id, loser_name).
+
+    With play_draw=True each row gains a 7th column: whether the winner went
+    first ('y'/'n'), or NULL when unknown or before PLAY_DRAW_CUTOFF.
     """
     all_rows = []
     use_new_columns = True
+
+    cols = "json_deck_data_winner, json_deck_data_loser, winner_id, winner_display_name, losser_id, losser_display_name"
+    if play_draw:
+        cols += (f", CASE WHEN timestamp >= '{PLAY_DRAW_CUTOFF}'"
+                 " THEN COALESCE(winner_went_first, first_player) END")
 
     deck_where = ("((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
                   " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))")
@@ -424,8 +435,7 @@ def _collect_discord_rows_with_players(cur, event_filter):
     if event_filter in ("all", "current"):
         try:
             cur.execute(f"""
-                SELECT json_deck_data_winner, json_deck_data_loser,
-                       winner_id, winner_display_name, losser_id, losser_display_name
+                SELECT {cols}
                 FROM match_records
                 WHERE {deck_where}
                   AND (source = 'Discord' OR source IS NULL)
@@ -438,8 +448,7 @@ def _collect_discord_rows_with_players(cur, event_filter):
     if event_filter == "all" and use_new_columns:
         try:
             cur.execute(f"""
-                SELECT json_deck_data_winner, json_deck_data_loser,
-                       winner_id, winner_display_name, losser_id, losser_display_name
+                SELECT {cols}
                 FROM match_records_archive
                 WHERE {deck_where}
             """)
@@ -453,8 +462,7 @@ def _collect_discord_rows_with_players(cur, event_filter):
                 for table in ("match_records", "match_records_archive"):
                     try:
                         cur.execute(f"""
-                            SELECT json_deck_data_winner, json_deck_data_loser,
-                                   winner_id, winner_display_name, losser_id, losser_display_name
+                            SELECT {cols}
                             FROM {table}
                             WHERE {deck_where} AND timestamp >= ? AND timestamp <= ?
                               AND (source = 'Discord' OR source IS NULL)
@@ -466,8 +474,7 @@ def _collect_discord_rows_with_players(cur, event_filter):
             try:
                 event_id = int(event_filter)
                 cur.execute(f"""
-                    SELECT json_deck_data_winner, json_deck_data_loser,
-                           winner_id, winner_display_name, losser_id, losser_display_name
+                    SELECT {cols}
                     FROM match_records_archive
                     WHERE {deck_where} AND event_id = ?
                 """, (event_id,))
@@ -2263,7 +2270,7 @@ def get_play_draw_stats():
     Supports optional query param, matching the avatar table's event filter:
       ?event=all (default) | current | season_<id> | <event_id>
     """
-    cutoff_date = "2026-02-07"
+    cutoff_date = PLAY_DRAW_CUTOFF
     event_filter = request.args.get("event", "all")
 
     # Only admins can query the active event
@@ -2608,8 +2615,18 @@ def get_elo_bracket_matrix():
 
     Each cell shows how often players in one ELO bracket beat opponents
     in another ELO bracket. Rows = player bracket, columns = opponent bracket.
+    Each row also has the bracket's win rate on the play and on the draw.
+
+    Supports optional query params:
+      ?event=all (default) | current | season_<id> | <event_id>
+      ?source=discord (default) | all | <source_name>
     """
     source = request.args.get("source", "discord")
+    event_filter = request.args.get("event", "all")
+
+    # Only admins can query the active event
+    if event_filter == "current" and not is_admin():
+        event_filter = "all"
 
     if not MATCH_RECORDS_DB_PATH.exists() or not ELO_DB_PATH.exists():
         return jsonify({"brackets": [], "rows": []})
@@ -2635,9 +2652,12 @@ def get_elo_bracket_matrix():
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
         if source in ("all", "discord"):
-            rows, use_new = _collect_discord_rows_with_players(cur, "all")
+            rows, use_new = _collect_discord_rows_with_players(cur, event_filter, play_draw=True)
         else:
-            rows = _collect_external_rows_with_players(cur, source)
+            event_start, event_end = (None, None)
+            if event_filter != "all":
+                event_start, event_end = _get_event_date_range(event_filter)
+            rows = _collect_external_rows_with_players(cur, source, event_start, event_end)
             use_new = True
         conn.close()
     except sqlite3.OperationalError as e:
@@ -2650,8 +2670,20 @@ def get_elo_bracket_matrix():
     def elo_bracket(elo):
         return (elo // 100) * 100
 
+    min_games = 5
+
     # 3) Tally: {player_bracket: {opponent_bracket: {"wins": n, "losses": n}}}
     bracket_data = {}
+    # {player_bracket: {"play": {"wins", "losses"}, "draw": {...}}}
+    play_draw_data = {}
+
+    def _empty_play_draw():
+        return {"play": {"wins": 0, "losses": 0}, "draw": {"wins": 0, "losses": 0}}
+
+    def _rate(d):
+        t = d["wins"] + d["losses"]
+        return {"wins": d["wins"], "losses": d["losses"], "total": t,
+                "win_rate": round(d["wins"] / t * 100, 1) if t >= min_games else None}
 
     for row in rows:
         winner_id = str(row[2]) if row[2] else None
@@ -2678,6 +2710,15 @@ def get_elo_bracket_matrix():
         cell = ld.setdefault(w_bracket, {"wins": 0, "losses": 0})
         cell["losses"] += 1
 
+        # On the play / on the draw, from each player's side
+        winner_went_first = row[6] if len(row) > 6 else None
+        if winner_went_first is not None:
+            winner_on_play = "y" in str(winner_went_first).lower()
+            w_pd = play_draw_data.setdefault(w_bracket, _empty_play_draw())
+            l_pd = play_draw_data.setdefault(l_bracket, _empty_play_draw())
+            w_pd["play" if winner_on_play else "draw"]["wins"] += 1
+            l_pd["draw" if winner_on_play else "play"]["losses"] += 1
+
     if not bracket_data:
         return jsonify({"brackets": [], "rows": []})
 
@@ -2689,7 +2730,6 @@ def get_elo_bracket_matrix():
     brackets = sorted(all_brackets)
 
     # 5) Build response rows
-    min_games = 5
     result_rows = []
     for brk in brackets:
         opp_data = bracket_data.get(brk, {})
@@ -2714,9 +2754,12 @@ def get_elo_bracket_matrix():
             "label": f"{brk}-{brk + 99}",
             "cells": cells,
             "overall": {"wins": total_wins, "losses": total_losses, "total": total_games, "win_rate": overall_wr},
+            "on_play": _rate(play_draw_data.get(brk, _empty_play_draw())["play"]),
+            "on_draw": _rate(play_draw_data.get(brk, _empty_play_draw())["draw"]),
         })
 
     return jsonify({
+        "event": event_filter,
         "brackets": brackets,
         "rows": result_rows,
     })

@@ -78,17 +78,35 @@ function sortAvatars(data, key) {
   }
 }
 
-function EloBracketMatrix({ sourceFilter }) {
+function RateCell({ stat }) {
+  if (stat?.win_rate == null) {
+    return <span className="text-text-muted text-xs">{stat?.total > 0 ? `${stat.total}g` : '—'}</span>
+  }
+  return (
+    <>
+      <span className="font-bold" style={{ color: getWinRateColor(stat.win_rate) }}>
+        {stat.win_rate}%
+      </span>
+      <div className="text-xs text-text-muted">({stat.total})</div>
+    </>
+  )
+}
+
+function EloBracketMatrix({ sourceFilter, eventFilter }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let cancelled = false
     setLoading(true)
-    get(`/api/avatars/elo-bracket-matrix?source=${sourceFilter}`)
-      .then(setData)
-      .catch(() => setData(null))
-      .finally(() => setLoading(false))
-  }, [sourceFilter])
+    const params = new URLSearchParams({ source: sourceFilter })
+    if (eventFilter !== 'all') params.set('event', eventFilter)
+    get(`/api/avatars/elo-bracket-matrix?${params}`)
+      .then((d) => { if (!cancelled) setData(d) })
+      .catch(() => { if (!cancelled) setData(null) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [sourceFilter, eventFilter])
 
   if (loading) return <p className="text-text-muted text-sm py-4">Loading ELO bracket matrix...</p>
   if (!data || !data.rows?.length) return <p className="text-text-muted text-sm py-4">Not enough data for ELO bracket matrix.</p>
@@ -110,6 +128,12 @@ function EloBracketMatrix({ sourceFilter }) {
             ))}
             <th className="px-2 py-2 text-center text-xs font-bold text-secondary uppercase whitespace-nowrap">
               Overall
+            </th>
+            <th className="px-2 py-2 text-center text-xs font-semibold text-text-muted uppercase whitespace-nowrap border-l border-border">
+              On the Play
+            </th>
+            <th className="px-2 py-2 text-center text-xs font-semibold text-text-muted uppercase whitespace-nowrap">
+              On the Draw
             </th>
           </tr>
         </thead>
@@ -152,6 +176,12 @@ function EloBracketMatrix({ sourceFilter }) {
                 ) : (
                   <span className="text-text-muted">—</span>
                 )}
+              </td>
+              <td className="px-2 py-2 text-center whitespace-nowrap border-l border-border">
+                <RateCell stat={row.on_play} />
+              </td>
+              <td className="px-2 py-2 text-center whitespace-nowrap">
+                <RateCell stat={row.on_draw} />
               </td>
             </tr>
           ))}
@@ -591,9 +621,10 @@ export default function Avatars() {
               Win Rate by Player ELO vs Opponent ELO
             </h2>
             <p className="text-xs text-text-muted text-center mb-4">
-              Shows win rates for each player ELO bracket against each opponent ELO bracket. Uses current player ratings.
+              Shows win rates for each player ELO bracket against each opponent ELO bracket, plus each bracket's
+              win rate on the play and on the draw (matches from 2/7/2026 onward). Uses current player ratings.
             </p>
-            <EloBracketMatrix sourceFilter={sourceFilter} />
+            <EloBracketMatrix sourceFilter={sourceFilter} eventFilter={eventFilter} />
           </section>
         </>
       )}

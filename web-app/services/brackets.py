@@ -1366,45 +1366,64 @@ class BracketService:
             self._add_to_top8(bracket_id)
 
     def _announce_pairing(self, bracket: dict, match: dict):
-        """DM both players their new pairing, once both seats are filled.
+        """Announce one newly filled match."""
+        self._send_pairings(bracket, [self._claim_pairing(bracket, match)])
+
+    def _announce_open_matches(self, bracket_id: int, match_nos=None):
+        """Announce every match (or just `match_nos`) waiting to be played, together."""
+        try:
+            bracket = self._repo.get_bracket(bracket_id=bracket_id)
+            claimed = [
+                self._claim_pairing(bracket, match)
+                for match in self._repo.get_matches(bracket_id)
+                if (match_nos is None or match["match_no"] in match_nos)
+                and match["state"] not in ("bye", "complete", "empty")
+                and match["p1_user_id"] and match["p2_user_id"]
+            ]
+            self._send_pairings(bracket, claimed)
+        except Exception as e:
+            logger.error("Bracket %s: could not announce pairings: %s", bracket_id, e)
+
+    def _claim_pairing(self, bracket: dict, match: dict) -> dict | None:
+        """The message for a pairing not yet announced, or None.
 
         Each pairing is announced once: an admin re-entering the same result
-        clears and refills the seat, but the same two players are not DMed
-        again. Sent from a background thread, and never allowed to fail the
-        result that produced the pairing.
+        clears and refills the seat, but the same two players are not told
+        again.
         """
         try:
             pairing = "|".join(sorted((str(match["p1_user_id"]), str(match["p2_user_id"]))))
             if not self._repo.claim_pairing_announcement(
                 bracket["bracket_id"], match["match_no"], pairing
             ):
-                return
-            payload = self._pairing_payload(bracket, match)
-            if self._pairing_notifier:
-                self._pairing_notifier(payload)
-                return
-            threading.Thread(
-                target=_send_pairing_to_bot, args=(payload,), daemon=True
-            ).start()
+                return None
+            return self._pairing_payload(bracket, match)
         except Exception as e:
             logger.error(
                 "Bracket %s match %s: could not announce the pairing: %s",
                 bracket.get("slug"), match.get("match_no"), e,
             )
+            return None
 
-    def _announce_open_matches(self, bracket_id: int, match_nos=None):
-        """Announce every match (or just `match_nos`) waiting to be played."""
+    def _send_pairings(self, bracket: dict, pairings: list):
+        """Hand new pairings to the bot: it DMs the players and posts them in
+        the Top Cut channel. Sent from a background thread, and never allowed
+        to fail the result or publish that produced them."""
+        pairings = [p for p in pairings if p]
+        if not pairings:
+            return
+        batch = {
+            "bracket_name": bracket["name"],
+            "bracket_url": pairings[0]["bracket_url"],
+            "pairings": pairings,
+        }
         try:
-            bracket = self._repo.get_bracket(bracket_id=bracket_id)
-            for match in self._repo.get_matches(bracket_id):
-                if match_nos is not None and match["match_no"] not in match_nos:
-                    continue
-                if match["state"] not in ("bye", "complete", "empty") and (
-                    match["p1_user_id"] and match["p2_user_id"]
-                ):
-                    self._announce_pairing(bracket, match)
+            if self._pairing_notifier:
+                self._pairing_notifier(batch)
+                return
+            threading.Thread(target=_send_pairing_to_bot, args=(batch,), daemon=True).start()
         except Exception as e:
-            logger.error("Bracket %s: could not announce pairings: %s", bracket_id, e)
+            logger.error("Bracket %s: could not send pairings: %s", bracket.get("slug"), e)
 
     def _pairing_payload(self, bracket: dict, match: dict) -> dict:
         ids = [str(match["p1_user_id"]), str(match["p2_user_id"])]
@@ -1631,7 +1650,7 @@ class BracketService:
 
 
 def _send_pairing_to_bot(payload: dict):
-    """Ask the bot to DM both players their new bracket pairing."""
+    """Ask the bot to DM the players and post the pairings in Top Cut."""
     from routes.api.matchmaking import relay_to_bot
 
     try:
@@ -1642,8 +1661,8 @@ def _send_pairing_to_bot(payload: dict):
             unavailable_body={"sent": 0, "reason": "bot_unavailable"},
         )
         logger.info(
-            "Bracket pairing DM for %s %s: status=%s %s",
-            payload.get("bracket_name"), payload.get("round_title"), status, body,
+            "Bracket pairings for %s (%s): status=%s %s",
+            payload.get("bracket_name"), len(payload.get("pairings") or []), status, body,
         )
     except Exception as e:
         logger.error("Bracket pairing DM failed: %s", e)

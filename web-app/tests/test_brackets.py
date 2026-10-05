@@ -118,14 +118,22 @@ def announcements():
 
 
 @pytest.fixture()
-def service(repo, curiosa, ladder, match_log, announcements):
+def batches():
+    """Each call the service made to the bot."""
+    return []
+
+
+@pytest.fixture()
+def service(repo, curiosa, ladder, match_log, announcements, batches):
     return BracketService(
         repo=repo,
         leaderboard_service=FakeLeaderboard(),
         curiosa_service=curiosa,
         elo_repo=ladder,
         match_repo=match_log,
-        pairing_notifier=announcements.append,
+        pairing_notifier=lambda batch: (
+            batches.append(batch), announcements.extend(batch["pairings"])
+        ),
     )
 
 
@@ -1568,6 +1576,13 @@ class TestPairingAnnouncements:
         assert all(a["first_round"] for a in announcements)
         paired = [{p["user_id"] for p in a["players"]} for a in announcements]
         assert {"u1", "u8"} in paired
+
+    def test_publishing_sends_round_one_as_one_batch(self, service, repo, batches):
+        published(service, repo, 8, name="Gothic Cup")
+
+        [batch] = batches
+        assert batch["bracket_name"] == "Gothic Cup"
+        assert len(batch["pairings"]) == 4
 
     def test_a_bye_is_not_announced_as_a_pairing(self, service, repo, announcements):
         published(service, repo, 3)  # seed 1 has a bye; only 2 v 3 is played

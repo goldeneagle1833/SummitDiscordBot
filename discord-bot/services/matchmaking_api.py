@@ -1,5 +1,6 @@
 """Loopback-only HTTP API exposing the bot's authoritative LFG state."""
 
+import asyncio
 import hmac
 import json
 import logging
@@ -34,6 +35,8 @@ from services.voice_presence import parse_user_ids, voice_session
 
 
 logger = logging.getLogger("discord_bot")
+# Strong references so fire-and-forget announcements are not garbage collected.
+_background_tasks = set()
 VOICE_URL = SUMMIT_VOICE_URL
 
 # TTL cache for guild.fetch_member() results to avoid hitting Discord API
@@ -421,21 +424,40 @@ async def start_matchmaking_api(bot):
             return web.json_response({"sent": False, "reason": "dms_disabled"})
 
     async def bracket_match_notify(request):
-        """DM both players of a bracket match that just got its pairing."""
-        from services.bracket_notify import send_pairing_dms
+        """DM the players of new bracket pairings and post them in Top Cut."""
+        from services.bracket_notify import (
+            find_top_cut_channel,
+            post_pairings,
+            send_pairing_dms,
+        )
 
         try:
             payload = await request.json()
         except ValueError:
             raise web.HTTPBadRequest(text="Request body must be JSON")
-        if not isinstance(payload, dict) or not payload.get("players"):
-            raise web.HTTPBadRequest(text="players are required")
+        if not isinstance(payload, dict) or not (payload.get("pairings") or payload.get("players")):
+            raise web.HTTPBadRequest(text="pairings are required")
 
-        results = await send_pairing_dms(bot, payload)
-        return web.json_response({
-            "sent": sum(1 for r in results if r["sent"]),
-            "results": results,
-        })
+        async def announce():
+            try:
+                channel = find_top_cut_channel(
+                    bot, config.GUILD_ID, getattr(config, "TOP_CUT_CHANNEL_ID", None)
+                )
+                if channel is None:
+                    logger.warning(
+                        "Bracket notify: no Top Cut channel; set TOP_CUT_CHANNEL_ID in config.py"
+                    )
+                await post_pairings(bot, payload, channel)
+                await send_pairing_dms(bot, payload)
+            except Exception:
+                logger.exception("Bracket notify failed")
+
+        # A whole first round of DMs can outlast the web app's request, so
+        # answer now and announce in the background.
+        task = asyncio.create_task(announce())
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+        return web.json_response({"accepted": True}, status=202)
 
     async def explorer_application_notify(request):
         """DM Explorer admins that a new host application has come in."""

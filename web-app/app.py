@@ -44,6 +44,7 @@ from migrations.create_card_points_tables import create_card_points_tables
 from migrations.create_card_catalog_table import create_card_catalog_table
 from migrations.create_bracket_tables import create_bracket_tables
 from migrations.refund_bracket_elo import refund_bracket_elo
+from migrations.archive_bracket_matches import archive_bracket_matches
 
 # Configure logging
 logging.basicConfig(
@@ -147,6 +148,11 @@ def create_app() -> Flask:
         refund_bracket_elo()
     except Exception as e:
         logger.error(f"Failed to refund bracket ELO: {e}")
+
+    try:
+        archive_bracket_matches()
+    except Exception as e:
+        logger.error(f"Failed to archive bracket matches: {e}")
 
     # Request timing, outbound API timing and resource sampling
     init_monitoring(app)

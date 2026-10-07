@@ -63,6 +63,13 @@ class MatchRepository:
                 )
             except sqlite3.OperationalError:
                 pass  # Column already exists
+            # Bracket games are filed straight into the archive and tagged so,
+            # keeping them out of that season's archived standings. Season games
+            # the bot archives leave it NULL.
+            try:
+                cur.execute("ALTER TABLE match_records_archive ADD COLUMN source TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
         conn.commit()
         conn.close()
 
@@ -916,28 +923,81 @@ class MatchRepository:
         details.update(zip(optional, row[8:]))
         return details
 
-    def insert_match(self, data: dict) -> int:
+    # Tables a site-settled match (a bracket game) can be written to.
+    MATCH_TABLES = ("match_records", "match_records_archive")
+
+    # The bot's match_records_archive schema, for a database the bot has not
+    # archived a season into yet.
+    _ARCHIVE_SCHEMA = """CREATE TABLE IF NOT EXISTS match_records_archive (
+        archive_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
+        original_match_id INTEGER,
+        reporter_id INTEGER,
+        winner_id INTEGER,
+        winner_display_name TEXT,
+        losser_id INTEGER,
+        losser_display_name TEXT,
+        did_win BOOLEAN,
+        timestamp TEXT,
+        first_player TEXT,
+        match_time INTEGER,
+        curiosa_url TEXT,
+        curiosa_url_winner TEXT,
+        curiosa_url_loser TEXT,
+        match_comment TEXT,
+        json_deck_data TEXT,
+        json_deck_data_winner TEXT,
+        json_deck_data_loser TEXT,
+        winner_elo_change INTEGER,
+        loser_elo_change INTEGER,
+        winner_lifetime_elo_change INTEGER,
+        loser_lifetime_elo_change INTEGER,
+        archived_at TEXT,
+        winner_went_first TEXT,
+        loser_went_first TEXT,
+        winner_lifetime_elo_after INTEGER,
+        loser_lifetime_elo_after INTEGER,
+        match_type TEXT DEFAULT 'ranked',
+        source TEXT
+    )"""
+
+    def _table(self, table: str) -> str:
+        if table not in self.MATCH_TABLES:
+            raise ValueError(f"Unknown match table {table!r}")
+        return table
+
+    def _columns_of(self, cur, table: str) -> set:
+        if table == "match_records_archive":
+            cur.execute(self._ARCHIVE_SCHEMA)
+            try:
+                cur.execute("ALTER TABLE match_records_archive ADD COLUMN source TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+        cur.execute(f"PRAGMA table_info({table})")
+        return {row[1] for row in cur.fetchall()}
+
+    def insert_match(self, data: dict, table: str = "match_records") -> int:
         """Record a played match and return its row id.
 
-        Used for games the site settles itself - bracket results - so they sit
-        in match history beside everything else the ladder counts. Only columns
-        the table actually has are written, because match_records has grown
+        Used for games the site settles itself - bracket results, which go
+        to the archive so they stay out of the running season. Only columns
+        the table actually has are written, because these tables have grown
         over time and older databases carry fewer of them.
         """
+        table = self._table(table)
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute("PRAGMA table_info(match_records)")
-        available = {row[1] for row in cur.fetchall()}
+        available = self._columns_of(cur, table)
 
         row = {"did_win": 1, **data}
         columns = [c for c in row if c in available]
         if not columns:
             conn.close()
-            raise ValueError("match_records has none of the expected columns")
+            raise ValueError(f"{table} has none of the expected columns")
 
         placeholders = ", ".join("?" for _ in columns)
         cur.execute(
-            f"INSERT INTO match_records ({', '.join(columns)}) VALUES ({placeholders})",
+            f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",
             [row[c] for c in columns],
         )
         row_id = cur.lastrowid
@@ -945,18 +1005,19 @@ class MatchRepository:
         conn.close()
         return row_id
 
-    def update_match_row(self, row_id: int, fields: dict) -> bool:
+    def update_match_row(self, row_id: int, fields: dict, table: str = "match_records") -> bool:
         """Set columns on one match by row id, skipping any the table lacks."""
+        table = self._table(table)
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute("PRAGMA table_info(match_records)")
+        cur.execute(f"PRAGMA table_info({table})")
         available = {row[1] for row in cur.fetchall()}
         columns = [c for c in fields if c in available]
         if not columns:
             conn.close()
             return False
         cur.execute(
-            f"UPDATE match_records SET {', '.join(f'{c} = ?' for c in columns)} WHERE rowid = ?",
+            f"UPDATE {table} SET {', '.join(f'{c} = ?' for c in columns)} WHERE rowid = ?",
             [*(fields[c] for c in columns), row_id],
         )
         changed = cur.rowcount > 0
@@ -964,15 +1025,62 @@ class MatchRepository:
         conn.close()
         return changed
 
-    def delete_match_row(self, row_id: int) -> bool:
+    def delete_match_row(self, row_id: int, table: str = "match_records") -> bool:
         """Remove a match by row id. Bracket rows carry no match_id."""
+        table = self._table(table)
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM match_records WHERE rowid = ?", (row_id,))
+        try:
+            cur.execute(f"DELETE FROM {table} WHERE rowid = ?", (row_id,))
+        except sqlite3.OperationalError:
+            conn.close()
+            return False  # The table was never created
         deleted = cur.rowcount > 0
         conn.commit()
         conn.close()
         return deleted
+
+    def move_to_archive(self, row_id: int, extra: dict) -> int | None:
+        """Move one match_records row into the archive, returning its new id.
+
+        `extra` adds archive-only fields (event_id, archived_at, source). The
+        copy and delete share one write transaction, so two workers moving the
+        same row at once cannot both copy it: the second finds it gone and
+        gets None.
+        """
+        conn = self._get_connection()
+        conn.isolation_level = None
+        cur = conn.cursor()
+        try:
+            archive_columns = self._columns_of(cur, "match_records_archive")
+            cur.execute("BEGIN IMMEDIATE")
+            cur.execute("SELECT * FROM match_records WHERE rowid = ?", (row_id,))
+            found = cur.fetchone()
+            if found is None:
+                cur.execute("ROLLBACK")
+                return None
+            names = [d[0] for d in cur.description]
+            row = dict(zip(names, found))
+            row["original_match_id"] = row.get("match_id")
+            row.update(extra)
+            columns = [c for c in row if c in archive_columns and c != "archive_id"]
+            cur.execute(
+                f"INSERT INTO match_records_archive ({', '.join(columns)})"
+                f" VALUES ({', '.join('?' for _ in columns)})",
+                [row[c] for c in columns],
+            )
+            new_id = cur.lastrowid
+            cur.execute("DELETE FROM match_records WHERE rowid = ?", (row_id,))
+            cur.execute("COMMIT")
+            return new_id
+        except Exception:
+            try:
+                cur.execute("ROLLBACK")
+            except sqlite3.OperationalError:
+                pass
+            raise
+        finally:
+            conn.close()
 
     def delete_match(self, match_id: int) -> bool:
         """Delete a match record by rowid. Returns True if deleted."""

@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 
 SEED_SOURCES = ("ticket_holders", "overall", "manual")
 PUBLIC_SITE_URL = "https://sorcererssummit.com"
+# Bracket games are history, not season games, so they are logged here.
+ARCHIVE_TABLE = "match_records_archive"
 
 
 class BracketError(Exception):
@@ -1528,10 +1530,82 @@ class BracketService:
                             "winner_lifetime_elo_after": None,
                             "loser_lifetime_elo_after": None,
                         },
+                        table=self._record_table(match),
                     )
         if refunded:
             logger.info("Refunded ELO for %d bracket matches", refunded)
         return refunded
+
+    def archive_existing_records(self) -> int:
+        """Move bracket games logged in the running season into the archive.
+
+        Runs at startup. Bracket games used to be logged to match_records,
+        where the running season counts them. Returns how many were moved.
+        """
+        moved = 0
+        for bracket in self._repo.list_brackets(published_only=False):
+            for match in self._repo.get_matches(bracket["bracket_id"]):
+                row_id = match.get("match_record_id")
+                if not row_id or self._record_table(match) == ARCHIVE_TABLE:
+                    continue
+                try:
+                    new_id = self._match_repo.move_to_archive(
+                        row_id, self._archive_fields(bracket)
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Bracket %s match %s: could not archive its match: %s",
+                        bracket.get("slug"), match.get("match_no"), e,
+                    )
+                    continue
+                if new_id is None:
+                    continue  # Already moved, or the row is gone
+                self._repo.update_match(
+                    bracket["bracket_id"],
+                    match["match_no"],
+                    {"match_record_id": new_id, "match_record_table": ARCHIVE_TABLE},
+                )
+                moved += 1
+        if moved:
+            logger.info("Moved %d bracket matches into the match archive", moved)
+        return moved
+
+    @staticmethod
+    def _record_table(match: dict) -> str:
+        """Where a bracket match's history row lives; older ones are in match_records."""
+        return match.get("match_record_table") or "match_records"
+
+    def _archive_event_id(self, bracket: dict) -> int:
+        """The season a bracket's games are filed under in the archive.
+
+        A postseason bracket belongs to the season that just ended: the event
+        it was seeded from when that has ended, otherwise the most recent
+        ended event. Only with no ended event at all does it fall back to the
+        seeding event or the running one.
+        """
+        try:
+            events = self._elo_repo.get_all_events()
+        except Exception as e:
+            logger.warning("Bracket archive: could not read events: %s", e)
+            events = []
+        named = next(
+            (e for e in events if e["event_name"] == bracket.get("elo_event_name")), None
+        )
+        if named and not named["is_active"]:
+            return named["event_id"]
+        ended = [e for e in events if not e["is_active"]]
+        if ended:
+            return max(ended, key=lambda e: (e["end_date"] or "", e["event_id"]))["event_id"]
+        if named:
+            return named["event_id"]
+        return events[0]["event_id"] if events else 0
+
+    def _archive_fields(self, bracket: dict) -> dict:
+        return {
+            "event_id": self._archive_event_id(bracket),
+            "archived_at": datetime.now().isoformat(),
+            "source": self.MATCH_SOURCE,
+        }
 
     @staticmethod
     def _match_comment(bracket: dict, match: dict) -> str:
@@ -1543,8 +1617,10 @@ class BracketService:
         """Log a settled bracket game as a played match.
 
         It counts toward the players' history and record, but is a top cut
-        game: no ELO moves, and the match notes say so. The decks are the
-        ones submitted to the bracket.
+        game: no ELO moves, and the match notes say so. It is filed straight
+        into the match archive under the season the bracket followed, so the
+        running season never counts it. The decks are the ones submitted to
+        the bracket.
         """
         try:
             if match.get("match_record_id"):
@@ -1586,12 +1662,15 @@ class BracketService:
                     "loser_elo_change": 0,
                     "winner_lifetime_elo_after": elo_repo.get_user_elo(winner_id),
                     "loser_lifetime_elo_after": elo_repo.get_user_elo(loser_id),
-                    "source": self.MATCH_SOURCE,
                     "match_type": "ranked",
-                }
+                    **self._archive_fields(bracket),
+                },
+                table=ARCHIVE_TABLE,
             )
             self._repo.update_match(
-                bracket["bracket_id"], match["match_no"], {"match_record_id": row_id}
+                bracket["bracket_id"],
+                match["match_no"],
+                {"match_record_id": row_id, "match_record_table": ARCHIVE_TABLE},
             )
         except Exception as e:
             logger.error(
@@ -1604,9 +1683,11 @@ class BracketService:
         row_id = match.get("match_record_id")
         if not row_id:
             return
-        self._match_repo.delete_match_row(row_id)
+        self._match_repo.delete_match_row(row_id, table=self._record_table(match))
         self._repo.update_match(
-            bracket["bracket_id"], match["match_no"], {"match_record_id": None}
+            bracket["bracket_id"],
+            match["match_no"],
+            {"match_record_id": None, "match_record_table": None},
         )
 
     def _clear_from(self, bracket: dict, match_no: int):

@@ -1430,11 +1430,22 @@ class TestBracketEloRefund:
             match["match_no"],
             {"elo_applied_at": "2026-09-01T00:00:00", "winner_elo_change": 16, "loser_elo_change": -16},
         )
+        # Logged to the running season, as bracket games used to be.
         stored = repo.get_match(bracket_id, match["match_no"])
-        service._match_repo.update_match_row(
-            stored["match_record_id"],
-            {"winner_elo_change": 16, "loser_elo_change": -16, "match_comment": "Old Cup - Round 1"},
+        service._match_repo.delete_match_row(
+            stored["match_record_id"], table="match_records_archive"
         )
+        row_id = service._match_repo.insert_match({
+            "winner_id": "u1", "losser_id": "u4", "source": "Bracket",
+            "timestamp": "2026-09-01 12:00:00",
+            "winner_elo_change": 16, "loser_elo_change": -16,
+            "match_comment": "Old Cup - Round 1",
+        })
+        repo.update_match(
+            bracket_id, match["match_no"],
+            {"match_record_id": row_id, "match_record_table": None},
+        )
+        stored = repo.get_match(bracket_id, match["match_no"])
         return slug, bracket_id, stored
 
     def test_the_points_come_back(self, service, repo, ladder):
@@ -1610,12 +1621,15 @@ class TestBracketMatchRecords:
 
         conn = sqlite3.connect(str(match_db))
         conn.row_factory = sqlite3.Row
-        sql = "SELECT rowid, * FROM match_records WHERE source = 'Bracket'"
+        sql = "SELECT rowid, * FROM match_records_archive WHERE source = 'Bracket'"
         params = ()
         if user_id:
             sql += " AND (winner_id = ? OR losser_id = ?)"
             params = (user_id, user_id)
-        rows = [dict(r) for r in conn.execute(sql, params)]
+        try:
+            rows = [dict(r) for r in conn.execute(sql, params)]
+        except sqlite3.OperationalError:
+            rows = []  # Nothing has been archived yet
         conn.close()
         return rows
 
@@ -1699,6 +1713,148 @@ class TestBracketMatchRecords:
         service.set_result(slug, match["match_no"], "u1", admin_id="a")
 
         assert len(self._rows(match_db)) == 1
+
+
+class TestBracketGamesAreArchived:
+    """Bracket games are filed in the match archive, never the running season."""
+
+    def _add_events(self, elo_db, *events):
+        import sqlite3
+
+        conn = sqlite3.connect(str(elo_db))
+        conn.executemany(
+            "INSERT INTO events (event_id, event_name, start_date, end_date, is_active)"
+            " VALUES (?, ?, ?, ?, ?)",
+            events,
+        )
+        conn.commit()
+        conn.close()
+
+    def _table(self, match_db, table):
+        import sqlite3
+
+        conn = sqlite3.connect(str(match_db))
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(f"SELECT rowid AS row_id, * FROM {table}")]
+        conn.close()
+        return rows
+
+    def test_a_result_goes_to_the_archive_only(self, service, repo, match_db):
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        assert self._table(match_db, "match_records") == []
+        [row] = self._table(match_db, "match_records_archive")
+        assert row["source"] == "Bracket"
+        stored = repo.get_match(bracket_id, match["match_no"])
+        assert stored["match_record_table"] == "match_records_archive"
+        assert stored["match_record_id"] == row["row_id"]
+
+    def test_it_is_filed_under_the_season_that_just_ended(
+        self, service, repo, match_db, elo_db
+    ):
+        self._add_events(
+            elo_db,
+            (6, "Season 6", "2026-06-01", "2026-07-30", 0),
+            (7, "Season 7", "2026-08-01", "2026-09-28", 0),
+            (8, "Season 8", "2026-10-01", None, 1),
+        )
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        [row] = self._table(match_db, "match_records_archive")
+        assert row["event_id"] == 7
+
+    def test_the_seeding_season_wins_once_it_has_ended(self, service, repo, match_db, elo_db):
+        self._add_events(
+            elo_db,
+            (6, "Season 6", "2026-06-01", "2026-07-30", 0),
+            (7, "Season 7", "2026-08-01", "2026-09-28", 0),
+        )
+        slug, bracket_id = published(service, repo, 4)
+        import sqlite3
+
+        conn = sqlite3.connect(str(repo._db_path))
+        conn.execute(
+            "UPDATE brackets SET elo_event_name = 'Season 6' WHERE bracket_id = ?", (bracket_id,)
+        )
+        conn.commit()
+        conn.close()
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        [row] = self._table(match_db, "match_records_archive")
+        assert row["event_id"] == 6
+
+    def test_resetting_removes_the_archived_game(self, service, repo, match_db):
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        service.reset_match(slug, match["match_no"])
+
+        assert self._table(match_db, "match_records_archive") == []
+        assert repo.get_match(bracket_id, match["match_no"])["match_record_table"] is None
+
+    def test_it_still_counts_toward_the_players_record(self, service, repo, match_log):
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        assert match_log.get_wins_count("u1") == 1
+        assert match_log.get_losses_count("u4") == 1
+
+    def _season_logged(self, service, repo):
+        """A game logged to match_records the way bracket games used to be."""
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+        stored = repo.get_match(bracket_id, match["match_no"])
+        service._match_repo.delete_match_row(
+            stored["match_record_id"], table="match_records_archive"
+        )
+        row_id = service._match_repo.insert_match({
+            "match_id": "m-1", "winner_id": "u1", "losser_id": "u4",
+            "source": "Bracket", "timestamp": "2026-10-02 12:00:00",
+            "match_comment": "Top cut game - Test Cup - Round 1",
+        })
+        repo.update_match(
+            bracket_id, match["match_no"],
+            {"match_record_id": row_id, "match_record_table": None},
+        )
+        return slug, bracket_id, match
+
+    def test_games_already_in_the_season_are_moved_out(self, service, repo, match_db, elo_db):
+        self._add_events(elo_db, (7, "Season 7", "2026-08-01", "2026-09-28", 0))
+        _, bracket_id, match = self._season_logged(service, repo)
+
+        assert service.archive_existing_records() == 1
+
+        assert self._table(match_db, "match_records") == []
+        [row] = self._table(match_db, "match_records_archive")
+        assert (row["event_id"], row["source"]) == (7, "Bracket")
+        assert row["original_match_id"] == "m-1"
+        assert row["match_comment"].startswith("Top cut game")
+        stored = repo.get_match(bracket_id, match["match_no"])
+        assert (stored["match_record_id"], stored["match_record_table"]) == (
+            row["row_id"], "match_records_archive"
+        )
+
+    def test_moving_is_done_once(self, service, repo, match_db):
+        self._season_logged(service, repo)
+
+        service.archive_existing_records()
+        assert service.archive_existing_records() == 0
+        assert len(self._table(match_db, "match_records_archive")) == 1
+
+    def test_a_season_logged_game_can_still_be_reset(self, service, repo, match_db):
+        slug, _, match = self._season_logged(service, repo)
+
+        service.reset_match(slug, match["match_no"])
+
+        assert self._table(match_db, "match_records") == []
 
 
 class TestFinishes:
@@ -1991,7 +2147,7 @@ class TestPlayersKeepTheirName:
 
         conn = sqlite3.connect(str(match_db))
         row = conn.execute(
-            "SELECT winner_display_name, losser_display_name FROM match_records"
+            "SELECT winner_display_name, losser_display_name FROM match_records_archive"
         ).fetchone()
         conn.close()
         assert row == ("Gwendolyn", "P4")

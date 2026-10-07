@@ -11,12 +11,16 @@ import logging
 import sqlite3
 import tempfile
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_file, session
 
-from repositories.store import StoreRepository, ORDER_STATUSES, STORE_DB_PATH
-from utils.store_auth import require_store_admin
+from repositories.store import (
+    StoreRepository, ORDER_STATUSES, STORE_DB_PATH, STOREFRONT_ROLES, slugify,
+    DEFAULT_STOREFRONT_SLUG,
+)
+from utils.store_auth import is_store_admin, require_store_admin
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +36,63 @@ def _repo() -> StoreRepository:
 
 def _actor():
     return str(session.get("user_id", 0)), session.get("username", "API/localhost")
+
+
+# ----------------------------------------------------------------------
+# Storefront scope
+#
+# Full store admins (STORE_ADMIN_IDS) manage every storefront. Everyone
+# else in storefront_admins manages only their own: a manager handles
+# products and orders, fulfillment handles orders only.
+# ----------------------------------------------------------------------
+
+def _storefront_roles() -> dict[int, str]:
+    user_id = session.get("user_id")
+    if user_id is None:
+        return {}
+    return _repo().storefront_roles_for_user(str(user_id))
+
+
+def _scope_ids(need: str = "orders") -> list[int] | None:
+    """Storefront ids the current user may act on, or None for all of them."""
+    if is_store_admin():
+        return None
+    roles = _storefront_roles()
+    if need == "products":
+        return [sid for sid, role in roles.items() if role == "manager"]
+    return list(roles)
+
+
+def _can(storefront_id, need: str = "orders") -> bool:
+    ids = _scope_ids(need)
+    return ids is None or storefront_id in ids
+
+
+def require_store_staff(f):
+    """Full store admins, plus anyone who runs at least one storefront.
+
+    Handlers must still narrow what they return or change with
+    _scope_ids() / _can().
+    """
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_store_admin() and not _storefront_roles():
+            logger.warning(
+                f"Non-store-staff access attempt to {request.path} "
+                f"from {request.remote_addr}"
+            )
+            return jsonify({"error": "Store admin access required"}), 403
+        return f(*args, **kwargs)
+
+    decorated_function._auth_required = True
+    return decorated_function
+
+
+def _not_found(what: str):
+    # Same answer for "doesn't exist" and "not yours", so storefront admins
+    # can't probe other storefronts' ids.
+    return jsonify({"error": f"{what} not found"}), 404
 
 
 # ----------------------------------------------------------------------
@@ -61,15 +122,35 @@ def list_products():
 # ----------------------------------------------------------------------
 
 @store_bp.route("/store/admin/products", methods=["GET"])
-@require_store_admin
+@require_store_staff
 def admin_list_products():
-    return jsonify({"products": _repo().list_products(include_inactive=True)})
+    # Fulfillment staff see the list too: the order queue filters by product
+    ids = _scope_ids("orders")
+    wanted = request.args.get("storefront_id", type=int)
+    if wanted is not None:
+        if ids is not None and wanted not in ids:
+            return jsonify({"products": []})
+        ids = [wanted]
+    return jsonify({
+        "products": _repo().list_products(include_inactive=True, storefront_ids=ids)
+    })
 
 
 @store_bp.route("/store/admin/products", methods=["POST"])
-@require_store_admin
+@require_store_staff
 def admin_create_product():
     data = request.get_json(silent=True) or {}
+    repo = _repo()
+    storefront_id = data.get("storefront_id")
+    if storefront_id in (None, ""):
+        storefront_id = repo.default_storefront_id()
+    try:
+        storefront_id = int(storefront_id)
+    except (TypeError, ValueError):
+        return jsonify({"error": "storefront_id must be an integer"}), 400
+    if not _can(storefront_id, "products"):
+        return jsonify({"error": "You can't add products to that storefront"}), 403
+
     required = ("sku", "name", "price_cents")
     missing = [f for f in required if not data.get(f) and data.get(f) != 0]
     if missing:
@@ -91,7 +172,6 @@ def admin_create_product():
         except (TypeError, ValueError):
             return jsonify({"error": "max_per_user_monthly must be a positive integer"}), 400
 
-    repo = _repo()
     try:
         product_id = repo.create_product(
             sku=str(data["sku"]).strip(),
@@ -102,6 +182,7 @@ def admin_create_product():
             stock_quantity=stock,
             max_per_user_monthly=max_monthly,
             images=data.get("images"),
+            storefront_id=storefront_id,
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -110,7 +191,7 @@ def admin_create_product():
 
     actor_id, actor_name = _actor()
     repo.log_action(actor_id, actor_name, "create_product",
-                    f"id={product_id} sku={data['sku']}")
+                    f"id={product_id} sku={data['sku']} storefront={storefront_id}")
     return jsonify({"id": product_id}), 201
 
 
@@ -148,6 +229,11 @@ def _validate_product_patch(data: dict) -> tuple[dict, str | None]:
             except (TypeError, ValueError):
                 return {}, "max_per_user_monthly must be a positive integer"
             fields["max_per_user_monthly"] = value
+    if "storefront_id" in data:
+        try:
+            fields["storefront_id"] = int(data["storefront_id"])
+        except (TypeError, ValueError):
+            return {}, "storefront_id must be an integer"
     if "images" in data:
         fields["images"] = data["images"]
     elif "image_url" in data:
@@ -156,15 +242,21 @@ def _validate_product_patch(data: dict) -> tuple[dict, str | None]:
 
 
 @store_bp.route("/store/admin/products/<int:product_id>", methods=["PATCH"])
-@require_store_admin
+@require_store_staff
 def admin_update_product(product_id: int):
     data = request.get_json(silent=True) or {}
     repo = _repo()
-    if not repo.get_product(product_id):
-        return jsonify({"error": "Product not found"}), 404
+    product = repo.get_product(product_id)
+    if not product or not _can(product["storefront_id"], "orders"):
+        return _not_found("Product")
+    if not _can(product["storefront_id"], "products"):
+        return jsonify({"error": "Only storefront managers can edit products"}), 403
     fields, error = _validate_product_patch(data)
     if error:
         return jsonify({"error": error}), 400
+    if ("storefront_id" in fields and fields["storefront_id"] != product["storefront_id"]
+            and not is_store_admin()):
+        return jsonify({"error": "Only full store admins can move products"}), 403
     try:
         updated = repo.update_product(product_id, **fields)
     except ValueError as e:
@@ -181,12 +273,17 @@ def admin_update_product(product_id: int):
 
 
 @store_bp.route("/store/admin/products/<int:product_id>/deactivate", methods=["POST"])
-@require_store_admin
+@require_store_staff
 def admin_deactivate_product(product_id: int):
     """Soft delete: products referenced by orders must never be hard-deleted."""
     repo = _repo()
+    product = repo.get_product(product_id)
+    if not product or not _can(product["storefront_id"], "orders"):
+        return _not_found("Product")
+    if not _can(product["storefront_id"], "products"):
+        return jsonify({"error": "Only storefront managers can edit products"}), 403
     if not repo.update_product(product_id, is_active=0):
-        return jsonify({"error": "Product not found"}), 404
+        return _not_found("Product")
     actor_id, actor_name = _actor()
     repo.log_action(actor_id, actor_name, "deactivate_product", f"id={product_id}")
     return jsonify({"success": True})
@@ -196,8 +293,18 @@ def admin_deactivate_product(product_id: int):
 # Store admin: order queue
 # ----------------------------------------------------------------------
 
+def _order_scope_from_args() -> list[int] | None:
+    """Storefront ids for an order list: the user's scope, optionally narrowed
+    by ?storefront_id=."""
+    ids = _scope_ids("orders")
+    wanted = request.args.get("storefront_id", type=int)
+    if wanted is None:
+        return ids
+    return [wanted] if ids is None or wanted in ids else []
+
+
 @store_bp.route("/store/admin/orders", methods=["GET"])
-@require_store_admin
+@require_store_staff
 def admin_list_orders():
     status = request.args.get("status") or None
     product_id = request.args.get("product_id", type=int)
@@ -209,31 +316,41 @@ def admin_list_orders():
         orders = _repo().list_orders_filtered(
             status=status, product_id=product_id, search=search,
             date_from=date_from, date_to=date_to, limit=limit,
+            storefront_ids=_order_scope_from_args(),
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     return jsonify({"orders": orders, "statuses": ORDER_STATUSES})
 
 
+def _scoped_order(repo: StoreRepository, order_id: int) -> dict | None:
+    order = repo.get_order(order_id)
+    if order and _can(order["storefront_id"], "orders"):
+        return order
+    return None
+
+
 @store_bp.route("/store/admin/orders/<int:order_id>", methods=["GET"])
-@require_store_admin
+@require_store_staff
 def admin_get_order(order_id: int):
-    order = _repo().get_order(order_id)
+    order = _scoped_order(_repo(), order_id)
     if not order:
-        return jsonify({"error": "Order not found"}), 404
+        return _not_found("Order")
     return jsonify({"order": order})
 
 
 @store_bp.route("/store/admin/orders/<int:order_id>/ship", methods=["POST"])
-@require_store_admin
+@require_store_staff
 def admin_ship_order(order_id: int):
     data = request.get_json(silent=True) or {}
     tracking = (data.get("tracking_number") or "").strip() or None
     carrier = (data.get("tracking_carrier") or "").strip() or None
 
     repo = _repo()
-    order = repo.get_order(order_id)
-    if order and not tracking and order["total_cents"] > TRACKING_REQUIRED_OVER_CENTS:
+    order = _scoped_order(repo, order_id)
+    if not order:
+        return _not_found("Order")
+    if not tracking and order["total_cents"] > TRACKING_REQUIRED_OVER_CENTS:
         return jsonify({
             "error": f"Tracking is required for orders over "
                      f"${TRACKING_REQUIRED_OVER_CENTS / 100:.0f}"
@@ -256,16 +373,16 @@ def admin_ship_order(order_id: int):
 
 
 @store_bp.route("/store/admin/orders/<int:order_id>/status", methods=["POST"])
-@require_store_admin
+@require_store_staff
 def admin_set_order_status(order_id: int):
     data = request.get_json(silent=True) or {}
     status = data.get("status")
     repo = _repo()
+    order = _scoped_order(repo, order_id)
+    if not order:
+        return _not_found("Order")
 
     if status == "cancelled":
-        order = repo.get_order(order_id)
-        if not order:
-            return jsonify({"error": "Order not found"}), 404
         try:
             cancelled = StoreCheckoutService(repo).cancel_order(order)
         except ValueError as e:
@@ -293,7 +410,7 @@ def admin_set_order_status(order_id: int):
 
 
 @store_bp.route("/store/admin/orders/export", methods=["GET"])
-@require_store_admin
+@require_store_staff
 def admin_export_orders():
     """Export orders as CSV for the current filter."""
     import csv
@@ -309,6 +426,7 @@ def admin_export_orders():
         orders = repo.list_orders_filtered(
             status=status, product_id=product_id, search=search,
             date_from=date_from, date_to=date_to, limit=500,
+            storefront_ids=_order_scope_from_args(),
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -316,7 +434,7 @@ def admin_export_orders():
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow([
-        "order_number", "status", "username", "email",
+        "order_number", "storefront", "status", "username", "email",
         "total", "currency", "ship_name", "ship_line1", "ship_line2",
         "ship_city", "ship_state", "ship_postal", "ship_country",
         "tracking_number", "tracking_carrier",
@@ -324,7 +442,8 @@ def admin_export_orders():
     ])
     for o in orders:
         writer.writerow([
-            o.get("order_number"), o.get("status"), o.get("username"), o.get("email"),
+            o.get("order_number"), o.get("storefront_name"), o.get("status"),
+            o.get("username"), o.get("email"),
             f"{o.get('total_cents', 0) / 100:.2f}", o.get("currency"),
             o.get("ship_name"), o.get("ship_line1"), o.get("ship_line2"),
             o.get("ship_city"), o.get("ship_state"), o.get("ship_postal"), o.get("ship_country"),
@@ -390,7 +509,7 @@ def admin_download_backup():
 # ----------------------------------------------------------------------
 
 from utils.auth import require_auth  # noqa: E402
-from services.store_checkout import StoreCheckoutService  # noqa: E402
+from services.store_checkout import StoreCheckoutService, _site_url  # noqa: E402
 from webapp_config import FREE_SHIPPING_ROLE_IDS  # noqa: E402
 
 
@@ -461,6 +580,7 @@ def my_orders():
     public_fields = (
         "order_number", "status", "total_cents", "currency",
         "tracking_number", "tracking_carrier", "created_at", "paid_at", "shipped_at",
+        "storefront_slug", "storefront_name", "storefront_contact_email",
     )
     result = []
     for o in orders:
@@ -626,7 +746,7 @@ MAX_IMAGES_PER_UPLOAD = 10
 
 
 @store_bp.route("/store/admin/products/upload-image", methods=["POST"])
-@require_store_admin
+@require_store_staff
 def upload_product_image():
     """Upload one or more product images under the ``image`` field.
 
@@ -634,6 +754,8 @@ def upload_product_image():
     callers. Every file is validated before any is saved, so a bad file in
     the batch rejects the whole request.
     """
+    if _scope_ids("products") == []:
+        return jsonify({"success": False, "error": "Only storefront managers can upload images"}), 403
     files = [f for f in request.files.getlist("image") if f and f.filename]
     if not files:
         return jsonify({"success": False, "error": "No image file provided"}), 400
@@ -666,3 +788,367 @@ def upload_product_image():
         urls.append(f"/static/uploads/store/{filename}")
 
     return jsonify({"success": True, "url": urls[0], "urls": urls})
+
+
+# ----------------------------------------------------------------------
+# Storefronts
+# ----------------------------------------------------------------------
+
+PUBLIC_STOREFRONT_FIELDS = ("id", "slug", "name", "description", "sort_order")
+
+
+@store_bp.route("/store/storefronts", methods=["GET"])
+def list_storefronts():
+    """Active storefronts, in tab order."""
+    return jsonify({
+        "storefronts": [
+            {**{k: s[k] for k in PUBLIC_STOREFRONT_FIELDS},
+             "accepts_payments": StoreRepository.accepts_payments(s)}
+            for s in _repo().list_storefronts()
+        ]
+    })
+
+
+@store_bp.route("/store/admin/me", methods=["GET"])
+@require_store_staff
+def admin_me():
+    """What the Store Admin page should show this user."""
+    repo = _repo()
+    full = is_store_admin()
+    roles = {} if full else _storefront_roles()
+    storefronts = []
+    for s in repo.list_storefronts(include_inactive=True):
+        if full or s["id"] in roles:
+            storefronts.append({
+                **s,
+                "role": "owner" if full else roles[s["id"]],
+                "accepts_payments": repo.accepts_payments(s),
+                "uses_summit_stripe": s["slug"] == DEFAULT_STOREFRONT_SLUG,
+            })
+    return jsonify({"is_full_admin": full, "storefronts": storefronts})
+
+
+def _clean_text(data: dict, key: str, max_len: int) -> str:
+    return str(data.get(key) or "").strip()[:max_len]
+
+
+@store_bp.route("/store/admin/storefronts", methods=["POST"])
+@require_store_admin
+def admin_create_storefront():
+    data = request.get_json(silent=True) or {}
+    name = _clean_text(data, "name", 80)
+    slug = _clean_text(data, "slug", 40).lower() or slugify(name)
+    repo = _repo()
+    try:
+        storefront_id = repo.create_storefront(
+            slug=slug, name=name,
+            description=_clean_text(data, "description", 1000),
+            contact_email=_clean_text(data, "contact_email", 200) or None,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "create_storefront",
+                    f"id={storefront_id} slug={slug}")
+    return jsonify({"id": storefront_id, "slug": slug}), 201
+
+
+@store_bp.route("/store/admin/storefronts/<int:storefront_id>", methods=["PATCH"])
+@require_store_admin
+def admin_update_storefront(storefront_id: int):
+    data = request.get_json(silent=True) or {}
+    fields: dict = {}
+    if "name" in data:
+        fields["name"] = _clean_text(data, "name", 80)
+    if "description" in data:
+        fields["description"] = _clean_text(data, "description", 1000)
+    if "contact_email" in data:
+        fields["contact_email"] = _clean_text(data, "contact_email", 200) or None
+    if "is_active" in data:
+        fields["is_active"] = 1 if data["is_active"] in (1, True, "1", "true") else 0
+    if "sort_order" in data:
+        try:
+            fields["sort_order"] = int(data["sort_order"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "sort_order must be an integer"}), 400
+    if "shipping_cents" in data:
+        if data["shipping_cents"] in (None, ""):
+            fields["shipping_cents"] = None
+        else:
+            try:
+                fields["shipping_cents"] = int(data["shipping_cents"])
+            except (TypeError, ValueError):
+                return jsonify({"error": "shipping_cents must be an integer"}), 400
+            if fields["shipping_cents"] < 0:
+                return jsonify({"error": "shipping_cents can't be negative"}), 400
+    repo = _repo()
+    if not repo.get_storefront(storefront_id):
+        return _not_found("Storefront")
+    try:
+        if not repo.update_storefront(storefront_id, **fields):
+            return jsonify({"error": "No valid fields to update"}), 400
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "update_storefront",
+                    f"id={storefront_id} fields={sorted(fields)}")
+    return jsonify({"success": True})
+
+
+# ----------------------------------------------------------------------
+# Storefront payments: each storefront besides Summit connects its own
+# Stripe account. Its managers (or a full admin) run the onboarding.
+# ----------------------------------------------------------------------
+
+def _payments_status(storefront: dict) -> dict:
+    return {
+        "uses_summit_stripe": storefront["slug"] == DEFAULT_STOREFRONT_SLUG,
+        "stripe_account_id": storefront.get("stripe_account_id"),
+        "charges_enabled": bool(storefront.get("stripe_charges_enabled")),
+        "accepts_payments": StoreRepository.accepts_payments(storefront),
+    }
+
+
+@store_bp.route("/store/admin/storefronts/<int:storefront_id>/stripe", methods=["GET"])
+@require_store_staff
+def admin_storefront_payments(storefront_id: int):
+    repo = _repo()
+    storefront = repo.get_storefront(storefront_id)
+    if not storefront or not _can(storefront_id, "orders"):
+        return _not_found("Storefront")
+    if storefront.get("stripe_account_id") and request.args.get("refresh"):
+        try:
+            StoreCheckoutService(repo).refresh_account_status(storefront)
+        except Exception:
+            logger.exception(f"Stripe status check failed for storefront {storefront_id}")
+            return jsonify({"error": "Couldn't reach Stripe, please try again"}), 502
+        storefront = repo.get_storefront(storefront_id)
+    return jsonify(_payments_status(storefront))
+
+
+@store_bp.route("/store/admin/storefronts/<int:storefront_id>/stripe/onboard",
+                methods=["POST"])
+@require_store_staff
+def admin_storefront_stripe_onboard(storefront_id: int):
+    """Start (or resume) Stripe onboarding; returns the Stripe URL to visit."""
+    repo = _repo()
+    storefront = repo.get_storefront(storefront_id)
+    if not storefront or not _can(storefront_id, "products"):
+        return _not_found("Storefront")
+    if storefront["slug"] == DEFAULT_STOREFRONT_SLUG:
+        return jsonify({"error": "Summit Store uses Summit's own Stripe account"}), 400
+    service = StoreCheckoutService(repo)
+    if not service.is_configured():
+        return jsonify({"error": "Payments are not configured"}), 503
+    back = _site_url(f"/admin/store?storefront={storefront_id}&stripe=return")
+    try:
+        url = service.start_onboarding(storefront, return_url=back, refresh_url=back)
+    except Exception:
+        logger.exception(f"Stripe onboarding failed for storefront {storefront_id}")
+        return jsonify({"error": "Couldn't reach Stripe, please try again"}), 502
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "stripe_onboard", f"storefront={storefront_id}")
+    return jsonify({"url": url})
+
+
+@store_bp.route("/store/admin/storefronts/<int:storefront_id>/stripe", methods=["DELETE"])
+@require_store_admin
+def admin_storefront_stripe_disconnect(storefront_id: int):
+    """Forget a storefront's Stripe account (it stops taking orders)."""
+    repo = _repo()
+    storefront = repo.get_storefront(storefront_id)
+    if not storefront:
+        return _not_found("Storefront")
+    repo.set_storefront_stripe(storefront_id, None, False)
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "stripe_disconnect",
+                    f"storefront={storefront_id} account={storefront.get('stripe_account_id')}")
+    return jsonify({"success": True})
+
+
+# ----------------------------------------------------------------------
+# Storefront admins (only full store admins assign them)
+# ----------------------------------------------------------------------
+
+@store_bp.route("/store/admin/storefronts/<int:storefront_id>/admins", methods=["GET"])
+@require_store_staff
+def admin_list_storefront_admins(storefront_id: int):
+    repo = _repo()
+    if not repo.get_storefront(storefront_id) or not _can(storefront_id, "orders"):
+        return _not_found("Storefront")
+    return jsonify({"admins": repo.list_storefront_admins(storefront_id)})
+
+
+@store_bp.route("/store/admin/storefronts/<int:storefront_id>/admins", methods=["POST"])
+@require_store_admin
+def admin_add_storefront_admin(storefront_id: int):
+    """Body: {user_id, username?, role}. Re-adding someone changes their role."""
+    data = request.get_json(silent=True) or {}
+    user_id = _clean_text(data, "user_id", 40)
+    role = data.get("role") or "manager"
+    if not user_id.isdigit():
+        return jsonify({"error": "Pick a user, or enter their Discord user ID"}), 400
+    if role not in STOREFRONT_ROLES:
+        return jsonify({"error": f"Role must be one of: {', '.join(STOREFRONT_ROLES)}"}), 400
+
+    username = _clean_text(data, "username", 80)
+    if not username:
+        try:
+            from repositories.user_profiles import UserProfileRepository
+            profile = UserProfileRepository().get_by_user_id(user_id)
+            username = (profile or {}).get("display_name") or ""
+        except Exception:
+            logger.exception("Profile lookup failed while adding a storefront admin")
+    username = username or user_id
+
+    repo = _repo()
+    if not repo.get_storefront(storefront_id):
+        return _not_found("Storefront")
+    actor_id, actor_name = _actor()
+    repo.add_storefront_admin(storefront_id, user_id, username, role, added_by=actor_name)
+    repo.log_action(actor_id, actor_name, "add_storefront_admin",
+                    f"storefront={storefront_id} user={user_id} role={role}")
+    return jsonify({"success": True}), 201
+
+
+@store_bp.route("/store/admin/storefronts/<int:storefront_id>/admins/<user_id>",
+                methods=["DELETE"])
+@require_store_admin
+def admin_remove_storefront_admin(storefront_id: int, user_id: str):
+    repo = _repo()
+    if not repo.remove_storefront_admin(storefront_id, user_id):
+        return _not_found("Admin")
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "remove_storefront_admin",
+                    f"storefront={storefront_id} user={user_id}")
+    return jsonify({"success": True})
+
+
+@store_bp.route("/store/admin/user-search", methods=["GET"])
+@require_store_admin
+def admin_user_search():
+    """Find people to add as storefront admins (people who've logged in or played)."""
+    query = (request.args.get("q") or "").strip()
+    if len(query) < 2:
+        return jsonify({"users": []})
+    from repositories.user_profiles import UserProfileRepository
+    users = UserProfileRepository().search_users(query, limit=10)
+    return jsonify({
+        "users": [
+            {"user_id": str(u.get("user_id")), "display_name": u.get("display_name")}
+            for u in users
+            if str(u.get("user_id") or "").isdigit()  # Discord accounts only
+        ]
+    })
+
+
+# ----------------------------------------------------------------------
+# Storefront applications
+# ----------------------------------------------------------------------
+
+@store_bp.route("/store/storefront-applications", methods=["POST"])
+@require_auth
+def apply_for_storefront():
+    data = request.get_json(silent=True) or {}
+    name = _clean_text(data, "name", 80)
+    contact_email = _clean_text(data, "contact_email", 200)
+    description = _clean_text(data, "description", 2000)
+    shipping = _clean_text(data, "shipping", 1000)
+    website = _clean_text(data, "website", 300) or None
+
+    missing = [label for label, value in (
+        ("storefront name", name), ("contact email", contact_email),
+        ("what you'd sell", description), ("shipping", shipping),
+    ) if not value]
+    if missing:
+        return jsonify({"error": f"Please fill in: {', '.join(missing)}"}), 400
+    if "@" not in contact_email:
+        return jsonify({"error": "Please enter a valid contact email"}), 400
+    if data.get("agreed") is not True:
+        return jsonify({"error": "Please accept the storefront agreement"}), 400
+
+    repo = _repo()
+    user_id = str(session.get("user_id"))
+    username = session.get("username", "unknown")
+    try:
+        application_id = repo.create_storefront_application(
+            user_id=user_id, username=username, name=name,
+            contact_email=contact_email, description=description,
+            shipping=shipping, website=website,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    repo.log_action(user_id, username, "storefront_application",
+                    f"id={application_id} name={name}")
+    try:
+        repo.enqueue_notification(
+            None, "discord_admin", "store-admins",
+            f"New storefront application: {name}",
+            f"**{username}** applied for a storefront called **{name}**. "
+            f"Review it in Store Admin under Storefronts.",
+        )
+    except Exception:
+        logger.exception("Could not queue storefront application notification")
+    return jsonify({"id": application_id}), 201
+
+
+@store_bp.route("/store/storefront-applications/mine", methods=["GET"])
+@require_auth
+def my_storefront_applications():
+    apps = _repo().list_applications_by_user(str(session.get("user_id")))
+    fields = ("id", "name", "status", "created_at", "reviewed_at", "storefront_slug")
+    return jsonify({"applications": [{k: a.get(k) for k in fields} for a in apps]})
+
+
+@store_bp.route("/store/admin/storefront-applications", methods=["GET"])
+@require_store_admin
+def admin_list_storefront_applications():
+    try:
+        apps = _repo().list_storefront_applications(request.args.get("status") or None)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"applications": apps})
+
+
+@store_bp.route("/store/admin/storefront-applications/<int:application_id>/approve",
+                methods=["POST"])
+@require_store_admin
+def admin_approve_storefront_application(application_id: int):
+    """Creates the storefront and makes the applicant its manager.
+    Body: {slug?} (defaults to one made from the storefront name)."""
+    data = request.get_json(silent=True) or {}
+    repo = _repo()
+    app = repo.get_storefront_application(application_id)
+    if not app:
+        return _not_found("Application")
+    slug = _clean_text(data, "slug", 40).lower() or slugify(app["name"])
+    actor_id, actor_name = _actor()
+    try:
+        storefront_id = repo.approve_storefront_application(application_id, slug, actor_name)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    repo.log_action(actor_id, actor_name, "approve_storefront_application",
+                    f"id={application_id} storefront={storefront_id} slug={slug}")
+    try:
+        repo.enqueue_notification(
+            None, "discord_dm", app["user_id"],
+            f"Your storefront {app['name']} is approved",
+            f"Your storefront **{app['name']}** is approved. You can add products "
+            f"from Store Admin on the Sorcerers Summit site.",
+        )
+    except Exception:
+        logger.exception("Could not queue storefront approval DM")
+    return jsonify({"storefront_id": storefront_id, "slug": slug})
+
+
+@store_bp.route("/store/admin/storefront-applications/<int:application_id>/decline",
+                methods=["POST"])
+@require_store_admin
+def admin_decline_storefront_application(application_id: int):
+    repo = _repo()
+    actor_id, actor_name = _actor()
+    if not repo.decline_storefront_application(application_id, actor_name):
+        return jsonify({"error": "Application not found or already reviewed"}), 409
+    repo.log_action(actor_id, actor_name, "decline_storefront_application",
+                    f"id={application_id}")
+    return jsonify({"success": True})

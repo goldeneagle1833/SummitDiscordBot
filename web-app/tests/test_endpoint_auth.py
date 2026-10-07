@@ -209,6 +209,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
 
     # -- Store (public catalog + Stripe webhook verified by signature) --
     "api.store.list_products",
+    "api.store.list_storefronts",
     "api.store.stripe_webhook",
 
     # -- OG previews (bot crawlers only, public read-only) --

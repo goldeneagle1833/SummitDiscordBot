@@ -5,6 +5,7 @@ import Spinner from '@/components/ui/Spinner'
 export default function StoreAdminGuard({ children }) {
   const { user, loading } = useAuth()
   if (loading) return <Spinner className="py-20" />
-  if (!user || !user.is_store_admin) return <Navigate to="/" replace />
+  // Storefront admins get in too; the API limits them to their storefronts
+  if (!user || !(user.is_store_admin || user.is_store_staff)) return <Navigate to="/" replace />
   return children
 }

@@ -1,8 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
-  adminGetProducts, adminCreateProduct, adminUpdateProduct, adminDeactivateProduct,
+  adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminDeactivateProduct,
   adminUploadProductImages,
   adminGetOrders, adminGetOrder, adminShipOrder, adminSetOrderStatus, formatMoney,
+  adminCreateStorefront, adminUpdateStorefront,
+  adminGetStorefrontAdmins, adminAddStorefrontAdmin, adminRemoveStorefrontAdmin, adminSearchUsers,
+  adminGetStorefrontApplications, adminApproveStorefrontApplication,
+  adminDeclineStorefrontApplication,
+  adminGetStorefrontPayments, adminStartStripeOnboarding, adminDisconnectStripe,
 } from '@/api/store'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -30,8 +36,9 @@ function productToForm(p) {
 
 // Shared by "Add product" and the inline editor. `initial` is a product row
 // when editing, null when adding.
-function ProductForm({ initial, onSaved, onCancel }) {
+function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStorefrontId = null }) {
   const editing = Boolean(initial)
+  const [storefrontId, setStorefrontId] = useState(defaultStorefrontId ?? storefronts[0]?.id ?? '')
   const [form, setForm] = useState(() => (initial ? productToForm(initial) : EMPTY_PRODUCT))
   const [urlDraft, setUrlDraft] = useState('')
   const [saving, setSaving] = useState(false)
@@ -111,6 +118,7 @@ function ProductForm({ initial, onSaved, onCancel }) {
         await adminCreateProduct({
           ...payload,
           max_per_user_monthly: maxMonthly ?? undefined,
+          storefront_id: storefrontId || undefined,
         })
         setForm(EMPTY_PRODUCT)
       }
@@ -133,6 +141,18 @@ function ProductForm({ initial, onSaved, onCancel }) {
         )}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
+        {!editing && storefronts.length > 1 && defaultStorefrontId == null && (
+          <select
+            className={`${inputCls} sm:col-span-2`}
+            aria-label="Storefront"
+            value={storefrontId}
+            onChange={(e) => setStorefrontId(Number(e.target.value))}
+          >
+            {storefronts.map((sf) => (
+              <option key={sf.id} value={sf.id}>{sf.name}</option>
+            ))}
+          </select>
+        )}
         <input className={inputCls} placeholder="SKU (e.g. TOK-FIRE)" aria-label="SKU" value={form.sku} onChange={set('sku')} />
         <input className={inputCls} placeholder="Name" aria-label="Name" value={form.name} onChange={set('name')} />
         <textarea
@@ -245,19 +265,20 @@ function ProductForm({ initial, onSaved, onCancel }) {
   )
 }
 
-function ProductsPanel() {
+function ProductsPanel({ storefrontId, storefronts }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(null) // product row being edited
 
   const load = useCallback(() => {
-    adminGetProducts()
+    adminGetProducts(storefrontId)
       .then((d) => setProducts(d.products || []))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [])
+  }, [storefrontId])
   useEffect(load, [load])
+  const storefrontName = (id) => storefronts.find((sf) => sf.id === id)?.name
 
   const updateStock = async (p, value) => {
     const stock_quantity = parseInt(value, 10)
@@ -295,7 +316,13 @@ function ProductsPanel() {
           }}
         />
       ) : (
-        <ProductForm key="new" initial={null} onSaved={load} />
+        <ProductForm
+          key={`new-${storefrontId}`}
+          initial={null}
+          onSaved={load}
+          storefronts={storefronts}
+          defaultStorefrontId={storefrontId}
+        />
       )}
 
       {error && <p className="text-accent-red text-sm mb-3">{error}</p>}
@@ -337,7 +364,12 @@ function ProductsPanel() {
                     </div>
                   </td>
                   <td className="py-2 px-3 font-mono text-xs">{p.sku}</td>
-                  <td className="py-2 px-3">{p.name}</td>
+                  <td className="py-2 px-3">
+                    {p.name}
+                    {storefrontId == null && storefronts.length > 1 && (
+                      <span className="block text-xs text-text-muted">{storefrontName(p.storefront_id)}</span>
+                    )}
+                  </td>
                   <td className="py-2 px-3 text-secondary">{formatMoney(p.price_cents, p.currency)}</td>
                   <td className="py-2 px-3">
                     <input
@@ -400,7 +432,7 @@ const QUEUE_FILTERS = [
 // Keep in sync with TRACKING_REQUIRED_OVER_CENTS in routes/api/store.py
 const TRACKING_REQUIRED_OVER_CENTS = 5000
 
-function OrderRow({ order, onChanged }) {
+function OrderRow({ order, onChanged, showStorefront = false }) {
   const trackingRequired = order.total_cents > TRACKING_REQUIRED_OVER_CENTS
   const [expanded, setExpanded] = useState(false)
   const [detail, setDetail] = useState(null)
@@ -447,6 +479,9 @@ function OrderRow({ order, onChanged }) {
         <button onClick={toggle} className="flex-1 flex flex-wrap items-center justify-between gap-2 p-3 text-left">
           <span className="font-mono text-sm">{order.order_number}</span>
           <span className="text-sm">{order.username}</span>
+          {showStorefront && order.storefront_name && (
+            <span className="text-xs text-brand-sky">{order.storefront_name}</span>
+          )}
           <span className="text-sm text-secondary font-medium">{formatMoney(order.total_cents, order.currency)}</span>
           <span className="text-sm text-text-muted">{order.status}</span>
         </button>
@@ -539,7 +574,7 @@ function OrderRow({ order, onChanged }) {
   )
 }
 
-function OrdersPanel() {
+function OrdersPanel({ storefrontId, showStorefront }) {
   const [filter, setFilter] = useState('paid')
   const [productFilter, setProductFilter] = useState('')
   const [search, setSearch] = useState('')
@@ -551,12 +586,13 @@ function OrdersPanel() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    adminGetProducts().then((d) => setProducts(d.products || [])).catch(() => {})
-  }, [])
+    adminGetProducts(storefrontId).then((d) => setProducts(d.products || [])).catch(() => {})
+  }, [storefrontId])
 
   const load = useCallback(() => {
     setLoading(true)
     adminGetOrders({
+      storefront_id: storefrontId || undefined,
       status: filter,
       product_id: productFilter || undefined,
       search: search.trim() || undefined,
@@ -566,11 +602,12 @@ function OrdersPanel() {
       .then((d) => setOrders(d.orders || []))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [filter, productFilter, search, dateFrom, dateTo])
+  }, [storefrontId, filter, productFilter, search, dateFrom, dateTo])
   useEffect(load, [load])
 
   const exportCsv = () => {
     const params = new URLSearchParams()
+    if (storefrontId) params.set('storefront_id', storefrontId)
     if (filter) params.set('status', filter)
     if (productFilter) params.set('product_id', productFilter)
     if (search.trim()) params.set('search', search.trim())
@@ -653,10 +690,486 @@ function OrdersPanel() {
       ) : (
         <div className="space-y-2">
           {orders.map((o) => (
-            <OrderRow key={o.id} order={o} onChanged={load} />
+            <OrderRow key={o.id} order={o} onChanged={load} showStorefront={showStorefront} />
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- Team
+
+const ROLE_LABELS = {
+  manager: 'Manager: products and orders',
+  fulfillment: 'Fulfillment: orders only',
+}
+
+function TeamPanel({ storefront }) {
+  const [admins, setAdmins] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState([])
+  const [picked, setPicked] = useState(null) // { user_id, display_name }
+  const [role, setRole] = useState('manager')
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(() => {
+    adminGetStorefrontAdmins(storefront.id)
+      .then((d) => setAdmins(d.admins || []))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [storefront.id])
+  useEffect(load, [load])
+
+  useEffect(() => {
+    if (picked || query.trim().length < 2 || /^\d+$/.test(query.trim())) {
+      setResults([])
+      return undefined
+    }
+    const t = setTimeout(() => {
+      adminSearchUsers(query.trim()).then((d) => setResults(d.users || [])).catch(() => setResults([]))
+    }, 250)
+    return () => clearTimeout(t)
+  }, [query, picked])
+
+  const typedId = /^\d{5,}$/.test(query.trim()) ? query.trim() : null
+  const target = picked || (typedId ? { user_id: typedId, display_name: '' } : null)
+
+  const add = async () => {
+    if (!target) return
+    setBusy(true)
+    setError(null)
+    try {
+      await adminAddStorefrontAdmin(storefront.id, {
+        user_id: target.user_id, username: target.display_name || undefined, role,
+      })
+      setPicked(null)
+      setQuery('')
+      load()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async (a) => {
+    setError(null)
+    try {
+      await adminRemoveStorefrontAdmin(storefront.id, a.user_id)
+      load()
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap gap-6 items-start">
+      <div className="flex-[999_1_480px] min-w-0">
+        <h2 className="font-semibold text-lg">{storefront.name} admins</h2>
+        <p className="text-sm text-text-muted mb-4">
+          They only see and manage {storefront.name} orders{' '}
+          and products. Full store admins aren&apos;t listed here; they see every storefront.
+        </p>
+        {loading ? (
+          <Spinner className="py-8" />
+        ) : admins.length === 0 ? (
+          <p className="text-sm text-text-muted py-6 text-center bg-bg-surface border border-border rounded-lg">
+            No storefront admins yet.
+          </p>
+        ) : (
+          <ul className="bg-bg-surface border border-border rounded-lg divide-y divide-border">
+            {admins.map((a) => (
+              <li key={a.user_id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium">{a.username}</div>
+                  <div className="text-xs text-text-muted">
+                    {ROLE_LABELS[a.role] || a.role}
+                    {a.added_by ? ` · added by ${a.added_by}` : ''}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => remove(a)}
+                  className="text-sm text-accent-red hover:underline"
+                  aria-label={`Remove ${a.username}`}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="flex-[1_1_300px] min-w-0 bg-bg-surface border border-border rounded-lg p-4 space-y-3">
+        <h3 className="font-semibold">Add an admin</h3>
+        <div className="relative">
+          <label htmlFor="team-user" className="block text-sm font-medium mb-1">Discord name or user ID</label>
+          {picked ? (
+            <div className="flex items-center justify-between rounded border border-primary bg-bg-elevated px-3 py-2 text-sm">
+              <span>{picked.display_name} <span className="text-text-muted text-xs">({picked.user_id})</span></span>
+              <button type="button" className="text-text-muted hover:text-text" onClick={() => setPicked(null)} aria-label="Clear">
+                ✕
+              </button>
+            </div>
+          ) : (
+            <input
+              id="team-user"
+              className={`${inputCls} w-full`}
+              placeholder="Start typing a name"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              autoComplete="off"
+            />
+          )}
+          {results.length > 0 && !picked && (
+            <ul className="absolute z-10 mt-1 w-full bg-bg-elevated border border-border rounded shadow-harsh max-h-56 overflow-y-auto">
+              {results.map((u) => (
+                <li key={u.user_id}>
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/10"
+                    onClick={() => { setPicked(u); setResults([]) }}
+                  >
+                    {u.display_name} <span className="text-text-muted text-xs">({u.user_id})</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div>
+          <label htmlFor="team-role" className="block text-sm font-medium mb-1">Role</label>
+          <select id="team-role" className={`${inputCls} w-full`} value={role} onChange={(e) => setRole(e.target.value)}>
+            <option value="manager">{ROLE_LABELS.manager}</option>
+            <option value="fulfillment">{ROLE_LABELS.fulfillment}</option>
+          </select>
+        </div>
+        <p className="text-xs text-text-muted">
+          They&apos;ll see Store Admin in their menu after signing in with Discord, limited to {storefront.name}.
+        </p>
+        {error && <p className="text-accent-red text-sm">{error}</p>}
+        <button
+          type="button"
+          onClick={add}
+          disabled={!target || busy}
+          className="w-full bg-primary hover:bg-primary-dark text-white font-medium px-4 py-2 rounded transition-colors disabled:opacity-50"
+        >
+          Add to {storefront.name}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- Storefronts
+
+function StorefrontEditor({ storefront, onSaved }) {
+  const [form, setForm] = useState({
+    name: storefront.name || '',
+    description: storefront.description || '',
+    contact_email: storefront.contact_email || '',
+    shipping: storefront.shipping_cents == null ? '' : (storefront.shipping_cents / 100).toFixed(2),
+  })
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+
+  const save = async (extra = {}) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const { shipping, ...fields } = form
+      if (!storefront.uses_summit_stripe) {
+        fields.shipping_cents = shipping === '' ? null : Math.round(parseFloat(shipping) * 100)
+      }
+      await adminUpdateStorefront(storefront.id, { ...fields, ...extra })
+      onSaved()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <li className="px-4 py-4 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold">{storefront.name}</span>
+        <span className="text-xs text-text-muted font-mono">/store?storefront={storefront.slug}</span>
+        <span className={`text-xs ${storefront.is_active ? 'text-accent-green' : 'text-text-muted'}`}>
+          {storefront.is_active ? 'Live' : 'Hidden'}
+        </span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input className={inputCls} aria-label={`${storefront.name} name`} value={form.name} onChange={set('name')} />
+        <input className={inputCls} aria-label={`${storefront.name} contact email`} placeholder="Contact email for buyers" value={form.contact_email} onChange={set('contact_email')} />
+        <textarea className={`${inputCls} sm:col-span-2`} aria-label={`${storefront.name} description`} placeholder="Short description shown under the tab" rows={2} value={form.description} onChange={set('description')} />
+        {!storefront.uses_summit_stripe && (
+          <label className="text-sm text-text-muted flex items-center gap-2">
+            Flat shipping $
+            <input
+              className={`${inputCls} w-24`}
+              aria-label={`${storefront.name} shipping`}
+              type="number" min="0" step="0.01"
+              placeholder="Default"
+              value={form.shipping}
+              onChange={set('shipping')}
+            />
+          </label>
+        )}
+      </div>
+      <p className="text-xs text-text-muted">
+        {storefront.uses_summit_stripe
+          ? "Payments go to Summit's Stripe account."
+          : storefront.accepts_payments
+            ? `Payments go to its own Stripe account (${storefront.stripe_account_id}).`
+            : storefront.stripe_account_id
+              ? 'Stripe setup started but not finished. Not taking orders yet.'
+              : 'No Stripe account connected. Not taking orders yet.'}
+      </p>
+      {error && <p className="text-accent-red text-sm">{error}</p>}
+      <div className="flex gap-4 text-sm">
+        <button type="button" disabled={busy} onClick={() => save()} className="text-primary hover:underline disabled:opacity-50">
+          Save
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => save({ is_active: !storefront.is_active })}
+          className="text-primary hover:underline disabled:opacity-50"
+        >
+          {storefront.is_active ? 'Hide storefront' : 'Show storefront'}
+        </button>
+        {storefront.stripe_account_id && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              if (!window.confirm(`Disconnect ${storefront.name}'s Stripe account? It will stop taking orders.`)) return
+              setBusy(true)
+              try {
+                await adminDisconnectStripe(storefront.id)
+                onSaved()
+              } catch (e) {
+                setError(e.message)
+              } finally {
+                setBusy(false)
+              }
+            }}
+            className="text-accent-red hover:underline disabled:opacity-50"
+          >
+            Disconnect Stripe
+          </button>
+        )}
+      </div>
+    </li>
+  )
+}
+
+function ApplicationRow({ app, onDone }) {
+  const [slug, setSlug] = useState(
+    app.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40),
+  )
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  const act = async (fn) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await fn()
+      onDone()
+    } catch (e) {
+      setError(e.message)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <li className="px-4 py-4 space-y-2 text-sm">
+      <div className="flex flex-wrap justify-between gap-2">
+        <span className="font-semibold text-base">{app.name}</span>
+        <span className="text-text-muted">from {app.username} · {new Date(app.created_at).toLocaleDateString()}</span>
+      </div>
+      <p className="text-text-muted whitespace-pre-line">{app.description}</p>
+      <p><span className="text-text-muted">Shipping:</span> {app.shipping}</p>
+      <p>
+        <span className="text-text-muted">Contact:</span> {app.contact_email}
+        {app.website && <> · <a href={app.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{app.website}</a></>}
+      </p>
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        <label className="text-text-muted" htmlFor={`slug-${app.id}`}>Web address</label>
+        <input id={`slug-${app.id}`} className={`${inputCls} w-48 py-1`} value={slug} onChange={(e) => setSlug(e.target.value)} />
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => act(() => adminApproveStorefrontApplication(app.id, slug))}
+          className="bg-accent-green text-white font-medium px-3 py-1.5 rounded disabled:opacity-50"
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => act(() => adminDeclineStorefrontApplication(app.id))}
+          className="text-accent-red hover:underline disabled:opacity-50"
+        >
+          Decline
+        </button>
+      </div>
+      {error && <p className="text-accent-red">{error}</p>}
+    </li>
+  )
+}
+
+function StorefrontsPanel({ storefronts, onChanged }) {
+  const [apps, setApps] = useState([])
+  const [newName, setNewName] = useState('')
+  const [error, setError] = useState(null)
+
+  const loadApps = useCallback(() => {
+    adminGetStorefrontApplications('pending')
+      .then((d) => setApps(d.applications || []))
+      .catch((e) => setError(e.message))
+  }, [])
+  useEffect(loadApps, [loadApps])
+
+  const create = async () => {
+    setError(null)
+    try {
+      await adminCreateStorefront({ name: newName.trim() })
+      setNewName('')
+      onChanged()
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  return (
+    <div className="space-y-8">
+      <section>
+        <h2 className="font-semibold text-lg mb-3">Applications</h2>
+        {apps.length === 0 ? (
+          <p className="text-sm text-text-muted">No applications waiting.</p>
+        ) : (
+          <ul className="bg-bg-surface border border-border rounded-lg divide-y divide-border">
+            {apps.map((a) => (
+              <ApplicationRow key={a.id} app={a} onDone={() => { loadApps(); onChanged() }} />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <h2 className="font-semibold text-lg mb-3">Storefronts</h2>
+        <ul className="bg-bg-surface border border-border rounded-lg divide-y divide-border mb-4">
+          {storefronts.map((sf) => (
+            <StorefrontEditor key={`${sf.id}-${sf.updated_at}`} storefront={sf} onSaved={onChanged} />
+          ))}
+        </ul>
+        <div className="flex flex-wrap gap-2">
+          <input
+            className={`${inputCls} flex-1 min-w-48`}
+            placeholder="New storefront name"
+            aria-label="New storefront name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+          />
+          <button
+            type="button"
+            onClick={create}
+            disabled={!newName.trim()}
+            className="bg-primary hover:bg-primary-dark text-white font-medium px-4 py-2 rounded transition-colors disabled:opacity-50"
+          >
+            New storefront
+          </button>
+        </div>
+        {error && <p className="text-accent-red text-sm mt-2">{error}</p>}
+      </section>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- Payments
+
+function PaymentsCard({ storefront, canConnect, checkStripe, onChanged }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  // Back from Stripe's onboarding pages: ask Stripe whether it's done
+  useEffect(() => {
+    if (!checkStripe || !storefront.stripe_account_id) return
+    adminGetStorefrontPayments(storefront.id, true)
+      .then((d) => { if (d.accepts_payments !== storefront.accepts_payments) onChanged() })
+      .catch((e) => setError(e.message))
+  }, [checkStripe, storefront.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (storefront.accepts_payments) {
+    return (
+      <p className="text-xs text-text-muted mb-2">
+        {storefront.name} takes payments on its own Stripe account.
+      </p>
+    )
+  }
+
+  const connect = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const { url } = await adminStartStripeOnboarding(storefront.id)
+      window.location.assign(url)
+    } catch (e) {
+      setError(e.message)
+      setBusy(false)
+    }
+  }
+
+  const recheck = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const d = await adminGetStorefrontPayments(storefront.id, true)
+      if (d.accepts_payments) onChanged()
+      else setError('Stripe says setup still isn\'t finished.')
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const started = Boolean(storefront.stripe_account_id)
+  return (
+    <div className="bg-secondary/10 border border-secondary/30 rounded-lg px-4 py-3 my-3 text-sm">
+      <p className="mb-2">
+        {started
+          ? `${storefront.name}'s Stripe setup isn't finished, so it can't take orders yet.`
+          : `${storefront.name} can't take orders until it connects its own Stripe account. Payments go straight to that account.`}
+      </p>
+      {canConnect ? (
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={connect}
+            disabled={busy}
+            className="bg-primary hover:bg-primary-dark text-white font-medium px-4 py-2 rounded transition-colors disabled:opacity-50"
+          >
+            {started ? 'Finish Stripe setup' : 'Connect Stripe'}
+          </button>
+          {started && (
+            <button type="button" onClick={recheck} disabled={busy} className="text-primary hover:underline disabled:opacity-50">
+              Check again
+            </button>
+          )}
+        </div>
+      ) : (
+        <p className="text-text-muted">A manager of {storefront.name} can connect it.</p>
+      )}
+      {error && <p className="text-accent-red mt-2">{error}</p>}
     </div>
   )
 }
@@ -665,31 +1178,109 @@ function OrdersPanel() {
 
 export default function StoreAdmin() {
   usePageTitle('Store Admin')
+  const [me, setMe] = useState(null)
+  const [error, setError] = useState(null)
+  const [params] = useSearchParams()
+  // ?storefront=<id> opens one storefront (Stripe onboarding returns here)
+  const [storefrontId, setStorefrontId] = useState(
+    params.get('storefront') ? Number(params.get('storefront')) : undefined,
+  ) // null = all
+  const backFromStripe = params.get('stripe') === 'return'
   const [tab, setTab] = useState('orders')
+
+  const loadMe = useCallback(() => {
+    adminGetMe()
+      .then((d) => {
+        setMe(d)
+        setStorefrontId((current) => {
+          if (current !== undefined) return current
+          // With a single storefront there's nothing to switch between
+          return d.storefronts.length === 1 ? d.storefronts[0].id : null
+        })
+      })
+      .catch((e) => setError(e.message))
+  }, [])
+  useEffect(loadMe, [loadMe])
+
+  if (error) return <p className="text-center text-accent-red py-8">{error}</p>
+  if (!me) return <Spinner className="py-20" />
+
+  const full = me.is_full_admin
+  const storefronts = me.storefronts || []
+  const selected = storefronts.find((sf) => sf.id === storefrontId) || null
+  const canEditProducts = full || (selected
+    ? selected.role === 'manager'
+    : storefronts.some((sf) => sf.role === 'manager'))
+  const productStorefronts = full ? storefronts : storefronts.filter((sf) => sf.role === 'manager')
+
+  const tabs = [
+    { key: 'orders', label: 'Order queue' },
+    canEditProducts && { key: 'products', label: 'Products' },
+    full && { key: 'team', label: 'Admins' },
+    full && { key: 'storefronts', label: 'Storefronts' },
+  ].filter(Boolean)
+  const current = tabs.some((t) => t.key === tab) ? tab : 'orders'
+  const pills = storefronts.length > 1
+    ? [{ id: null, name: 'All storefronts' }, ...storefronts]
+    : storefronts
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-display text-secondary">Store Admin</h1>
-        <a
-          href="/api/store/admin/backup"
-          className="text-sm text-primary hover:underline"
-          download
-        >
-          Download backup
-        </a>
+        {full && (
+          <a
+            href="/api/store/admin/backup"
+            className="text-sm text-primary hover:underline"
+            download
+          >
+            Download backup
+          </a>
+        )}
       </div>
 
-      <div className="flex gap-2 border-b border-border mb-6">
-        {[
-          { key: 'orders', label: 'Order queue' },
-          { key: 'products', label: 'Products' },
-        ].map((t) => (
+      {current !== 'storefronts' && (
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <span className="text-sm text-text-muted mr-1">Managing</span>
+          {pills.map((sf) => (
+            <button
+              key={sf.id ?? 'all'}
+              type="button"
+              aria-pressed={storefrontId === sf.id}
+              onClick={() => setStorefrontId(sf.id)}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                storefrontId === sf.id
+                  ? 'bg-brand-blue border-brand-blue-light text-white'
+                  : 'border-border text-text-muted hover:text-text'
+              }`}
+            >
+              {sf.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {selected && !selected.uses_summit_stripe && current !== 'storefronts' && (
+        <PaymentsCard
+          key={selected.id}
+          storefront={selected}
+          canConnect={full || selected.role === 'manager'}
+          checkStripe={backFromStripe}
+          onChanged={loadMe}
+        />
+      )}
+      {!full && (
+        <p className="text-xs text-text-muted mb-2">
+          You can manage {storefronts.map((sf) => sf.name).join(', ')} only.
+        </p>
+      )}
+
+      <div className="flex gap-2 border-b border-border mb-6 mt-4">
+        {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t.key
+              current === t.key
                 ? 'border-secondary text-secondary'
                 : 'border-transparent text-text-muted hover:text-text'
             }`}
@@ -699,7 +1290,18 @@ export default function StoreAdmin() {
         ))}
       </div>
 
-      {tab === 'orders' ? <OrdersPanel /> : <ProductsPanel />}
+      {current === 'orders' && (
+        <OrdersPanel key={storefrontId ?? 'all'} storefrontId={storefrontId} showStorefront={storefrontId == null} />
+      )}
+      {current === 'products' && (
+        <ProductsPanel key={storefrontId ?? 'all'} storefrontId={storefrontId} storefronts={productStorefronts} />
+      )}
+      {current === 'team' && (
+        selected
+          ? <TeamPanel key={selected.id} storefront={selected} />
+          : <p className="text-sm text-text-muted">Pick a storefront above to see and change its admins.</p>
+      )}
+      {current === 'storefronts' && <StorefrontsPanel storefronts={storefronts} onChanged={loadMe} />}
     </div>
   )
 }

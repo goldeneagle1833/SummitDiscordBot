@@ -638,25 +638,7 @@ export default function Nav() {
             {!loading && (
               <div className="hidden md:flex items-center gap-3">
                 {user ? (
-                  <>
-                    <Link
-                      to={`/player/${user.user_id}`}
-                      className="text-primary font-semibold hover:text-primary-light transition-colors"
-                    >
-                      {user.username}
-                    </Link>
-                    <a
-                      href="/api/logout"
-                      className="text-sm text-text-muted hover:text-accent-red transition-colors"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        fetch('/api/logout', { credentials: 'include' })
-                          .then(() => window.location.reload())
-                      }}
-                    >
-                      Logout
-                    </a>
-                  </>
+                  <UserMenu user={user} />
                 ) : (
                   <Link
                     to={`/login?next=${encodeURIComponent(window.location.href)}`}
@@ -712,6 +694,7 @@ export default function Nav() {
                 >
                   {user.username}
                 </Link>
+                <SidebarLink to="/store/orders" label="My orders" location={location} onClick={close} />
                 <a
                   href="/api/logout"
                   className="block px-4 py-3 text-text-muted hover:bg-accent-red/10 hover:text-accent-red transition-colors text-sm"
@@ -739,7 +722,7 @@ export default function Nav() {
         {/* Full navigation */}
         <div>
           {/* Creator link */}
-          {user?.is_store_admin && (
+          {(user?.is_store_admin || user?.is_store_staff) && (
             <div className="border-b border-border">
               <SidebarLink to="/admin/store" label="Store Admin" location={location} onClick={close} />
             </div>
@@ -847,6 +830,74 @@ export default function Nav() {
         />
       )}
     </>
+  )
+}
+
+// Account menu behind the username in the top bar
+function UserMenu({ user }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onPointer = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onPointer)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPointer)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const itemCls = 'block w-full text-left px-4 py-2.5 text-sm hover:bg-secondary/10 hover:text-secondary transition-colors'
+  const close = () => setOpen(false)
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex items-center gap-1 text-primary font-semibold hover:text-primary-light transition-colors"
+      >
+        {user.username}
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" className={`transition-transform ${open ? 'rotate-180' : ''}`}>
+          <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 mt-2 w-48 bg-bg-surface border border-border rounded-lg shadow-harsh py-1 z-[960]">
+          <Link role="menuitem" to={`/player/${user.user_id}`} className={itemCls} onClick={close}>
+            My profile
+          </Link>
+          <Link role="menuitem" to="/store/orders" className={itemCls} onClick={close}>
+            My orders
+          </Link>
+          {(user.is_store_admin || user.is_store_staff) && (
+            <Link role="menuitem" to="/admin/store" className={itemCls} onClick={close}>
+              Store Admin
+            </Link>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            className={`${itemCls} text-text-muted hover:!text-accent-red border-t border-border mt-1`}
+            onClick={() => {
+              fetch('/api/logout', { credentials: 'include' })
+                .then(() => window.location.reload())
+            }}
+          >
+            Logout
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 

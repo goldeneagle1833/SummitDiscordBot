@@ -35,6 +35,11 @@ function OrderCard({ order }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <span className="font-mono text-sm text-text-primary">{order.order_number}</span>
+            {order.storefront_name && (
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full border border-brand-line bg-brand-panel text-brand-sky">
+                {order.storefront_name}
+              </span>
+            )}
             <span className="text-xs text-text-muted">
               {new Date(order.created_at).toLocaleDateString(undefined, {
                 year: 'numeric', month: 'short', day: 'numeric',
@@ -103,17 +108,29 @@ function OrderCard({ order }) {
               <span className="font-mono text-text-primary">{order.tracking_number}</span>
             </div>
           )}
+
+          {order.storefront_contact_email && (
+            <div className="border-t border-border/50 px-4 py-3 text-sm text-text-muted">
+              Questions about this order?{' '}
+              <a href={`mailto:${order.storefront_contact_email}`} className="text-primary hover:underline">
+                Contact {order.storefront_name}
+              </a>
+            </div>
+          )}
         </div>
       )}
     </div>
   )
 }
 
+const ALL = ''
+
 export default function MyOrders() {
   usePageTitle('My Orders')
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [tab, setTab] = useState(ALL)
 
   useEffect(() => {
     getMyOrders()
@@ -125,9 +142,25 @@ export default function MyOrders() {
   if (loading) return <Spinner className="py-20" />
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
 
+  // One section per storefront the buyer has ordered from, in first-seen order
+  const sections = []
+  for (const o of orders) {
+    const slug = o.storefront_slug || 'summit'
+    if (!sections.some((s) => s.slug === slug)) {
+      sections.push({ slug, name: o.storefront_name || 'Summit Store' })
+    }
+  }
+  const countFor = (slug) =>
+    orders.filter((o) => (o.storefront_slug || 'summit') === slug).length
+  const shown = tab === ALL
+    ? orders
+    : orders.filter((o) => (o.storefront_slug || 'summit') === tab)
+  const tabs = [{ slug: ALL, name: 'All orders', count: orders.length },
+    ...sections.map((s) => ({ ...s, count: countFor(s.slug) }))]
+
   return (
     <div className="max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-display text-secondary">My Orders</h1>
         <Link to="/store" className="text-sm text-text-muted hover:text-text transition-colors">
           &larr; Back to store
@@ -142,11 +175,32 @@ export default function MyOrders() {
           </Link>
         </div>
       ) : (
-        <div className="space-y-3">
-          {orders.map((o) => (
-            <OrderCard key={o.order_number} order={o} />
-          ))}
-        </div>
+        <>
+          <div role="tablist" aria-label="Orders by storefront" className="flex gap-6 border-b border-border mb-5 overflow-x-auto">
+            {tabs.map((t) => (
+              <button
+                key={t.slug || 'all'}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.slug}
+                onClick={() => setTab(t.slug)}
+                className={`py-3 -mb-px border-b-2 text-sm font-semibold whitespace-nowrap transition-colors flex items-center gap-2 ${
+                  tab === t.slug
+                    ? 'border-secondary text-secondary'
+                    : 'border-transparent text-text-muted hover:text-text'
+                }`}
+              >
+                {t.name}
+                <span className="text-xs bg-bg-elevated text-text-muted rounded-full px-2 py-0.5">{t.count}</span>
+              </button>
+            ))}
+          </div>
+          <div className="space-y-3">
+            {shown.map((o) => (
+              <OrderCard key={o.order_number} order={o} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   )

@@ -102,6 +102,29 @@ Setup:
    `whsec_...` secret to use). Card `4242 4242 4242 4242` completes test
    payments.
 
+### Storefronts with their own Stripe account
+
+Summit Store takes payments on Summit's own Stripe account (above). Every
+other storefront takes payments on its own Stripe account through Stripe
+Connect (Standard accounts, direct charges): the money goes straight to the
+storefront, and Summit takes no fee. A storefront can't check out until its
+account can take charges.
+
+1. In the Stripe dashboard, turn on Connect for Summit's account.
+2. Add a second webhook endpoint for **connected accounts**, pointing to the
+   same `https://yourdomain.com/api/store/webhooks/stripe` URL, listening for
+   `checkout.session.completed`, `checkout.session.expired` and
+   `account.updated`. Put its signing secret in `STRIPE_CONNECT_WEBHOOK_SECRET`.
+3. A storefront manager opens Store Admin, picks their storefront and clicks
+   **Connect Stripe**, which sends them through Stripe's onboarding.
+   Full store admins can set a storefront's flat shipping rate (defaults to
+   `STORE_FLAT_SHIPPING_CENTS`) and disconnect its account on the
+   Storefronts tab.
+
+Summit's Stripe shipping rates and the free-shipping perk only apply to
+Summit Store. A webhook event from one Stripe account can never settle an
+order that belongs to another.
+
 Notes:
 - Prices are always read from the database; the client only sends product
   IDs and quantities.

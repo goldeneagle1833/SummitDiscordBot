@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { getProducts, getCheckoutPrefill, createCheckout, formatMoney } from '@/api/store'
-import { loadCart, saveCart, reconcileCart } from '@/hooks/useStoreCart'
+import { DEFAULT_STOREFRONT, loadCart, saveCart, reconcileCart } from '@/hooks/useStoreCart'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -49,6 +49,12 @@ function CheckoutProgress({ step }) {
 export default function StoreCheckout() {
   usePageTitle('Checkout')
   const { user, loading: authLoading } = useAuth()
+  const [params] = useSearchParams()
+  // Each storefront checks out on its own, from its own cart
+  const storefront = params.get('storefront') || DEFAULT_STOREFRONT
+  const storeUrl = storefront === DEFAULT_STOREFRONT
+    ? '/store'
+    : `/store?storefront=${encodeURIComponent(storefront)}`
 
   const [items, setItems] = useState([])
   const [email, setEmail] = useState('')
@@ -66,8 +72,8 @@ export default function StoreCheckout() {
     Promise.all([
       getProducts().then((data) => {
         const products = data.products || []
-        const cart = reconcileCart(loadCart(), products)
-        saveCart(cart)
+        const cart = reconcileCart(loadCart(storefront), products)
+        saveCart(cart, storefront)
         setItems(
           products
             .filter((p) => cart[p.id])
@@ -88,15 +94,15 @@ export default function StoreCheckout() {
     ])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [user])
+  }, [user, storefront])
 
   if (authLoading) return <Spinner className="py-20" />
-  if (!user) return <Navigate to={`/login?next=${encodeURIComponent('/store')}`} replace />
+  if (!user) return <Navigate to={`/login?next=${encodeURIComponent(storeUrl)}`} replace />
   if (loading) return <Spinner className="py-20" />
   if (error && items.length === 0) {
     return <p className="text-center text-accent-red py-8">{error}</p>
   }
-  if (items.length === 0) return <Navigate to="/store" replace />
+  if (items.length === 0) return <Navigate to={storeUrl} replace />
 
   const subtotal = items.reduce((s, i) => s + i.price_cents * i.quantity, 0)
 
@@ -217,7 +223,7 @@ export default function StoreCheckout() {
       </div>
 
       <div className="text-center mt-3">
-        <Link to="/store" className="text-sm text-text-muted hover:text-text transition-colors">
+        <Link to={storeUrl} className="text-sm text-text-muted hover:text-text transition-colors">
           &larr; Back to store
         </Link>
       </div>

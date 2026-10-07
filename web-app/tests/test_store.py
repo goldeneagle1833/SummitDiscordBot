@@ -1053,7 +1053,7 @@ class TestStoreAdminRoutes:
     def test_admin_ship_unknown_order(self, store_admin_session, store_repo):
         resp = store_admin_session.post(
             "/api/store/admin/orders/9999/ship", json={"tracking_number": "T"})
-        assert resp.status_code == 409
+        assert resp.status_code == 404
 
     def test_admin_cancel_restocks(self, store_admin_session, store_repo):
         pid = _seed_product(store_repo, stock_quantity=10)

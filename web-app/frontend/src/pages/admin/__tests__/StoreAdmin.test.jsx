@@ -5,17 +5,20 @@ vi.mock('@/api/store', async () => {
   const actual = await vi.importActual('@/api/store')
   return {
     ...actual,
+    adminGetMe: vi.fn(),
     adminGetProducts: vi.fn(),
     adminCreateProduct: vi.fn(),
     adminUpdateProduct: vi.fn(),
     adminDeactivateProduct: vi.fn(),
     adminUploadProductImages: vi.fn(),
     adminGetOrders: vi.fn(),
+    adminStartStripeOnboarding: vi.fn(),
   }
 })
 
 import {
-  adminGetProducts, adminCreateProduct, adminUpdateProduct, adminUploadProductImages, adminGetOrders,
+  adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminUploadProductImages, adminGetOrders,
+  adminStartStripeOnboarding,
 } from '@/api/store'
 import StoreAdmin from '../StoreAdmin'
 
@@ -33,6 +36,9 @@ const TOKEN = {
   images: ['/one.png', '/two.png'],
 }
 
+const SUMMIT = { id: 1, slug: 'summit', name: 'Summit Store', role: 'owner', is_active: 1 }
+const FULL_ADMIN = { is_full_admin: true, storefronts: [SUMMIT] }
+
 async function openProductsTab() {
   renderWithRouter(<StoreAdmin />)
   await userEvent.click(await screen.findByRole('button', { name: 'Products' }))
@@ -42,6 +48,7 @@ async function openProductsTab() {
 describe('StoreAdmin order queue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    adminGetMe.mockResolvedValue(FULL_ADMIN)
     adminGetProducts.mockResolvedValue({ products: [TOKEN] })
     adminGetOrders.mockResolvedValue({
       orders: [{ id: 42, order_number: 'SUM-20260930-ABC123', username: 'bruce', total_cents: 1999, currency: 'USD', status: 'paid' }],
@@ -59,6 +66,7 @@ describe('StoreAdmin order queue', () => {
 describe('StoreAdmin products', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    adminGetMe.mockResolvedValue(FULL_ADMIN)
     adminGetProducts.mockResolvedValue({ products: [TOKEN] })
     adminGetOrders.mockResolvedValue({ orders: [] })
     adminUpdateProduct.mockResolvedValue({ success: true })
@@ -156,6 +164,7 @@ describe('StoreAdmin products', () => {
       stock_quantity: 3,
       max_per_user_monthly: undefined,
       images: ['https://img.example/ice.png'],
+      storefront_id: 1,
     })
   })
 
@@ -165,5 +174,63 @@ describe('StoreAdmin products', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(screen.getByRole('heading', { name: 'Add product' })).toBeInTheDocument()
     expect(adminUpdateProduct).not.toHaveBeenCalled()
+  })
+})
+
+describe('StoreAdmin for a storefront admin', () => {
+  const EXPLORER = { id: 2, slug: 'explorer', name: 'Explorer Store', is_active: 1 }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    adminGetProducts.mockResolvedValue({ products: [] })
+    adminGetOrders.mockResolvedValue({ orders: [] })
+  })
+
+  it('shows a manager only their storefront, without the full-admin tabs', async () => {
+    adminGetMe.mockResolvedValue({ is_full_admin: false, storefronts: [{ ...EXPLORER, role: 'manager' }] })
+    renderWithRouter(<StoreAdmin />)
+    expect(await screen.findByRole('button', { name: 'Products' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Admins' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Storefronts' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Download backup')).not.toBeInTheDocument()
+    await waitFor(() => expect(adminGetOrders).toHaveBeenCalledWith(expect.objectContaining({ storefront_id: 2 })))
+  })
+
+  it('hides products from fulfillment staff', async () => {
+    adminGetMe.mockResolvedValue({ is_full_admin: false, storefronts: [{ ...EXPLORER, role: 'fulfillment' }] })
+    renderWithRouter(<StoreAdmin />)
+    await waitFor(() => expect(adminGetOrders).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Products' })).not.toBeInTheDocument()
+  })
+})
+
+describe('StoreAdmin storefront payments', () => {
+  const EXPLORER = { id: 2, slug: 'explorer', name: 'Explorer Store', is_active: 1, uses_summit_stripe: false }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    adminGetProducts.mockResolvedValue({ products: [] })
+    adminGetOrders.mockResolvedValue({ orders: [] })
+  })
+
+  it('lets a manager connect Stripe for a storefront that has none', async () => {
+    adminGetMe.mockResolvedValue({ is_full_admin: false, storefronts: [{ ...EXPLORER, role: 'manager', accepts_payments: false }] })
+    adminStartStripeOnboarding.mockReturnValue(new Promise(() => {}))
+    renderWithRouter(<StoreAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect Stripe' }))
+    expect(adminStartStripeOnboarding).toHaveBeenCalledWith(2)
+  })
+
+  it('tells fulfillment staff a manager has to connect it', async () => {
+    adminGetMe.mockResolvedValue({ is_full_admin: false, storefronts: [{ ...EXPLORER, role: 'fulfillment', accepts_payments: false }] })
+    renderWithRouter(<StoreAdmin />)
+    expect(await screen.findByText('A manager of Explorer Store can connect it.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Connect Stripe' })).not.toBeInTheDocument()
+  })
+
+  it('shows nothing to set up once the storefront takes payments', async () => {
+    adminGetMe.mockResolvedValue({ is_full_admin: false, storefronts: [{ ...EXPLORER, role: 'manager', accepts_payments: true, stripe_account_id: 'acct_1' }] })
+    renderWithRouter(<StoreAdmin />)
+    expect(await screen.findByText('Explorer Store takes payments on its own Stripe account.')).toBeInTheDocument()
   })
 })

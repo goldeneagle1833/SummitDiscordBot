@@ -34,7 +34,20 @@ def me():
         "is_rumble_admin": is_rumble_admin(),
         "is_card_points_admin": is_card_points_admin(),
         "is_store_admin": is_store_admin(),
+        "is_store_staff": _is_store_staff(str(user_id)),
     })
+
+
+def _is_store_staff(user_id: str) -> bool:
+    """Full store admin, or runs at least one storefront (sees Store Admin)."""
+    if is_store_admin():
+        return True
+    try:
+        from repositories.store import StoreRepository
+        return bool(StoreRepository().storefront_roles_for_user(user_id))
+    except Exception:
+        logger.exception("Storefront role lookup failed")
+        return False
 
 
 @misc_bp.route("/logout")

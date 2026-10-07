@@ -5,6 +5,7 @@ real-money order records can be backed up and audited independently.
 """
 
 import os
+import re
 import secrets
 import json
 import sqlite3
@@ -26,6 +27,24 @@ ORDER_STATUSES = (
 
 # Orders whose items haven't left the building, so cancelling returns stock
 CANCELLABLE_STATUSES = ("pending_payment", "paid")
+
+# Every product and order belongs to a storefront (a tab in the store).
+# Rows from before storefronts existed belong to this one.
+DEFAULT_STOREFRONT_SLUG = "summit"
+DEFAULT_STOREFRONT_NAME = "Summit Store"
+
+# manager: products and orders. fulfillment: orders only.
+STOREFRONT_ROLES = ("manager", "fulfillment")
+
+APPLICATION_STATUSES = ("pending", "approved", "declined")
+
+SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
+
+
+def slugify(name: str) -> str:
+    """'Explorer Store!' -> 'explorer-store'."""
+    slug = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
+    return slug[:40].strip("-")
 
 
 class StoreRepository:
@@ -134,6 +153,46 @@ class StoreRepository:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS storefronts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    slug TEXT UNIQUE NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    contact_email TEXT,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                -- People who run one storefront. Full store admins
+                -- (STORE_ADMIN_IDS) are not listed here: they see everything.
+                CREATE TABLE IF NOT EXISTS storefront_admins (
+                    storefront_id INTEGER NOT NULL REFERENCES storefronts(id),
+                    user_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    role TEXT NOT NULL,          -- manager | fulfillment
+                    added_by TEXT,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (storefront_id, user_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS storefront_applications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    contact_email TEXT NOT NULL,
+                    website TEXT,
+                    description TEXT NOT NULL,
+                    shipping TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    storefront_id INTEGER REFERENCES storefronts(id),
+                    reviewed_by TEXT,
+                    reviewed_at TEXT,
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_notif_pending
                     ON notifications(status, channel);
                 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
@@ -154,6 +213,45 @@ class StoreRepository:
                 conn.execute("ALTER TABLE products ADD COLUMN images TEXT")
             except sqlite3.OperationalError:
                 pass  # column already exists
+            for table in ("products", "orders"):
+                try:
+                    conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN storefront_id INTEGER "
+                        f"REFERENCES storefronts(id)"
+                    )
+                except sqlite3.OperationalError:
+                    pass  # column already exists
+
+            # Each storefront other than Summit takes payments through its
+            # own Stripe account, connected to Summit's platform account.
+            for column in ("stripe_account_id TEXT",
+                           "stripe_charges_enabled INTEGER NOT NULL DEFAULT 0",
+                           "shipping_cents INTEGER"):
+                try:
+                    conn.execute(f"ALTER TABLE storefronts ADD COLUMN {column}")
+                except sqlite3.OperationalError:
+                    pass  # column already exists
+
+            now = self._now()
+            conn.execute(
+                """INSERT OR IGNORE INTO storefronts (slug, name, created_at, updated_at)
+                   VALUES (?, ?, ?, ?)""",
+                (DEFAULT_STOREFRONT_SLUG, DEFAULT_STOREFRONT_NAME, now, now),
+            )
+            default_id = conn.execute(
+                "SELECT id FROM storefronts WHERE slug = ?", (DEFAULT_STOREFRONT_SLUG,)
+            ).fetchone()["id"]
+            for table in ("products", "orders"):
+                conn.execute(
+                    f"UPDATE {table} SET storefront_id = ? WHERE storefront_id IS NULL",
+                    (default_id,),
+                )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_products_storefront ON products(storefront_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_orders_storefront ON orders(storefront_id)"
+            )
 
     @staticmethod
     def _now() -> str:
@@ -201,13 +299,32 @@ class StoreRepository:
                 cleaned.append(url)
         return cleaned
 
-    def list_products(self, include_inactive: bool = False) -> list[dict]:
-        query = "SELECT * FROM products"
+    def list_products(self, include_inactive: bool = False,
+                      storefront_ids: list[int] | None = None) -> list[dict]:
+        """Products, optionally limited to some storefronts.
+
+        Without include_inactive, hidden products and products of hidden
+        storefronts are left out (the public catalog).
+        """
+        conditions = []
+        params: list = []
         if not include_inactive:
-            query += " WHERE is_active = 1"
-        query += " ORDER BY name ASC"
+            conditions.append(
+                "p.is_active = 1 AND p.storefront_id IN "
+                "(SELECT id FROM storefronts WHERE is_active = 1)"
+            )
+        if storefront_ids is not None:
+            if not storefront_ids:
+                return []
+            conditions.append(
+                f"p.storefront_id IN ({','.join('?' for _ in storefront_ids)})"
+            )
+            params.extend(storefront_ids)
+        where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+        query = f"SELECT p.* FROM products p{where} ORDER BY p.name ASC"
         with self._connect() as conn:
-            return [self._product_from_row(r) for r in conn.execute(query).fetchall()]
+            return [self._product_from_row(r)
+                    for r in conn.execute(query, params).fetchall()]
 
     def get_product(self, product_id: int) -> dict | None:
         with self._connect() as conn:
@@ -226,26 +343,35 @@ class StoreRepository:
         stock_quantity: int = 0,
         max_per_user_monthly: int | None = None,
         images: list[str] | None = None,
+        storefront_id: int | None = None,
     ) -> int:
         images = self._clean_images(images)
         if not images and image_url:
             images = [image_url]
+        if storefront_id is None:
+            storefront_id = self.default_storefront_id()
+        elif not self.get_storefront(storefront_id):
+            raise ValueError("Unknown storefront")
         now = self._now()
         with self._connect() as conn:
             cur = conn.execute(
                 """INSERT INTO products
                    (sku, name, description, price_cents, image_url, images,
-                    stock_quantity, max_per_user_monthly, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    stock_quantity, max_per_user_monthly, storefront_id,
+                    created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (sku, name, description, price_cents,
                  images[0] if images else None, json.dumps(images),
-                 stock_quantity, max_per_user_monthly, now, now),
+                 stock_quantity, max_per_user_monthly, storefront_id, now, now),
             )
             return cur.lastrowid
 
     def update_product(self, product_id: int, **fields) -> bool:
         allowed = {"sku", "name", "description", "price_cents", "image_url",
-                   "stock_quantity", "is_active", "max_per_user_monthly", "images"}
+                   "stock_quantity", "is_active", "max_per_user_monthly", "images",
+                   "storefront_id"}
+        if "storefront_id" in fields and not self.get_storefront(fields["storefront_id"]):
+            raise ValueError("Unknown storefront")
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return False
@@ -313,6 +439,7 @@ class StoreRepository:
             try:
                 subtotal = 0
                 snapshots = []
+                storefront_id = None
                 for item in items:
                     row = conn.execute(
                         "SELECT * FROM products WHERE id = ? AND is_active = 1",
@@ -320,6 +447,14 @@ class StoreRepository:
                     ).fetchone()
                     if row is None:
                         raise ValueError(f"Product {item['product_id']} not available")
+                    # Each storefront is its own order and its own checkout
+                    if storefront_id is None:
+                        storefront_id = row["storefront_id"]
+                    elif row["storefront_id"] != storefront_id:
+                        raise ValueError(
+                            "Items from different storefronts have to be "
+                            "checked out separately"
+                        )
                     qty = int(item["quantity"])
                     if qty <= 0:
                         raise ValueError("Quantity must be positive")
@@ -348,15 +483,17 @@ class StoreRepository:
                 cur = conn.execute(
                     """INSERT INTO orders
                        (order_number, user_id, username, email, auth_provider, status,
+                        storefront_id,
                         subtotal_cents, shipping_cents, tax_cents, total_cents,
                         ship_name, ship_line1, ship_line2, ship_city, ship_state,
                         ship_postal, ship_country, address_validated,
                         created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, 'pending_payment',
+                       VALUES (?, ?, ?, ?, ?, 'pending_payment', ?,
                                ?, ?, ?, ?,
                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         order_number, str(user_id), username, email, auth_provider,
+                        storefront_id,
                         subtotal, shipping_cents, tax_cents, total,
                         shipping_address.get("name"),
                         shipping_address.get("line1"),
@@ -433,7 +570,11 @@ class StoreRepository:
         with self._connect() as conn:
             return [
                 dict(r) for r in conn.execute(
-                    "SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+                    """SELECT o.*, s.slug AS storefront_slug, s.name AS storefront_name,
+                              s.contact_email AS storefront_contact_email
+                       FROM orders o
+                       LEFT JOIN storefronts s ON s.id = o.storefront_id
+                       WHERE o.user_id = ? ORDER BY o.created_at DESC LIMIT ?""",
                     (str(user_id), limit),
                 ).fetchall()
             ]
@@ -685,10 +826,23 @@ class StoreRepository:
                              search: str | None = None,
                              date_from: str | None = None,
                              date_to: str | None = None,
-                             limit: int = 100) -> list[dict]:
-        """List orders with optional filters for admin views."""
+                             limit: int = 100,
+                             storefront_ids: list[int] | None = None) -> list[dict]:
+        """List orders with optional filters for admin views.
+
+        storefront_ids limits the result to those storefronts (a storefront
+        admin's scope); None means every storefront.
+        """
         conditions = []
         params: list = []
+
+        if storefront_ids is not None:
+            if not storefront_ids:
+                return []
+            conditions.append(
+                f"o.storefront_id IN ({','.join('?' for _ in storefront_ids)})"
+            )
+            params.extend(storefront_ids)
 
         if status:
             if status not in ORDER_STATUSES:
@@ -717,7 +871,11 @@ class StoreRepository:
             params.append(date_to)
 
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-        query = f"SELECT * FROM orders o{where} ORDER BY o.created_at DESC LIMIT ?"
+        query = (
+            f"SELECT o.*, s.slug AS storefront_slug, s.name AS storefront_name "
+            f"FROM orders o LEFT JOIN storefronts s ON s.id = o.storefront_id"
+            f"{where} ORDER BY o.created_at DESC LIMIT ?"
+        )
         params.append(limit)
 
         with self._connect() as conn:
@@ -764,3 +922,273 @@ class StoreRepository:
                 "state": d["ship_state"], "postal": d["ship_postal"],
                 "country": d["ship_country"], "email": d["email"],
             }
+
+    # ------------------------------------------------------------------
+    # Storefronts (the tabs in the store)
+    # ------------------------------------------------------------------
+
+    def list_storefronts(self, include_inactive: bool = False) -> list[dict]:
+        query = "SELECT * FROM storefronts"
+        if not include_inactive:
+            query += " WHERE is_active = 1"
+        query += " ORDER BY sort_order ASC, id ASC"
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(query).fetchall()]
+
+    def get_storefront(self, storefront_id) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM storefronts WHERE id = ?", (storefront_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_storefront_by_slug(self, slug: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM storefronts WHERE slug = ?", (slug,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def default_storefront_id(self) -> int:
+        return self.get_storefront_by_slug(DEFAULT_STOREFRONT_SLUG)["id"]
+
+    @staticmethod
+    def _create_storefront(conn, slug: str, name: str, description: str,
+                           contact_email: str | None, now: str) -> int:
+        if not SLUG_PATTERN.match(slug or ""):
+            raise ValueError(
+                "Web address must be 2-40 lowercase letters, numbers or dashes"
+            )
+        if not (name or "").strip():
+            raise ValueError("Storefront name is required")
+        next_order = conn.execute(
+            "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM storefronts"
+        ).fetchone()[0]
+        try:
+            cur = conn.execute(
+                """INSERT INTO storefronts
+                   (slug, name, description, contact_email, sort_order,
+                    created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (slug, name.strip(), description or "", contact_email,
+                 next_order, now, now),
+            )
+        except sqlite3.IntegrityError:
+            raise ValueError(f"A storefront already uses /{slug}")
+        return cur.lastrowid
+
+    def create_storefront(self, slug: str, name: str, description: str = "",
+                          contact_email: str | None = None) -> int:
+        with self._connect() as conn:
+            return self._create_storefront(
+                conn, slug, name, description, contact_email, self._now()
+            )
+
+    def update_storefront(self, storefront_id: int, **fields) -> bool:
+        allowed = {"name", "description", "contact_email", "sort_order", "is_active",
+                   "shipping_cents"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return False
+        if "name" in updates and not str(updates["name"] or "").strip():
+            raise ValueError("Storefront name is required")
+        updates["updated_at"] = self._now()
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        with self._connect() as conn:
+            cur = conn.execute(
+                f"UPDATE storefronts SET {set_clause} WHERE id = ?",
+                (*updates.values(), storefront_id),
+            )
+            return cur.rowcount > 0
+
+    def set_storefront_stripe(self, storefront_id: int, account_id: str | None,
+                              charges_enabled: bool) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute(
+                """UPDATE storefronts SET stripe_account_id = ?,
+                   stripe_charges_enabled = ?, updated_at = ? WHERE id = ?""",
+                (account_id, 1 if charges_enabled else 0, self._now(), storefront_id),
+            )
+            return cur.rowcount > 0
+
+    def set_stripe_charges_enabled(self, account_id: str, charges_enabled: bool) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute(
+                """UPDATE storefronts SET stripe_charges_enabled = ?, updated_at = ?
+                   WHERE stripe_account_id = ?""",
+                (1 if charges_enabled else 0, self._now(), account_id),
+            )
+            return cur.rowcount > 0
+
+    @staticmethod
+    def stripe_account_for(storefront: dict | None) -> str | None:
+        """The connected Stripe account that takes this storefront's payments.
+
+        None means Summit's own (platform) account.
+        """
+        if not storefront or storefront.get("slug") == DEFAULT_STOREFRONT_SLUG:
+            return None
+        return storefront.get("stripe_account_id") or None
+
+    @staticmethod
+    def accepts_payments(storefront: dict | None) -> bool:
+        if not storefront:
+            return False
+        if storefront.get("slug") == DEFAULT_STOREFRONT_SLUG:
+            return True
+        return bool(storefront.get("stripe_account_id")
+                    and storefront.get("stripe_charges_enabled"))
+
+    # ------------------------------------------------------------------
+    # Storefront admins
+    # ------------------------------------------------------------------
+
+    def list_storefront_admins(self, storefront_id: int) -> list[dict]:
+        with self._connect() as conn:
+            return [
+                dict(r) for r in conn.execute(
+                    """SELECT * FROM storefront_admins WHERE storefront_id = ?
+                       ORDER BY role ASC, username COLLATE NOCASE ASC""",
+                    (storefront_id,),
+                ).fetchall()
+            ]
+
+    def add_storefront_admin(self, storefront_id: int, user_id: str, username: str,
+                             role: str, added_by: str | None = None) -> None:
+        """Add someone to a storefront, or change their role if already there."""
+        if role not in STOREFRONT_ROLES:
+            raise ValueError(f"Role must be one of: {', '.join(STOREFRONT_ROLES)}")
+        if not self.get_storefront(storefront_id):
+            raise ValueError("Unknown storefront")
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO storefront_admins
+                   (storefront_id, user_id, username, role, added_by, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(storefront_id, user_id)
+                   DO UPDATE SET role = excluded.role, username = excluded.username""",
+                (storefront_id, str(user_id), username, role, added_by, self._now()),
+            )
+
+    def remove_storefront_admin(self, storefront_id: int, user_id: str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM storefront_admins WHERE storefront_id = ? AND user_id = ?",
+                (storefront_id, str(user_id)),
+            )
+            return cur.rowcount > 0
+
+    def storefront_roles_for_user(self, user_id: str) -> dict[int, str]:
+        """{storefront_id: role} for every storefront this user helps run."""
+        with self._connect() as conn:
+            return {
+                r["storefront_id"]: r["role"]
+                for r in conn.execute(
+                    "SELECT storefront_id, role FROM storefront_admins WHERE user_id = ?",
+                    (str(user_id),),
+                ).fetchall()
+            }
+
+    # ------------------------------------------------------------------
+    # Storefront applications
+    # ------------------------------------------------------------------
+
+    def create_storefront_application(self, user_id: str, username: str, name: str,
+                                      contact_email: str, description: str,
+                                      shipping: str, website: str | None = None) -> int:
+        with self._connect() as conn:
+            pending = conn.execute(
+                """SELECT 1 FROM storefront_applications
+                   WHERE user_id = ? AND status = 'pending'""",
+                (str(user_id),),
+            ).fetchone()
+            if pending:
+                raise ValueError("You already have an application waiting for review")
+            cur = conn.execute(
+                """INSERT INTO storefront_applications
+                   (user_id, username, name, contact_email, website, description,
+                    shipping, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (str(user_id), username, name, contact_email, website,
+                 description, shipping, self._now()),
+            )
+            return cur.lastrowid
+
+    def list_storefront_applications(self, status: str | None = None) -> list[dict]:
+        query = "SELECT * FROM storefront_applications"
+        params: tuple = ()
+        if status:
+            if status not in APPLICATION_STATUSES:
+                raise ValueError(f"Unknown status: {status}")
+            query += " WHERE status = ?"
+            params = (status,)
+        query += " ORDER BY created_at DESC"
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+    def list_applications_by_user(self, user_id: str) -> list[dict]:
+        with self._connect() as conn:
+            return [
+                dict(r) for r in conn.execute(
+                    """SELECT a.*, s.slug AS storefront_slug
+                       FROM storefront_applications a
+                       LEFT JOIN storefronts s ON s.id = a.storefront_id
+                       WHERE a.user_id = ? ORDER BY a.created_at DESC""",
+                    (str(user_id),),
+                ).fetchall()
+            ]
+
+    def get_storefront_application(self, application_id: int) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM storefront_applications WHERE id = ?", (application_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def approve_storefront_application(self, application_id: int, slug: str,
+                                       reviewer: str) -> int:
+        """Create the storefront, make the applicant its manager, close the
+        application. All or nothing. Returns the new storefront id."""
+        now = self._now()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                app = conn.execute(
+                    """SELECT * FROM storefront_applications
+                       WHERE id = ? AND status = 'pending'""",
+                    (application_id,),
+                ).fetchone()
+                if app is None:
+                    raise ValueError("Application not found or already reviewed")
+                storefront_id = self._create_storefront(
+                    conn, slug, app["name"], app["description"],
+                    app["contact_email"], now,
+                )
+                conn.execute(
+                    """INSERT INTO storefront_admins
+                       (storefront_id, user_id, username, role, added_by, created_at)
+                       VALUES (?, ?, ?, 'manager', ?, ?)""",
+                    (storefront_id, app["user_id"], app["username"], reviewer, now),
+                )
+                conn.execute(
+                    """UPDATE storefront_applications
+                       SET status = 'approved', storefront_id = ?, reviewed_by = ?,
+                           reviewed_at = ?
+                       WHERE id = ?""",
+                    (storefront_id, reviewer, now, application_id),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return storefront_id
+
+    def decline_storefront_application(self, application_id: int, reviewer: str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute(
+                """UPDATE storefront_applications
+                   SET status = 'declined', reviewed_by = ?, reviewed_at = ?
+                   WHERE id = ? AND status = 'pending'""",
+                (reviewer, self._now(), application_id),
+            )
+            return cur.rowcount > 0

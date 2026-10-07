@@ -59,6 +59,7 @@ import Store from '@/pages/Store'
 import StoreCheckout from '@/pages/StoreCheckout'
 import StoreSuccess from '@/pages/StoreSuccess'
 import StoreCancelled from '@/pages/StoreCancelled'
+import StoreApply from '@/pages/StoreApply'
 import MyOrders from '@/pages/MyOrders'
 import Creator from '@/pages/Creator'
 import Feedback from '@/pages/Feedback'
@@ -222,6 +223,7 @@ const router = createBrowserRouter([
       { path: '/store/success', element: <StoreSuccess /> },
       { path: '/store/cancelled', element: <StoreCancelled /> },
       { path: '/store/orders', element: <LoginGuard><MyOrders /></LoginGuard> },
+      { path: '/store/apply', element: <LoginGuard><StoreApply /></LoginGuard> },
       { path: '/admin/store', element: <StoreAdminGuard><StoreAdmin /></StoreAdminGuard> },
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
       { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },

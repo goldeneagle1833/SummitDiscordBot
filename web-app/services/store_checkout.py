@@ -7,6 +7,14 @@ Flow:
   3. Stripe calls POST /api/store/webhooks/stripe; we verify the signature,
      confirm the amount, and mark the order paid. Expired sessions restock.
 
+Storefronts:
+  Summit Store takes payments on Summit's own Stripe account. Every other
+  storefront takes them on its own Stripe account, connected to Summit's
+  through Stripe Connect (Standard accounts, direct charges): the session
+  is created on the connected account, and its events arrive on the
+  Connect webhook endpoint with ``event.account`` set. A storefront can't
+  check out until its account can take charges.
+
 Security invariants:
   - Prices always come from the database, never the client.
   - The webhook is the ONLY thing that marks an order paid. The success
@@ -27,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+# Signing secret of the separate "connected accounts" webhook endpoint
+STRIPE_CONNECT_WEBHOOK_SECRET = os.environ.get("STRIPE_CONNECT_WEBHOOK_SECRET", "")
 FLAT_SHIPPING_CENTS = int(os.environ.get("STORE_FLAT_SHIPPING_CENTS", "599"))
 CHECKOUT_EXPIRES_MINUTES = 60  # Stripe minimum is 30
 
@@ -105,18 +115,35 @@ class StoreCheckoutService:
         """
         import time
 
-        # Free shipping for Patreon / Summit ticket holders
+        storefront = self._storefront_for_items(items)
+        if storefront and not self.repo.accepts_payments(storefront):
+            raise ValueError(f"{storefront['name']} isn't taking orders yet")
+        stripe_account = self.repo.stripe_account_for(storefront)
+
+        # Free shipping for Patreon / Summit ticket holders, on Summit's
+        # own products only
         has_free_shipping = bool(
-            discord_roles and FREE_SHIPPING_ROLE_IDS.intersection(discord_roles)
+            not stripe_account
+            and discord_roles and FREE_SHIPPING_ROLE_IDS.intersection(discord_roles)
         )
 
-        # Build Stripe shipping_options from Shipping Rate objects
+        # Build Stripe shipping_options from Shipping Rate objects. Those
+        # live on Summit's account, so connected storefronts use their own
+        # flat rate instead.
         use_shipping_rates = bool(
-            STRIPE_SHIPPING_RATE_DOMESTIC
+            not stripe_account
+            and STRIPE_SHIPPING_RATE_DOMESTIC
             and STRIPE_SHIPPING_RATE_INTERNATIONAL
         )
 
-        if has_free_shipping and STRIPE_SHIPPING_RATE_FREE:
+        if stripe_account:
+            shipping_options = None
+            shipping_cents = (
+                storefront["shipping_cents"]
+                if storefront.get("shipping_cents") is not None
+                else FLAT_SHIPPING_CENTS
+            )
+        elif has_free_shipping and STRIPE_SHIPPING_RATE_FREE:
             shipping_options = [
                 {"shipping_rate": STRIPE_SHIPPING_RATE_FREE},
             ]
@@ -171,6 +198,11 @@ class StoreCheckoutService:
                 }
             )
 
+        # The success/cancel pages clear or keep this storefront's cart only
+        storefront = self.repo.get_storefront(full_order["storefront_id"]) or {}
+        stripe_account = self.repo.stripe_account_for(storefront)
+        sf = f"&storefront={storefront.get('slug', '')}" if storefront else ""
+
         session_params = {
             "mode": "payment",
             "line_items": line_items,
@@ -178,12 +210,13 @@ class StoreCheckoutService:
             "metadata": {
                 "order_id": str(order["id"]),
                 "order_number": order["order_number"],
+                "storefront": storefront.get("slug", ""),
             },
             "success_url": _site_url(
-                f"/store/success?order={order['order_number']}"
+                f"/store/success?order={order['order_number']}{sf}"
             ),
             "cancel_url": _site_url(
-                f"/store/cancelled?order={order['order_number']}"
+                f"/store/cancelled?order={order['order_number']}{sf}"
             ),
             "expires_at": int(time.time()) + CHECKOUT_EXPIRES_MINUTES * 60,
         }
@@ -198,7 +231,9 @@ class StoreCheckoutService:
             session_params["shipping_options"] = shipping_options
 
         try:
-            checkout_session = stripe.checkout.Session.create(**session_params)
+            checkout_session = stripe.checkout.Session.create(
+                **session_params, **self._account_kwargs(stripe_account)
+            )
         except stripe.StripeError:
             # Stripe rejected the session: release the reserved stock.
             self.repo.cancel_order(order["id"], from_statuses=("pending_payment",))
@@ -216,6 +251,60 @@ class StoreCheckoutService:
             "order_number": order["order_number"],
             "checkout_url": checkout_session.url,
         }
+
+    def _storefront_for_items(self, items: list[dict]) -> dict | None:
+        for item in items:
+            try:
+                product = self.repo.get_product(int(item.get("product_id")))
+            except (TypeError, ValueError):
+                continue
+            if product:
+                return self.repo.get_storefront(product.get("storefront_id"))
+        return None
+
+    @staticmethod
+    def _account_kwargs(stripe_account: str | None) -> dict:
+        return {"stripe_account": stripe_account} if stripe_account else {}
+
+    def _order_account(self, order: dict) -> str | None:
+        return self.repo.stripe_account_for(
+            self.repo.get_storefront(order.get("storefront_id"))
+        )
+
+    # ------------------------------------------------------------------
+    # Stripe Connect onboarding (one Standard account per storefront)
+    # ------------------------------------------------------------------
+
+    def start_onboarding(self, storefront: dict, return_url: str, refresh_url: str) -> str:
+        """Return a Stripe onboarding link, creating the account if needed."""
+        account_id = storefront.get("stripe_account_id")
+        if not account_id:
+            account = stripe.Account.create(
+                type="standard",
+                email=storefront.get("contact_email") or None,
+                business_profile={"name": storefront["name"]},
+                metadata={"storefront_id": str(storefront["id"]),
+                          "storefront": storefront["slug"]},
+            )
+            account_id = account.id
+            self.repo.set_storefront_stripe(storefront["id"], account_id, False)
+        link = stripe.AccountLink.create(
+            account=account_id,
+            type="account_onboarding",
+            return_url=return_url,
+            refresh_url=refresh_url,
+        )
+        return link.url
+
+    def refresh_account_status(self, storefront: dict) -> bool:
+        """Ask Stripe whether the storefront's account can take charges."""
+        account_id = storefront.get("stripe_account_id")
+        if not account_id:
+            return False
+        account = stripe.Account.retrieve(account_id)
+        enabled = bool(account.get("charges_enabled"))
+        self.repo.set_stripe_charges_enabled(account_id, enabled)
+        return enabled
 
     # ------------------------------------------------------------------
     # Admin cancel
@@ -236,11 +325,14 @@ class StoreCheckoutService:
     def _expire_checkout_session(self, order: dict) -> None:
         if order.get("payment_provider") != "stripe" or not order.get("payment_ref"):
             return  # Session was never created, nothing to close
+        account = self._account_kwargs(self._order_account(order))
         try:
-            stripe.checkout.Session.expire(order["payment_ref"])
+            stripe.checkout.Session.expire(order["payment_ref"], **account)
         except stripe.StripeError:
             # Expire only works on open sessions; find out why it wasn't.
-            status = stripe.checkout.Session.retrieve(order["payment_ref"]).status
+            status = stripe.checkout.Session.retrieve(
+                order["payment_ref"], **account
+            ).status
             if status == "complete":
                 raise ValueError(
                     "The buyer just completed payment for this order. "
@@ -254,14 +346,27 @@ class StoreCheckoutService:
     # ------------------------------------------------------------------
 
     def construct_event(self, payload: bytes, sig_header: str):
-        """Verify webhook signature; raises on tampering or bad signature."""
-        return stripe.Webhook.construct_event(
-            payload, sig_header, STRIPE_WEBHOOK_SECRET
-        )
+        """Verify webhook signature; raises on tampering or bad signature.
+
+        Summit's own events and connected-account events come from two
+        endpoints with different signing secrets; either one is accepted.
+        """
+        secrets = [s for s in (STRIPE_WEBHOOK_SECRET, STRIPE_CONNECT_WEBHOOK_SECRET) if s]
+        for secret in secrets[:-1]:
+            try:
+                return stripe.Webhook.construct_event(payload, sig_header, secret)
+            except stripe.SignatureVerificationError:
+                continue
+        return stripe.Webhook.construct_event(payload, sig_header, secrets[-1])
 
     def handle_event(self, event) -> dict:
         """Process a verified Stripe event. Returns a status summary dict."""
         etype = event["type"]
+        # Set on events from a storefront's connected account; None for Summit's
+        try:
+            account = event["account"] or None
+        except (KeyError, TypeError):
+            account = None
         # Stripe Event objects don't support .get(); convert to plain dict
         # so our handlers can use dict.get() safely.
         raw = event["data"]["object"]
@@ -272,24 +377,48 @@ class StoreCheckoutService:
             obj = raw
 
         if etype == "checkout.session.completed":
-            return self._handle_completed(obj)
+            return self._handle_completed(obj, account)
         if etype == "checkout.session.expired":
-            return self._handle_expired(obj)
+            return self._handle_expired(obj, account)
+        if etype == "account.updated":
+            if self.repo.set_stripe_charges_enabled(
+                obj.get("id"), bool(obj.get("charges_enabled"))
+            ):
+                return {"handled": True, "reason": "storefront account updated"}
+            return {"handled": False, "reason": "unknown account"}
 
         logger.debug(f"Ignoring Stripe event type: {etype}")
         return {"handled": False, "reason": f"ignored event {etype}"}
 
-    def _order_from_session(self, session_obj) -> dict | None:
+    def _order_from_session(self, session_obj, account: str | None = None) -> dict | None:
+        order = None
         order_id = (session_obj.get("metadata") or {}).get("order_id")
         if order_id:
             order = self.repo.get_order(int(order_id))
-            if order:
-                return order
-        # Fallback: look up by attached session id
-        return self.repo.get_order_by_payment_ref("stripe", session_obj["id"])
+        if order is None:
+            # Fallback: look up by attached session id
+            order = self.repo.get_order_by_payment_ref("stripe", session_obj["id"])
+        if order is None:
+            return None
+        # A storefront owner controls their own Stripe account, so a session
+        # from it may only ever settle that storefront's orders.
+        expected = self._order_account(order)
+        if (account or None) != expected:
+            logger.error(
+                f"Stripe account mismatch for {order['order_number']}: "
+                f"event from {account or 'platform'}, order belongs to "
+                f"{expected or 'platform'}"
+            )
+            self.repo.log_action(
+                "stripe-webhook", "system", "account_mismatch",
+                f"order={order['order_number']} event_account={account} "
+                f"expected={expected} session={session_obj.get('id')}",
+            )
+            return None
+        return order
 
-    def _handle_completed(self, session_obj) -> dict:
-        order = self._order_from_session(session_obj)
+    def _handle_completed(self, session_obj, account: str | None = None) -> dict:
+        order = self._order_from_session(session_obj, account)
         if order is None:
             logger.error(f"Webhook for unknown order: session {session_obj['id']}")
             return {"handled": False, "reason": "order not found"}
@@ -386,8 +515,8 @@ class StoreCheckoutService:
         )
         return {"handled": False, "reason": f"payment received for {status} order"}
 
-    def _handle_expired(self, session_obj) -> dict:
-        order = self._order_from_session(session_obj)
+    def _handle_expired(self, session_obj, account: str | None = None) -> dict:
+        order = self._order_from_session(session_obj, account)
         if order is None or not self.repo.cancel_order(
             order["id"], from_statuses=("pending_payment",)
         ):

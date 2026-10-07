@@ -988,3 +988,41 @@ class TestAvatarWinRates:
             "players": 1, "matches": 1, "win_rate": 100.0,
         }]
 
+
+
+# ── Event folder names ───────────────────────────────────────
+
+
+class TestEventFolderNames:
+    @pytest.mark.parametrize("raw, expected", [
+        ("Summit Open: Day 1", "Summit Open Day 1"),
+        ("Store/Event #3 (Top 8!)", "StoreEvent 3 Top 8"),
+        ("Café Sorcery", "Cafe Sorcery"),
+        ("Bob\u2019s Cup", "Bob's Cup"),
+        ("  lots   of   space  ", "lots of space"),
+        ("../../etc", "etc"),
+        ("Plain Name", "Plain Name"),
+    ])
+    def test_sanitize_drops_invalid_characters(self, raw, expected):
+        assert EventRepository.sanitize_folder_name(raw) == expected
+
+    def test_sanitize_returns_empty_when_nothing_usable(self):
+        assert EventRepository.sanitize_folder_name("!!!///") == ""
+
+    def test_check_rejects_existing_folder(self, tmp_path):
+        (tmp_path / "Summit Open").mkdir()
+        repo = EventRepository(events_dir=tmp_path)
+        name, error = repo.check_new_folder_name("Summit Open!")
+        assert name == "Summit Open"
+        assert "already exists" in error
+
+    def test_check_rejects_unusable_name(self, tmp_path):
+        repo = EventRepository(events_dir=tmp_path)
+        _, error = repo.check_new_folder_name("???")
+        assert error
+
+    def test_create_event_cleans_folder_name(self, tmp_path):
+        repo = EventRepository(events_dir=tmp_path)
+        result = repo.create_event("Summit: Open?", [{"id": "deck-1", "avatar": []}])
+        assert result == {"success": True, "folder": "Summit Open"}
+        assert (tmp_path / "Summit Open" / "Summit Opentop8.json").exists()

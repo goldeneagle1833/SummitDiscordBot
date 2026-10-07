@@ -6,6 +6,7 @@ import logging
 import re
 import shutil
 import time
+import unicodedata
 from pathlib import Path
 
 from webapp_config import TOP_8_DIR, EVENT_RATINGS
@@ -28,6 +29,35 @@ class EventRepository:
 
     def __init__(self, events_dir: Path | None = None):
         self._events_dir = events_dir or TOP_8_DIR
+
+    @staticmethod
+    def sanitize_folder_name(name: str) -> str:
+        """Turn an event title into a safe folder name.
+
+        Accented letters become plain ASCII (Café -> Cafe), curly apostrophes
+        become straight ones, any other character outside
+        SAFE_FOLDER_PATTERN is dropped, and runs of spaces collapse to one.
+        Returns "" when nothing usable is left.
+        """
+        if not name or not isinstance(name, str):
+            return ""
+        name = name.replace("’", "'").replace("‘", "'")
+        name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+        name = re.sub(r"[^a-zA-Z0-9 _\-']", "", name)
+        return re.sub(r"\s+", " ", name).strip(" -_'")
+
+    def check_new_folder_name(self, title: str) -> tuple[str, str | None]:
+        """Sanitize a title and confirm a new event can be created under it.
+
+        Call this before fetching any deck data so a bad name fails fast.
+        Returns (folder_name, error); error is None when the name is usable.
+        """
+        folder_name = self.sanitize_folder_name(title)
+        if not folder_name:
+            return "", "Event name has no usable characters (letters, numbers, spaces, - _ ')"
+        if (self._events_dir / folder_name).exists():
+            return folder_name, f'An event named "{folder_name}" already exists'
+        return folder_name, None
 
     def _validate_event_folder(self, event_folder: str) -> Path | None:
         """
@@ -1015,8 +1045,9 @@ class EventRepository:
         if not folder_name or not isinstance(folder_name, str):
             return {"success": False, "error": "Folder name is required"}
 
-        if not self.SAFE_FOLDER_PATTERN.match(folder_name):
-            return {"success": False, "error": "Folder name contains invalid characters"}
+        folder_name = self.sanitize_folder_name(folder_name)
+        if not folder_name:
+            return {"success": False, "error": "Folder name has no usable characters"}
 
         event_path = self._events_dir / folder_name
         if event_path.exists():

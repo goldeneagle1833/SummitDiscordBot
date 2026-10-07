@@ -480,6 +480,10 @@ def create_event():
     if not title:
         return jsonify({"success": False, "error": "Title is required"}), 400
 
+    title, name_error = EventRepository().check_new_folder_name(title)
+    if name_error:
+        return jsonify({"success": False, "error": name_error}), 400
+
     ranked_urls = data.get("ranked_urls", [])
     if not isinstance(ranked_urls, list):
         return jsonify({"success": False, "error": "ranked_urls must be a list"}), 400
@@ -674,9 +678,17 @@ def _run_event_import(job_id, title, event_url):
             })
             return
 
-        # Use event name as title if not provided
+        # Use event name as title if not provided, and make sure it's a usable
+        # folder name before spending time fetching every deck
         if not title:
             title = discovery["event_name"] or "Imported Event"
+        title, name_error = EventRepository().check_new_folder_name(title)
+        if name_error:
+            _write_job(job_id, {
+                "status": "failed",
+                "result": {"success": False, "error": name_error},
+            })
+            return
 
         players = discovery["players"]  # already sorted by standing
         deck_ids = [p["deck_id"] for p in players]
@@ -783,6 +795,12 @@ def import_event_from_url():
         }), 400
 
     title = data.get("title", "").strip()
+    if title:
+        # A given title can be checked now; otherwise the worker checks the
+        # event's own name right after discovery, before fetching decks
+        title, name_error = EventRepository().check_new_folder_name(title)
+        if name_error:
+            return jsonify({"success": False, "error": name_error}), 400
 
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting import..."})

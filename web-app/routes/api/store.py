@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request, send_file, session
+from flask import Blueprint, jsonify, redirect, request, send_file, session
 
 from repositories.store import (
     StoreRepository, ORDER_STATUSES, STORE_DB_PATH, STOREFRONT_ROLES, slugify,
@@ -509,6 +509,9 @@ def admin_download_backup():
 # ----------------------------------------------------------------------
 
 from utils.auth import require_auth  # noqa: E402
+import secrets as _secrets  # noqa: E402
+from urllib.parse import quote as _quote  # noqa: E402
+
 import stripe  # noqa: E402
 from services.store_checkout import StoreCheckoutService, _site_url  # noqa: E402
 from webapp_config import FREE_SHIPPING_ROLE_IDS  # noqa: E402
@@ -826,7 +829,11 @@ def admin_me():
                 "accepts_payments": repo.accepts_payments(s),
                 "uses_summit_stripe": s["slug"] == DEFAULT_STOREFRONT_SLUG,
             })
-    return jsonify({"is_full_admin": full, "storefronts": storefronts})
+    return jsonify({
+        "is_full_admin": full,
+        "storefronts": storefronts,
+        "can_link_stripe": StoreCheckoutService.can_link_existing_account(),
+    })
 
 
 def _clean_text(data: dict, key: str, max_len: int) -> str:
@@ -976,6 +983,71 @@ def admin_storefront_stripe_onboard(storefront_id: int):
     actor_id, actor_name = _actor()
     repo.log_action(actor_id, actor_name, "stripe_onboard", f"storefront={storefront_id}")
     return jsonify({"url": url})
+
+
+@store_bp.route("/store/admin/storefronts/<int:storefront_id>/stripe/link",
+                methods=["POST"])
+@require_store_staff
+def admin_storefront_stripe_link(storefront_id: int):
+    """Start linking a Stripe account the storefront already has.
+
+    Returns Stripe's sign-in-and-approve URL; Stripe sends the person back
+    to stripe_oauth_callback.
+    """
+    repo = _repo()
+    storefront = repo.get_storefront(storefront_id)
+    if not storefront or not _can(storefront_id, "products"):
+        return _not_found("Storefront")
+    if storefront["slug"] == DEFAULT_STOREFRONT_SLUG:
+        return jsonify({"error": "Summit Store uses Summit's own Stripe account"}), 400
+    if storefront.get("stripe_account_id"):
+        return jsonify({"error": "This storefront already has a Stripe account. "
+                                 "A full store admin can disconnect it first."}), 409
+    if not StoreCheckoutService.can_link_existing_account():
+        return jsonify({"error": "Linking an existing Stripe account isn't set up yet"}), 503
+    state = _secrets.token_urlsafe(24)
+    session["stripe_link"] = {"state": state, "storefront_id": storefront_id}
+    return jsonify({"url": StoreCheckoutService.link_existing_url(state)})
+
+
+@store_bp.route("/store/stripe/oauth/callback", methods=["GET"])
+@require_store_staff
+def stripe_oauth_callback():
+    """Stripe sends the browser here after someone approves (or cancels)."""
+    pending = session.pop("stripe_link", None) or {}
+    storefront_id = pending.get("storefront_id")
+    back = "/admin/store"
+    if storefront_id:
+        back += f"?storefront={storefront_id}&stripe=return"
+
+    def fail(reason: str):
+        sep = "&" if "?" in back else "?"
+        return redirect(f"{back}{sep}stripe_error={_quote(reason)}")
+
+    if not pending or not _secrets.compare_digest(
+        str(request.args.get("state") or ""), str(pending.get("state") or "")
+    ):
+        return fail("That Stripe link expired. Please try again.")
+    if request.args.get("error"):
+        return fail(request.args.get("error_description") or "Stripe linking was cancelled.")
+    repo = _repo()
+    storefront = repo.get_storefront(storefront_id)
+    if not storefront or not _can(storefront_id, "products"):
+        return fail("Storefront not found.")
+    if storefront.get("stripe_account_id"):
+        return fail("This storefront already has a Stripe account.")
+    code = request.args.get("code") or ""
+    if not code:
+        return fail("Stripe didn't send an approval code.")
+    try:
+        account_id = StoreCheckoutService(repo).finish_link(storefront, code)
+    except stripe.StripeError as e:
+        logger.exception(f"Stripe OAuth failed for storefront {storefront_id}")
+        return fail(f"Stripe said: {e.user_message or str(e) or 'unknown error'}")
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "stripe_link",
+                    f"storefront={storefront_id} account={account_id}")
+    return redirect(back)
 
 
 @store_bp.route("/store/admin/storefronts/<int:storefront_id>/stripe", methods=["DELETE"])

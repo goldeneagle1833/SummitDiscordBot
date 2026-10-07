@@ -14,13 +14,14 @@ vi.mock('@/api/store', async () => {
     adminGetOrders: vi.fn(),
     adminStartStripeOnboarding: vi.fn(),
     adminDeleteStorefront: vi.fn(),
+    adminLinkStripe: vi.fn(),
     adminGetStorefrontApplications: vi.fn(),
   }
 })
 
 import {
   adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminUploadProductImages, adminGetOrders,
-  adminStartStripeOnboarding, adminDeleteStorefront, adminGetStorefrontApplications,
+  adminStartStripeOnboarding, adminDeleteStorefront, adminGetStorefrontApplications, adminLinkStripe,
 } from '@/api/store'
 import StoreAdmin from '../StoreAdmin'
 
@@ -221,6 +222,21 @@ describe('StoreAdmin storefront payments', () => {
     renderWithRouter(<StoreAdmin />)
     await userEvent.click(await screen.findByRole('button', { name: 'Connect Stripe' }))
     expect(adminStartStripeOnboarding).toHaveBeenCalledWith(2)
+  })
+
+  it('offers to link an existing Stripe account when that is set up', async () => {
+    adminGetMe.mockResolvedValue({ is_full_admin: false, can_link_stripe: true, storefronts: [{ ...EXPLORER, role: 'manager', accepts_payments: false }] })
+    adminLinkStripe.mockReturnValue(new Promise(() => {}))
+    renderWithRouter(<StoreAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: 'I already have a Stripe account' }))
+    expect(adminLinkStripe).toHaveBeenCalledWith(2)
+  })
+
+  it('hides the link option until it is set up, and shows errors from Stripe', async () => {
+    adminGetMe.mockResolvedValue({ is_full_admin: false, can_link_stripe: false, storefronts: [{ ...EXPLORER, role: 'manager', accepts_payments: false }] })
+    renderWithRouter(<StoreAdmin />, { route: '/admin/store?storefront=2&stripe=return&stripe_error=Stripe%20said%3A%20nope' })
+    expect(await screen.findByText('Stripe said: nope')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'I already have a Stripe account' })).not.toBeInTheDocument()
   })
 
   it('tells fulfillment staff a manager has to connect it', async () => {

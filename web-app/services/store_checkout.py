@@ -37,6 +37,10 @@ STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 # Signing secret of the separate "connected accounts" webhook endpoint
 STRIPE_CONNECT_WEBHOOK_SECRET = os.environ.get("STRIPE_CONNECT_WEBHOOK_SECRET", "")
+# Connect OAuth client ID (ca_...), lets a storefront link a Stripe account
+# it already has instead of opening a new one
+STRIPE_CONNECT_CLIENT_ID = os.environ.get("STRIPE_CONNECT_CLIENT_ID", "")
+OAUTH_CALLBACK_PATH = "/api/store/stripe/oauth/callback"
 FLAT_SHIPPING_CENTS = int(os.environ.get("STORE_FLAT_SHIPPING_CENTS", "599"))
 CHECKOUT_EXPIRES_MINUTES = 60  # Stripe minimum is 30
 
@@ -295,6 +299,30 @@ class StoreCheckoutService:
             refresh_url=refresh_url,
         )
         return link.url
+
+    @staticmethod
+    def can_link_existing_account() -> bool:
+        return bool(STRIPE_CONNECT_CLIENT_ID)
+
+    @staticmethod
+    def link_existing_url(state: str) -> str:
+        """Stripe's page where someone signs in and approves an existing account."""
+        from urllib.parse import urlencode
+        return "https://connect.stripe.com/oauth/authorize?" + urlencode({
+            "response_type": "code",
+            "client_id": STRIPE_CONNECT_CLIENT_ID,
+            "scope": "read_write",
+            "state": state,
+            "redirect_uri": _site_url(OAUTH_CALLBACK_PATH),
+        })
+
+    def finish_link(self, storefront: dict, code: str) -> str:
+        """Swap the OAuth code for the account id and attach it to the storefront."""
+        token = stripe.OAuth.token(grant_type="authorization_code", code=code)
+        account_id = token["stripe_user_id"]
+        self.repo.set_storefront_stripe(storefront["id"], account_id, False)
+        self.refresh_account_status({**storefront, "stripe_account_id": account_id})
+        return account_id
 
     def refresh_account_status(self, storefront: dict) -> bool:
         """Ask Stripe whether the storefront's account can take charges."""

@@ -8,7 +8,7 @@ import {
   adminGetStorefrontAdmins, adminAddStorefrontAdmin, adminRemoveStorefrontAdmin, adminSearchUsers,
   adminGetStorefrontApplications, adminApproveStorefrontApplication,
   adminDeclineStorefrontApplication,
-  adminGetStorefrontPayments, adminStartStripeOnboarding, adminDisconnectStripe,
+  adminGetStorefrontPayments, adminStartStripeOnboarding, adminDisconnectStripe, adminLinkStripe,
 } from '@/api/store'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -1123,9 +1123,9 @@ function StorefrontsPanel({ storefronts, onChanged }) {
 
 // ---------------------------------------------------------------- Payments
 
-function PaymentsCard({ storefront, canConnect, checkStripe, onChanged }) {
+function PaymentsCard({ storefront, canConnect, canLink, checkStripe, stripeError, onChanged }) {
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState(stripeError || null)
 
   // Back from Stripe's onboarding pages: ask Stripe whether it's done
   useEffect(() => {
@@ -1143,11 +1143,11 @@ function PaymentsCard({ storefront, canConnect, checkStripe, onChanged }) {
     )
   }
 
-  const connect = async () => {
+  const connect = async (start = adminStartStripeOnboarding) => {
     setBusy(true)
     setError(null)
     try {
-      const { url } = await adminStartStripeOnboarding(storefront.id)
+      const { url } = await start(storefront.id)
       window.location.assign(url)
     } catch (e) {
       setError(e.message)
@@ -1181,12 +1181,22 @@ function PaymentsCard({ storefront, canConnect, checkStripe, onChanged }) {
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
-            onClick={connect}
+            onClick={() => connect()}
             disabled={busy}
             className="bg-primary hover:bg-primary-dark text-white font-medium px-4 py-2 rounded transition-colors disabled:opacity-50"
           >
             {started ? 'Finish Stripe setup' : 'Connect Stripe'}
           </button>
+          {!started && canLink && (
+            <button
+              type="button"
+              onClick={() => connect(adminLinkStripe)}
+              disabled={busy}
+              className="border border-border hover:border-primary font-medium px-4 py-2 rounded transition-colors disabled:opacity-50"
+            >
+              I already have a Stripe account
+            </button>
+          )}
           {started && (
             <button type="button" onClick={recheck} disabled={busy} className="text-primary hover:underline disabled:opacity-50">
               Check again
@@ -1291,7 +1301,9 @@ export default function StoreAdmin() {
           key={selected.id}
           storefront={selected}
           canConnect={full || selected.role === 'manager'}
+          canLink={Boolean(me.can_link_stripe)}
           checkStripe={backFromStripe}
+          stripeError={params.get('stripe_error')}
           onChanged={loadMe}
         />
       )}

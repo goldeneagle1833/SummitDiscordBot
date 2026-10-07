@@ -85,6 +85,7 @@ export const adminGetStorefrontPayments = (id, refresh = false) =>
   get(`/api/store/admin/storefronts/${id}/stripe${refresh ? '?refresh=1' : ''}`)
 export const adminStartStripeOnboarding = (id) =>
   post(`/api/store/admin/storefronts/${id}/stripe/onboard`)
+export const adminLinkStripe = (id) => post(`/api/store/admin/storefronts/${id}/stripe/link`)
 export const adminDisconnectStripe = (id) => del(`/api/store/admin/storefronts/${id}/stripe`)
 
 export const adminGetStorefrontApplications = (status) =>

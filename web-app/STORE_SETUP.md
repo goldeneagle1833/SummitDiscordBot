@@ -121,6 +121,14 @@ account can take charges.
    `STORE_FLAT_SHIPPING_CENTS`) and disconnect its account on the
    Storefronts tab.
 
+Groups that already have a Stripe account can link it instead of opening a
+new one ("I already have a Stripe account" in Store Admin, via Connect
+OAuth). To turn that on, copy the **Client ID** (`ca_...`) from Stripe
+Settings > Connect > Onboarding options > OAuth into
+`STRIPE_CONNECT_CLIENT_ID`, and add
+`https://yourdomain.com/api/store/stripe/oauth/callback` as a redirect URI
+on the same page. The button stays hidden until the client ID is set.
+
 Summit's Stripe shipping rates and the free-shipping perk only apply to
 Summit Store. A webhook event from one Stripe account can never settle an
 order that belongs to another.

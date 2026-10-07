@@ -690,3 +690,66 @@ def test_onboarding_shows_stripes_reason(explorer_manager):
         res = client.post(f"/api/store/admin/storefronts/{s['explorer']}/stripe/onboard")
     assert res.status_code == 502
     assert "signed up for Connect" in res.get_json()["error"]
+
+
+class TestLinkExistingStripeAccount:
+    @pytest.fixture(autouse=True)
+    def _client_id(self):
+        with patch("services.store_checkout.STRIPE_CONNECT_CLIENT_ID", "ca_test"):
+            yield
+
+    def _start(self, client, sid):
+        res = client.post(f"/api/store/admin/storefronts/{sid}/stripe/link")
+        assert res.status_code == 200
+        url = res.get_json()["url"]
+        assert url.startswith("https://connect.stripe.com/oauth/authorize?")
+        assert "client_id=ca_test" in url
+        from urllib.parse import parse_qs, urlparse
+        return parse_qs(urlparse(url).query)["state"][0]
+
+    @patch("services.store_checkout.stripe")
+    def test_manager_links_existing_account(self, mock_stripe, explorer_manager, store_repo):
+        client, s = explorer_manager
+        mock_stripe.OAuth.token.return_value = {"stripe_user_id": "acct_old"}
+        mock_stripe.Account.retrieve.return_value = {"charges_enabled": True}
+        state = self._start(client, s["explorer"])
+        res = client.get(f"/api/store/stripe/oauth/callback?state={state}&code=ac_1")
+        assert res.status_code == 302
+        assert res.headers["Location"].endswith(f"/admin/store?storefront={s['explorer']}&stripe=return")
+        sf = store_repo.get_storefront(s["explorer"])
+        assert sf["stripe_account_id"] == "acct_old"
+        assert store_repo.accepts_payments(sf)
+
+    @patch("services.store_checkout.stripe")
+    def test_wrong_state_is_refused(self, mock_stripe, explorer_manager, store_repo):
+        client, s = explorer_manager
+        self._start(client, s["explorer"])
+        res = client.get("/api/store/stripe/oauth/callback?state=forged&code=ac_1")
+        assert "stripe_error=" in res.headers["Location"]
+        mock_stripe.OAuth.token.assert_not_called()
+        assert store_repo.get_storefront(s["explorer"])["stripe_account_id"] is None
+
+    def test_cancelled_on_stripe(self, explorer_manager):
+        client, s = explorer_manager
+        state = self._start(client, s["explorer"])
+        res = client.get(f"/api/store/stripe/oauth/callback?state={state}&error=access_denied"
+                         "&error_description=The+user+denied+your+request")
+        assert "stripe_error=The%20user%20denied" in res.headers["Location"]
+
+    def test_already_connected_is_refused(self, explorer_manager, store_repo):
+        client, s = explorer_manager
+        store_repo.set_storefront_stripe(s["explorer"], "acct_x", True)
+        res = client.post(f"/api/store/admin/storefronts/{s['explorer']}/stripe/link")
+        assert res.status_code == 409
+
+    def test_fulfillment_cannot_link(self, explorer_fulfillment):
+        client, s = explorer_fulfillment
+        res = client.post(f"/api/store/admin/storefronts/{s['explorer']}/stripe/link")
+        assert res.status_code == 404
+
+    def test_not_configured(self, explorer_manager):
+        client, s = explorer_manager
+        with patch("services.store_checkout.STRIPE_CONNECT_CLIENT_ID", ""):
+            res = client.post(f"/api/store/admin/storefronts/{s['explorer']}/stripe/link")
+            assert res.status_code == 503
+            assert client.get("/api/store/admin/me").get_json()["can_link_stripe"] is False

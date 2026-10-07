@@ -77,3 +77,25 @@ def test_an_archived_top_cut_game_is_not_in_the_current_season(
 
     assert [m["opponent"] for m in current] == ["Cara"]
     assert sorted(m["opponent"] for m in lifetime) == ["Bob", "Cara"]
+
+
+def test_a_top_cut_game_shows_under_the_season_it_was_filed_under(
+    client, archived_top_cut_match, elo_db
+):
+    conn = sqlite3.connect(str(elo_db))
+    conn.executemany(
+        "INSERT INTO events (event_id, event_name, start_date, end_date, is_active)"
+        " VALUES (?, ?, ?, ?, ?)",
+        [
+            (6, "Gothic Season 6", "2026-07-01", "2026-07-30", 0),
+            (7, "Gothic Season 7", "2026-08-01", "2026-09-28", 0),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    season_7 = client.get("/api/player/100?event=7").get_json()["matches"]
+    assert [m["match_comment"] for m in season_7] == ["Top cut game - Test Cup - Final"]
+
+    season_6 = client.get("/api/player/100?event=6").get_json().get("matches", [])
+    assert season_6 == []

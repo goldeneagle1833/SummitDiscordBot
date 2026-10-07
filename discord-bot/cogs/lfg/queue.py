@@ -17,6 +17,7 @@ from cogs.lfg.voice import (
     NO_VOICE,
     normalize_voice_preference,
     resolve_match_voice,
+    voice_from_checkboxes,
 )
 from cogs.lfg.persistent_confirm import create_match_card_view, update_match_card_message_ref
 from cogs.lfg.pairing_messages import (
@@ -158,29 +159,27 @@ def get_last_unreported_pairing(user_id: int, guild_id: int):
     return None
 
 
-VOICE_SELECT_DESCRIPTIONS = {
-    VOICE: "Only match players who want voice",
-    NO_VOICE: "Only match players who want no voice",
+VOICE_CHECKBOX_DESCRIPTIONS = {
+    VOICE: "Play on voice chat",
+    NO_VOICE: "Play without voice chat",
 }
 
 
 def build_voice_select():
-    """Voice-preference dropdown for every queue's join modal.
+    """Voice-preference checkboxes for every queue's join modal.
 
-    Voice is preselected so joining takes no extra clicks; players who want
-    no voice pick it from the dropdown.
+    Ticking both means either is fine; ticking none joins as voice, so joining
+    still takes no extra clicks.
     """
-    return discord.ui.Select(
-        placeholder="Voice or no voice?",
-        min_values=1,
-        max_values=1,
-        required=True,
+    return discord.ui.CheckboxGroup(
+        required=False,
+        min_values=0,
+        max_values=2,
         options=[
-            discord.SelectOption(
+            discord.CheckboxGroupOption(
                 label=VOICE_LABELS[value],
                 value=value,
-                description=VOICE_SELECT_DESCRIPTIONS[value],
-                default=value == DEFAULT_VOICE,
+                description=VOICE_CHECKBOX_DESCRIPTIONS[value],
             )
             for value in (VOICE, NO_VOICE)
         ],
@@ -188,19 +187,21 @@ def build_voice_select():
 
 
 def add_voice_select(modal):
-    """Put the voice dropdown just above the modal's duration field and return it."""
+    """Put the voice checkboxes just above the modal's duration field and return them."""
     select = build_voice_select()
     modal.remove_item(modal.timeframe)
-    modal.add_item(discord.ui.Label(text="Voice chat", component=select))
+    modal.add_item(discord.ui.Label(
+        text="Voice chat",
+        description="Tick both if either is fine. None ticked joins as voice.",
+        component=select,
+    ))
     modal.add_item(modal.timeframe)
     return select
 
 
 def selected_voice(select):
-    """The chosen preference from a voice dropdown, defaulting to voice."""
-    if select is not None and select.values:
-        return normalize_voice_preference(select.values[0]) or DEFAULT_VOICE
-    return DEFAULT_VOICE
+    """The chosen preference from the voice checkboxes, defaulting to voice."""
+    return voice_from_checkboxes(select.values if select is not None else None)
 
 
 class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):

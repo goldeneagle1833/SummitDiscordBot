@@ -146,7 +146,7 @@ async def _status(bot, user_id):
                 "waiting_count": len(entries),
                 "joined": queue_type in joined or matching_web_users.get(user_id) == queue_type,
                 "deck_mode": deck_mode,
-                # Every queue takes a voice / no_voice choice (voice is the default).
+                # Every queue takes a voice / no_voice / either choice (voice is the default).
                 "voice_options": True,
                 "voice_choices": list(VOICE_PREFERENCES),
                 "default_voice": DEFAULT_VOICE,
@@ -245,7 +245,7 @@ async def start_matchmaking_api(bot):
             raise web.HTTPBadRequest(text="Queue duration must be between 5 and 240 minutes")
         voice = normalize_voice_preference(payload.get("voice"))
         if voice is None:
-            raise web.HTTPBadRequest(text="voice must be one of: voice, no_voice")
+            raise web.HTTPBadRequest(text="voice must be one of: voice, no_voice, either")
         deck_url = str(payload.get("deck_url") or "").strip() or None
         run_id = None
         if definition["deck_mode"] == "required" and not deck_url:

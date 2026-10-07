@@ -1,25 +1,29 @@
 """Voice-chat preferences for every LFG queue.
 
 Voice is a preference on a queue entry, not a separate queue: every player
-in Ranked stays on one ladder. A player picks ``voice`` or ``no_voice`` and
-only pairs with players who picked the same. Voice is the default when a
-join path gives no preference. Ranked voice matches count toward top-cut
+in Ranked stays on one ladder. A player picks ``voice``, ``no_voice`` or
+``either``. Voice and no-voice players only pair with the same choice or with
+``either`` players, who pair with anyone. Voice is the default when a join
+path gives no preference. Ranked voice matches count toward top-cut
 eligibility.
 """
 
 VOICE = "voice"
 NO_VOICE = "no_voice"
-VOICE_PREFERENCES = (VOICE, NO_VOICE)
+EITHER = "either"
+VOICE_PREFERENCES = (VOICE, NO_VOICE, EITHER)
 DEFAULT_VOICE = VOICE
 
 VOICE_LABELS = {
     VOICE: "🔊 Voice",
     NO_VOICE: "🔇 No voice",
+    EITHER: "🔊🔇 Voice or no voice",
 }
 
 VOICE_ICONS = {
     VOICE: "🔊",
     NO_VOICE: "🔇",
+    EITHER: "🔊🔇",
 }
 
 SUMMIT_VOICE_URL = "https://discord.com/channels/1319120227643949211/1552047481129541713"
@@ -34,13 +38,27 @@ def normalize_voice_preference(value):
 
 
 def voice_preferences_compatible(pref_a, pref_b):
-    """Players only pair with others who made the same voice choice."""
-    return (pref_a or DEFAULT_VOICE) == (pref_b or DEFAULT_VOICE)
+    """Players pair with the same voice choice; ``either`` pairs with anyone."""
+    pref_a, pref_b = pref_a or DEFAULT_VOICE, pref_b or DEFAULT_VOICE
+    return EITHER in (pref_a, pref_b) or pref_a == pref_b
 
 
 def resolve_match_voice(pref_a, pref_b):
-    """A match is played on voice when the players asked for voice."""
-    return VOICE in (pref_a or DEFAULT_VOICE, pref_b or DEFAULT_VOICE)
+    """A match is on voice unless a player asked for no voice.
+
+    Two ``either`` players play on voice.
+    """
+    return NO_VOICE not in (pref_a or DEFAULT_VOICE, pref_b or DEFAULT_VOICE)
+
+
+def voice_from_checkboxes(values):
+    """Preference from the join modal's checkboxes: none ticked means voice."""
+    ticked = set(values or ())
+    if VOICE in ticked and NO_VOICE in ticked:
+        return EITHER
+    if NO_VOICE in ticked:
+        return NO_VOICE
+    return VOICE
 
 
 def voice_match_tag(is_voice_match):

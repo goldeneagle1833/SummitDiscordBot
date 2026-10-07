@@ -134,12 +134,13 @@ class SlashCommandsCog(commands.Cog):
         description="Issue a ladder challenge (Top 16 event players only, once per day)",
     )
     @app_commands.describe(
-        voice="Play the challenge on voice chat or not (default: voice)",
+        voice="Play the challenge on voice chat, without, or either (default: voice)",
         deck_url="Your deck link (required in Avatar-mode seasons: it sets your avatar)",
     )
     @app_commands.choices(voice=[
         app_commands.Choice(name="🔊 Voice", value="voice"),
         app_commands.Choice(name="🔇 No voice", value="no_voice"),
+        app_commands.Choice(name="🔊🔇 Either", value="either"),
     ])
     async def issue_challenge_slash(
         self, interaction: discord.Interaction, voice: str = "voice", deck_url: str = None,

@@ -1,4 +1,4 @@
-"""Voice preferences on every LFG queue: voice or no voice, nothing in between."""
+"""Voice preferences on every LFG queue: voice, no voice, or either."""
 
 import datetime
 import sqlite3
@@ -20,11 +20,13 @@ from cogs.lfg.queue import (
 )
 from cogs.lfg.state import lfg_queue, pending_web_matches
 from cogs.lfg.voice import (
+    EITHER,
     NO_VOICE,
     VOICE,
     VOICE_PREFERENCES,
     normalize_voice_preference,
     resolve_match_voice,
+    voice_from_checkboxes,
     voice_preferences_compatible,
 )
 from repositories.elo_repo import get_pairing_by_id, get_pairing_voice, save_pairing
@@ -73,24 +75,42 @@ class TestVoiceRules:
     @pytest.mark.parametrize(
         "raw, expected",
         [(None, VOICE), ("", VOICE), ("voice", VOICE), ("No-Voice", NO_VOICE),
-         (" any ", None), ("either", None), ("maybe", None), (True, None)],
+         (" any ", None), ("Either", EITHER), ("maybe", None), (True, None)],
     )
     def test_normalize(self, raw, expected):
         assert normalize_voice_preference(raw) == expected
 
-    def test_there_is_no_either_option(self):
-        assert VOICE_PREFERENCES == (VOICE, NO_VOICE)
+    def test_preferences(self):
+        assert VOICE_PREFERENCES == (VOICE, NO_VOICE, EITHER)
 
-    def test_only_the_same_choice_pairs(self):
+    def test_voice_and_no_voice_do_not_pair(self):
         assert not voice_preferences_compatible(VOICE, NO_VOICE)
         assert not voice_preferences_compatible(NO_VOICE, VOICE)
+        assert not voice_preferences_compatible(None, NO_VOICE)
         for a, b in [(VOICE, VOICE), (NO_VOICE, NO_VOICE), (VOICE, None), (None, None)]:
             assert voice_preferences_compatible(a, b)
 
-    def test_match_is_voice_when_players_asked(self):
+    @pytest.mark.parametrize("other", [VOICE, NO_VOICE, EITHER, None])
+    def test_either_pairs_with_anyone(self, other):
+        assert voice_preferences_compatible(EITHER, other)
+        assert voice_preferences_compatible(other, EITHER)
+
+    def test_match_is_voice_unless_someone_asked_for_no_voice(self):
         assert resolve_match_voice(VOICE, VOICE)
         assert resolve_match_voice(VOICE, None)
         assert not resolve_match_voice(NO_VOICE, NO_VOICE)
+        assert resolve_match_voice(EITHER, VOICE)
+        assert not resolve_match_voice(EITHER, NO_VOICE)
+        assert not resolve_match_voice(NO_VOICE, EITHER)
+        assert resolve_match_voice(EITHER, EITHER)
+
+    @pytest.mark.parametrize(
+        "ticked, expected",
+        [([], VOICE), (None, VOICE), ([VOICE], VOICE), ([NO_VOICE], NO_VOICE),
+         ([VOICE, NO_VOICE], EITHER), ([NO_VOICE, VOICE], EITHER)],
+    )
+    def test_checkboxes(self, ticked, expected):
+        assert voice_from_checkboxes(ticked) == expected
 
 
 class TestVoiceMatching:
@@ -120,11 +140,21 @@ class TestVoiceMatching:
         assert lfg_cog.check_if_someone_is_lfg(ctx, queue_type, voice=VOICE) == 222
         assert lfg_cog.check_if_someone_is_lfg(ctx, queue_type, voice=NO_VOICE) == 111
 
+    def test_either_player_takes_oldest_of_any_preference(self, lfg_cog, ctx):
+        lfg_queue[111] = entry("ranked", 10, NO_VOICE)
+        lfg_queue[222] = entry("ranked", 5, VOICE)
+        assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=EITHER) == 111
+
+    def test_waiting_either_player_pairs_with_both(self, lfg_cog, ctx):
+        lfg_queue[111] = entry("ranked", 10, EITHER)
+        assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=VOICE) == 111
+        assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=NO_VOICE) == 111
+
     def test_add_to_queue_stores_voice(self, lfg_cog, ctx):
         lfg_cog.add_to_lfg_queue(ctx, 30, None, "ranked", voice=NO_VOICE)
         assert lfg_queue[999]["queues"]["ranked"]["voice"] == NO_VOICE
 
-    def test_add_to_queue_defaults_and_rejects_either(self, lfg_cog, ctx):
+    def test_add_to_queue_defaults_and_rejects_unknown(self, lfg_cog, ctx):
         lfg_cog.add_to_lfg_queue(ctx, 30, None, "rumble")
         assert lfg_queue[999]["queues"]["rumble"]["voice"] == VOICE
         lfg_cog.add_to_lfg_queue(ctx, 30, None, "limited", voice="any")
@@ -231,11 +261,11 @@ class TestVoiceWebsite:
         ranked, rumble = status["queues"]
         for queue in (ranked, rumble):
             assert queue["voice_options"] is True
-            assert queue["voice_choices"] == [VOICE, NO_VOICE]
+            assert queue["voice_choices"] == [VOICE, NO_VOICE, EITHER]
             assert queue["default_voice"] == VOICE
-        assert ranked["waiting_by_voice"] == {VOICE: 2, NO_VOICE: 1}
+        assert ranked["waiting_by_voice"] == {VOICE: 2, NO_VOICE: 1, EITHER: 0}
         assert ranked["voice"] == NO_VOICE
-        assert rumble["waiting_by_voice"] == {VOICE: 1, NO_VOICE: 0}
+        assert rumble["waiting_by_voice"] == {VOICE: 1, NO_VOICE: 0, EITHER: 0}
         assert rumble["voice"] is None
 
     @pytest.mark.asyncio
@@ -257,10 +287,12 @@ class TestVoiceModal:
         assert len(labels) == 1
         select = labels[0].component
         assert select is modal.voice_select
+        assert isinstance(select, discord.ui.CheckboxGroup)
         assert [o.value for o in select.options] == [VOICE, NO_VOICE]
-        assert select.required
-        # Voice is preselected so joining needs no extra clicks.
-        assert [o.value for o in select.options if o.default] == [VOICE]
+        # Both may be ticked (either); none ticked joins as voice.
+        assert not select.required
+        assert select.min_values == 0
+        assert select.max_values == 2
         # Voice sits just above the duration field, which stays last.
         assert modal.children.index(labels[0]) == len(modal.children) - 2
         assert modal.children[-1] is modal.timeframe

@@ -1122,7 +1122,8 @@ class LFGCog(commands.Cog):
         """Find a player in queue compatible with the given queue_type.
         All queue types use FIFO order (oldest first) with anti-rematch for ranked/limited.
         Casual (testing): No pairing restrictions, FIFO order (oldest first).
-        Every queue skips players whose voice preference differs (voice vs no voice).
+        Every queue skips players whose voice preference conflicts (voice vs no voice);
+        ``either`` players pair with anyone.
         Returns user_id if a valid match is found, None otherwise.
         """
         now = datetime.datetime.now()
@@ -1339,7 +1340,8 @@ class LFGCog(commands.Cog):
         for modified ELO stakes. Can be used in DMs with the bot.
         The challenge only counts against your daily limit when a match is found.
         Disabled during the first week of a new event.
-        Pass ``no_voice`` to queue as a no-voice game; voice is the default.
+        Pass ``no_voice`` to queue as a no-voice game or ``either`` if either is
+        fine; voice is the default.
         Pass a deck link to queue with that deck (required in Avatar-mode
         seasons, where the avatar is read from it). Arguments go in any order.
 
@@ -1370,7 +1372,7 @@ class LFGCog(commands.Cog):
 
         voice = normalize_voice_preference(voice)
         if voice is None:
-            voice_help = "Use `!issue_challenge` for a voice game or `!issue_challenge no_voice` for no voice."
+            voice_help = "Use `!issue_challenge` for a voice game, `!issue_challenge no_voice` for no voice, or `!issue_challenge either` if either is fine."
             try:
                 await ctx.author.send(voice_help)
             except discord.Forbidden:
@@ -1451,7 +1453,7 @@ class LFGCog(commands.Cog):
         if needs_avatar("ranked"):
             join_avatar, deck_error = await check_join_deck(deck_url)
             if deck_error:
-                usage = "Usage: `!issue_challenge <deck link>` (add `no_voice` for a no-voice game)."
+                usage = "Usage: `!issue_challenge <deck link>` (add `no_voice` for a no-voice game or `either` if either is fine)."
                 try:
                     await ctx.author.send(f"{deck_error}\n{usage}")
                 except discord.Forbidden:
@@ -1805,7 +1807,7 @@ class LFGCog(commands.Cog):
                 "`!challenge @user` - Challenge a specific player to a match\n"
                 "**When to use:** When you want to play against a specific person "
                 "instead of being matched randomly. They have 5 minutes to accept.\n\n"
-                "`!issue_challenge [no_voice]` or `/issue-challenge` - Issue a ladder challenge (Top 16 or admins); voice unless you say `no_voice`\n"
+                "`!issue_challenge [no_voice|either]` or `/issue-challenge` - Issue a ladder challenge (Top 16 or admins); voice unless you say `no_voice` or `either`\n"
                 "**When to use:** Top 16 players or admins can issue once per day (disabled first week of event). "
                 "Adds you to the ranked queue - the next player to match with you plays for special stakes. "
                 "Non-Top 16 wins = 2x ELO gain, Top 16 loses = 0.5x ELO loss (normal stakes if ELO diff < 100)."

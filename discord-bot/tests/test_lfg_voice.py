@@ -297,9 +297,17 @@ class TestVoiceModal:
         assert modal.children.index(labels[0]) == len(modal.children) - 2
         assert modal.children[-1] is modal.timeframe
 
-    @pytest.mark.parametrize("queue_type", ["ranked", "testing", "rumble"])
-    def test_deck_url_modal_has_required_voice_dropdown(self, queue_type):
+    @pytest.mark.parametrize("queue_type", ["ranked", "testing"])
+    def test_deck_url_modal_has_voice_checkboxes_and_season_rules(self, queue_type):
         modal = DeckURLModal(MagicMock(), queue_type=queue_type)
+        self.assert_voice_dropdown(modal)
+        notice = modal.children[0]
+        assert isinstance(notice, discord.ui.TextDisplay)
+        assert notice.content == "For Gothic Season 8 **(NO SEER/SCRY)**"
+        assert modal.children[1] is modal.deck_url
+
+    def test_rumble_modal_has_no_season_rules(self):
+        modal = DeckURLModal(MagicMock(), queue_type="rumble")
         self.assert_voice_dropdown(modal)
         assert modal.children[0] is modal.deck_url
 

@@ -199,6 +199,20 @@ def add_voice_select(modal):
     return select
 
 
+# Season rules shown under the title of the Ranked/Casual join modal.
+SEASON_RULES_NOTICE = "For Gothic Season 8 **(NO SEER/SCRY)**"
+SEASON_RULES_QUEUES = ("ranked", "testing")
+
+
+def add_season_rules_notice(modal):
+    """Put the season rules text at the top of the modal, under the title."""
+    items = list(modal.children)
+    modal.clear_items()
+    modal.add_item(discord.ui.TextDisplay(SEASON_RULES_NOTICE))
+    for item in items:
+        modal.add_item(item)
+
+
 def selected_voice(select):
     """The chosen preference from the voice checkboxes, defaulting to voice."""
     return voice_from_checkboxes(select.values if select is not None else None)
@@ -236,6 +250,8 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             self.deck_url.placeholder = "Curiosa or Sorcery Online deck link"
         # Keep the voice choice next to the deck URL, above the duration.
         self.voice_select = add_voice_select(self)
+        if queue_type in SEASON_RULES_QUEUES:
+            add_season_rules_notice(self)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)

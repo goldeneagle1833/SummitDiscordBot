@@ -222,6 +222,13 @@ class StoreRepository:
                 except sqlite3.OperationalError:
                     pass  # column already exists
 
+            try:
+                # JSON list of {user_id, username, role}: the managers and
+                # shippers the applicant picked, added when it's approved
+                conn.execute("ALTER TABLE storefront_applications ADD COLUMN team TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+
             # Each storefront other than Summit takes payments through its
             # own Stripe account, connected to Summit's platform account.
             for column in ("stripe_account_id TEXT",
@@ -1095,7 +1102,8 @@ class StoreRepository:
 
     def create_storefront_application(self, user_id: str, username: str, name: str,
                                       contact_email: str, description: str,
-                                      shipping: str, website: str | None = None) -> int:
+                                      shipping: str, website: str | None = None,
+                                      team: list[dict] | None = None) -> int:
         with self._connect() as conn:
             pending = conn.execute(
                 """SELECT 1 FROM storefront_applications
@@ -1107,10 +1115,10 @@ class StoreRepository:
             cur = conn.execute(
                 """INSERT INTO storefront_applications
                    (user_id, username, name, contact_email, website, description,
-                    shipping, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    shipping, team, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (str(user_id), username, name, contact_email, website,
-                 description, shipping, self._now()),
+                 description, shipping, json.dumps(team or []), self._now()),
             )
             return cur.lastrowid
 
@@ -1124,12 +1132,22 @@ class StoreRepository:
             params = (status,)
         query += " ORDER BY created_at DESC"
         with self._connect() as conn:
-            return [dict(r) for r in conn.execute(query, params).fetchall()]
+            return [self._application_from_row(r)
+                    for r in conn.execute(query, params).fetchall()]
+
+    @staticmethod
+    def _application_from_row(row) -> dict:
+        app = dict(row)
+        try:
+            app["team"] = json.loads(app.get("team") or "[]")
+        except (TypeError, ValueError):
+            app["team"] = []
+        return app
 
     def list_applications_by_user(self, user_id: str) -> list[dict]:
         with self._connect() as conn:
             return [
-                dict(r) for r in conn.execute(
+                self._application_from_row(r) for r in conn.execute(
                     """SELECT a.*, s.slug AS storefront_slug
                        FROM storefront_applications a
                        LEFT JOIN storefronts s ON s.id = a.storefront_id
@@ -1143,7 +1161,7 @@ class StoreRepository:
             row = conn.execute(
                 "SELECT * FROM storefront_applications WHERE id = ?", (application_id,)
             ).fetchone()
-            return dict(row) if row else None
+            return self._application_from_row(row) if row else None
 
     def approve_storefront_application(self, application_id: int, slug: str,
                                        reviewer: str) -> int:
@@ -1170,6 +1188,21 @@ class StoreRepository:
                        VALUES (?, ?, ?, 'manager', ?, ?)""",
                     (storefront_id, app["user_id"], app["username"], reviewer, now),
                 )
+                try:
+                    team = json.loads(app["team"] or "[]")
+                except (TypeError, ValueError):
+                    team = []
+                for member in team:
+                    if member.get("role") not in STOREFRONT_ROLES:
+                        continue
+                    conn.execute(
+                        """INSERT OR IGNORE INTO storefront_admins
+                           (storefront_id, user_id, username, role, added_by, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (storefront_id, str(member["user_id"]),
+                         member.get("username") or str(member["user_id"]),
+                         member["role"], reviewer, now),
+                    )
                 conn.execute(
                     """UPDATE storefront_applications
                        SET status = 'approved', storefront_id = ?, reviewed_by = ?,

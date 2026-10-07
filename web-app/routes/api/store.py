@@ -1028,6 +1028,17 @@ def admin_remove_storefront_admin(storefront_id: int, user_id: str):
 @require_store_admin
 def admin_user_search():
     """Find people to add as storefront admins (people who've logged in or played)."""
+    return _user_search()
+
+
+@store_bp.route("/store/user-search", methods=["GET"])
+@require_auth
+def user_search():
+    """Find Summit members to name as managers or shippers on an application."""
+    return _user_search()
+
+
+def _user_search():
     query = (request.args.get("q") or "").strip()
     if len(query) < 2:
         return jsonify({"users": []})
@@ -1067,14 +1078,18 @@ def apply_for_storefront():
     if data.get("agreed") is not True:
         return jsonify({"error": "Please accept the storefront agreement"}), 400
 
-    repo = _repo()
     user_id = str(session.get("user_id"))
     username = session.get("username", "unknown")
+    team, error = _clean_team(data.get("team"), applicant_id=user_id)
+    if error:
+        return jsonify({"error": error}), 400
+
+    repo = _repo()
     try:
         application_id = repo.create_storefront_application(
             user_id=user_id, username=username, name=name,
             contact_email=contact_email, description=description,
-            shipping=shipping, website=website,
+            shipping=shipping, website=website, team=team,
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 409
@@ -1092,11 +1107,56 @@ def apply_for_storefront():
     return jsonify({"id": application_id}), 201
 
 
+MAX_APPLICATION_TEAM = 10
+
+
+def _clean_team(raw, applicant_id: str) -> tuple[list[dict], str | None]:
+    """Validate the managers and shippers named on an application.
+
+    Names come from Summit profiles, never from the request, so nobody can
+    be listed under a made-up name. The applicant is always a manager and
+    isn't listed again.
+    """
+    if raw in (None, ""):
+        return [], None
+    if not isinstance(raw, list):
+        return [], "Team must be a list"
+    if len(raw) > MAX_APPLICATION_TEAM:
+        return [], f"You can name up to {MAX_APPLICATION_TEAM} people"
+    from repositories.user_profiles import UserProfileRepository
+    profiles = UserProfileRepository()
+    team: dict[str, dict] = {}
+    for member in raw:
+        if not isinstance(member, dict):
+            return [], "Each team member needs a user and a role"
+        member_id = str(member.get("user_id") or "")
+        role = member.get("role")
+        if not member_id.isdigit():
+            return [], "Pick team members from the search"
+        if role not in STOREFRONT_ROLES:
+            return [], f"Role must be one of: {', '.join(STOREFRONT_ROLES)}"
+        if member_id == applicant_id:
+            continue
+        try:
+            profile = profiles.get_by_user_id(member_id)
+        except Exception:
+            logger.exception("Profile lookup failed for an application team member")
+            profile = None
+        if not profile:
+            return [], "One of the people you picked doesn't have a Summit profile"
+        team[member_id] = {
+            "user_id": member_id,
+            "username": profile.get("display_name") or member_id,
+            "role": role,
+        }
+    return list(team.values()), None
+
+
 @store_bp.route("/store/storefront-applications/mine", methods=["GET"])
 @require_auth
 def my_storefront_applications():
     apps = _repo().list_applications_by_user(str(session.get("user_id")))
-    fields = ("id", "name", "status", "created_at", "reviewed_at", "storefront_slug")
+    fields = ("id", "name", "status", "created_at", "reviewed_at", "storefront_slug", "team")
     return jsonify({"applications": [{k: a.get(k) for k in fields} for a in apps]})
 
 

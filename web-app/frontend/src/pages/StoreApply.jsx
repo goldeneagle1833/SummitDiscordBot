@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { applyForStorefront, getMyStorefrontApplications } from '@/api/store'
+import { applyForStorefront, getMyStorefrontApplications, searchMembers } from '@/api/store'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -25,10 +25,98 @@ function Field({ id, label, hint, children }) {
   )
 }
 
+const ROLE_NAMES = { manager: 'Manager', fulfillment: 'Shipper' }
+
+// Pick Summit members to run the storefront with you. Managers handle
+// products and orders; shippers see and ship orders only.
+function TeamPicker({ team, onChange }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState([])
+
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 2) {
+      setResults([])
+      return undefined
+    }
+    const timer = setTimeout(() => {
+      searchMembers(q)
+        .then((d) => setResults(d.users || []))
+        .catch(() => setResults([]))
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [query])
+
+  const add = (user, role) => {
+    onChange([
+      ...team.filter((m) => m.user_id !== user.user_id),
+      { user_id: user.user_id, username: user.display_name, role },
+    ])
+    setQuery('')
+    setResults([])
+  }
+  const remove = (userId) => onChange(team.filter((m) => m.user_id !== userId))
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-text-muted">
+        You're a manager automatically. Managers handle products and orders; shippers see and ship orders only.
+        Everyone here gets access in Store Admin once your storefront is approved.
+      </p>
+      {team.length > 0 && (
+        <ul className="divide-y divide-border border border-border rounded-lg">
+          {team.map((m) => (
+            <li key={m.user_id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+              <span className="font-medium">{m.username}</span>
+              <span className="flex items-center gap-3">
+                <span className="text-text-muted">{ROLE_NAMES[m.role]}</span>
+                <button
+                  type="button"
+                  onClick={() => remove(m.user_id)}
+                  aria-label={`Remove ${m.username}`}
+                  className="text-accent-red hover:underline min-h-11 px-1"
+                >
+                  Remove
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <input
+        id="sf-team"
+        className={inputCls}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search Summit members by name"
+        autoComplete="off"
+      />
+      {results.length > 0 && (
+        <ul className="divide-y divide-border border border-border rounded-lg" aria-label="Search results">
+          {results.map((u) => (
+            <li key={u.user_id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 text-sm">
+              <span>{u.display_name}</span>
+              <span className="flex gap-2">
+                <button type="button" onClick={() => add(u, 'manager')} className="text-primary hover:underline min-h-11 px-1">
+                  Add as manager
+                </button>
+                <button type="button" onClick={() => add(u, 'fulfillment')} className="text-primary hover:underline min-h-11 px-1">
+                  Add as shipper
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export default function StoreApply() {
   usePageTitle('Apply for a storefront')
   const [form, setForm] = useState(EMPTY)
   const [agreed, setAgreed] = useState(false)
+  const [team, setTeam] = useState([])
   const [applications, setApplications] = useState([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -50,10 +138,15 @@ export default function StoreApply() {
     setError(null)
     setSubmitting(true)
     try {
-      await applyForStorefront({ ...form, agreed })
+      await applyForStorefront({
+        ...form,
+        agreed,
+        team: team.map(({ user_id, role }) => ({ user_id, role })),
+      })
       setSent(true)
       setForm(EMPTY)
       setAgreed(false)
+      setTeam([])
       load()
     } catch (err) {
       setError(err.message)
@@ -128,6 +221,10 @@ export default function StoreApply() {
           </Field>
           <Field id="sf-ship" label="Shipping" hint="Who packs and ships your orders, and where from.">
             <textarea id="sf-ship" rows={2} className={inputCls} value={form.shipping} onChange={set('shipping')} required />
+          </Field>
+
+          <Field id="sf-team" label="Managers and shippers (optional)">
+            <TeamPicker team={team} onChange={setTeam} />
           </Field>
 
           <fieldset className="border border-secondary/30 rounded-lg p-4">

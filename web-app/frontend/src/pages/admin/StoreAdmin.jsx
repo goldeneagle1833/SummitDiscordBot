@@ -702,7 +702,7 @@ function OrdersPanel({ storefrontId, showStorefront }) {
 
 const ROLE_LABELS = {
   manager: 'Manager: products and orders',
-  fulfillment: 'Fulfillment: orders only',
+  fulfillment: 'Shipper: orders only',
 }
 
 function TeamPanel({ storefront }) {
@@ -997,6 +997,12 @@ function ApplicationRow({ app, onDone }) {
       </div>
       <p className="text-text-muted whitespace-pre-line">{app.description}</p>
       <p><span className="text-text-muted">Shipping:</span> {app.shipping}</p>
+      <p>
+        <span className="text-text-muted">Team:</span> {app.username} (manager)
+        {(app.team || []).map((m) => (
+          <span key={m.user_id}>, {m.username} ({m.role === 'manager' ? 'manager' : 'shipper'})</span>
+        ))}
+      </p>
       <p>
         <span className="text-text-muted">Contact:</span> {app.contact_email}
         {app.website && <> · <a href={app.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{app.website}</a></>}

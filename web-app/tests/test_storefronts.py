@@ -402,6 +402,57 @@ class TestStorefrontApplicationRoutes:
         sid = resp.get_json()["storefront_id"]
         assert store_repo.storefront_roles_for_user("555") == {sid: "manager"}
 
+    def test_apply_with_team_uses_profile_names(self, client, store_repo):
+        _login(client, "555", "Applicant")
+        profiles = {"601": {"display_name": "Mia"}, "602": {"display_name": "Sam"}}
+        with patch("repositories.user_profiles.UserProfileRepository.get_by_user_id",
+                   side_effect=lambda uid: profiles.get(uid)):
+            resp = client.post("/api/store/storefront-applications", json={**self.BODY, "team": [
+                {"user_id": "601", "username": "Fake name", "role": "manager"},
+                {"user_id": "602", "role": "fulfillment"},
+                {"user_id": "555", "role": "fulfillment"},  # the applicant: ignored
+            ]})
+        assert resp.status_code == 201
+        app = store_repo.list_storefront_applications()[0]
+        assert app["team"] == [
+            {"user_id": "601", "username": "Mia", "role": "manager"},
+            {"user_id": "602", "username": "Sam", "role": "fulfillment"},
+        ]
+
+    def test_apply_team_validation(self, client, store_repo):
+        _login(client, "555")
+        with patch("repositories.user_profiles.UserProfileRepository.get_by_user_id",
+                   return_value=None):
+            for team in ([{"user_id": "abc", "role": "manager"}],
+                         [{"user_id": "601", "role": "owner"}],
+                         [{"user_id": "601", "role": "manager"}],  # no profile
+                         "601"):
+                resp = client.post("/api/store/storefront-applications",
+                                   json={**self.BODY, "team": team})
+                assert resp.status_code == 400, team
+
+    def test_approval_gives_the_team_access(self, full_admin, store_repo):
+        app_id = store_repo.create_storefront_application(
+            user_id="555", username="Applicant", name="VIP",
+            contact_email="vip@example.com", description="x", shipping="y",
+            team=[{"user_id": "601", "username": "Mia", "role": "manager"},
+                  {"user_id": "602", "username": "Sam", "role": "fulfillment"}])
+        sid = full_admin.post(
+            f"/api/store/admin/storefront-applications/{app_id}/approve", json={}
+        ).get_json()["storefront_id"]
+        assert store_repo.storefront_roles_for_user("555") == {sid: "manager"}
+        assert store_repo.storefront_roles_for_user("601") == {sid: "manager"}
+        assert store_repo.storefront_roles_for_user("602") == {sid: "fulfillment"}
+
+    def test_member_search_needs_login(self, client, store_repo):
+        assert client.get("/api/store/user-search?q=mi").status_code == 401
+        _login(client, "555")
+        with patch("repositories.user_profiles.UserProfileRepository.search_users",
+                   return_value=[{"user_id": "601", "display_name": "Mia", "email": "x@y"},
+                                 {"user_id": "google-9", "display_name": "G"}]):
+            users = client.get("/api/store/user-search?q=mi").get_json()["users"]
+        assert users == [{"user_id": "601", "display_name": "Mia"}]
+
     def test_manager_cannot_review_applications(self, explorer_manager):
         client, _ = explorer_manager
         assert client.get("/api/store/admin/storefront-applications").status_code == 403

@@ -677,3 +677,16 @@ class TestDeleteStorefront:
 
     def test_unknown_storefront(self, full_admin, store_repo):
         assert full_admin.delete("/api/store/admin/storefronts/999").status_code == 404
+
+
+@patch("services.store_checkout.STRIPE_SECRET_KEY", "sk")
+@patch("services.store_checkout.STRIPE_WEBHOOK_SECRET", "wh")
+def test_onboarding_shows_stripes_reason(explorer_manager):
+    import stripe
+    client, s = explorer_manager
+    err = stripe.InvalidRequestError(
+        "You can only create new accounts if you've signed up for Connect", None)
+    with patch("services.store_checkout.stripe.Account.create", side_effect=err):
+        res = client.post(f"/api/store/admin/storefronts/{s['explorer']}/stripe/onboard")
+    assert res.status_code == 502
+    assert "signed up for Connect" in res.get_json()["error"]

@@ -509,6 +509,7 @@ def admin_download_backup():
 # ----------------------------------------------------------------------
 
 from utils.auth import require_auth  # noqa: E402
+import stripe  # noqa: E402
 from services.store_checkout import StoreCheckoutService, _site_url  # noqa: E402
 from webapp_config import FREE_SHIPPING_ROLE_IDS  # noqa: E402
 
@@ -963,6 +964,12 @@ def admin_storefront_stripe_onboard(storefront_id: int):
     back = _site_url(f"/admin/store?storefront={storefront_id}&stripe=return")
     try:
         url = service.start_onboarding(storefront, return_url=back, refresh_url=back)
+    except stripe.StripeError as e:
+        # Stripe's own reason (e.g. Connect not turned on) tells the admin
+        # what to fix; it carries no secrets.
+        logger.exception(f"Stripe onboarding failed for storefront {storefront_id}")
+        reason = e.user_message or str(e) or "unknown error"
+        return jsonify({"error": f"Stripe said: {reason}"}), 502
     except Exception:
         logger.exception(f"Stripe onboarding failed for storefront {storefront_id}")
         return jsonify({"error": "Couldn't reach Stripe, please try again"}), 502

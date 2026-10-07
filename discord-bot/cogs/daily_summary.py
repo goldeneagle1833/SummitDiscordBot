@@ -16,11 +16,31 @@ logger = logging.getLogger("discord_bot")
 EST = ZoneInfo("America/New_York")
 
 
-def _truncate(text: str, max_len: int) -> str:
-    """Truncate text to max_len, adding '...' if truncated."""
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 3] + "..."
+def _player(guild, user_id, name) -> str:
+    """Format a player as readable bold text plus a mention.
+
+    Mentions in embeds render as raw ``<@id>`` when the viewer's client hasn't
+    cached that user, so the name is always shown as plain text too. The live
+    server display name is preferred over the name stored with the match.
+    """
+    member = guild.get_member(int(user_id)) if guild and str(user_id).isdigit() else None
+    display = member.display_name if member else (name or "Unknown")
+    return f"**{discord.utils.escape_markdown(display)}** (<@{user_id}>)"
+
+
+def _join_lines(lines, max_len: int = 1024) -> str:
+    """Join lines for an embed field, dropping whole lines instead of cutting
+    one in half (a cut mention shows up as broken text)."""
+    out = []
+    used = 0
+    for i, line in enumerate(lines):
+        extra = len(line) + (1 if out else 0)
+        if used + extra > max_len - 20:
+            out.append(f"…and {len(lines) - i} more")
+            break
+        out.append(line)
+        used += extra
+    return "\n".join(out)
 
 
 class DailySummaryCog(commands.Cog):
@@ -68,7 +88,7 @@ class DailySummaryCog(commands.Cog):
     async def _post_daily_summary(self, channel_override=None):
         est_now = datetime.datetime.now(EST)
         date_prefix = f"{est_now.strftime('%Y-%m-%d')}%"
-        date_display = est_now.strftime("%B %d, %Y")
+        date_display = est_now.strftime("%A, %B %d, %Y")
 
         logger.info(f"Running daily summary for {date_display}...")
 
@@ -82,159 +102,101 @@ class DailySummaryCog(commands.Cog):
         streak_data = await asyncio.to_thread(self._compute_streaks, date_prefix)
         stats.update(streak_data)
 
-        # Build embed
+        guild = getattr(channel, "guild", None)
+
+        def p(user_id, name):
+            return _player(guild, user_id, name)
+
         embed = discord.Embed(
-            title=f"Daily Summary — {date_display}",
+            title=f"📊 Daily Recap — {date_display}",
             color=0xFFD700,
         )
         embed.set_footer(text="Summit Bot • Matches tracked since midnight EST")
 
         all_zero = stats["total_matches"] == 0 and stats["casual_matches"] == 0 and stats["limited_matches"] == 0 and stats["rumble_matches"] == 0
         if all_zero:
-            embed.description = "No matches were played today."
+            embed.description = "No matches were played today. Queue up tomorrow! 🃏"
             logger.info("Zero-match day — posting quiet-day summary.")
             await channel.send(embed=embed)
             return
 
-        # Core stats
-        if stats["total_matches"]:
-            embed.add_field(
-                name="⚔️ Ranked Matches",
-                value=_truncate(str(stats["total_matches"]), 200),
-                inline=True,
-            )
+        # --- At a glance (description) ---
+        counts = []
+        for key, label in (
+            ("total_matches", "Ranked"),
+            ("casual_matches", "Casual"),
+            ("limited_matches", "Limited"),
+            ("rumble_matches", "Rumble"),
+        ):
+            if stats[key]:
+                counts.append(f"**{stats[key]}** {label}")
+        glance = [" • ".join(counts)]
 
-        if stats["casual_matches"]:
-            embed.add_field(
-                name="🎲 Casual Matches",
-                value=_truncate(str(stats["casual_matches"]), 200),
-                inline=True,
-            )
-
-        if stats["limited_matches"]:
-            embed.add_field(
-                name="📦 Limited Matches",
-                value=_truncate(str(stats["limited_matches"]), 200),
-                inline=True,
-            )
-
-        if stats["rumble_matches"]:
-            embed.add_field(
-                name="💥 Rumble Matches",
-                value=_truncate(str(stats["rumble_matches"]), 200),
-                inline=True,
-            )
-
+        extras = []
         if stats.get("unique_players"):
-            embed.add_field(
-                name="🎮 Unique Players",
-                value=_truncate(str(stats["unique_players"]), 200),
-                inline=True,
-            )
+            extras.append(f"👥 **{stats['unique_players']}** players")
+        if stats.get("ironman"):
+            extras.append(f"🕒 **{stats['ironman']}** hrs played")
+        if stats.get("avg_duration") is not None:
+            extras.append(f"⏱️ **{round(stats['avg_duration'])}** min avg")
+        if extras:
+            glance.append(" • ".join(extras))
+        embed.description = "\n".join(glance)
 
-        if stats.get("most_active"):
-            user_id, name, count = stats["most_active"]
-            embed.add_field(
-                name="👑 Most Active Player",
-                value=_truncate(f"<@{user_id}> ({count} matches)", 200),
-                inline=False,
-            )
-
+        # --- Top performers ---
+        performers = []
         if stats.get("top_gainer"):
             user_id, name, change = stats["top_gainer"]
-            embed.add_field(
-                name="📈 Top ELO Gainer",
-                value=_truncate(f"<@{user_id}> (+{change} ELO)", 200),
-                inline=True,
-            )
-
+            if change and change > 0:
+                performers.append(f"📈 **Top Gainer:** {p(user_id, name)} `+{change}`")
         if stats.get("biggest_loser"):
             user_id, name, change = stats["biggest_loser"]
-            embed.add_field(
-                name="📉 Biggest ELO Drop",
-                value=_truncate(f"<@{user_id}> ({change} ELO)", 200),
-                inline=True,
-            )
-
-        # Extended stats
-        if stats.get("biggest_upset"):
-            winner_id, winner_name, loser_id, loser_name, change = stats["biggest_upset"]
-            embed.add_field(
-                name="🎯 Biggest Upset",
-                value=_truncate(f"<@{winner_id}> beat <@{loser_id}> (+{change} ELO)", 200),
-                inline=False,
-            )
-
-        if stats.get("rivalry"):
-            p1_id, p1, p2_id, p2, p1w, p2w, total = stats["rivalry"]
-            embed.add_field(
-                name="⚔️ Rivalry of the Day",
-                value=_truncate(
-                    f"<@{p1_id}> vs <@{p2_id}> — {p1w}-{p2w} ({total} games)", 200
-                ),
-                inline=False,
-            )
-
-        if stats.get("highest_rated"):
-            w_id, w_name, l_id, l_name, w_elo, l_elo = stats["highest_rated"]
-            embed.add_field(
-                name="🏆 Highest Rated Match",
-                value=_truncate(
-                    f"<@{w_id}> ({w_elo}) vs <@{l_id}> ({l_elo})", 200
-                ),
-                inline=False,
-            )
-
-        if stats.get("ironman"):
-            total_hours = stats["ironman"]
-            embed.add_field(
-                name="🦾 Total Sorcery",
-                value=_truncate(
-                    f"{total_hours} hours of Sorcery have been played today", 200
-                ),
-                inline=True,
-            )
-
+            performers.append(f"📉 **Biggest Drop:** {p(user_id, name)} `{change}`")
+        if stats.get("most_active"):
+            user_id, name, count = stats["most_active"]
+            performers.append(f"👑 **Most Active:** {p(user_id, name)} — {count} matches")
         if stats.get("deck_variety"):
             user_id, name, count = stats["deck_variety"]
-            embed.add_field(
-                name="🎴 Deck Variety",
-                value=_truncate(
-                    f"<@{user_id}> played {count} different decks", 200
-                ),
-                inline=True,
-            )
+            performers.append(f"🎴 **Deck Variety:** {p(user_id, name)} — {count} decks")
+        if performers:
+            embed.add_field(name="🏅 Top Performers", value=_join_lines(performers), inline=False)
 
-        if stats.get("hot_streaks"):
-            lines_out = []
-            for user_id, name, streak in stats["hot_streaks"][:5]:
-                lines_out.append(f"<@{user_id}> is on a {streak}-win streak")
-            if len(stats["hot_streaks"]) > 5:
-                lines_out.append(f"and {len(stats['hot_streaks']) - 5} more...")
-            embed.add_field(
-                name="🔥 Hot Streaks",
-                value=_truncate("\n".join(lines_out), 200),
-                inline=False,
+        # --- Match highlights ---
+        highlights = []
+        if stats.get("biggest_upset"):
+            winner_id, winner_name, loser_id, loser_name, change = stats["biggest_upset"]
+            highlights.append(
+                f"🎯 **Biggest Upset:** {p(winner_id, winner_name)} beat {p(loser_id, loser_name)} `+{change}`"
             )
-
-        if stats.get("broken_streaks"):
-            lines_out = []
-            for entry in stats["broken_streaks"][:5]:
-                lines_out.append(f"<@{entry['player_id']}>'s {entry['streak']}-win streak was ended by <@{entry['broken_by_id']}>")
-            embed.add_field(
-                name="💔 Streak Broken",
-                value=_truncate("\n".join(lines_out), 200),
-                inline=False,
+        if stats.get("highest_rated"):
+            w_id, w_name, l_id, l_name, w_elo, l_elo = stats["highest_rated"]
+            highlights.append(
+                f"🏆 **Highest Rated:** {p(w_id, w_name)} `{w_elo}` vs {p(l_id, l_name)} `{l_elo}`"
             )
-
-        if stats.get("avg_duration") is not None:
-            embed.add_field(
-                name="⏱️ Avg Match Duration",
-                value=_truncate(f"{round(stats['avg_duration'])} min", 200),
-                inline=True,
+        if stats.get("rivalry"):
+            p1_id, p1, p2_id, p2, p1w, p2w, total = stats["rivalry"]
+            highlights.append(
+                f"⚔️ **Rivalry:** {p(p1_id, p1)} vs {p(p2_id, p2)} — `{p1w}-{p2w}` ({total} games)"
             )
+        if highlights:
+            embed.add_field(name="✨ Match Highlights", value=_join_lines(highlights), inline=False)
 
-        await channel.send(embed=embed)
+        # --- Streaks ---
+        streak_lines = []
+        hot = stats.get("hot_streaks") or []
+        for user_id, name, streak in hot[:5]:
+            streak_lines.append(f"🔥 {p(user_id, name)} — **{streak}** wins in a row")
+        if len(hot) > 5:
+            streak_lines.append(f"…and {len(hot) - 5} more")
+        for entry in (stats.get("broken_streaks") or [])[:5]:
+            streak_lines.append(
+                f"💔 {p(entry['player_id'], entry['player'])}'s **{entry['streak']}**-win streak "
+                f"ended by {p(entry['broken_by_id'], entry['broken_by'])}"
+            )
+        if streak_lines:
+            embed.add_field(name="🔥 Streaks", value=_join_lines(streak_lines), inline=False)
+
+        await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
         logger.info(f"Daily summary posted to #{channel.name}")
 
     # ------------------------------------------------------------------

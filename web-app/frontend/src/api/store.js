@@ -73,6 +73,7 @@ export const adminSetOrderStatus = (id, status) =>
 // Storefronts, their admins, and applications (full store admins)
 export const adminCreateStorefront = (data) => post('/api/store/admin/storefronts', data)
 export const adminUpdateStorefront = (id, data) => patch(`/api/store/admin/storefronts/${id}`, data)
+export const adminDeleteStorefront = (id) => del(`/api/store/admin/storefronts/${id}`)
 export const adminGetStorefrontAdmins = (id) => get(`/api/store/admin/storefronts/${id}/admins`)
 export const adminAddStorefrontAdmin = (id, data) =>
   post(`/api/store/admin/storefronts/${id}/admins`, data)

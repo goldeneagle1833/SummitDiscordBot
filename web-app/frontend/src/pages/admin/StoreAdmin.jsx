@@ -4,7 +4,7 @@ import {
   adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminDeactivateProduct,
   adminUploadProductImages,
   adminGetOrders, adminGetOrder, adminShipOrder, adminSetOrderStatus, formatMoney,
-  adminCreateStorefront, adminUpdateStorefront,
+  adminCreateStorefront, adminUpdateStorefront, adminDeleteStorefront,
   adminGetStorefrontAdmins, adminAddStorefrontAdmin, adminRemoveStorefrontAdmin, adminSearchUsers,
   adminGetStorefrontApplications, adminApproveStorefrontApplication,
   adminDeclineStorefrontApplication,
@@ -944,6 +944,27 @@ function StorefrontEditor({ storefront, onSaved }) {
         >
           {storefront.is_active ? 'Hide storefront' : 'Show storefront'}
         </button>
+        {!storefront.uses_summit_stripe && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              if (!window.confirm(`Delete ${storefront.name}? Its products and admins are removed too. This can't be undone.`)) return
+              setBusy(true)
+              setError(null)
+              try {
+                await adminDeleteStorefront(storefront.id)
+                onSaved()
+              } catch (e) {
+                setError(e.message)
+                setBusy(false)
+              }
+            }}
+            className="text-accent-red hover:underline disabled:opacity-50"
+          >
+            Delete storefront
+          </button>
+        )}
         {storefront.stripe_account_id && (
           <button
             type="button"

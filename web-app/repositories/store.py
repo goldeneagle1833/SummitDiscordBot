@@ -1008,6 +1008,51 @@ class StoreRepository:
             )
             return cur.rowcount > 0
 
+    def delete_storefront(self, storefront_id: int) -> dict:
+        """Delete a storefront with its products, admins and Stripe link.
+
+        Refused for Summit Store, and for any storefront that has orders:
+        order history has to stay, so those can only be hidden. Returns
+        what was removed.
+        """
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                storefront = conn.execute(
+                    "SELECT * FROM storefronts WHERE id = ?", (storefront_id,)
+                ).fetchone()
+                if storefront is None:
+                    raise LookupError("Storefront not found")
+                if storefront["slug"] == DEFAULT_STOREFRONT_SLUG:
+                    raise ValueError("Summit Store can't be deleted")
+                orders = conn.execute(
+                    "SELECT COUNT(*) FROM orders WHERE storefront_id = ?", (storefront_id,)
+                ).fetchone()[0]
+                if orders:
+                    raise ValueError(
+                        f"{storefront['name']} has {orders} "
+                        f"order{'s' if orders != 1 else ''}, so it can't be deleted. "
+                        f"Hide it instead to keep its order history."
+                    )
+                products = conn.execute(
+                    "DELETE FROM products WHERE storefront_id = ?", (storefront_id,)
+                ).rowcount
+                admins = conn.execute(
+                    "DELETE FROM storefront_admins WHERE storefront_id = ?", (storefront_id,)
+                ).rowcount
+                # Keep the application on record, just unlinked
+                conn.execute(
+                    "UPDATE storefront_applications SET storefront_id = NULL "
+                    "WHERE storefront_id = ?", (storefront_id,)
+                )
+                conn.execute("DELETE FROM storefronts WHERE id = ?", (storefront_id,))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return {"name": storefront["name"], "products": products, "admins": admins,
+                "stripe_account_id": storefront["stripe_account_id"]}
+
     def set_storefront_stripe(self, storefront_id: int, account_id: str | None,
                               charges_enabled: bool) -> bool:
         with self._connect() as conn:

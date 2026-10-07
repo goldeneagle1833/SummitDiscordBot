@@ -638,3 +638,42 @@ class TestStorefrontPaymentRoutes:
         assert store_repo.get_storefront(s["explorer"])["shipping_cents"] == 450
         res = full_admin.patch(f"/api/store/admin/storefronts/{s['explorer']}", json={"shipping_cents": -1})
         assert res.status_code == 400
+
+
+class TestDeleteStorefront:
+    def test_full_admin_deletes_storefront_without_orders(self, full_admin, store_repo):
+        sid = store_repo.create_storefront("vip", "VIP")
+        pid = _product(store_repo, "VIP-1", storefront_id=sid)
+        store_repo.add_storefront_admin(sid, "601", "Mia", "manager")
+        res = full_admin.delete(f"/api/store/admin/storefronts/{sid}")
+        assert res.status_code == 200
+        assert res.get_json()["products"] == 1
+        assert store_repo.get_storefront(sid) is None
+        assert store_repo.get_product(pid) is None
+        assert store_repo.storefront_roles_for_user("601") == {}
+
+    def test_storefront_with_orders_cannot_be_deleted(self, full_admin, store_repo):
+        s = _make_shop(store_repo)
+        res = full_admin.delete(f"/api/store/admin/storefronts/{s['explorer']}")
+        assert res.status_code == 409
+        assert "Hide it instead" in res.get_json()["error"]
+        assert store_repo.get_storefront(s["explorer"]) is not None
+
+    def test_summit_cannot_be_deleted(self, full_admin, store_repo):
+        sid = store_repo.default_storefront_id()
+        assert full_admin.delete(f"/api/store/admin/storefronts/{sid}").status_code == 409
+
+    def test_approved_application_stays_after_delete(self, repo):
+        app_id = repo.create_storefront_application(
+            user_id="555", username="A", name="VIP", contact_email="a@b.c",
+            description="x", shipping="y")
+        sid = repo.approve_storefront_application(app_id, "vip", "Owner")
+        repo.delete_storefront(sid)
+        assert repo.get_storefront_application(app_id)["storefront_id"] is None
+
+    def test_manager_cannot_delete(self, explorer_manager):
+        client, s = explorer_manager
+        assert client.delete(f"/api/store/admin/storefronts/{s['explorer']}").status_code == 403
+
+    def test_unknown_storefront(self, full_admin, store_repo):
+        assert full_admin.delete("/api/store/admin/storefronts/999").status_code == 404

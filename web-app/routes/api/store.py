@@ -895,6 +895,26 @@ def admin_update_storefront(storefront_id: int):
     return jsonify({"success": True})
 
 
+@store_bp.route("/store/admin/storefronts/<int:storefront_id>", methods=["DELETE"])
+@require_store_admin
+def admin_delete_storefront(storefront_id: int):
+    """Delete a storefront that has never had an order."""
+    repo = _repo()
+    try:
+        removed = repo.delete_storefront(storefront_id)
+    except LookupError:
+        return _not_found("Storefront")
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    actor_id, actor_name = _actor()
+    repo.log_action(
+        actor_id, actor_name, "delete_storefront",
+        f"id={storefront_id} name={removed['name']} products={removed['products']} "
+        f"admins={removed['admins']} stripe={removed['stripe_account_id']}",
+    )
+    return jsonify({"success": True, **removed})
+
+
 # ----------------------------------------------------------------------
 # Storefront payments: each storefront besides Summit connects its own
 # Stripe account. Its managers (or a full admin) run the onboarding.

@@ -13,12 +13,14 @@ vi.mock('@/api/store', async () => {
     adminUploadProductImages: vi.fn(),
     adminGetOrders: vi.fn(),
     adminStartStripeOnboarding: vi.fn(),
+    adminDeleteStorefront: vi.fn(),
+    adminGetStorefrontApplications: vi.fn(),
   }
 })
 
 import {
   adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminUploadProductImages, adminGetOrders,
-  adminStartStripeOnboarding,
+  adminStartStripeOnboarding, adminDeleteStorefront, adminGetStorefrontApplications,
 } from '@/api/store'
 import StoreAdmin from '../StoreAdmin'
 
@@ -232,5 +234,38 @@ describe('StoreAdmin storefront payments', () => {
     adminGetMe.mockResolvedValue({ is_full_admin: false, storefronts: [{ ...EXPLORER, role: 'manager', accepts_payments: true, stripe_account_id: 'acct_1' }] })
     renderWithRouter(<StoreAdmin />)
     expect(await screen.findByText('Explorer Store takes payments on its own Stripe account.')).toBeInTheDocument()
+  })
+})
+
+describe('StoreAdmin deleting storefronts', () => {
+  const SUMMIT_SF = { id: 1, slug: 'summit', name: 'Summit Store', role: 'owner', is_active: 1, uses_summit_stripe: true }
+  const VIP = { id: 3, slug: 'vip', name: 'VIP', role: 'owner', is_active: 1, uses_summit_stripe: false }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    adminGetMe.mockResolvedValue({ is_full_admin: true, storefronts: [SUMMIT_SF, VIP] })
+    adminGetProducts.mockResolvedValue({ products: [] })
+    adminGetOrders.mockResolvedValue({ orders: [] })
+    adminGetStorefrontApplications.mockResolvedValue({ applications: [] })
+  })
+
+  it('deletes a storefront after confirming, but never Summit Store', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    adminDeleteStorefront.mockResolvedValue({ success: true })
+    renderWithRouter(<StoreAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Storefronts' }))
+    const buttons = await screen.findAllByRole('button', { name: 'Delete storefront' })
+    expect(buttons).toHaveLength(1)
+    await userEvent.click(buttons[0])
+    expect(adminDeleteStorefront).toHaveBeenCalledWith(3)
+  })
+
+  it('shows why a storefront with orders cannot be deleted', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    adminDeleteStorefront.mockRejectedValue(new Error('VIP has 2 orders, so it can\'t be deleted. Hide it instead to keep its order history.'))
+    renderWithRouter(<StoreAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Storefronts' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete storefront' }))
+    expect(await screen.findByText(/Hide it instead/)).toBeInTheDocument()
   })
 })

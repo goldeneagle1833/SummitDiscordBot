@@ -14,10 +14,19 @@ import config
 logger = logging.getLogger("discord_bot")
 
 EST = ZoneInfo("America/New_York")
+WEB_APP_URL = getattr(config, "WEB_APP_URL", "https://sorcererssummit.com").rstrip("/")
+SUNDAY = 6  # datetime.weekday()
+
+MATCH_TYPES = (
+    ("total_matches", "Ranked"),
+    ("casual_matches", "Casual"),
+    ("limited_matches", "Limited"),
+    ("rumble_matches", "Rumble"),
+)
 
 
 def _player(guild, user_id, name) -> str:
-    """Format a player as readable bold text plus a mention.
+    """Format a player as a bold link to their site profile plus a mention.
 
     Mentions in embeds render as raw ``<@id>`` when the viewer's client hasn't
     cached that user, so the name is always shown as plain text too. The live
@@ -25,7 +34,9 @@ def _player(guild, user_id, name) -> str:
     """
     member = guild.get_member(int(user_id)) if guild and str(user_id).isdigit() else None
     display = member.display_name if member else (name or "Unknown")
-    return f"**{discord.utils.escape_markdown(display)}** (<@{user_id}>)"
+    # Square brackets would break the masked link
+    display = discord.utils.escape_markdown(display).replace("[", "(").replace("]", ")")
+    return f"[**{display}**]({WEB_APP_URL}/player/{user_id}) (<@{user_id}>)"
 
 
 def _join_lines(lines, max_len: int = 1024) -> str:
@@ -41,6 +52,46 @@ def _join_lines(lines, max_len: int = 1024) -> str:
         out.append(line)
         used += extra
     return "\n".join(out)
+
+
+def _total(counts: dict) -> int:
+    return sum(counts.get(key) or 0 for key, _ in MATCH_TYPES)
+
+
+def _delta(current: int, previous: int) -> str:
+    """Return '▲ 3', '▼ 2' or '±0' for the change from previous to current."""
+    diff = (current or 0) - (previous or 0)
+    if diff > 0:
+        return f"▲ {diff}"
+    if diff < 0:
+        return f"▼ {-diff}"
+    return "±0"
+
+
+def _period(kind: str, today: datetime.date) -> dict:
+    """Date range [start, end) for the recap plus the matching previous period."""
+    days = 7 if kind == "weekly" else 1
+    end = today + datetime.timedelta(days=1)
+    start = end - datetime.timedelta(days=days)
+    prev_start = start - datetime.timedelta(days=days)
+    if kind == "weekly":
+        title = f"📆 Weekly Recap — {start.strftime('%b %d')} to {today.strftime('%b %d, %Y')}"
+        compare_label = "last week"
+        footer = "Summit Bot • Matches tracked over the last 7 days (EST)"
+    else:
+        title = f"📊 Daily Recap — {today.strftime('%A, %B %d, %Y')}"
+        compare_label = "yesterday"
+        footer = "Summit Bot • Matches tracked since midnight EST"
+    return {
+        "kind": kind,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "prev_start": prev_start.isoformat(),
+        "prev_end": start.isoformat(),
+        "title": title,
+        "compare_label": compare_label,
+        "footer": footer,
+    }
 
 
 class DailySummaryCog(commands.Cog):
@@ -61,9 +112,17 @@ class DailySummaryCog(commands.Cog):
     async def daily_summary_task(self):
         logger.info("Daily summary task firing...")
         try:
-            await self._post_daily_summary()
+            await self._post_summary("daily")
         except Exception:
             logger.error("Daily summary task failed", exc_info=True)
+
+        # Sunday night also gets the weekly recap, right after the daily one
+        if datetime.datetime.now(EST).weekday() == SUNDAY:
+            logger.info("Sunday — posting weekly recap...")
+            try:
+                await self._post_summary("weekly")
+            except Exception:
+                logger.error("Weekly summary failed", exc_info=True)
 
     @daily_summary_task.before_loop
     async def before_daily_summary(self):
@@ -72,25 +131,28 @@ class DailySummaryCog(commands.Cog):
         logger.info(f"Daily summary task is ready — next run: {next_run}")
 
     # ------------------------------------------------------------------
-    # Admin command
+    # Admin commands
     # ------------------------------------------------------------------
 
     @commands.command(name="daily_summary")
     @commands.has_permissions(administrator=True)
     async def trigger_summary(self, ctx):
         """Manually trigger the daily summary (admin only)."""
-        await self._post_daily_summary(channel_override=ctx.channel)
+        await self._post_summary("daily", channel_override=ctx.channel)
+
+    @commands.command(name="weekly_summary")
+    @commands.has_permissions(administrator=True)
+    async def trigger_weekly_summary(self, ctx):
+        """Manually trigger the weekly recap for the last 7 days (admin only)."""
+        await self._post_summary("weekly", channel_override=ctx.channel)
 
     # ------------------------------------------------------------------
     # Core orchestrator
     # ------------------------------------------------------------------
 
-    async def _post_daily_summary(self, channel_override=None):
-        est_now = datetime.datetime.now(EST)
-        date_prefix = f"{est_now.strftime('%Y-%m-%d')}%"
-        date_display = est_now.strftime("%A, %B %d, %Y")
-
-        logger.info(f"Running daily summary for {date_display}...")
+    async def _post_summary(self, kind: str, channel_override=None):
+        period = _period(kind, datetime.datetime.now(EST).date())
+        logger.info(f"Running {kind} summary for {period['start']} to {period['end']}...")
 
         channel = channel_override or self.bot.get_channel(config.DAILY_SUMMARY_CHANNEL_ID)
         if channel is None:
@@ -98,112 +160,84 @@ class DailySummaryCog(commands.Cog):
             return
 
         # Gather stats
-        stats = await asyncio.to_thread(self._query_stats, date_prefix)
-        streak_data = await asyncio.to_thread(self._compute_streaks, date_prefix)
+        stats = await asyncio.to_thread(self._query_stats, period["start"], period["end"])
+        streak_data = await asyncio.to_thread(self._compute_streaks, period["start"], period["end"])
         stats.update(streak_data)
+        previous = await asyncio.to_thread(self._query_counts, period["prev_start"], period["prev_end"])
 
-        guild = getattr(channel, "guild", None)
-
-        def p(user_id, name):
-            return _player(guild, user_id, name)
-
-        embed = discord.Embed(
-            title=f"📊 Daily Recap — {date_display}",
-            color=0xFFD700,
-        )
-        embed.set_footer(text="Summit Bot • Matches tracked since midnight EST")
-
-        all_zero = stats["total_matches"] == 0 and stats["casual_matches"] == 0 and stats["limited_matches"] == 0 and stats["rumble_matches"] == 0
-        if all_zero:
-            embed.description = "No matches were played today. Queue up tomorrow! 🃏"
-            logger.info("Zero-match day — posting quiet-day summary.")
-            await channel.send(embed=embed)
-            return
-
-        # --- At a glance (description) ---
-        counts = []
-        for key, label in (
-            ("total_matches", "Ranked"),
-            ("casual_matches", "Casual"),
-            ("limited_matches", "Limited"),
-            ("rumble_matches", "Rumble"),
-        ):
-            if stats[key]:
-                counts.append(f"**{stats[key]}** {label}")
-        glance = [" • ".join(counts)]
-
-        extras = []
-        if stats.get("unique_players"):
-            extras.append(f"👥 **{stats['unique_players']}** players")
-        if stats.get("ironman"):
-            extras.append(f"🕒 **{stats['ironman']}** hrs played")
-        if stats.get("avg_duration") is not None:
-            extras.append(f"⏱️ **{round(stats['avg_duration'])}** min avg")
-        if extras:
-            glance.append(" • ".join(extras))
-        embed.description = "\n".join(glance)
-
-        # --- Top performers ---
-        performers = []
-        if stats.get("top_gainer"):
-            user_id, name, change = stats["top_gainer"]
-            if change and change > 0:
-                performers.append(f"📈 **Top Gainer:** {p(user_id, name)} `+{change}`")
-        if stats.get("biggest_loser"):
-            user_id, name, change = stats["biggest_loser"]
-            performers.append(f"📉 **Biggest Drop:** {p(user_id, name)} `{change}`")
-        if stats.get("most_active"):
-            user_id, name, count = stats["most_active"]
-            performers.append(f"👑 **Most Active:** {p(user_id, name)} — {count} matches")
-        if stats.get("deck_variety"):
-            user_id, name, count = stats["deck_variety"]
-            performers.append(f"🎴 **Deck Variety:** {p(user_id, name)} — {count} decks")
-        if performers:
-            embed.add_field(name="🏅 Top Performers", value=_join_lines(performers), inline=False)
-
-        # --- Match highlights ---
-        highlights = []
-        if stats.get("biggest_upset"):
-            winner_id, winner_name, loser_id, loser_name, change = stats["biggest_upset"]
-            highlights.append(
-                f"🎯 **Biggest Upset:** {p(winner_id, winner_name)} beat {p(loser_id, loser_name)} `+{change}`"
-            )
-        if stats.get("highest_rated"):
-            w_id, w_name, l_id, l_name, w_elo, l_elo = stats["highest_rated"]
-            highlights.append(
-                f"🏆 **Highest Rated:** {p(w_id, w_name)} `{w_elo}` vs {p(l_id, l_name)} `{l_elo}`"
-            )
-        if stats.get("rivalry"):
-            p1_id, p1, p2_id, p2, p1w, p2w, total = stats["rivalry"]
-            highlights.append(
-                f"⚔️ **Rivalry:** {p(p1_id, p1)} vs {p(p2_id, p2)} — `{p1w}-{p2w}` ({total} games)"
-            )
-        if highlights:
-            embed.add_field(name="✨ Match Highlights", value=_join_lines(highlights), inline=False)
-
-        # --- Streaks ---
-        streak_lines = []
-        hot = stats.get("hot_streaks") or []
-        for user_id, name, streak in hot[:5]:
-            streak_lines.append(f"🔥 {p(user_id, name)} — **{streak}** wins in a row")
-        if len(hot) > 5:
-            streak_lines.append(f"…and {len(hot) - 5} more")
-        for entry in (stats.get("broken_streaks") or [])[:5]:
-            streak_lines.append(
-                f"💔 {p(entry['player_id'], entry['player'])}'s **{entry['streak']}**-win streak "
-                f"ended by {p(entry['broken_by_id'], entry['broken_by'])}"
-            )
-        if streak_lines:
-            embed.add_field(name="🔥 Streaks", value=_join_lines(streak_lines), inline=False)
-
+        embed = _build_embed(period, stats, previous, getattr(channel, "guild", None))
         await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
-        logger.info(f"Daily summary posted to #{channel.name}")
+        logger.info(f"{kind.capitalize()} summary posted to #{channel.name}")
 
     # ------------------------------------------------------------------
     # Database queries
     # ------------------------------------------------------------------
 
-    def _query_stats(self, date_prefix: str) -> dict:
+    def _query_counts(self, start: str, end: str) -> dict:
+        """Query only match/player counts for a period (used for comparisons). Runs in a thread."""
+        conn = sqlite3.connect("match_records.db")
+        try:
+            return self._count_activity(conn.cursor(), start, end)
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _count_activity(cur, start: str, end: str) -> dict:
+        """Match counts per type plus unique ranked players for [start, end)."""
+        counts = {}
+
+        # Ranked matches
+        cur.execute(
+            "SELECT COUNT(*) FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'",
+            (start, end),
+        )
+        counts["total_matches"] = cur.fetchone()[0]
+
+        # Casual match count — count pairings (not just reported matches)
+        try:
+            cur.execute(
+                "SELECT COUNT(*) FROM active_pairings WHERE created_at >= ? AND created_at < ? AND match_type = 'testing'",
+                (start, end),
+            )
+            counts["casual_matches"] = cur.fetchone()[0]
+        except sqlite3.OperationalError:
+            counts["casual_matches"] = 0
+
+        # Limited match count — stored in limited_match_records table
+        try:
+            cur.execute(
+                "SELECT COUNT(*) FROM limited_match_records WHERE timestamp >= ? AND timestamp < ?",
+                (start, end),
+            )
+            counts["limited_matches"] = cur.fetchone()[0]
+        except sqlite3.OperationalError:
+            counts["limited_matches"] = 0
+
+        # Rumble match count
+        cur.execute(
+            "SELECT COUNT(*) FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'rumble'",
+            (start, end),
+        )
+        counts["rumble_matches"] = cur.fetchone()[0]
+
+        # Unique ranked players
+        cur.execute(
+            """
+            SELECT COUNT(DISTINCT player_id) FROM (
+                SELECT winner_id as player_id FROM match_records
+                WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
+                UNION
+                SELECT losser_id as player_id FROM match_records
+                WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
+            )
+            """,
+            (start, end, start, end),
+        )
+        counts["unique_players"] = cur.fetchone()[0]
+
+        return counts
+
+    def _query_stats(self, start: str, end: str) -> dict:
         """Query core and extended stats from match_records.db. Runs in a thread."""
         stats = {
             "total_matches": 0,
@@ -220,45 +254,14 @@ class DailySummaryCog(commands.Cog):
             "highest_rated": None,
             "ironman": None,
             "deck_variety": None,
+            "busiest_day": None,
         }
 
         conn = sqlite3.connect("match_records.db")
         try:
             cur = conn.cursor()
 
-            # 1. Total matches (ranked)
-            cur.execute(
-                "SELECT COUNT(*) FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'",
-                (date_prefix,),
-            )
-            stats["total_matches"] = cur.fetchone()[0]
-
-            # 1b. Casual match count — count pairings (not just reported matches)
-            try:
-                cur.execute(
-                    "SELECT COUNT(*) FROM active_pairings WHERE created_at LIKE ? AND match_type = 'testing'",
-                    (date_prefix,),
-                )
-                stats["casual_matches"] = cur.fetchone()[0]
-            except sqlite3.OperationalError:
-                stats["casual_matches"] = 0
-
-            # 1c. Limited match count — stored in limited_match_records table
-            try:
-                cur.execute(
-                    "SELECT COUNT(*) FROM limited_match_records WHERE timestamp LIKE ?",
-                    (date_prefix,),
-                )
-                stats["limited_matches"] = cur.fetchone()[0]
-            except sqlite3.OperationalError:
-                stats["limited_matches"] = 0
-
-            # 1d. Rumble match count
-            cur.execute(
-                "SELECT COUNT(*) FROM match_records WHERE timestamp LIKE ? AND match_type = 'rumble'",
-                (date_prefix,),
-            )
-            stats["rumble_matches"] = cur.fetchone()[0]
+            stats.update(self._count_activity(cur, start, end))
 
             if stats["total_matches"] == 0 and stats["casual_matches"] == 0 and stats["limited_matches"] == 0 and stats["rumble_matches"] == 0:
                 return stats
@@ -268,13 +271,13 @@ class DailySummaryCog(commands.Cog):
                 """
                 SELECT player_id, player_name, COUNT(*) as match_count FROM (
                     SELECT winner_id as player_id, winner_display_name as player_name
-                    FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
+                    FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                     UNION ALL
                     SELECT losser_id as player_id, losser_display_name as player_name
-                    FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
+                    FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                 ) GROUP BY player_id ORDER BY match_count DESC LIMIT 1
                 """,
-                (date_prefix, date_prefix),
+                (start, end, start, end),
             )
             row = cur.fetchone()
             if row:
@@ -286,16 +289,16 @@ class DailySummaryCog(commands.Cog):
                 SELECT player_id, player_name, SUM(elo_change) as net_change FROM (
                     SELECT winner_id as player_id, winner_display_name as player_name,
                            winner_lifetime_elo_change as elo_change
-                    FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
+                    FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                                              AND winner_lifetime_elo_change IS NOT NULL
                     UNION ALL
                     SELECT losser_id as player_id, losser_display_name as player_name,
                            loser_lifetime_elo_change as elo_change
-                    FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
+                    FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                                              AND loser_lifetime_elo_change IS NOT NULL
                 ) GROUP BY player_id ORDER BY net_change DESC LIMIT 1
                 """,
-                (date_prefix, date_prefix),
+                (start, end, start, end),
             )
             row = cur.fetchone()
             if row:
@@ -307,40 +310,25 @@ class DailySummaryCog(commands.Cog):
                 SELECT player_id, player_name, SUM(elo_change) as net_change FROM (
                     SELECT winner_id as player_id, winner_display_name as player_name,
                            winner_lifetime_elo_change as elo_change
-                    FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
+                    FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                                              AND winner_lifetime_elo_change IS NOT NULL
                     UNION ALL
                     SELECT losser_id as player_id, losser_display_name as player_name,
                            loser_lifetime_elo_change as elo_change
-                    FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
+                    FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                                              AND loser_lifetime_elo_change IS NOT NULL
                 ) GROUP BY player_id ORDER BY net_change ASC LIMIT 1
                 """,
-                (date_prefix, date_prefix),
+                (start, end, start, end),
             )
             row = cur.fetchone()
             if row and row[2] < 0:
                 stats["biggest_loser"] = (row[0], row[1], row[2])  # (user_id, name, change)
 
-            # 6. Unique players
-            cur.execute(
-                """
-                SELECT COUNT(DISTINCT player_id) FROM (
-                    SELECT winner_id as player_id FROM match_records
-                    WHERE timestamp LIKE ? AND match_type = 'ranked'
-                    UNION
-                    SELECT losser_id as player_id FROM match_records
-                    WHERE timestamp LIKE ? AND match_type = 'ranked'
-                )
-                """,
-                (date_prefix, date_prefix),
-            )
-            stats["unique_players"] = cur.fetchone()[0]
-
             # 7. Average match duration
             cur.execute(
-                "SELECT AVG(match_time) FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked' AND match_time > 0",
-                (date_prefix,),
+                "SELECT AVG(match_time) FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked' AND match_time > 0",
+                (start, end),
             )
             row = cur.fetchone()
             if row and row[0] is not None:
@@ -351,12 +339,12 @@ class DailySummaryCog(commands.Cog):
                 """
                 SELECT winner_id, winner_display_name, losser_id, losser_display_name, winner_lifetime_elo_change
                 FROM match_records
-                WHERE timestamp LIKE ? AND match_type = 'ranked'
+                WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                       AND winner_lifetime_elo_change IS NOT NULL
                       AND winner_lifetime_elo_change > 0
                 ORDER BY winner_lifetime_elo_change DESC LIMIT 1
                 """,
-                (date_prefix,),
+                (start, end),
             )
             row = cur.fetchone()
             if row:
@@ -370,12 +358,12 @@ class DailySummaryCog(commands.Cog):
                     MAX(winner_id, losser_id) as p2_id,
                     COUNT(*) as match_count
                 FROM match_records
-                WHERE timestamp LIKE ? AND match_type = 'ranked'
+                WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                 GROUP BY p1_id, p2_id
                 HAVING match_count >= 2
                 ORDER BY match_count DESC LIMIT 1
                 """,
-                (date_prefix,),
+                (start, end),
             )
             pair = cur.fetchone()
             if pair:
@@ -384,11 +372,11 @@ class DailySummaryCog(commands.Cog):
                     """
                     SELECT winner_id, winner_display_name, losser_display_name
                     FROM match_records
-                    WHERE timestamp LIKE ? AND match_type = 'ranked'
+                    WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                           AND ((winner_id = ? AND losser_id = ?)
                                OR (winner_id = ? AND losser_id = ?))
                     """,
-                    (date_prefix, p1_id, p2_id, p2_id, p1_id),
+                    (start, end, p1_id, p2_id, p2_id, p1_id),
                 )
                 rivalry_matches = cur.fetchall()
                 p1_wins = sum(1 for m in rivalry_matches if m[0] == p1_id)
@@ -413,12 +401,12 @@ class DailySummaryCog(commands.Cog):
                     FROM match_records m
                     LEFT JOIN elo_db.overall_standings w ON w.user_id = m.winner_id
                     LEFT JOIN elo_db.overall_standings l ON l.user_id = m.losser_id
-                    WHERE m.timestamp LIKE ? AND m.match_type = 'ranked'
+                    WHERE m.timestamp >= ? AND m.timestamp < ? AND m.match_type = 'ranked'
                     ORDER BY (COALESCE(w.online_elo, w.elo, 1500)
                               + COALESCE(l.online_elo, l.elo, 1500)) DESC
                     LIMIT 1
                     """,
-                    (date_prefix,),
+                    (start, end),
                 )
                 row = cur.fetchone()
                 if row:
@@ -432,9 +420,9 @@ class DailySummaryCog(commands.Cog):
                 """
                 SELECT ROUND(SUM(match_time) / 60.0, 1) as total_hours
                 FROM match_records
-                WHERE timestamp LIKE ? AND match_type = 'ranked' AND match_time > 0
+                WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked' AND match_time > 0
                 """,
-                (date_prefix,),
+                (start, end),
             )
             row = cur.fetchone()
             if row and row[0]:
@@ -448,7 +436,7 @@ class DailySummaryCog(commands.Cog):
                            winner_display_name as player_name,
                            curiosa_url_winner as deck_url
                     FROM match_records
-                    WHERE timestamp LIKE ? AND match_type = 'ranked'
+                    WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                           AND curiosa_url_winner IS NOT NULL
                           AND curiosa_url_winner != ''
                     UNION ALL
@@ -456,7 +444,7 @@ class DailySummaryCog(commands.Cog):
                            losser_display_name as player_name,
                            curiosa_url_loser as deck_url
                     FROM match_records
-                    WHERE timestamp LIKE ? AND match_type = 'ranked'
+                    WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                           AND curiosa_url_loser IS NOT NULL
                           AND curiosa_url_loser != ''
                 )
@@ -464,11 +452,25 @@ class DailySummaryCog(commands.Cog):
                 HAVING deck_count >= 2
                 ORDER BY deck_count DESC LIMIT 1
                 """,
-                (date_prefix, date_prefix),
+                (start, end, start, end),
             )
             row = cur.fetchone()
             if row:
                 stats["deck_variety"] = (row[0], row[1], row[2])  # (user_id, name, count)
+
+            # 13. Busiest day (only shown on the weekly recap)
+            cur.execute(
+                """
+                SELECT substr(timestamp, 1, 10) as day, COUNT(*) as match_count
+                FROM match_records
+                WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
+                GROUP BY day ORDER BY match_count DESC LIMIT 1
+                """,
+                (start, end),
+            )
+            row = cur.fetchone()
+            if row:
+                stats["busiest_day"] = (row[0], row[1])  # (YYYY-MM-DD, count)
 
         finally:
             conn.close()
@@ -479,7 +481,7 @@ class DailySummaryCog(commands.Cog):
     # Streak detection
     # ------------------------------------------------------------------
 
-    def _compute_streaks(self, date_prefix: str) -> dict:
+    def _compute_streaks(self, start: str, end: str) -> dict:
         """Compute hot streaks and broken streaks. Runs in a thread."""
         result = {"hot_streaks": [], "broken_streaks": []}
 
@@ -492,13 +494,13 @@ class DailySummaryCog(commands.Cog):
                 """
                 SELECT DISTINCT player_id FROM (
                     SELECT winner_id as player_id FROM match_records
-                    WHERE timestamp LIKE ? AND match_type = 'ranked'
+                    WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                     UNION
                     SELECT losser_id as player_id FROM match_records
-                    WHERE timestamp LIKE ? AND match_type = 'ranked'
+                    WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                 )
                 """,
-                (date_prefix, date_prefix),
+                (start, end, start, end),
             )
             player_ids = [row[0] for row in cur.fetchall()]
 
@@ -535,12 +537,11 @@ class DailySummaryCog(commands.Cog):
                 if current_streak >= 3:
                     result["hot_streaks"].append((player_id, player_name, current_streak))
 
-                # Broken streak: did this player lose today and have a 6+ streak before that loss?
-                # Find the first loss today
-                today_prefix = date_prefix.rstrip("%")
+                # Broken streak: did this player lose in the period and have a 6+ streak before that loss?
+                # Find the most recent loss in the period
                 first_loss_idx = None
                 for i, m in enumerate(matches):
-                    if m[1] == player_id and m[4].startswith(today_prefix):  # player is loser, today
+                    if m[1] == player_id and start <= m[4] < end:  # player is loser, in period
                         first_loss_idx = i
                         # Don't break — we want the most recent loss today (lowest index)
                         break
@@ -570,6 +571,119 @@ class DailySummaryCog(commands.Cog):
             conn.close()
 
         return result
+
+
+def _build_embed(period: dict, stats: dict, previous: dict, guild) -> discord.Embed:
+    """Build the recap embed from the period's stats and the previous period's counts."""
+
+    def p(user_id, name):
+        return _player(guild, user_id, name)
+
+    compare = period["compare_label"]
+    embed = discord.Embed(
+        title=period["title"],
+        url=f"{WEB_APP_URL}/match-history",
+        color=0xFFD700,
+    )
+    embed.set_footer(text=period["footer"])
+
+    links = (
+        f"🔗 [Leaderboard]({WEB_APP_URL}/elo) • "
+        f"[Match History]({WEB_APP_URL}/match-history) • "
+        f"[Fun Stats]({WEB_APP_URL}/fun-stats)"
+    )
+
+    total = _total(stats)
+    prev_total = _total(previous)
+    if total == 0:
+        quiet = "today" if period["kind"] == "daily" else "this week"
+        embed.description = (
+            f"No matches were played {quiet} ({prev_total} {compare}). Queue up! 🃏\n\n{links}"
+        )
+        return embed
+
+    # --- At a glance (description) ---
+    counts = [f"**{stats[key]}** {label}" for key, label in MATCH_TYPES if stats.get(key)]
+    glance = [" • ".join(counts)]
+    glance.append(f"📅 **{total}** matches total — {_delta(total, prev_total)} vs {compare} ({prev_total})")
+
+    extras = []
+    if stats.get("unique_players"):
+        extras.append(
+            f"👥 **{stats['unique_players']}** players "
+            f"({_delta(stats['unique_players'], previous.get('unique_players'))})"
+        )
+    if stats.get("ironman"):
+        extras.append(f"🕒 **{stats['ironman']}** hrs played")
+    if stats.get("avg_duration") is not None:
+        extras.append(f"⏱️ **{round(stats['avg_duration'])}** min avg")
+    if extras:
+        glance.append(" • ".join(extras))
+
+    if period["kind"] == "weekly" and stats.get("busiest_day"):
+        day, count = stats["busiest_day"]
+        try:
+            day = datetime.date.fromisoformat(day).strftime("%A")
+        except ValueError:
+            pass
+        glance.append(f"📆 Busiest day: **{day}** ({count} ranked matches)")
+    embed.description = "\n".join(glance)
+
+    # --- Top performers ---
+    performers = []
+    if stats.get("top_gainer"):
+        user_id, name, change = stats["top_gainer"]
+        if change and change > 0:
+            performers.append(f"📈 **Top Gainer:** {p(user_id, name)} `+{change}`")
+    if stats.get("biggest_loser"):
+        user_id, name, change = stats["biggest_loser"]
+        performers.append(f"📉 **Biggest Drop:** {p(user_id, name)} `{change}`")
+    if stats.get("most_active"):
+        user_id, name, count = stats["most_active"]
+        performers.append(f"👑 **Most Active:** {p(user_id, name)} — {count} matches")
+    if stats.get("deck_variety"):
+        user_id, name, count = stats["deck_variety"]
+        performers.append(f"🎴 **Deck Variety:** {p(user_id, name)} — {count} decks")
+    if performers:
+        embed.add_field(name="🏅 Top Performers", value=_join_lines(performers), inline=False)
+
+    # --- Match highlights ---
+    highlights = []
+    if stats.get("biggest_upset"):
+        winner_id, winner_name, loser_id, loser_name, change = stats["biggest_upset"]
+        highlights.append(
+            f"🎯 **Biggest Upset:** {p(winner_id, winner_name)} beat {p(loser_id, loser_name)} `+{change}`"
+        )
+    if stats.get("highest_rated"):
+        w_id, w_name, l_id, l_name, w_elo, l_elo = stats["highest_rated"]
+        highlights.append(
+            f"🏆 **Highest Rated:** {p(w_id, w_name)} `{w_elo}` vs {p(l_id, l_name)} `{l_elo}`"
+        )
+    if stats.get("rivalry"):
+        p1_id, p1, p2_id, p2, p1w, p2w, rivalry_total = stats["rivalry"]
+        highlights.append(
+            f"⚔️ **Rivalry:** {p(p1_id, p1)} vs {p(p2_id, p2)} — `{p1w}-{p2w}` ({rivalry_total} games)"
+        )
+    if highlights:
+        embed.add_field(name="✨ Match Highlights", value=_join_lines(highlights), inline=False)
+
+    # --- Streaks ---
+    streak_lines = []
+    hot = stats.get("hot_streaks") or []
+    for user_id, name, streak in hot[:5]:
+        streak_lines.append(f"🔥 {p(user_id, name)} — **{streak}** wins in a row")
+    if len(hot) > 5:
+        streak_lines.append(f"…and {len(hot) - 5} more")
+    for entry in (stats.get("broken_streaks") or [])[:5]:
+        streak_lines.append(
+            f"💔 {p(entry['player_id'], entry['player'])}'s **{entry['streak']}**-win streak "
+            f"ended by {p(entry['broken_by_id'], entry['broken_by'])}"
+        )
+    if streak_lines:
+        embed.add_field(name="🔥 Streaks", value=_join_lines(streak_lines), inline=False)
+
+    embed.add_field(name="​", value=links, inline=False)
+    return embed
 
 
 async def setup(bot):

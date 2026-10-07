@@ -61,5 +61,8 @@ DEFAULT_TIMEFRAME = 30  # minutes
 # Summit Discord invite (for multi-server branding)
 SUMMIT_DISCORD_INVITE = "https://discord.gg/sorcererssummit"
 
+# Public website — used for player/leaderboard links in the daily & weekly recaps
+WEB_APP_URL = "https://sorcererssummit.com"
+
 # File names
 DECK_DATA_FILE = "deck_data_test.json"

@@ -20,6 +20,9 @@ ALERT_COOLDOWN_SECONDS = 3600  # while still failing, re-alert at most hourly
 
 # Base URLs
 WEB_APP_URL = getattr(config, "WEB_APP_URL", "https://sorcererssummit.com")
+# Every /api/* route on the web app requires an API key (web-app/utils/site_gate.py);
+# without it the data probes below would report 401 instead of the real status.
+WEB_APP_API_KEY = getattr(config, "WEB_APP_API_KEY", "") or ""
 MATCHMAKING_API_HOST = "127.0.0.1"
 MATCHMAKING_API_PORT = 8765
 BOT_API_BASE = f"http://{MATCHMAKING_API_HOST}:{MATCHMAKING_API_PORT}"
@@ -101,7 +104,11 @@ class HealthMonitorCog(commands.Cog):
             async with aiohttp.ClientSession() as session:
                 start = time.monotonic()
                 req_method = getattr(session, method.lower(), session.get)
-                async with req_method(url, timeout=aiohttp.ClientTimeout(total=DOWN_TIMEOUT_S)) as resp:
+                headers = {}
+                if WEB_APP_API_KEY and url.startswith(WEB_APP_URL):
+                    headers["X-API-Key"] = WEB_APP_API_KEY
+                async with req_method(url, headers=headers,
+                                      timeout=aiohttp.ClientTimeout(total=DOWN_TIMEOUT_S)) as resp:
                     elapsed_ms = (time.monotonic() - start) * 1000
                     result = {
                         "name": name,

@@ -24,6 +24,7 @@ if _bot_path not in sys.path:
 from utils.version import APP_VERSION
 from utils.auth import get_current_user, is_admin, is_curio_editor
 from utils.monitoring import init_monitoring
+from utils.site_gate import init_site_gate
 from routes import register_blueprints
 from migrations.enable_wal_mode import enable_wal_mode
 from migrations.create_match_reports_web import create_match_reports_web_table
@@ -156,6 +157,9 @@ def create_app() -> Flask:
 
     # Request timing, outbound API timing and resource sampling
     init_monitoring(app)
+
+    # API gate: /api/* needs an API key or a same-site token (utils/site_gate.py)
+    init_site_gate(app)
 
     # Register all blueprints
     register_blueprints(app)

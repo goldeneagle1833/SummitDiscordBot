@@ -12,6 +12,13 @@ info:
     - **Server-to-server**: `X-API-Key` header or `Authorization: Bearer <key>`
 
 
+    **Every `/api/*` request must carry an API key** (`X-API-Key` / `Bearer`). Requests without one are rejected with
+    `401 {"code": "api_key_required"}` before any handler runs. The only exceptions are `/api/site-token`, `/api/health`
+    and the Stripe webhook. The Sorcerers Summit website itself authenticates with a short-lived site token cookie that
+    the server only issues to its own pages; that path is not available to third parties. Endpoints marked "public"
+    below are public *to key holders and the website* — they do not require a user login on top of the key.
+
+
     Request/response bodies marked as generic objects should be refined from the handler source; endpoints documented
     in `API_DOCUMENTATION.md` include full schemas.'
   contact:

@@ -242,6 +242,9 @@ def app(elo_db, match_db, tmp_path):
     from app import create_app
     test_app = create_app()
     test_app.config["TESTING"] = True
+    # Existing endpoint tests exercise per-route auth without a site token.
+    # The gate itself is covered by tests/test_site_gate.py, which turns it on.
+    test_app.config["SITE_GATE_ENABLED"] = False
     yield test_app
 
 

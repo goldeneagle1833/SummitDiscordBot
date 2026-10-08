@@ -120,6 +120,19 @@ VALID_API_KEYS = [key.strip() for key in API_KEYS_ENV.split(",") if key.strip()]
 # Draft Sorcery API key for server-to-server limited arena endpoints
 DRAFT_SORCERY_API_KEY = os.environ.get("DRAFT_SORCERY_API_KEY", os.environ.get("REALMSDRAFT_API_KEY", ""))
 
+# API gate (utils/site_gate.py): every /api/* request needs an API key or a
+# same-site token issued to the React front end. SITE_GATE_ENABLED=0 only for
+# local debugging. SITE_HOSTS lists extra hostnames allowed to receive a site
+# token (the request's own host is always allowed).
+IS_PRODUCTION = os.environ.get("FLASK_ENV") == "production" or os.environ.get("FLASK_DEBUG") == "0"
+SITE_GATE_ENABLED = os.environ.get("SITE_GATE_ENABLED", "1") != "0"
+SITE_TOKEN_MAX_AGE = int(os.environ.get("SITE_TOKEN_MAX_AGE", str(12 * 60 * 60)))  # seconds
+SITE_HOSTS = {
+    h.strip().lower()
+    for h in os.environ.get("SITE_HOSTS", "sorcererssummit.com,www.sorcererssummit.com").split(",")
+    if h.strip()
+}
+
 # OpenAI API key (shared from discord-bot/.env) — used for spotlight descriptions
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 

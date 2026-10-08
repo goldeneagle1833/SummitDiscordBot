@@ -4,6 +4,12 @@ from flask import Blueprint
 
 api_bp = Blueprint("api", __name__)
 
+# Site token for the React front end (see utils/site_gate.py).  Every other
+# /api/* route requires an API key or this token.
+from utils.site_gate import site_token_view
+
+api_bp.add_url_rule("/site-token", endpoint="site_token", view_func=site_token_view)
+
 # Import and register sub-blueprints
 from routes.api.leaderboard import leaderboard_bp
 from routes.api.matches import matches_bp

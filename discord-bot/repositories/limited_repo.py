@@ -398,16 +398,26 @@ def get_limited_lifetime_elo(user_id: int) -> int:
     return row[0] if row and row[0] else 1500
 
 
-def upsert_limited_elo(user_id: int, display_name: str, new_elo: int, elo_change: int = None):
+def upsert_limited_elo(
+    user_id: int,
+    display_name: str,
+    new_elo: int,
+    elo_change: int = None,
+    lifetime_change: int = None,
+):
     """Insert or update a user's Limited ELO rating.
 
-    If elo_change is provided, lifetime_elo is also adjusted by that amount.
-    If elo_change is None (e.g. admin spot fix), only season elo is set.
+    Season and lifetime are separate ladders, so match reporting passes
+    ``lifetime_change`` computed from the lifetime ratings themselves.
+    If only ``elo_change`` is given (legacy callers), lifetime moves by that
+    amount. If neither is given (e.g. admin spot fix), only season elo is set.
     """
+    if lifetime_change is None:
+        lifetime_change = elo_change
     create_limited_tables()
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
-    if elo_change is not None:
+    if lifetime_change is not None:
         cur.execute(
             """INSERT INTO limited_elo (user_id, user_display_name, elo, lifetime_elo)
                VALUES (?, ?, ?, ?)
@@ -415,7 +425,7 @@ def upsert_limited_elo(user_id: int, display_name: str, new_elo: int, elo_change
                    user_display_name = excluded.user_display_name,
                    elo = excluded.elo,
                    lifetime_elo = lifetime_elo + ?""",
-            (user_id, display_name, new_elo, 1500 + elo_change, elo_change),
+            (user_id, display_name, new_elo, 1500 + lifetime_change, lifetime_change),
         )
     else:
         cur.execute(

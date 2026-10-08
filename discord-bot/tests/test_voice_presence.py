@@ -13,6 +13,13 @@ from services.voice_presence import parse_user_ids, voice_session
 
 
 @pytest.fixture(autouse=True)
+def pin_guild_id(monkeypatch):
+    """Other tests (or config.py from config.example.py) may load config first
+    with a different GUILD_ID; these tests build their fake guild with id 1."""
+    monkeypatch.setattr(voice_presence.config, "GUILD_ID", 1, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def clear_invite_cache():
     voice_presence._invite_cache.clear()
     yield

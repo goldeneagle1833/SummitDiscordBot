@@ -19,6 +19,18 @@ def clear_invite_cache():
     voice_presence._invite_cache.clear()
 
 
+@pytest.fixture(autouse=True)
+def guild_id_is_one(monkeypatch):
+    """The fake bots below register guild 1.
+
+    The ``sys.modules.setdefault`` above only installs the mock config when
+    this module is the first to import ``config``.  In a full run another
+    test has usually imported the real one already (``GUILD_ID = 0``), so
+    pin the value on whichever module voice_presence is actually using.
+    """
+    monkeypatch.setattr(voice_presence.config, "GUILD_ID", 1, raising=False)
+
+
 def make_member(user_id, name, channel=None, streaming=False, bot=False):
     member = MagicMock()
     member.id = user_id

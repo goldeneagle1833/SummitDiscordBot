@@ -335,8 +335,13 @@ describe('BracketsAdmin card sets', () => {
     const field = await screen.findByLabelText('Set for Season 7 Postseason')
     expect(field).toHaveValue('Gothic')
 
-    await userEvent.clear(field)
-    await userEvent.type(field, 'Beta{Enter}')
+    // Explicit events rather than clear()+type(): the field saves on blur, and
+    // under CI load the keystroke sequence raced the controlled value, leaving
+    // "GothicBeta" in the input.
+    fireEvent.change(field, { target: { value: 'Beta' } })
+    expect(field).toHaveValue('Beta')
+    fireEvent.keyDown(field, { key: 'Enter' })
+    fireEvent.blur(field)
     await waitFor(() =>
       expect(adminUpdateBracket).toHaveBeenCalledWith('season-7', { set_name: 'Beta' }),
     )

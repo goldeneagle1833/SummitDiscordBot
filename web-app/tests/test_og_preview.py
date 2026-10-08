@@ -11,6 +11,20 @@ BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 
 @pytest.fixture(autouse=True)
+def _stub_spa_build(tmp_path, monkeypatch):
+    """Point the SPA fallback at a stub index.html.
+
+    The real file is ``frontend/dist/index.html`` — gitignored build output
+    that doesn't exist in CI (pytest runs before ``npm run build``), so the
+    browser-UA test must not depend on it.
+    """
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text('<!doctype html><html><body><div id="root"></div></body></html>')
+    monkeypatch.setattr(og_preview, "_SPA_DIR", str(dist))
+
+
+@pytest.fixture(autouse=True)
 def _clear_deck_summary_cache():
     """Deck summaries are cached at module level — reset between tests."""
     og_preview._deck_summaries = None

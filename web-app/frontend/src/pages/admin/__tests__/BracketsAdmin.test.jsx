@@ -319,7 +319,10 @@ describe('BracketsAdmin card sets', () => {
     adminCreateBracket.mockResolvedValue({ slug: 'new', entrant_count: 2, short_by: 0 })
     renderWithRouter(<BracketsAdmin />)
     await screen.findByText('Season 7 Postseason')
-    expect(screen.getByLabelText('Set', { selector: '#bracket-set' })).toHaveValue('Gothic')
+    // The newest set is filled in by an effect after the list loads — wait for it.
+    await waitFor(() =>
+      expect(screen.getByLabelText('Set', { selector: '#bracket-set' })).toHaveValue('Gothic'),
+    )
 
     await userEvent.type(screen.getByLabelText('Name'), 'New Cup')
     await userEvent.click(screen.getByRole('button', { name: /create draft/i }))
@@ -333,7 +336,7 @@ describe('BracketsAdmin card sets', () => {
   it('moves a bracket to another set', async () => {
     renderWithRouter(<BracketsAdmin />)
     const field = await screen.findByLabelText('Set for Season 7 Postseason')
-    expect(field).toHaveValue('Gothic')
+    await waitFor(() => expect(field).toHaveValue('Gothic'))
 
     // Explicit events rather than clear()+type(): the field saves on blur, and
     // under CI load the keystroke sequence raced the controlled value, leaving

@@ -284,10 +284,9 @@ BRACKET_REPORT_WINDOW = timedelta(hours=48)
 def _acknowledge_bracket_pairing(data: dict, winner_id: str, loser_id: str):
     """Answer a report for a bracket table, or None when it is not one.
 
-    Bracket results are settled on the bracket page, so there is nothing to
-    record here - and above all nothing to rate. Returning 200 keeps the
-    integration healthy instead of leaving PSO retrying a report we
-    deliberately ignore.
+    The winner is filed on the bracket as a report the players confirm,
+    and nothing is rated. Returning 200 keeps the integration healthy
+    instead of leaving PSO retrying.
     """
     from repositories.brackets import BracketRepository
 
@@ -338,13 +337,26 @@ def _acknowledge_bracket_pairing(data: dict, winner_id: str, loser_id: str):
             "success": False,
         }), 400
 
-    logger.info("Acknowledged bracket table report for %s", pairing_id)
+    # The table's result goes on the bracket as a report the players confirm
+    # or dispute there. It never touches ELO.
+    from services.brackets import BracketService
+
+    try:
+        state = BracketService(repo=repo).record_table_result(
+            bracket["bracket_id"], match_no, winner_id
+        )
+    except Exception as e:
+        logger.error("Could not file bracket table result for %s: %s", pairing_id, e)
+        state = bracket_match["state"]
+
+    logger.info("Bracket table report for %s: match is %s", pairing_id, state)
     return jsonify({
         "success": True,
         "pipeline": "bracket",
         "bracket_slug": bracket["slug"],
         "match_no": match_no,
-        "message": "Recorded on the bracket; players settle this match there.",
+        "state": state,
+        "message": "Recorded on the bracket; players confirm the result there.",
     })
 
 

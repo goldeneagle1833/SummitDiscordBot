@@ -549,6 +549,49 @@ class TestReporting:
         assert service.get_player_open_matches("u1") == []
         assert [m["needs"] for m in service.get_player_open_matches("u8")] == ["confirm"]
 
+    def test_a_table_result_waits_for_either_player_to_confirm(self, service, repo):
+        slug, bracket_id = published(service, repo, 8)
+        match = self._first_match(service, slug)
+
+        state = service.record_table_result(bracket_id, match["match_no"], "u8")
+
+        assert state == "reported"
+        stored = repo.get_match(bracket_id, match["match_no"])
+        assert stored["reported_by"] == service.TABLE_REPORTER
+        assert stored["reported_winner_id"] == "u8"
+        assert stored["expires_at"] > time.time()
+        assert [m["needs"] for m in service.get_player_open_matches("u1")] == ["confirm"]
+        assert [m["needs"] for m in service.get_player_open_matches("u8")] == ["confirm"]
+
+        service.confirm_result(slug, match["match_no"], "u1", agree=True)
+        assert repo.get_match(bracket_id, match["match_no"])["winner_user_id"] == "u8"
+
+    def test_a_disputed_table_result_goes_back_for_reporting(self, service, repo):
+        slug, bracket_id = published(service, repo, 8)
+        match = self._first_match(service, slug)
+        service.record_table_result(bracket_id, match["match_no"], "u8")
+
+        assert service.confirm_result(slug, match["match_no"], "u1", agree=False) == {
+            "state": "disputed"
+        }
+        assert repo.get_match(bracket_id, match["match_no"])["state"] == "pending"
+
+    def test_a_table_result_never_overrides_a_players_report(self, service, repo):
+        slug, bracket_id = published(service, repo, 8)
+        match = self._first_match(service, slug)
+        service.report_result(slug, match["match_no"], "u1", "u1")
+
+        assert service.record_table_result(bracket_id, match["match_no"], "u8") == "reported"
+        stored = repo.get_match(bracket_id, match["match_no"])
+        assert stored["reported_by"] == "u1"
+        assert stored["reported_winner_id"] == "u1"
+
+    def test_a_table_result_names_one_of_the_players(self, service, repo):
+        slug, bracket_id = published(service, repo, 8)
+        match = self._first_match(service, slug)
+        with pytest.raises(BracketError, match="one of the two players"):
+            service.record_table_result(bracket_id, match["match_no"], "stranger")
+
     def test_winning_the_final_completes_the_bracket(self, service, repo):
         slug, bracket_id = published(service, repo, 2)
         final = repo.get_matches(bracket_id)[0]
@@ -2501,6 +2544,12 @@ class TestBracketApi:
         body = resp.get_json()
         assert body["pipeline"] == "bracket"
         assert body["bracket_slug"] == slug
+        assert body["state"] == "reported"
+
+        # The table's winner waits on the bracket for the players to confirm.
+        match = admin_session.get(f"/api/brackets/{slug}").get_json()["rounds"][0]["matches"][0]
+        assert match["state"] == "reported"
+        assert match["reported_winner_id"] == "p_one"
 
     def _report(self, app, **overrides):
         payload = {

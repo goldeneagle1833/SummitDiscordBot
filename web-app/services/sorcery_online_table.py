@@ -193,6 +193,8 @@ def provision_match_table(pairing_id: str, players: list[dict]) -> dict:
         "pairingId": str(pairing_id)[:64],
         "queueType": BRACKET_QUEUE_TYPE,
         "voiceType": DEFAULT_VOICE_TYPE,
+        # Spectators ask a player to let them in, and replays start private.
+        "private": True,
         "players": [
             {
                 "discordUserId": str(player["user_id"]),

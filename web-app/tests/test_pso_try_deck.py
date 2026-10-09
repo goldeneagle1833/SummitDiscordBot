@@ -102,8 +102,9 @@ class TestProvisionDeckTable:
         assert players[1]["displayName"] == pso.OPEN_SEAT_NAME
         assert players[1]["discordUserId"] != players[0]["discordUserId"]
         assert captured["json"]["voiceType"] == "voice"
+        assert "private" not in captured["json"]
 
-    def test_bracket_table_always_sends_voice_type(self, configured, monkeypatch):
+    def test_bracket_table_is_private_and_sends_voice_type(self, configured, monkeypatch):
         captured = {}
 
         def fake_post(url, json=None, headers=None, timeout=None):
@@ -124,6 +125,7 @@ class TestProvisionDeckTable:
 
         assert captured["json"]["queueType"] == "ranked"
         assert captured["json"]["voiceType"] == "voice"
+        assert captured["json"]["private"] is True
 
     def test_visitor_gets_their_own_seat_whatever_the_order(self, configured, monkeypatch):
         """The visitor's link is matched by id, not by position in the response."""

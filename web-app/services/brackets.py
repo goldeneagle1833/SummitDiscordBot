@@ -632,6 +632,41 @@ class BracketService:
             "expires_in_hours": bracket["confirm_hours"],
         }
 
+    TABLE_REPORTER = "sorcery-online"
+
+    def record_table_result(self, bracket_id: int, match_no: int, winner_user_id: str) -> str:
+        """File the winner Sorcery Online reports for a bracket table.
+
+        It goes in as a report the players confirm or dispute, exactly like
+        one a player filed, so a wrong result can still be put right. A match
+        a player has already reported or that is settled is left alone.
+        Returns the match's state afterwards.
+        """
+        bracket = self._repo.get_bracket(bracket_id=int(bracket_id))
+        match = self._repo.get_match(int(bracket_id), int(match_no)) if bracket else None
+        if not match:
+            raise BracketError("Match not found")
+        if bracket["status"] == "draft" or match["state"] != "pending" or not _is_playable(match):
+            return match["state"]
+
+        winner_user_id = str(winner_user_id)
+        if winner_user_id not in (match["p1_user_id"], match["p2_user_id"]):
+            raise BracketError("The winner has to be one of the two players")
+
+        window = int(bracket["confirm_hours"] or 48) * 3600
+        self._repo.update_match(
+            bracket["bracket_id"],
+            int(match_no),
+            {
+                "state": "reported",
+                "reported_by": self.TABLE_REPORTER,
+                "reported_winner_id": winner_user_id,
+                "reported_at": datetime.now().isoformat(),
+                "expires_at": int(time.time()) + window,
+            },
+        )
+        return "reported"
+
     def confirm_result(self, slug: str, match_no: int, user_id: str, agree: bool = True) -> dict:
         """The opponent confirms a reported result, or disputes it."""
         bracket, match = self._require_live_match(slug, match_no)

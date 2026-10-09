@@ -4,6 +4,7 @@ import datetime
 import os
 import sqlite3
 import sys
+import time
 from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
@@ -27,6 +28,20 @@ from cogs.fun import (  # noqa: E402
 
 
 EST = ZoneInfo("America/New_York")
+
+
+@pytest.fixture(autouse=True)
+def _local_clock_in_est(monkeypatch):
+    """The cog stamps naive datetime.now() and reads naive stamps back as EST.
+
+    On a UTC runner between UTC and EST midnight the two calendar days differ,
+    so pin the process clock to EST like the bot's server.
+    """
+    monkeypatch.setenv("TZ", "America/New_York")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
 
 
 @pytest.fixture()

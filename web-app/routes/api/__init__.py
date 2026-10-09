@@ -29,6 +29,7 @@ from routes.api.fun_stats import fun_stats_bp
 from routes.api.events import events_bp
 from routes.api.analytics import analytics_bp
 from routes.api.deck_recommendations import deck_rec_bp
+from routes.api.deck_archetypes import deck_archetypes_bp
 from routes.api.creator import creator_bp
 from routes.api.explorer import explorer_bp
 from routes.api.explorer_applications import explorer_applications_bp
@@ -61,6 +62,7 @@ api_bp.register_blueprint(fun_stats_bp)
 api_bp.register_blueprint(events_bp)
 api_bp.register_blueprint(analytics_bp)
 api_bp.register_blueprint(deck_rec_bp, url_prefix="/deck-rec")
+api_bp.register_blueprint(deck_archetypes_bp)
 api_bp.register_blueprint(creator_bp, url_prefix="/creator")
 api_bp.register_blueprint(explorer_bp, url_prefix="/explorer")
 api_bp.register_blueprint(

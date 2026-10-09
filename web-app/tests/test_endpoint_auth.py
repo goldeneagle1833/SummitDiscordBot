@@ -145,6 +145,10 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # Throttled per client in services/sorcery_online_table.py.
     "api.deck_rec.create_pso_table",
 
+    # -- Deck archetypes (public read-only) --
+    "api.deck_archetypes.list_archetypes",
+    "api.deck_archetypes.get_archetype",
+
     # -- Ranked analytics (public read-only proxy to Play Sorcery Online) --
     # The shared partner key stays server-side; only the four read routes are
     # forwarded and each client is throttled in services/ranked_analytics.py.

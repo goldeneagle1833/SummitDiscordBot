@@ -793,7 +793,7 @@ export default function Nav() {
           <SidebarLink to="/avatars/top-players" label="Avatar Top 16" location={location} onClick={close} />
           <SidebarLink to="/cards/played-winrates" label="Card Win Rates" location={location} onClick={close} />
           <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
-           <SidebarLink to="/deck-archetypes" label="Deck Archetypes" location={location} onClick={close} />
+          <SidebarLink to="/deck-archetypes" label="Deck Archetypes" location={location} onClick={close} />
 
           {/* Event Info */}
           <SidebarHeading label="Event Info" />

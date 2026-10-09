@@ -110,6 +110,10 @@ BUSINESS_DOC.md
 SALES_DOC.md
 scripts/pull_logs.ps1
 web-app/.spotlight_desc_cache.json
+# Deck Archetypes seed decks fetched from sorcerytcg.com at runtime
+web-app/data/archetype_seed_decks.cache.json
+web-app/data/archetype_seed_decks.cache.tmp
+web-app/data/archetype_seed_decks.cache.lock
 web-app/top-8-decks-by-event/latest_event.json
 # Store database backups (contain customer shipping addresses)
 web-app/backups/

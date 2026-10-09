@@ -1,0 +1,5799 @@
+{
+ "description": "Tournament decklists from the Deck Archetypes contribution (PR #72) whose events are not on the Top 8 page. Card lists are fetched from sorcerytcg.com once and cached in archetype_seed_decks.cache.json.",
+ "source": "Tournament data compiled by Golden Eagle at Sorcerers Summit",
+ "generated": "2026-10-08T22:29:52.210133+00:00",
+ "decks": [
+  {
+   "id": "cmobu9jsm00f804l1i7xlnpl0",
+   "name": "TerriblePracticePrecon",
+   "url": "https://sorcerytcg.com/decks/cmobu9jsm00f804l1i7xlnpl0",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Washington DC",
+     "date": "2026-05-30",
+     "player": "abcdefg",
+     "placement": 1,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmm45q5mu00dh04l7mzhl477o",
+   "name": "Heavier than a Duck - 2nd place SCGCon DC Grand Contest",
+   "url": "https://sorcerytcg.com/decks/cmm45q5mu00dh04l7mzhl477o",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "SCG CON Washington DC",
+     "date": "2026-05-30",
+     "player": "emperorigor",
+     "placement": 2,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmppimy4s005804l1m8zu23qi",
+   "name": "Not Another Druid List",
+   "url": "https://sorcerytcg.com/decks/cmppimy4s005804l1m8zu23qi",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "SCG CON Washington DC",
+     "date": "2026-05-30",
+     "player": "OhBaby1",
+     "placement": 3,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmptwc0wj000404jra5gajp9g",
+   "name": "W/A Necro Grand Contest DC",
+   "url": "https://sorcerytcg.com/decks/cmptwc0wj000404jra5gajp9g",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Washington DC",
+     "date": "2026-05-30",
+     "player": "CameraObscura",
+     "placement": 4,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmpulk97l000604lg2oeaaaap",
+   "name": "FE Archimago - Top 8 SCGCon DC Grand Contest",
+   "url": "https://sorcerytcg.com/decks/cmpulk97l000604lg2oeaaaap",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "SCG CON Washington DC",
+     "date": "2026-05-30",
+     "player": "herbig",
+     "placement": 5,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmpejfcey00ll04le33z2508i",
+   "name": "Scgcon DC top8 imposter",
+   "url": "https://sorcerytcg.com/decks/cmpejfcey00ll04le33z2508i",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "SCG CON Washington DC",
+     "date": "2026-05-30",
+     "player": "paladin_of_io",
+     "placement": 6,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmpuea7lu00j204l5bvepfisb",
+   "name": "Water Pathfinder Grand Contest Top 8",
+   "url": "https://sorcerytcg.com/decks/cmpuea7lu00j204l5bvepfisb",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "SCG CON Washington DC",
+     "date": "2026-05-30",
+     "player": "Pathfinder",
+     "placement": 7,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmoz800uw00dc04l2j24vc0ro",
+   "name": "Algor Necrobliss",
+   "url": "https://sorcerytcg.com/decks/cmoz800uw00dc04l2j24vc0ro",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Washington DC",
+     "date": "2026-05-30",
+     "player": "Xanth",
+     "placement": 8,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmmo5sa7r00em04jvhfgte3a4",
+   "name": "Jihadi surprise scg Vegas 1st",
+   "url": "https://sorcerytcg.com/decks/cmmo5sa7r00em04jvhfgte3a4",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "SCG CON Las Vegas",
+     "date": "2026-06-28",
+     "player": "dragonqueendora",
+     "placement": 1,
+     "top8": true,
+     "topCut": true
+    },
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "dragonqueendora",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmnlbec64017i04joty06gldf",
+   "name": "Map Control - 2nd SCG Con Vegas",
+   "url": "https://sorcerytcg.com/decks/cmnlbec64017i04joty06gldf",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "SCG CON Las Vegas",
+     "date": "2026-06-28",
+     "player": "Gwen",
+     "placement": 2,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmqrn3p7500t304l4v7m7qmtk",
+   "name": "HELLAMENTALIST - 3rd in Grand Contest Vegas 2026 - “All The Best”",
+   "url": "https://sorcerytcg.com/decks/cmqrn3p7500t304l4v7m7qmtk",
+   "avatar": "Elementalist",
+   "entries": [
+    {
+     "event": "SCG CON Las Vegas",
+     "date": "2026-06-28",
+     "player": "Michael Mindes",
+     "placement": 3,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmms1ylvf003f04ikyzvc8y06",
+   "name": "Eat Our Dust - SCG Con Las Vegas 2026 4th place",
+   "url": "https://sorcerytcg.com/decks/cmms1ylvf003f04ikyzvc8y06",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "SCG CON Las Vegas",
+     "date": "2026-06-28",
+     "player": "Bob Sacamano",
+     "placement": 4,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmnt1f9p9006q04l7y98ldn8w",
+   "name": "Enchantress? Never heard of her (top 8 SCG Vegas)",
+   "url": "https://sorcerytcg.com/decks/cmnt1f9p9006q04l7y98ldn8w",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "SCG CON Las Vegas",
+     "date": "2026-06-28",
+     "player": "Rackhir",
+     "placement": 5,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmpzutgsy00i704l5j9mmw97t",
+   "name": "\"Spitfire\"  | Top 8 SCG Con Las Vegas 2026 (5-1-0)",
+   "url": "https://sorcerytcg.com/decks/cmpzutgsy00i704l5j9mmw97t",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "SCG CON Las Vegas",
+     "date": "2026-06-28",
+     "player": "MeterPaleTone",
+     "placement": 6,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmqwjsshl00au04l5vyvu9b4z",
+   "name": "4 Big BOOOOMS - SCG Vegas top 8",
+   "url": "https://sorcerytcg.com/decks/cmqwjsshl00au04l5vyvu9b4z",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "SCG CON Las Vegas",
+     "date": "2026-06-28",
+     "player": "TbagScandalous",
+     "placement": 7,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmqyjjnxa01n604jx46mnuuip",
+   "name": "DragonLord SCGCON Top 8 by Deion",
+   "url": "https://sorcerytcg.com/decks/cmqyjjnxa01n604jx46mnuuip",
+   "avatar": "Dragonlord",
+   "entries": [
+    {
+     "event": "SCG CON Las Vegas",
+     "date": "2026-06-28",
+     "player": "Goldeneagle1833",
+     "placement": 8,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmm0yp4nd007h04jyjszzpubd",
+   "name": "Dank Magic",
+   "url": "https://sorcerytcg.com/decks/cmm0yp4nd007h04jyjszzpubd",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "Dado",
+     "placement": 3,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmpacz5qa00ym04lbjb82m5xb",
+   "name": "shart style - Summit top 8",
+   "url": "https://sorcerytcg.com/decks/cmpacz5qa00ym04lbjb82m5xb",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "Sirmurrmurr",
+     "placement": 4,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmpakajnf00lk04jmegpeuhgx",
+   "name": "Nonsensical - S4 Top Cut",
+   "url": "https://sorcerytcg.com/decks/cmpakajnf00lk04jmegpeuhgx",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "Chuch",
+     "placement": 5,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmpyv0evx002704jvo5ye7kxu",
+   "name": "Mudmen",
+   "url": "https://sorcerytcg.com/decks/cmpyv0evx002704jvo5ye7kxu",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "StealthCat",
+     "placement": 6,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmq7frrq5003404iiji9rh8bz",
+   "name": "SammyGL Summit S4 Top 8 - Avatar of Ash",
+   "url": "https://sorcerytcg.com/decks/cmq7frrq5003404iiji9rh8bz",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "SammyGL",
+     "placement": 7,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmq8x1otf00y504l4v3jjhvd4",
+   "name": "Sunday Drowny Sunday (locked for Top Cut S4)",
+   "url": "https://sorcerytcg.com/decks/cmq8x1otf00y504l4v3jjhvd4",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "UnderSietch",
+     "placement": 8,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmil2w3hh0050l804v5sqe44v",
+   "name": "OMINOUS | Summit Top 16 S5/S6",
+   "url": "https://sorcerytcg.com/decks/cmil2w3hh0050l804v5sqe44v",
+   "avatar": "Spellslinger",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "goodluckbad",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    },
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmk48tpsx1q270afmnko5eaew",
+   "name": "PR Nightmare",
+   "url": "https://sorcerytcg.com/decks/cmk48tpsx1q270afmnko5eaew",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "Lester_IV",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmnu7hkh3007804la7ocfwfnx",
+   "name": "Burned Stones",
+   "url": "https://sorcerytcg.com/decks/cmnu7hkh3007804la7ocfwfnx",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "weisel",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmpdl78x1000n04l5kex4dcvq",
+   "name": "New dankness",
+   "url": "https://sorcerytcg.com/decks/cmpdl78x1000n04l5kex4dcvq",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "Ceej",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmpfnqspf00ix04l7x6d6fzws",
+   "name": "PSG?",
+   "url": "https://sorcerytcg.com/decks/cmpfnqspf00ix04l7x6d6fzws",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "Geoffrey",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmpu2jad1012604lao0i0v2xi",
+   "name": "Of Dust and Sky [Summit S4 TopCut DO NOT EDIT]",
+   "url": "https://sorcerytcg.com/decks/cmpu2jad1012604lao0i0v2xi",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "KingSky",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmq5to8ri001y04l47g2wq5zo",
+   "name": "Steam's Still Hot Mk.2",
+   "url": "https://sorcerytcg.com/decks/cmq5to8ri001y04l47g2wq5zo",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "OhBaby1",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmq89pate00rn04js1zri0l0e",
+   "name": "BaffledPracticePrecon",
+   "url": "https://sorcerytcg.com/decks/cmq89pate00rn04js1zri0l0e",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "abcdefg",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmq8s5cp300t004l8yw2p86wp",
+   "name": "Aadu s4 topcut",
+   "url": "https://sorcerytcg.com/decks/cmq8s5cp300t004l8yw2p86wp",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "Aadu",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmq8xroe500k004jyz9o0qz3u",
+   "name": "Fury Geode - S4 Top Cut",
+   "url": "https://sorcerytcg.com/decks/cmq8xroe500k004jyz9o0qz3u",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "FooPossum",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmqayn5fa00pb04if881qtdvv",
+   "name": "Goth Springs 2.0",
+   "url": "https://sorcerytcg.com/decks/cmqayn5fa00pb04if881qtdvv",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "Duo",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmqbiyjc700r704l5d4k8n0pv",
+   "name": "Summit Season 4 - Fire in the Sky",
+   "url": "https://sorcerytcg.com/decks/cmqbiyjc700r704l5d4k8n0pv",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "Astarael7th",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmqbjyicz001u04l8n9yu5lns",
+   "name": "Rinderkennzeichnungsfleischetikettierungsüberwachungsaufgabenübertragungsgesetzzauberer",
+   "url": "https://sorcerytcg.com/decks/cmqbjyicz001u04l8n9yu5lns",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "user0",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmqc9j0d600ac04jm111qxaow",
+   "name": "Summit TTS League Season 4 Top Cut - A Frankenstein's thing - Petrus (ierp_999)",
+   "url": "https://sorcerytcg.com/decks/cmqc9j0d600ac04jm111qxaow",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "Gothic Season 4",
+     "date": "2026-07-18",
+     "player": "ierp",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmsq3wsfx00060ajeep0nrkuf",
+   "name": "1st place - GC Auckland 2026 - Death & Tax Evasion",
+   "url": "https://sorcerytcg.com/decks/cmsq3wsfx00060ajeep0nrkuf",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "New Zealand Grand Contest",
+     "date": "2026-08-15",
+     "player": "Henchmen",
+     "placement": 1,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmsqjys4x00030akymu0siw9l",
+   "name": "Mist Imposter Auckland GC Bardsword",
+   "url": "https://sorcerytcg.com/decks/cmsqjys4x00030akymu0siw9l",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "New Zealand Grand Contest",
+     "date": "2026-08-15",
+     "player": "Bardsword",
+     "placement": 2,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmsqpmvxq00010bj6c7b5zpcc",
+   "name": "Matthew M - NZ GC list",
+   "url": "https://sorcerytcg.com/decks/cmsqpmvxq00010bj6c7b5zpcc",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "New Zealand Grand Contest",
+     "date": "2026-08-15",
+     "player": "MattdogNZ",
+     "placement": 3,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmq2zjld7003704l6l1ewoy3x",
+   "name": "Splash-Bang Brigade - 5th place NZ Grand Contest",
+   "url": "https://sorcerytcg.com/decks/cmq2zjld7003704l6l1ewoy3x",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "New Zealand Grand Contest",
+     "date": "2026-08-15",
+     "player": "SupaLuca",
+     "placement": 4,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmkezv1gm00ey04jj7ci8o82j",
+   "name": "Chop chop",
+   "url": "https://sorcerytcg.com/decks/cmkezv1gm00ey04jj7ci8o82j",
+   "avatar": "Bladedancer",
+   "entries": [
+    {
+     "event": "New Zealand Grand Contest",
+     "date": "2026-08-15",
+     "player": "Veetbeeks",
+     "placement": 5,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmqqbqqas008u04l4yid3nmv9",
+   "name": "For glory",
+   "url": "https://sorcerytcg.com/decks/cmqqbqqas008u04l4yid3nmv9",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "New Zealand Grand Contest",
+     "date": "2026-08-15",
+     "player": "richwatts",
+     "placement": 6,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmsqxsx1m00000bkslodgmsz9",
+   "name": "salt the earth GC",
+   "url": "https://sorcerytcg.com/decks/cmsqxsx1m00000bkslodgmsz9",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "New Zealand Grand Contest",
+     "date": "2026-08-15",
+     "player": "Dannik",
+     "placement": 7,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmssqd4vs000x0aj94odn66u4",
+   "name": "Savior v2 - 2nd place GC Auckland 2026",
+   "url": "https://sorcerytcg.com/decks/cmssqd4vs000x0aj94odn66u4",
+   "avatar": "Savior",
+   "entries": [
+    {
+     "event": "New Zealand Grand Contest",
+     "date": "2026-08-15",
+     "player": "hoohex",
+     "placement": 8,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmt6q0xf300wu04l8hqcwxa7r",
+   "name": "1st great stories cornerstone",
+   "url": "https://sorcerytcg.com/decks/cmt6q0xf300wu04l8hqcwxa7r",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Great Stories Cornerstone (61 players)",
+     "date": "2026-08-23",
+     "player": "Sedge",
+     "placement": 1,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmt4lg3ke012804jxwt4xxy83",
+   "name": "Lava is Good",
+   "url": "https://sorcerytcg.com/decks/cmt4lg3ke012804jxwt4xxy83",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Great Stories Cornerstone (61 players)",
+     "date": "2026-08-23",
+     "player": "Aadu",
+     "placement": 2,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmsia6wia000f0bjjxni2hx7l",
+   "name": "bm",
+   "url": "https://sorcerytcg.com/decks/cmsia6wia000f0bjjxni2hx7l",
+   "avatar": "Battlemage",
+   "entries": [
+    {
+     "event": "Great Stories Cornerstone (61 players)",
+     "date": "2026-08-23",
+     "player": "Ennis",
+     "placement": 3,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmt6rw4xh00be04l4zq2lwrad",
+   "name": "FE Archimago - MA Cornerstone Top 8",
+   "url": "https://sorcerytcg.com/decks/cmt6rw4xh00be04l4zq2lwrad",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "Great Stories Cornerstone (61 players)",
+     "date": "2026-08-23",
+     "player": "herbig",
+     "placement": 4,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmsaeoeiv00000bgidzxe13wt",
+   "name": "Water",
+   "url": "https://sorcerytcg.com/decks/cmsaeoeiv00000bgidzxe13wt",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Great Stories Cornerstone (61 players)",
+     "date": "2026-08-23",
+     "player": "Ozrix",
+     "placement": 5,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmt7bsnfh00ep04jvcxqb31xy",
+   "name": "Earth, Witch, and Fire - MA Cornerstone Top 8",
+   "url": "https://sorcerytcg.com/decks/cmt7bsnfh00ep04jvcxqb31xy",
+   "avatar": "Witch",
+   "entries": [
+    {
+     "event": "Great Stories Cornerstone (61 players)",
+     "date": "2026-08-23",
+     "player": "Ragnorak",
+     "placement": 6,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrozhmrr008804jj205e0zu1",
+   "name": "1st place - S5 Summit'26 - Exceptional deck, mid pilot",
+   "url": "https://sorcerytcg.com/decks/cmrozhmrr008804jj205e0zu1",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Geoffrey",
+     "placement": 1,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmryx8xpn00050aje0dfxrfkm",
+   "name": "2nd SS5 Top Cut - E/A Return to Dust",
+   "url": "https://sorcerytcg.com/decks/cmryx8xpn00050aje0dfxrfkm",
+   "avatar": "Battlemage",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "nattu",
+     "placement": 2,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmraea68r004504jq9r4fbdb5",
+   "name": "Rainbow Kaiju",
+   "url": "https://sorcerytcg.com/decks/cmraea68r004504jq9r4fbdb5",
+   "avatar": "Elementalist",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Outfall",
+     "placement": 3,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrvk4o3c000709kpa8iaau0g",
+   "name": "Shriking Haunt (Top 4 Summit S5)",
+   "url": "https://sorcerytcg.com/decks/cmrvk4o3c000709kpa8iaau0g",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Sole Ferric",
+     "placement": 4,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrw7zpn2000b0bkf30ndfcts",
+   "name": "Not Another Druid List Mk.4",
+   "url": "https://sorcerytcg.com/decks/cmrw7zpn2000b0bkf30ndfcts",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "OhBaby1",
+     "placement": 5,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmryfto3w00030aknifiq7fr3",
+   "name": "Fire Horses",
+   "url": "https://sorcerytcg.com/decks/cmryfto3w00030aknifiq7fr3",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Sam McKinnon",
+     "placement": 6,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrtgf5gx000e0ajev7jc3jmj",
+   "name": "Geo Courts",
+   "url": "https://sorcerytcg.com/decks/cmrtgf5gx000e0ajev7jc3jmj",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Unknown",
+     "placement": 7,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrz7pko1000309krb4gvoqqx",
+   "name": "Summit S5 Top 8 - New Court Who Dis?",
+   "url": "https://sorcerytcg.com/decks/cmrz7pko1000309krb4gvoqqx",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "SammyGL",
+     "placement": 8,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmnu39w7500be04juio4s4rn9",
+   "name": "Melbourne Grand Contest 2026 Top4",
+   "url": "https://sorcerytcg.com/decks/cmnu39w7500be04juio4s4rn9",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Morgoth",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmqg298vx003104l80pwzxkff",
+   "name": "Preposterous",
+   "url": "https://sorcerytcg.com/decks/cmqg298vx003104l80pwzxkff",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Chuch",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmqu7koav00jf04jm14b70fmo",
+   "name": "minions",
+   "url": "https://sorcerytcg.com/decks/cmqu7koav00jf04jm14b70fmo",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Jjthebeast",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmqv3jdpq007p04l7bci1267f",
+   "name": "Tricity",
+   "url": "https://sorcerytcg.com/decks/cmqv3jdpq007p04l7bci1267f",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Moth",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrnlgerz00q304lcyddgxqhu",
+   "name": "Boogeyman II: Electric Boogalo S5 Summit",
+   "url": "https://sorcerytcg.com/decks/cmrnlgerz00q304lcyddgxqhu",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Dado",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrnude3d00tv04julp2d53cn",
+   "name": "Summit Season 5 Top Cut Deck",
+   "url": "https://sorcerytcg.com/decks/cmrnude3d00tv04julp2d53cn",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Aadu",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrou4mul00f604lah0050mxe",
+   "name": "Pregnant Goth Girls",
+   "url": "https://sorcerytcg.com/decks/cmrou4mul00f604lah0050mxe",
+   "avatar": "Savior",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "sixsixseve_n",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrtioirk00040ai7a1kkvbu4",
+   "name": "Waterfinder Courted",
+   "url": "https://sorcerytcg.com/decks/cmrtioirk00040ai7a1kkvbu4",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Hicham",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrv3as8s00040akp9gpd7m5f",
+   "name": "FireBat - Top Cut BattleMage",
+   "url": "https://sorcerytcg.com/decks/cmrv3as8s00040akp9gpd7m5f",
+   "avatar": "Battlemage",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "UnderSietch",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrvagrt6000g0aknohixav3s",
+   "name": "Summit Topcut season 5 -Ignited Town",
+   "url": "https://sorcerytcg.com/decks/cmrvagrt6000g0aknohixav3s",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Will(minorexplosion)19",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrvclo1r000c09hs0560iyuk",
+   "name": "Enchantress | Muck Court",
+   "url": "https://sorcerytcg.com/decks/cmrvclo1r000c09hs0560iyuk",
+   "avatar": "Enchantress",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "lester_iv",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrw2zyrv00050aj3yjq2jyt6",
+   "name": "Less",
+   "url": "https://sorcerytcg.com/decks/cmrw2zyrv00050aj3yjq2jyt6",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "abcdefg",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrwd5lit00040aktkitq9r1a",
+   "name": "court",
+   "url": "https://sorcerytcg.com/decks/cmrwd5lit00040aktkitq9r1a",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Sirmurrmurr",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrz05oxw00040bjl8dynrvbh",
+   "name": "Sorcerer - Dust Control (S5 Top-Cut)",
+   "url": "https://sorcerytcg.com/decks/cmrz05oxw00040bjl8dynrvbh",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "B-JM-A",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrzjsgdc000j0ajb0mlk2uxm",
+   "name": "Summit Season 5 - 🏰☁️ Court of Clouds ☁️🏰",
+   "url": "https://sorcerytcg.com/decks/cmrzjsgdc000j0ajb0mlk2uxm",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Gothic Season 5",
+     "date": "2026-08-30",
+     "player": "Astarael7th",
+     "placement": null,
+     "top8": false,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmtiay2ha00000aj87rz4d2uj",
+   "name": "Duckworthy",
+   "url": "https://sorcerytcg.com/decks/cmtiay2ha00000aj87rz4d2uj",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Niek",
+     "placement": 1,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmtpcmt4f00000agmmxbozf0b",
+   "name": "Archimago with that big landmass",
+   "url": "https://sorcerytcg.com/decks/cmtpcmt4f00000agmmxbozf0b",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Banish_Pakacuti",
+     "placement": 2,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmsw9t5mt00i004ifrnvaii9o",
+   "name": "Tempo Zoo Elementalist",
+   "url": "https://sorcerytcg.com/decks/cmsw9t5mt00i004ifrnvaii9o",
+   "avatar": "Elementalist",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Sersch",
+     "placement": 3,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmsf8ol2u00020ahyf7rujwuq",
+   "name": "Waterfinder Objects",
+   "url": "https://sorcerytcg.com/decks/cmsf8ol2u00020ahyf7rujwuq",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Hicham",
+     "placement": 4,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmtrdk16300020cgm23mhplt9",
+   "name": "5th Place - Jason S",
+   "url": "https://sorcerytcg.com/decks/cmtrdk16300020cgm23mhplt9",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": 5,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmsdknujy000409jliu6rhc0t",
+   "name": "Bling Bling Battleboy - 6th place Grand Contest Gelsenkirchen Germany 2026",
+   "url": "https://sorcerytcg.com/decks/cmsdknujy000409jliu6rhc0t",
+   "avatar": "Battlemage",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Sven TWA",
+     "placement": 6,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmtre0v0c000a09gm7c18yhxl",
+   "name": "7th Place - Wout R",
+   "url": "https://sorcerytcg.com/decks/cmtre0v0c000a09gm7c18yhxl",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": 7,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmtsivi0u000009gm17f7wdrr",
+   "name": "GC Germany Geomancer",
+   "url": "https://sorcerytcg.com/decks/cmtsivi0u000009gm17f7wdrr",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Nephilias",
+     "placement": 8,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmrl5za1l00050akp1mdh4vya",
+   "name": "EF Gandalf (Grand Contest Gelsenkirchen 5:2)",
+   "url": "https://sorcerytcg.com/decks/cmrl5za1l00050akp1mdh4vya",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "RTZ",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmsdklf12000n0bjf4pas5wlr",
+   "name": "Pawel the Persecutor",
+   "url": "https://sorcerytcg.com/decks/cmsdklf12000n0bjf4pas5wlr",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "TaddelDown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmt26872d016t04ldl16r2twh",
+   "name": "Avatar of Air",
+   "url": "https://sorcerytcg.com/decks/cmt26872d016t04ldl16r2twh",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "s41",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmt7by14f00kt04jr855pbhym",
+   "name": "Tatooine Sunset - GC Ger 14th Place",
+   "url": "https://sorcerytcg.com/decks/cmt7by14f00kt04jr855pbhym",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Phil",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmt993cbq018k04jtpn78dhi9",
+   "name": "16th Place - Ben A \"Against the Storm\"",
+   "url": "https://sorcerytcg.com/decks/cmt993cbq018k04jtpn78dhi9",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtkl88y2000l0ai5bjf2ma8u",
+   "name": "Deathspeaker EF Midrange Value",
+   "url": "https://sorcerytcg.com/decks/cmtkl88y2000l0ai5bjf2ma8u",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "cyremur",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtlqcax300000agi3r4mfqnb",
+   "name": "Betaal maar wat meer.",
+   "url": "https://sorcerytcg.com/decks/cmtlqcax300000agi3r4mfqnb",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Price",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtqa1iao00050agmxxcrnhnq",
+   "name": "Mono Fire Pathfinder - Grand Contest 2026 Germany",
+   "url": "https://sorcerytcg.com/decks/cmtqa1iao00050agmxxcrnhnq",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Moritz B.",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtrf4j7m00010agmf5jd07xn",
+   "name": "9th Place - Thomas S",
+   "url": "https://sorcerytcg.com/decks/cmtrf4j7m00010agmf5jd07xn",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtrf51xh000e0agm8remb8ui",
+   "name": "10th Place - Pontus A",
+   "url": "https://sorcerytcg.com/decks/cmtrf51xh000e0agm8remb8ui",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtrfuoof00050agmhxx4tk33",
+   "name": "20th Place - Pascal S",
+   "url": "https://sorcerytcg.com/decks/cmtrfuoof00050agmhxx4tk33",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtrfvapn000c0agm3j97dbwg",
+   "name": "13th Place - Iso B",
+   "url": "https://sorcerytcg.com/decks/cmtrfvapn000c0agm3j97dbwg",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtrgfnlc000j0agm52de6b8j",
+   "name": "19th Place - Martin H",
+   "url": "https://sorcerytcg.com/decks/cmtrgfnlc000j0agm52de6b8j",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtrgfumd000a0agma7c10tzx",
+   "name": "21st Place - Clemens M",
+   "url": "https://sorcerytcg.com/decks/cmtrgfumd000a0agma7c10tzx",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtrggche000d0agmtrehsi1f",
+   "name": "23rd Place - Jan S",
+   "url": "https://sorcerytcg.com/decks/cmtrggche000d0agmtrehsi1f",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtrgp7j300000agm2yoecf9k",
+   "name": "22nd Place - Tobias S",
+   "url": "https://sorcerytcg.com/decks/cmtrgp7j300000agm2yoecf9k",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtrh0m6g00070bgmfrkcqpl1",
+   "name": "15th Place - Iwan S \"Six Cores\"",
+   "url": "https://sorcerytcg.com/decks/cmtrh0m6g00070bgmfrkcqpl1",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtrh97lw000g0agmxsc6vx6h",
+   "name": "25th Place - Nico F",
+   "url": "https://sorcerytcg.com/decks/cmtrh97lw000g0agmxsc6vx6h",
+   "avatar": "Avatar of Earth",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtrh9ju300090agmzglgl9c1",
+   "name": "26th Place - Felix H",
+   "url": "https://sorcerytcg.com/decks/cmtrh9ju300090agmzglgl9c1",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtri53a3000c0agmwfwdi3p4",
+   "name": "31st Place - Maximilian M",
+   "url": "https://sorcerytcg.com/decks/cmtri53a3000c0agmwfwdi3p4",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtri6xrs00010bgmtn5114kh",
+   "name": "32nd Place Volker S \"of Air\"",
+   "url": "https://sorcerytcg.com/decks/cmtri6xrs00010bgmtn5114kh",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtriepof00010agmwpdk9sgk",
+   "name": "24th Place - Marc P",
+   "url": "https://sorcerytcg.com/decks/cmtriepof00010agmwpdk9sgk",
+   "avatar": "Sparkmage",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtslbsho00020agmvw8wl0i6",
+   "name": "GC Gelsenkirchen 2026",
+   "url": "https://sorcerytcg.com/decks/cmtslbsho00020agmvw8wl0i6",
+   "avatar": "Witch",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "wrieden",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtvra0qr00020agmebsyeuxw",
+   "name": "98th Place - Daniela R",
+   "url": "https://sorcerytcg.com/decks/cmtvra0qr00020agmebsyeuxw",
+   "avatar": "Animist",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtvsfmsn000n0agmvhu1o94l",
+   "name": "36th Place - Felix Z",
+   "url": "https://sorcerytcg.com/decks/cmtvsfmsn000n0agmvhu1o94l",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtvspe3b00010agm8varryah",
+   "name": "37th Place - Matjaz H",
+   "url": "https://sorcerytcg.com/decks/cmtvspe3b00010agm8varryah",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtvsy708001n0agmtardnf30",
+   "name": "38th Place - Pascal K",
+   "url": "https://sorcerytcg.com/decks/cmtvsy708001n0agmtardnf30",
+   "avatar": "Waveshaper",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtvyauv2000j09gmew24q0va",
+   "name": "39th Place - Yunes A",
+   "url": "https://sorcerytcg.com/decks/cmtvyauv2000j09gmew24q0va",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtvyj40300080agml5ob13l7",
+   "name": "40th Place - Peter K",
+   "url": "https://sorcerytcg.com/decks/cmtvyj40300080agml5ob13l7",
+   "avatar": "Elementalist",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtvyuyom00070agmx07118x1",
+   "name": "41st Place - Stefano C",
+   "url": "https://sorcerytcg.com/decks/cmtvyuyom00070agmx07118x1",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtvz7fxf00090agmjum76wi2",
+   "name": "42nd Place - Alexander N",
+   "url": "https://sorcerytcg.com/decks/cmtvz7fxf00090agmjum76wi2",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtvzg1wh000e0agm6s23upcx",
+   "name": "43rd Place - Jan P",
+   "url": "https://sorcerytcg.com/decks/cmtvzg1wh000e0agm6s23upcx",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtvzndj4000y0agmhi98axzc",
+   "name": "44th Place - Philipp S",
+   "url": "https://sorcerytcg.com/decks/cmtvzndj4000y0agmhi98axzc",
+   "avatar": "Interrogator",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtvzxq7i000f0agmtlqorxag",
+   "name": "45th Place - Oliver W",
+   "url": "https://sorcerytcg.com/decks/cmtvzxq7i000f0agmtlqorxag",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtw09k5300000agmw8u9kcz9",
+   "name": "46th Place - Marc S",
+   "url": "https://sorcerytcg.com/decks/cmtw09k5300000agmw8u9kcz9",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtw09vnv00080agm26w4fx3b",
+   "name": "47th Place - Kenneth R",
+   "url": "https://sorcerytcg.com/decks/cmtw09vnv00080agm26w4fx3b",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtw0lscf00060agm4etwczt3",
+   "name": "48th Place - Catharina T",
+   "url": "https://sorcerytcg.com/decks/cmtw0lscf00060agm4etwczt3",
+   "avatar": "Witch",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtw0lxe9000c0agmukyq86fd",
+   "name": "49th Place - Wim C",
+   "url": "https://sorcerytcg.com/decks/cmtw0lxe9000c0agmukyq86fd",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtw0vk0p00000bgm2cuna9a9",
+   "name": "50th Place - Viktor B",
+   "url": "https://sorcerytcg.com/decks/cmtw0vk0p00000bgm2cuna9a9",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtw0y4wr00060bgmw2p4xf54",
+   "name": "51st Place - Oliver W",
+   "url": "https://sorcerytcg.com/decks/cmtw0y4wr00060bgmw2p4xf54",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtw14vts000p0agm13qavlgb",
+   "name": "52nd Place - Ewout R",
+   "url": "https://sorcerytcg.com/decks/cmtw14vts000p0agm13qavlgb",
+   "avatar": "Sparkmage",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Dez",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtwxzqqz000e0agmiow85cic",
+   "name": "53rd Place - Charlie K",
+   "url": "https://sorcerytcg.com/decks/cmtwxzqqz000e0agmiow85cic",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtwy6ohk00010agmoeopxmu6",
+   "name": "54th Place - Mirko L",
+   "url": "https://sorcerytcg.com/decks/cmtwy6ohk00010agmoeopxmu6",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtwygy7w00020agms598l58m",
+   "name": "55th Place - Carsten S \"Magician Monstrosity (The Original)\"",
+   "url": "https://sorcerytcg.com/decks/cmtwygy7w00020agms598l58m",
+   "avatar": "Magician",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtwyx2h7000009gm43x5tpjw",
+   "name": "56th Place - Paul D",
+   "url": "https://sorcerytcg.com/decks/cmtwyx2h7000009gm43x5tpjw",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtwz89v4000p0bgm3s038jhi",
+   "name": "57th Place - Robert K",
+   "url": "https://sorcerytcg.com/decks/cmtwz89v4000p0bgm3s038jhi",
+   "avatar": "Dragonlord",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtwzk8er00040agm4jms1d4u",
+   "name": "58th Place - Jürgen W",
+   "url": "https://sorcerytcg.com/decks/cmtwzk8er00040agm4jms1d4u",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtwztny7000b0agmnmnx9aug",
+   "name": "59th Place - Florian B",
+   "url": "https://sorcerytcg.com/decks/cmtwztny7000b0agmnmnx9aug",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx021n4000b0agmrp28oqpd",
+   "name": "60th Place - Cedric K",
+   "url": "https://sorcerytcg.com/decks/cmtx021n4000b0agmrp28oqpd",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx0avdh00000agm5o5nc1al",
+   "name": "61st Place - Nikolaus S",
+   "url": "https://sorcerytcg.com/decks/cmtx0avdh00000agm5o5nc1al",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx0h0wf00040bgme0t4vyln",
+   "name": "62nd Place - Leonard M",
+   "url": "https://sorcerytcg.com/decks/cmtx0h0wf00040bgme0t4vyln",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx0qtvg003z0agmuhj3bfcn",
+   "name": "63rd Place - Florian S",
+   "url": "https://sorcerytcg.com/decks/cmtx0qtvg003z0agmuhj3bfcn",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx0r8ed007n0agmdkb54ula",
+   "name": "65th Place - Naoki Z",
+   "url": "https://sorcerytcg.com/decks/cmtx0r8ed007n0agmdkb54ula",
+   "avatar": "Waveshaper",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx0rnb100bl0agm82qrvz9h",
+   "name": "97th Place - Fabian W",
+   "url": "https://sorcerytcg.com/decks/cmtx0rnb100bl0agm82qrvz9h",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx0xgfn000e0agmkjn59spf",
+   "name": "66th Place - Ricardo B",
+   "url": "https://sorcerytcg.com/decks/cmtx0xgfn000e0agmkjn59spf",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx10ugn00070agm8jhetu4x",
+   "name": "64th Place - Christoffer W",
+   "url": "https://sorcerytcg.com/decks/cmtx10ugn00070agm8jhetu4x",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx1depc00000agmys6uqdid",
+   "name": "68th Place - Philipp S",
+   "url": "https://sorcerytcg.com/decks/cmtx1depc00000agmys6uqdid",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx1ds73003q0agm5zhnofdj",
+   "name": "69th Place - Max K",
+   "url": "https://sorcerytcg.com/decks/cmtx1ds73003q0agm5zhnofdj",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx1e62g00960agmkign3tif",
+   "name": "70th Place - Anton S",
+   "url": "https://sorcerytcg.com/decks/cmtx1e62g00960agmkign3tif",
+   "avatar": "Witch",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx1eh2700c60agmrmppjg93",
+   "name": "71st Place - Maciej K",
+   "url": "https://sorcerytcg.com/decks/cmtx1eh2700c60agmrmppjg93",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx1ewny002k0agmujzy938i",
+   "name": "72nd Place - Younas D",
+   "url": "https://sorcerytcg.com/decks/cmtx1ewny002k0agmujzy938i",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx1omb7000k04kzf2wmiqce",
+   "name": "73rd Place - Joris S",
+   "url": "https://sorcerytcg.com/decks/cmtx1omb7000k04kzf2wmiqce",
+   "avatar": "Harbinger",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx1p2gs000j0agmw7otkblw",
+   "name": "74th Place - Jens H",
+   "url": "https://sorcerytcg.com/decks/cmtx1p2gs000j0agmw7otkblw",
+   "avatar": "Battlemage",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx1pfpy003p0agm43u2y46c",
+   "name": "75th Place - Fabian R",
+   "url": "https://sorcerytcg.com/decks/cmtx1pfpy003p0agm43u2y46c",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx1puaj007e0agm1twmrji4",
+   "name": "76th Place - Jan P",
+   "url": "https://sorcerytcg.com/decks/cmtx1puaj007e0agm1twmrji4",
+   "avatar": "Battlemage",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx1q6rd00ao0agmfpxm7r08",
+   "name": "77th Place - Vassilios C",
+   "url": "https://sorcerytcg.com/decks/cmtx1q6rd00ao0agmfpxm7r08",
+   "avatar": "Seer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx24owi00030agmhhyu0tu2",
+   "name": "78th Place - Thorsten H",
+   "url": "https://sorcerytcg.com/decks/cmtx24owi00030agmhhyu0tu2",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx253xi003209gmdtqawh3l",
+   "name": "79th Place - Ingo S",
+   "url": "https://sorcerytcg.com/decks/cmtx253xi003209gmdtqawh3l",
+   "avatar": "Seer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx25fn4006d09gmcymam0i1",
+   "name": "81st Place - Johannes K",
+   "url": "https://sorcerytcg.com/decks/cmtx25fn4006d09gmcymam0i1",
+   "avatar": "Corruptor",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx28pzk000a0agm9i59v2rj",
+   "name": "80th Place - Simone P",
+   "url": "https://sorcerytcg.com/decks/cmtx28pzk000a0agm9i59v2rj",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx293eo001i0agmzzx4tj6g",
+   "name": "82nd Place - Andreas S",
+   "url": "https://sorcerytcg.com/decks/cmtx293eo001i0agmzzx4tj6g",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx2jrmz00010agmn72kjpfz",
+   "name": "87th Place - Kilian P",
+   "url": "https://sorcerytcg.com/decks/cmtx2jrmz00010agmn72kjpfz",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx2ofs5000g0agmcjj2wb4h",
+   "name": "83rd Place - Lars H",
+   "url": "https://sorcerytcg.com/decks/cmtx2ofs5000g0agmcjj2wb4h",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx2oui6005d0agm0lcuszt4",
+   "name": "84th Place - Leon M",
+   "url": "https://sorcerytcg.com/decks/cmtx2oui6005d0agm0lcuszt4",
+   "avatar": "Flamecaller",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx2sosq00000agmxnlhvsbx",
+   "name": "85th Place - Florence S",
+   "url": "https://sorcerytcg.com/decks/cmtx2sosq00000agmxnlhvsbx",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx2t3z300140agmp9h15urc",
+   "name": "86th Place - Marten B",
+   "url": "https://sorcerytcg.com/decks/cmtx2t3z300140agmp9h15urc",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx31ut200000agmqavkrguh",
+   "name": "88th Place - Aviran H",
+   "url": "https://sorcerytcg.com/decks/cmtx31ut200000agmqavkrguh",
+   "avatar": "Interrogator",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx32674002x0agmejr5b2dr",
+   "name": "89th Place - Oliver T",
+   "url": "https://sorcerytcg.com/decks/cmtx32674002x0agmejr5b2dr",
+   "avatar": "Savior",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx32nz000340agmwxhlzzfm",
+   "name": "90th Place - Maarten C",
+   "url": "https://sorcerytcg.com/decks/cmtx32nz000340agmwxhlzzfm",
+   "avatar": "Battlemage",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx32ys0005o0agm2o18e84i",
+   "name": "91st Place - Daniel D",
+   "url": "https://sorcerytcg.com/decks/cmtx32ys0005o0agm2o18e84i",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx33b5l00140agmimg1i6x3",
+   "name": "92nd Place - Christian S",
+   "url": "https://sorcerytcg.com/decks/cmtx33b5l00140agmimg1i6x3",
+   "avatar": "Savior",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx3ebfr00040agmwjq5v4ul",
+   "name": "93rd Place - Ido W",
+   "url": "https://sorcerytcg.com/decks/cmtx3ebfr00040agmwjq5v4ul",
+   "avatar": "Harbinger",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx3epi100000agm4jy58fti",
+   "name": "94th Place - Florian B",
+   "url": "https://sorcerytcg.com/decks/cmtx3epi100000agm4jy58fti",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx3f3u1003r0agm8uxochzp",
+   "name": "95th Place - Hannes S",
+   "url": "https://sorcerytcg.com/decks/cmtx3f3u1003r0agm8uxochzp",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx3fg1b000x0agms3o5fcry",
+   "name": "96th Place - Bian F",
+   "url": "https://sorcerytcg.com/decks/cmtx3fg1b000x0agms3o5fcry",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx3fuec00410agmc06cjqpa",
+   "name": "67th Place - Fabian W",
+   "url": "https://sorcerytcg.com/decks/cmtx3fuec00410agmc06cjqpa",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx3s8bp000e0bgmp728niaq",
+   "name": "101st Place - Frederic K",
+   "url": "https://sorcerytcg.com/decks/cmtx3s8bp000e0bgmp728niaq",
+   "avatar": "Ironclad",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx3skao005y0bgm0jsyhhpt",
+   "name": "102nd Place - David R",
+   "url": "https://sorcerytcg.com/decks/cmtx3skao005y0bgm0jsyhhpt",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx3surk008u0bgmp3f0x6c5",
+   "name": "99th Place - Thomas B",
+   "url": "https://sorcerytcg.com/decks/cmtx3surk008u0bgmp3f0x6c5",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx3xrst00000agmni04ycc6",
+   "name": "100th Place - Ozan B",
+   "url": "https://sorcerytcg.com/decks/cmtx3xrst00000agmni04ycc6",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx4ecm2000j0agm4mn29e9s",
+   "name": "103rd Place - Adam P",
+   "url": "https://sorcerytcg.com/decks/cmtx4ecm2000j0agm4mn29e9s",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx55ftl00000agmooq0vls4",
+   "name": "104th Place - Patrick G",
+   "url": "https://sorcerytcg.com/decks/cmtx55ftl00000agmooq0vls4",
+   "avatar": "Harbinger",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx55s2j002q0agmnc6ytyu2",
+   "name": "105th Place - Marijn J",
+   "url": "https://sorcerytcg.com/decks/cmtx55s2j002q0agmnc6ytyu2",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtx563q000430agm28ms6dlk",
+   "name": "106th Place - Dennis B",
+   "url": "https://sorcerytcg.com/decks/cmtx563q000430agm28ms6dlk",
+   "avatar": "Waveshaper",
+   "entries": [
+    {
+     "event": "Germany Grand Contest",
+     "date": "2026-09-05",
+     "player": "Ben",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmkfp14kh018h04jueyf5u3lw",
+   "name": "GC Dallas scgcon 1st",
+   "url": "https://sorcerytcg.com/decks/cmkfp14kh018h04jueyf5u3lw",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Informant118",
+     "placement": 1,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmsqxs1lh00070akh2i3odewx",
+   "name": "AoA B-A-S-S",
+   "url": "https://sorcerytcg.com/decks/cmsqxs1lh00070akh2i3odewx",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Gothar",
+     "placement": 2,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmtmidqvl00080agmr42rdody",
+   "name": "[Top 4 SCG Dallas Grand Contest] Fruit Loops Combo",
+   "url": "https://sorcerytcg.com/decks/cmtmidqvl00080agmr42rdody",
+   "avatar": "Corruptor",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Varanice",
+     "placement": 3,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmtoop0pc00020agmlsmtfrf6",
+   "name": "Archimago Grand Contest Top 4 SCG Dallas",
+   "url": "https://sorcerytcg.com/decks/cmtoop0pc00020agmlsmtfrf6",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Staetter",
+     "placement": 4,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmr27tflk00sd04l5koja4ti0",
+   "name": "5th place SCG Dallas: Self Destruct",
+   "url": "https://sorcerytcg.com/decks/cmr27tflk00sd04l5koja4ti0",
+   "avatar": "Bladedancer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Tofu",
+     "placement": 5,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmtoohifc003v0agmge7152x4",
+   "name": "Tournament (Copy) (Copy)",
+   "url": "https://sorcerytcg.com/decks/cmtoohifc003v0agmge7152x4",
+   "avatar": "Battlemage",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Count Tolstoy",
+     "placement": 6,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cms9jtiqy000t0ahv4ba9gv6h",
+   "name": "No Village for Old Men",
+   "url": "https://sorcerytcg.com/decks/cms9jtiqy000t0ahv4ba9gv6h",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "franekstein",
+     "placement": 7,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmsmbvifo000l09kktegf3um7",
+   "name": "necromancer SCG Dallas Top 8",
+   "url": "https://sorcerytcg.com/decks/cmsmbvifo000l09kktegf3um7",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Gypsy",
+     "placement": 8,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmgsrffvc002tl804kbk3lvbn",
+   "name": "Aurageddon",
+   "url": "https://sorcerytcg.com/decks/cmgsrffvc002tl804kbk3lvbn",
+   "avatar": "Enchantress",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "RandomWaffles",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmjssroh24n4bzofnddt6whzk",
+   "name": "deathspeaker air steam",
+   "url": "https://sorcerytcg.com/decks/cmjssroh24n4bzofnddt6whzk",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Madcows",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmkheuwzk00aw04l9k4ehbncl",
+   "name": "Fire Pathfinder",
+   "url": "https://sorcerytcg.com/decks/cmkheuwzk00aw04l9k4ehbncl",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Tywayne2127",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmkotsoe300t604jmczvr19th",
+   "name": "Holy Spirit paper needs",
+   "url": "https://sorcerytcg.com/decks/cmkotsoe300t604jmczvr19th",
+   "avatar": "Savior",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmlif4v8k010d04l4mhagx06k",
+   "name": "mono water imposter",
+   "url": "https://sorcerytcg.com/decks/cmlif4v8k010d04l4mhagx06k",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "ensonboro",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmptyrn9m008q04jrfpeqqpc1",
+   "name": "WaterFinder",
+   "url": "https://sorcerytcg.com/decks/cmptyrn9m008q04jrfpeqqpc1",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Ragnos01",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmpy53fre00rh04jrqs2ix3t9",
+   "name": "Crystal Cannon (Witch)",
+   "url": "https://sorcerytcg.com/decks/cmpy53fre00rh04jrqs2ix3t9",
+   "avatar": "Witch",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "DrRickso",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmq32l7nt009a04l21ucraniq",
+   "name": "Battletoad new AF",
+   "url": "https://sorcerytcg.com/decks/cmq32l7nt009a04l21ucraniq",
+   "avatar": "Battlemage",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Aviddriver",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmqlsm2n200ue04l2w10821p4",
+   "name": "BLADEDANCER SCG DALLAS",
+   "url": "https://sorcerytcg.com/decks/cmqlsm2n200ue04l2w10821p4",
+   "avatar": "Bladedancer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Roman",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmqyi5yy100cf04joatza2q25",
+   "name": "Eat Our Dust - SCG Con Dallas 2026",
+   "url": "https://sorcerytcg.com/decks/cmqyi5yy100cf04joatza2q25",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Bob Sacamano",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmr1dsip100ct04jxl1ybvuv1",
+   "name": "Curtis",
+   "url": "https://sorcerytcg.com/decks/cmr1dsip100ct04jxl1ybvuv1",
+   "avatar": "Realm-Eater",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "pzP L E A Z E R",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmr522hcg00v204kzojjuubjw",
+   "name": "Jodorowsky's Dune",
+   "url": "https://sorcerytcg.com/decks/cmr522hcg00v204kzojjuubjw",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "theYOTER",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmr54mh7p00hj04l1ccpzphh7",
+   "name": "I am Fire",
+   "url": "https://sorcerytcg.com/decks/cmr54mh7p00hj04l1ccpzphh7",
+   "avatar": "Dragonlord",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "RenTheRed",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmr6m302n00jj04k137r2ngqu",
+   "name": "Faustian Dragonlord",
+   "url": "https://sorcerytcg.com/decks/cmr6m302n00jj04k137r2ngqu",
+   "avatar": "Dragonlord",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "SirDragonlord",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmrww3c5b001q09jkwd8jvjhi",
+   "name": "Geo fire/earth",
+   "url": "https://sorcerytcg.com/decks/cmrww3c5b001q09jkwd8jvjhi",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cms1aj1un00090ajd3lwiad9o",
+   "name": "taxes",
+   "url": "https://sorcerytcg.com/decks/cms1aj1un00090ajd3lwiad9o",
+   "avatar": "Elementalist",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "kingofmidgard",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cms23665t00050ahufks9hqla",
+   "name": "Druid in the Rain (8/13/26)",
+   "url": "https://sorcerytcg.com/decks/cms23665t00050ahufks9hqla",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Lorchie Mammik",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cms3gq8u1000b0akldsb3lpzb",
+   "name": "Pearl Clutch",
+   "url": "https://sorcerytcg.com/decks/cms3gq8u1000b0akldsb3lpzb",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Porkchop",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmsb5jgrr000l0ajf0tlssv0a",
+   "name": "pathfinder",
+   "url": "https://sorcerytcg.com/decks/cmsb5jgrr000l0ajf0tlssv0a",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "desdymona",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmsf58mdo000b0ajf2u4drho2",
+   "name": "LavaDancer",
+   "url": "https://sorcerytcg.com/decks/cmsf58mdo000b0ajf2u4drho2",
+   "avatar": "Bladedancer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "DT",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmsktupos000704jrz5q9hjfy",
+   "name": "Firelord",
+   "url": "https://sorcerytcg.com/decks/cmsktupos000704jrz5q9hjfy",
+   "avatar": "Dragonlord",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "TimTheEnchanter",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmsqnptfr00040aj6044w3esd",
+   "name": "Save the Turtles",
+   "url": "https://sorcerytcg.com/decks/cmsqnptfr00040aj6044w3esd",
+   "avatar": "Savior",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Collision",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmsyff5mi001m04lcspxgq11g",
+   "name": "Inescapable Torment",
+   "url": "https://sorcerytcg.com/decks/cmsyff5mi001m04lcspxgq11g",
+   "avatar": "Interrogator",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Dama5cu5",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmt0ui4t100ce04jms1fwrmyi",
+   "name": "Bad Moon Rising",
+   "url": "https://sorcerytcg.com/decks/cmt0ui4t100ce04jms1fwrmyi",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Michael M",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmt3alqm500lk04l4wlo40fmt",
+   "name": "Death's Doorbell",
+   "url": "https://sorcerytcg.com/decks/cmt3alqm500lk04l4wlo40fmt",
+   "avatar": "Interrogator",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Rune",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmt5xlj9k012r04i5ngbn3ka7",
+   "name": "Giants and Monsters",
+   "url": "https://sorcerytcg.com/decks/cmt5xlj9k012r04i5ngbn3ka7",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Gomar",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmt6b8u7r00o704jl9r8a6hvw",
+   "name": "Angel Savior",
+   "url": "https://sorcerytcg.com/decks/cmt6b8u7r00o704jl9r8a6hvw",
+   "avatar": "Savior",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "xmarcusnapple",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmt9ktvi2002a04ky6ux7w8bp",
+   "name": "Mostly Air Elementalist",
+   "url": "https://sorcerytcg.com/decks/cmt9ktvi2002a04ky6ux7w8bp",
+   "avatar": "Elementalist",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Conniption",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmteheces00030akmbmbvshba",
+   "name": "Furious Witch's Road (Edited) - NWA",
+   "url": "https://sorcerytcg.com/decks/cmteheces00030akmbmbvshba",
+   "avatar": "Witch",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "MishkaDoll",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtf1qt77000a0aj2gcasc324",
+   "name": "FEDS",
+   "url": "https://sorcerytcg.com/decks/cmtf1qt77000a0aj2gcasc324",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Suriban",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmthllh74000m0aj9ntrxhhxt",
+   "name": "This is Steven's universe.",
+   "url": "https://sorcerytcg.com/decks/cmthllh74000m0aj9ntrxhhxt",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Stormy",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtjhhajc00090ajebxcditgr",
+   "name": "Brave, Brave, Sir Balin",
+   "url": "https://sorcerytcg.com/decks/cmtjhhajc00090ajebxcditgr",
+   "avatar": "Interrogator",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "RandallMSavage",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtjqkmym00030aklx26xnsb9",
+   "name": "Mmmmmmmmmmm",
+   "url": "https://sorcerytcg.com/decks/cmtjqkmym00030aklx26xnsb9",
+   "avatar": "Interrogator",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Vice",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtkynq7300000ai36jvztljx",
+   "name": "Necro Mono Fire - SCGCon Dallas 2026 - 4-3-0 35th / 82",
+   "url": "https://sorcerytcg.com/decks/cmtkynq7300000ai36jvztljx",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "NasoNice89",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtlscjgf00440aky9ev17kwm",
+   "name": "Planar Ol’ EnchAWntress (5-1-1 SCG CON Dallas)",
+   "url": "https://sorcerytcg.com/decks/cmtlscjgf00440aky9ev17kwm",
+   "avatar": "Enchantress",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "TheMurderBurger",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtm2sdtj00020agmplx25w8n",
+   "name": "Die Hard",
+   "url": "https://sorcerytcg.com/decks/cmtm2sdtj00020agmplx25w8n",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Guttersnipe93",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtnw4igy000e0agmxkbex893",
+   "name": "#1 Imposter 9th 5-2 SCGCon Dallas Grand Contest",
+   "url": "https://sorcerytcg.com/decks/cmtnw4igy000e0agmxkbex893",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "BlitzMP",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmto99za100040agmjjq8q196",
+   "name": "Mono Water Harbinger",
+   "url": "https://sorcerytcg.com/decks/cmto99za100040agmjjq8q196",
+   "avatar": "Harbinger",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Hank",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtobtibg00000agmm3fse79k",
+   "name": "Not In My Court - EF Imposter (Copy)",
+   "url": "https://sorcerytcg.com/decks/cmtobtibg00000agmm3fse79k",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Duo",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtohrgb800020agmqaxu843k",
+   "name": "Imma Cut You",
+   "url": "https://sorcerytcg.com/decks/cmtohrgb800020agmqaxu843k",
+   "avatar": "Bladedancer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Classythulhu",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtoo1wks00070agmc9dbbdta",
+   "name": "So, Magic Then?",
+   "url": "https://sorcerytcg.com/decks/cmtoo1wks00070agmc9dbbdta",
+   "avatar": "Magician",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Corulax",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtood6pb000004k0rusnshps",
+   "name": "S.C.R.E.Ws (Savior and Charge Really Enable Wards) SCG Dallas",
+   "url": "https://sorcerytcg.com/decks/cmtood6pb000004k0rusnshps",
+   "avatar": "Savior",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Metroidpikmin",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtoohapd00280agmtoz2acnv",
+   "name": "Seeland",
+   "url": "https://sorcerytcg.com/decks/cmtoohapd00280agmtoz2acnv",
+   "avatar": "Seer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "B2BB",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtoojb6k00020agm5sejie23",
+   "name": "Soggy Jank",
+   "url": "https://sorcerytcg.com/decks/cmtoojb6k00020agm5sejie23",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Brinoceros",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtoom08500060agmec0lieiq",
+   "name": "Savior",
+   "url": "https://sorcerytcg.com/decks/cmtoom08500060agmec0lieiq",
+   "avatar": "Savior",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "cupcakemikayla",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtoom66i00210agmkmpqa37m",
+   "name": "I did this last minute",
+   "url": "https://sorcerytcg.com/decks/cmtoom66i00210agmkmpqa37m",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Bossk",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtoomwc700060bgmxg7upiqo",
+   "name": "Torin",
+   "url": "https://sorcerytcg.com/decks/cmtoomwc700060bgmxg7upiqo",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Tmanridgway",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtoomxdl00000agmd92u4xlp",
+   "name": "Necro",
+   "url": "https://sorcerytcg.com/decks/cmtoomxdl00000agmd92u4xlp",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "bLaCkSTonE",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtooo7yw00300bgm90qfojbl",
+   "name": "Avatar of Air - 1st Place Gen Con 2026  (Copy)",
+   "url": "https://sorcerytcg.com/decks/cmtooo7yw00300bgm90qfojbl",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Truk Backwards",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtoortgp000m0agmlppr650v",
+   "name": "SCG Dallas 2026 - MISTer Druid",
+   "url": "https://sorcerytcg.com/decks/cmtoortgp000m0agmlppr650v",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Ismark The Lesser",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtoozst400050agm4ig86h0i",
+   "name": "Seduce Me",
+   "url": "https://sorcerytcg.com/decks/cmtoozst400050agm4ig86h0i",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Vertex Null",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtop3j6a00000agm0plhia2z",
+   "name": "Froggoth (Necromancer) (Copy)",
+   "url": "https://sorcerytcg.com/decks/cmtop3j6a00000agm0plhia2z",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Dallas",
+     "date": "2026-09-05",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtyhupfo00000agm59f5k63z",
+   "name": "Steamed Imposter Scgcon Baltimore",
+   "url": "https://sorcerytcg.com/decks/cmtyhupfo00000agm59f5k63z",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "paladin_of_io",
+     "placement": 1,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmtvv85px00000agmtjay9lje",
+   "name": "AwfulPracticePrecon",
+   "url": "https://sorcerytcg.com/decks/cmtvv85px00000agmtjay9lje",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "abcdefg",
+     "placement": 2,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmtyl3b4t00040agmx5e3j4ch",
+   "name": "Sherlocked  3rd place Grand Contest Baltimore",
+   "url": "https://sorcerytcg.com/decks/cmtyl3b4t00040agmx5e3j4ch",
+   "avatar": "Elementalist",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Voqas",
+     "placement": 3,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmtq2cwjz000209gmwuh157yr",
+   "name": "EF Necro Onslaught (Baltimore SCG 2026)",
+   "url": "https://sorcerytcg.com/decks/cmtq2cwjz000209gmwuh157yr",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "JoeG",
+     "placement": 4,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmreonib5002o04jt1c7nqjsz",
+   "name": "Grand Contest 5th Place: Earth Water Sorcerer",
+   "url": "https://sorcerytcg.com/decks/cmreonib5002o04jt1c7nqjsz",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Xanth",
+     "placement": 5,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmtog4fvh00000agm6h1z2jay",
+   "name": "Dank Necro - Resurrected",
+   "url": "https://sorcerytcg.com/decks/cmtog4fvh00000agm6h1z2jay",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "bubba",
+     "placement": 6,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmh45ypw300d4l104p3cj5zh1",
+   "name": "SCG Baltimore Crossroads Pathfinder",
+   "url": "https://sorcerytcg.com/decks/cmh45ypw300d4l104p3cj5zh1",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "UsernameNA",
+     "placement": 7,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmttbmd1100020bgmzjc8u828",
+   "name": "Pardon the Dust",
+   "url": "https://sorcerytcg.com/decks/cmttbmd1100020bgmzjc8u828",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": 8,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmf37fd4000l8l404d6daj9go",
+   "name": "The Dragonlord",
+   "url": "https://sorcerytcg.com/decks/cmf37fd4000l8l404d6daj9go",
+   "avatar": "Dragonlord",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "kitefin",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmiw4h9xf5o7l05ebx07hq5b7",
+   "name": "Cat's Necromancer",
+   "url": "https://sorcerytcg.com/decks/cmiw4h9xf5o7l05ebx07hq5b7",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Catrix",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmiz3hjt52dza30eca82s2h7r",
+   "name": "Cosmic Horror",
+   "url": "https://sorcerytcg.com/decks/cmiz3hjt52dza30eca82s2h7r",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Flappybags",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmjk6pjnz0zd16bfotarkut9m",
+   "name": "Scoochie Boochies",
+   "url": "https://sorcerytcg.com/decks/cmjk6pjnz0zd16bfotarkut9m",
+   "avatar": "Dragonlord",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "SpaceGrub",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmjsxcc704pt8zofn0pgdvrbm",
+   "name": "void mist harbinger (1st place cornerstone)",
+   "url": "https://sorcerytcg.com/decks/cmjsxcc704pt8zofn0pgdvrbm",
+   "avatar": "Harbinger",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmku2m6yf011204l5gvvdjkhr",
+   "name": "Battlemage",
+   "url": "https://sorcerytcg.com/decks/cmku2m6yf011204l5gvvdjkhr",
+   "avatar": "Battlemage",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmlyhg2j4002y04ju4lq1odzq",
+   "name": "SAVE ME",
+   "url": "https://sorcerytcg.com/decks/cmlyhg2j4002y04ju4lq1odzq",
+   "avatar": "Savior",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "BStepp",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmmrz0xzm00cf04jvs79qy35o",
+   "name": "Air/Water Necromancer",
+   "url": "https://sorcerytcg.com/decks/cmmrz0xzm00cf04jvs79qy35o",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Dg",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmpvxvkw700jf04l58tkr41dq",
+   "name": "Aggro Realm Eater",
+   "url": "https://sorcerytcg.com/decks/cmpvxvkw700jf04l58tkr41dq",
+   "avatar": "Realm-Eater",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": ".drakin",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmpzlrg0p00bw04lecvgbb1ws",
+   "name": "Heavier than a Duck 2",
+   "url": "https://sorcerytcg.com/decks/cmpzlrg0p00bw04lecvgbb1ws",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "emperorigor",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmqjje2wn00m104jsxxyxlxdu",
+   "name": "Geo",
+   "url": "https://sorcerytcg.com/decks/cmqjje2wn00m104jsxxyxlxdu",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "SeaMoose",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmqr26rz100m104kz8c4khq5z",
+   "name": "Paper Geomancer",
+   "url": "https://sorcerytcg.com/decks/cmqr26rz100m104kz8c4khq5z",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cms3asl4800020bj2m762d5bj",
+   "name": "WaterGPT",
+   "url": "https://sorcerytcg.com/decks/cms3asl4800020bj2m762d5bj",
+   "avatar": "Waveshaper",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "b_2_3_n",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cms70trax00000bge6udhyzmi",
+   "name": "Monks eat free",
+   "url": "https://sorcerytcg.com/decks/cms70trax00000bge6udhyzmi",
+   "avatar": "Enchantress",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "MacTavish",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmsasbtq4000104jpjpwmh43w",
+   "name": "Lava Persecutor",
+   "url": "https://sorcerytcg.com/decks/cmsasbtq4000104jpjpwmh43w",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Hush",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmsb1smgq000d0aj82b93q31d",
+   "name": "other deck",
+   "url": "https://sorcerytcg.com/decks/cmsb1smgq000d0aj82b93q31d",
+   "avatar": "Seer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Sunny_D_Mentia",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmshq025f00040bj97eo9opic",
+   "name": "Imposterble Burger Court Update",
+   "url": "https://sorcerytcg.com/decks/cmshq025f00040bj97eo9opic",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "genmaicha",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmskxba32000a0akmauqokofj",
+   "name": "Geo- Baltimore GC [Built*]",
+   "url": "https://sorcerytcg.com/decks/cmskxba32000a0akmauqokofj",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "WaterLily",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmstn531b00as04juy85nc1lu",
+   "name": "SS",
+   "url": "https://sorcerytcg.com/decks/cmstn531b00as04juy85nc1lu",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmsu7dokn004804jugr06r0ei",
+   "name": "Blue Mage",
+   "url": "https://sorcerytcg.com/decks/cmsu7dokn004804jugr06r0ei",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "vc050492",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmsw7pu6700ic04jx8pvw4nyi",
+   "name": "8-0 DANKER ENCHANTRESS Cornerstone Winner TopDeck Games 8/15",
+   "url": "https://sorcerytcg.com/decks/cmsw7pu6700ic04jx8pvw4nyi",
+   "avatar": "Enchantress",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "DurdleMagus",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmt0ss0d9001504jvaxvhfw5v",
+   "name": "Project Wolf Pack",
+   "url": "https://sorcerytcg.com/decks/cmt0ss0d9001504jvaxvhfw5v",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "TheSorcerersSanctum",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmt9b0rs400ki04jurcve6qzn",
+   "name": "Enter again again",
+   "url": "https://sorcerytcg.com/decks/cmt9b0rs400ki04jurcve6qzn",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Penusaur",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtawmlmz001604l5zgx2jvr4",
+   "name": "Dead and Unburied",
+   "url": "https://sorcerytcg.com/decks/cmtawmlmz001604l5zgx2jvr4",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "BigChalupa",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtdj4m55006k04l74pdcvs9w",
+   "name": "Top 16 SCG Con Baltimore 2026",
+   "url": "https://sorcerytcg.com/decks/cmtdj4m55006k04l74pdcvs9w",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Seraph",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtf1o4m7000r04jqm8hgqefb",
+   "name": "Hot Sauce",
+   "url": "https://sorcerytcg.com/decks/cmtf1o4m7000r04jqm8hgqefb",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "TiaanWTF",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtf6l55u00030ajm17tu6u2r",
+   "name": "Void Harbie v2",
+   "url": "https://sorcerytcg.com/decks/cmtf6l55u00030ajm17tu6u2r",
+   "avatar": "Harbinger",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Dillweeds",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtt143nl000a0agmyes2eaqx",
+   "name": "Fire Pathfinder",
+   "url": "https://sorcerytcg.com/decks/cmtt143nl000a0agmyes2eaqx",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtwy3imu000l0bgmu6buqedf",
+   "name": "lars glug glug",
+   "url": "https://sorcerytcg.com/decks/cmtwy3imu000l0bgmu6buqedf",
+   "avatar": "Waveshaper",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtwyg09700010agm16vty139",
+   "name": "[Hobs] Avatar of Earth, Wind and Fire (Copy)",
+   "url": "https://sorcerytcg.com/decks/cmtwyg09700010agm16vty139",
+   "avatar": "Avatar of Earth",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "ItsSnowing",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtwytjrd00020agmdq7jkx3k",
+   "name": "Immortal Truth Magician",
+   "url": "https://sorcerytcg.com/decks/cmtwytjrd00020agmdq7jkx3k",
+   "avatar": "Magician",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "ForceofPhil",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtxlytzs00130agm2jji0b8d",
+   "name": "A Good Time, Not Long Time",
+   "url": "https://sorcerytcg.com/decks/cmtxlytzs00130agm2jji0b8d",
+   "avatar": "Flamecaller",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Sister Stefania",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtxmw6i800000agmaz2f43fd",
+   "name": "Ride The Flame Wave!",
+   "url": "https://sorcerytcg.com/decks/cmtxmw6i800000agmaz2f43fd",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Telos",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtxokjx500020agmridnef0y",
+   "name": "First Flashback",
+   "url": "https://sorcerytcg.com/decks/cmtxokjx500020agmridnef0y",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Cram",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtxsjhgq00000agmogojn8ag",
+   "name": "Steam Druid",
+   "url": "https://sorcerytcg.com/decks/cmtxsjhgq00000agmogojn8ag",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtxtcp3n000c0agmdrctspzr",
+   "name": "[SCG Baltimore] Fruit Loops Combo",
+   "url": "https://sorcerytcg.com/decks/cmtxtcp3n000c0agmdrctspzr",
+   "avatar": "Corruptor",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Varanice",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtya1tyg00010agm8anea4ki",
+   "name": "Baltimore",
+   "url": "https://sorcerytcg.com/decks/cmtya1tyg00010agm8anea4ki",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Sestos",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtyae440000c0agm627d0yda",
+   "name": "Flaming necro",
+   "url": "https://sorcerytcg.com/decks/cmtyae440000c0agm627d0yda",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Infiltrate_Dominion",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtyb4mzp000e04l6zrn75mkf",
+   "name": "Waterboys!",
+   "url": "https://sorcerytcg.com/decks/cmtyb4mzp000e04l6zrn75mkf",
+   "avatar": "Dragonlord",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Paramisery",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtybid4q000009gmuu8z4kk0",
+   "name": "Angel Savior Balt",
+   "url": "https://sorcerytcg.com/decks/cmtybid4q000009gmuu8z4kk0",
+   "avatar": "Savior",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "TigerG",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtyeqdbk00000agmszcqm16h",
+   "name": "Avatar of Air Aggro",
+   "url": "https://sorcerytcg.com/decks/cmtyeqdbk00000agmszcqm16h",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtyf8sic000009gmcmety084",
+   "name": "Jihadest Assault",
+   "url": "https://sorcerytcg.com/decks/cmtyf8sic000009gmcmety084",
+   "avatar": "Interrogator",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtyhj3lq00050agmsz0azerk",
+   "name": "Harbinger",
+   "url": "https://sorcerytcg.com/decks/cmtyhj3lq00050agmsz0azerk",
+   "avatar": "Harbinger",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtyik2h100150agmkkhkhfwl",
+   "name": "Archmage",
+   "url": "https://sorcerytcg.com/decks/cmtyik2h100150agmkkhkhfwl",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtyivhl600090agmo4lpu2gh",
+   "name": "Pathfinder SCGCon Baltimore",
+   "url": "https://sorcerytcg.com/decks/cmtyivhl600090agmo4lpu2gh",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Pathfinder",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtyjmuol00070agmj6nwqnvj",
+   "name": "Air Fire Aggro",
+   "url": "https://sorcerytcg.com/decks/cmtyjmuol00070agmj6nwqnvj",
+   "avatar": "Interrogator",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtyk1uqw00030agmrhnjgfna",
+   "name": "Ground and pound",
+   "url": "https://sorcerytcg.com/decks/cmtyk1uqw00030agmrhnjgfna",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Big John",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtyl3jjx000309gmauywclqq",
+   "name": "Lelandary Flamecaller",
+   "url": "https://sorcerytcg.com/decks/cmtyl3jjx000309gmauywclqq",
+   "avatar": "Flamecaller",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Lelandary",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtyl3pl900060agm755kxrko",
+   "name": "Trade Encampment Mage (scg con Baltimore)",
+   "url": "https://sorcerytcg.com/decks/cmtyl3pl900060agm755kxrko",
+   "avatar": "Battlemage",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Pielord",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtylqz1m000109gmkco5y6w7",
+   "name": "Not Another Druid List SCG Baltimore",
+   "url": "https://sorcerytcg.com/decks/cmtylqz1m000109gmkco5y6w7",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "OhBaby1",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtylvxpy001j0agmnr9ihkss",
+   "name": "Scg con",
+   "url": "https://sorcerytcg.com/decks/cmtylvxpy001j0agmnr9ihkss",
+   "avatar": "Sparkmage",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Desuturoi",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtym5qz1002x04kw5rfxvjg9",
+   "name": "Imposter SCG Bal",
+   "url": "https://sorcerytcg.com/decks/cmtym5qz1002x04kw5rfxvjg9",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Brodo Swaggins",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtymaymd00030agmhd9jc4aq",
+   "name": "SCGCon Baltimore 2026",
+   "url": "https://sorcerytcg.com/decks/cmtymaymd00030agmhd9jc4aq",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtymcv60002i0agmwexp2cgw",
+   "name": "scgBaltimore_Anj_aoa",
+   "url": "https://sorcerytcg.com/decks/cmtymcv60002i0agmwexp2cgw",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "anj_elic",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtymxqpg001r0agm3cqzvgj9",
+   "name": "Submerge",
+   "url": "https://sorcerytcg.com/decks/cmtymxqpg001r0agm3cqzvgj9",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "SCG CON Baltimore",
+     "date": "2026-09-12",
+     "player": "WhiteNinja",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtgo4iht000l09jew13vdyyk",
+   "name": "Goat Tech",
+   "url": "https://sorcerytcg.com/decks/cmtgo4iht000l09jew13vdyyk",
+   "avatar": "Savior",
+   "entries": [
+    {
+     "event": "Thieves Guild Explorer Series (46 players)",
+     "date": "2026-09-19",
+     "player": "DeezyFoSheezy",
+     "placement": 1,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmu7hdu0y00000agmz84h8n2b",
+   "name": "Deathspeaker Explorer 2nd place Newport KY",
+   "url": "https://sorcerytcg.com/decks/cmu7hdu0y00000agmz84h8n2b",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "Thieves Guild Explorer Series (46 players)",
+     "date": "2026-09-19",
+     "player": "LifeDrain",
+     "placement": 2,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmua57g8p00080agmxbt6zxo1",
+   "name": "[Explorer Series Cincy] Fruit Loops Combo",
+   "url": "https://sorcerytcg.com/decks/cmua57g8p00080agmxbt6zxo1",
+   "avatar": "Corruptor",
+   "entries": [
+    {
+     "event": "Thieves Guild Explorer Series (46 players)",
+     "date": "2026-09-19",
+     "player": "Varanice",
+     "placement": 3,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmu98ng2u00030agmfi26qk9w",
+   "name": "Avatar of Air - 5th Place Thieves' Guild Explorer Series '26",
+   "url": "https://sorcerytcg.com/decks/cmu98ng2u00030agmfi26qk9w",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Thieves Guild Explorer Series (46 players)",
+     "date": "2026-09-19",
+     "player": "Unknown",
+     "placement": 5,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmu7hpfvf00010agmjl7fxyhg",
+   "name": "Blow me",
+   "url": "https://sorcerytcg.com/decks/cmu7hpfvf00010agmjl7fxyhg",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "Thieves Guild Explorer Series (46 players)",
+     "date": "2026-09-19",
+     "player": "Karnifact",
+     "placement": 6,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cms32ssxt000709jb9y14psa1",
+   "name": "A/F",
+   "url": "https://sorcerytcg.com/decks/cms32ssxt000709jb9y14psa1",
+   "avatar": "Interrogator",
+   "entries": [
+    {
+     "event": "Thieves Guild Explorer Series (46 players)",
+     "date": "2026-09-19",
+     "player": "sideik",
+     "placement": 7,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmua8zf6j000j0agmfm5wtv1h",
+   "name": "Lord of Bones",
+   "url": "https://sorcerytcg.com/decks/cmua8zf6j000j0agmfm5wtv1h",
+   "avatar": "Dragonlord",
+   "entries": [
+    {
+     "event": "Thieves Guild Explorer Series (46 players)",
+     "date": "2026-09-19",
+     "player": "BrosephStahlyn",
+     "placement": 8,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmucyfpmw000c0agmi0krs9xr",
+   "name": "1st Place Largest Cornerstone! Turbo Towers™️",
+   "url": "https://sorcerytcg.com/decks/cmucyfpmw000c0agmi0krs9xr",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "SammyGL",
+     "placement": 1,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmusytcc5000506nvc1wipz56",
+   "name": "Copy/Impasta",
+   "url": "https://sorcerytcg.com/decks/cmusytcc5000506nvc1wipz56",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Charles",
+     "placement": 3,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmh8en2bx002pl8047oghhtlx",
+   "name": "Sulfurous Springs",
+   "url": "https://sorcerytcg.com/decks/cmh8en2bx002pl8047oghhtlx",
+   "avatar": "Druid",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Polymancer (Paul)",
+     "placement": 4,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmugb1fwg00070agmthywyxlv",
+   "name": "my necro",
+   "url": "https://sorcerytcg.com/decks/cmugb1fwg00070agmthywyxlv",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Grimexgoblin",
+     "placement": 5,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmudo2xli000i0agm0yt0r7z9",
+   "name": "Ash Flavored Interrogatorade Cornerstone",
+   "url": "https://sorcerytcg.com/decks/cmudo2xli000i0agm0yt0r7z9",
+   "avatar": "Interrogator",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Eadric the Unwise",
+     "placement": 6,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmuu16kdh000b06qckl33s1aq",
+   "name": "Wolves",
+   "url": "https://sorcerytcg.com/decks/cmuu16kdh000b06qckl33s1aq",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Chloro",
+     "placement": 7,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmuty1bb9000106qdssq9dfol",
+   "name": "Lava Lord Top 8 GonGaii (70 ppl) 10/4",
+   "url": "https://sorcerytcg.com/decks/cmuty1bb9000106qdssq9dfol",
+   "avatar": "Dragonlord",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "The Blue Knight",
+     "placement": 8,
+     "top8": true,
+     "topCut": true
+    }
+   ]
+  },
+  {
+   "id": "cmj6g2bfa2hwvzrfm6jj65raf",
+   "name": "Silence",
+   "url": "https://sorcerytcg.com/decks/cmj6g2bfa2hwvzrfm6jj65raf",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Aric",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmk52c9mp00i804jy0lajeoef",
+   "name": "No Mercy",
+   "url": "https://sorcerytcg.com/decks/cmk52c9mp00i804jy0lajeoef",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "fakeblood",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmmwk2chy00kd04js417wkmst",
+   "name": "Seer BOGstacles 60/30",
+   "url": "https://sorcerytcg.com/decks/cmmwk2chy00kd04js417wkmst",
+   "avatar": "Seer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "aClockwise",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmnc8n94c009p04jrg14buwnb",
+   "name": "[90] Etrian Odyssey",
+   "url": "https://sorcerytcg.com/decks/cmnc8n94c009p04jrg14buwnb",
+   "avatar": "Seer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Lark",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmo1ylal400l004lgkm10g5jx",
+   "name": "Magic Time!",
+   "url": "https://sorcerytcg.com/decks/cmo1ylal400l004lgkm10g5jx",
+   "avatar": "Magician",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "HarkForsooth",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmo3lewh100n804le9syxp0ez",
+   "name": "Goombus Waveshaper",
+   "url": "https://sorcerytcg.com/decks/cmo3lewh100n804le9syxp0ez",
+   "avatar": "Waveshaper",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmphw1w6m001a04l5k6svekkc",
+   "name": "Genesis: The Re-Revengening",
+   "url": "https://sorcerytcg.com/decks/cmphw1w6m001a04l5k6svekkc",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "blueberryboy9000",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmpqiipd9002k04jrzyaqj1r8",
+   "name": "Value Town - Mud Sorcerer",
+   "url": "https://sorcerytcg.com/decks/cmpqiipd9002k04jrzyaqj1r8",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "BigAl_24/7",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmqmpkqe3000z04k4hnlcpdrx",
+   "name": "Grab Another Shovel",
+   "url": "https://sorcerytcg.com/decks/cmqmpkqe3000z04k4hnlcpdrx",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Gr4ppl3r",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmra92f7i007i04l1xa3d19yg",
+   "name": "Ricky Bobby",
+   "url": "https://sorcerytcg.com/decks/cmra92f7i007i04l1xa3d19yg",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "ExeDelete",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmrpzqlhd00040akrjkcwyx63",
+   "name": "Persecute the Weak",
+   "url": "https://sorcerytcg.com/decks/cmrpzqlhd00040akrjkcwyx63",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "SuperSorcerer420",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmrqhblt200010akogumrihsf",
+   "name": "Whirling Dervish - Mist.",
+   "url": "https://sorcerytcg.com/decks/cmrqhblt200010akogumrihsf",
+   "avatar": "Bladedancer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "wave2hi",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmshtqasb00030bjegcbb8ua1",
+   "name": "Fire Interrogator",
+   "url": "https://sorcerytcg.com/decks/cmshtqasb00030bjegcbb8ua1",
+   "avatar": "Interrogator",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Ericsgarage",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmshy30ex00020bjc8x4tk22h",
+   "name": "Interrogator Deck As built",
+   "url": "https://sorcerytcg.com/decks/cmshy30ex00020bjc8x4tk22h",
+   "avatar": "Interrogator",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Dischade",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmsxqls3t00gq04l4w7m6qznx",
+   "name": "harbinge drinker",
+   "url": "https://sorcerytcg.com/decks/cmsxqls3t00gq04l4w7m6qznx",
+   "avatar": "Harbinger",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "McSqueeb",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmsyzozd4000d04l4wspqbdih",
+   "name": "GeoLandMan (As built)",
+   "url": "https://sorcerytcg.com/decks/cmsyzozd4000d04l4wspqbdih",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Wagmaker",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmt7t3mtu006104js7arye4j1",
+   "name": "Molten Iron",
+   "url": "https://sorcerytcg.com/decks/cmt7t3mtu006104js7arye4j1",
+   "avatar": "Ironclad",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Casual_fan",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmt87zjfo001q04jp7j0mhc98",
+   "name": "2.0 Watch your step",
+   "url": "https://sorcerytcg.com/decks/cmt87zjfo001q04jp7j0mhc98",
+   "avatar": "Elementalist",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "D.Bubbletrousers",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmt9q3kxg00hc04jqsm2i42x5",
+   "name": "Courting AoA",
+   "url": "https://sorcerytcg.com/decks/cmt9q3kxg00hc04jqsm2i42x5",
+   "avatar": "Avatar of Air",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "ComboReversal",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtlr4c6u00040aj7tqfnncbt",
+   "name": "Kirby Down-B",
+   "url": "https://sorcerytcg.com/decks/cmtlr4c6u00040aj7tqfnncbt",
+   "avatar": "Spellslinger",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Thoren",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmtzd0wh5001o0agmehea58zh",
+   "name": "Fire Necro",
+   "url": "https://sorcerytcg.com/decks/cmtzd0wh5001o0agmehea58zh",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "memermancer",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmu01sbh600020agm6msnqtwr",
+   "name": "Aggro Witch",
+   "url": "https://sorcerytcg.com/decks/cmu01sbh600020agm6msnqtwr",
+   "avatar": "Witch",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Wasteland",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmu0iyi69000i0agmiman2myr",
+   "name": "Deep Waters",
+   "url": "https://sorcerytcg.com/decks/cmu0iyi69000i0agmiman2myr",
+   "avatar": "Waveshaper",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "SmartAlec_10",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmu0uw6fi00080bgmoe5hx6dz",
+   "name": "Sorcerer Air Fire",
+   "url": "https://sorcerytcg.com/decks/cmu0uw6fi00080bgmoe5hx6dz",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "limelizard",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmu9ato1k00090agm4v7teawq",
+   "name": "I Came to Drop Bombs",
+   "url": "https://sorcerytcg.com/decks/cmu9ato1k00090agm4v7teawq",
+   "avatar": "Animist",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "THEST3V3MC",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmublmn32000u09gmij9yhbew",
+   "name": "Ef aor Brew",
+   "url": "https://sorcerytcg.com/decks/cmublmn32000u09gmij9yhbew",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Beng",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmuctap7n000m0agm17p4wsfx",
+   "name": "The Answer V2",
+   "url": "https://sorcerytcg.com/decks/cmuctap7n000m0agm17p4wsfx",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Narxi",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmuds0ut200040agmzvey6maj",
+   "name": "Who Are You?",
+   "url": "https://sorcerytcg.com/decks/cmuds0ut200040agmzvey6maj",
+   "avatar": "Imposter",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "ZombieGrind",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmuihwpiv00090agmilnbzt42",
+   "name": "ef aggro",
+   "url": "https://sorcerytcg.com/decks/cmuihwpiv00090agmilnbzt42",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Moth",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmun6bt7i00040agmqnwzur4q",
+   "name": "Spirit Beasts",
+   "url": "https://sorcerytcg.com/decks/cmun6bt7i00040agmqnwzur4q",
+   "avatar": "Animist",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "compass",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmunbbr9o00090agmllfhtyld",
+   "name": "Dust Interrogator (Contessa)",
+   "url": "https://sorcerytcg.com/decks/cmunbbr9o00090agmllfhtyld",
+   "avatar": "Interrogator",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Contessa",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmuoipk85000i0agmjfcqxk07",
+   "name": "Get Bwrecked!",
+   "url": "https://sorcerytcg.com/decks/cmuoipk85000i0agmjfcqxk07",
+   "avatar": "Pathfinder",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Brex",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmur7iihs000206oyowwoc5q0",
+   "name": "Submerge",
+   "url": "https://sorcerytcg.com/decks/cmur7iihs000206oyowwoc5q0",
+   "avatar": "Waveshaper",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "V3ll3ry",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmurbwrpt000306op97yr66sb",
+   "name": "Keeping it Coy 10/4",
+   "url": "https://sorcerytcg.com/decks/cmurbwrpt000306op97yr66sb",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Hal",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmurswms8000507qonm5yn09w",
+   "name": "Gongaii Cornerstone 10/4",
+   "url": "https://sorcerytcg.com/decks/cmurswms8000507qonm5yn09w",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Vorlind",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmurt0mil000406mwyyam4cf8",
+   "name": "I am a wizard harry",
+   "url": "https://sorcerytcg.com/decks/cmurt0mil000406mwyyam4cf8",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Ginja ninja",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmus071k0001v06q3amhqdqhi",
+   "name": "rubby (Copy)",
+   "url": "https://sorcerytcg.com/decks/cmus071k0001v06q3amhqdqhi",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "winmoneysignton",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmus2xpfy000306mu4emco81x",
+   "name": "Gongaii CS Animist",
+   "url": "https://sorcerytcg.com/decks/cmus2xpfy000306mu4emco81x",
+   "avatar": "Animist",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "athenabobina",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmussziux000306jnof88pjut",
+   "name": "He’s back! And again! And again!",
+   "url": "https://sorcerytcg.com/decks/cmussziux000306jnof88pjut",
+   "avatar": "Deathspeaker",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Bnrrx7",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmusxia29000807p0mr8nebr6",
+   "name": "Earth-Air-Pebbles",
+   "url": "https://sorcerytcg.com/decks/cmusxia29000807p0mr8nebr6",
+   "avatar": "Geomancer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmut4xfag000c06l4b0dixest",
+   "name": "Sorcerer",
+   "url": "https://sorcerytcg.com/decks/cmut4xfag000c06l4b0dixest",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmut5woxu000306l46mv3x61z",
+   "name": "Ironclad and homies",
+   "url": "https://sorcerytcg.com/decks/cmut5woxu000306l46mv3x61z",
+   "avatar": "Ironclad",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmut6dkd1001e06o0incfadxa",
+   "name": "Meatball 10/4/26 Cornerstone",
+   "url": "https://sorcerytcg.com/decks/cmut6dkd1001e06o0incfadxa",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Jonny Killmoves",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmutbf8sp000c06la01e09wdo",
+   "name": "PirateKings",
+   "url": "https://sorcerytcg.com/decks/cmutbf8sp000c06la01e09wdo",
+   "avatar": "Dragonlord",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "NewWaters",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmutwj9tk000206mrdwtz3nie",
+   "name": "NECRO OCT 4",
+   "url": "https://sorcerytcg.com/decks/cmutwj9tk000206mrdwtz3nie",
+   "avatar": "Necromancer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "IntenseCiB",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmuu0724s000n06pc7cmcms7p",
+   "name": "The Great Pacific Garbage Pile",
+   "url": "https://sorcerytcg.com/decks/cmuu0724s000n06pc7cmcms7p",
+   "avatar": "Harbinger",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "generaleggs",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmuu424ho000906pab6jh63y0",
+   "name": "Archi",
+   "url": "https://sorcerytcg.com/decks/cmuu424ho000906pab6jh63y0",
+   "avatar": "Archimago",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmuu42u9m000206np5qdh7h7d",
+   "name": "Persecutor",
+   "url": "https://sorcerytcg.com/decks/cmuu42u9m000206np5qdh7h7d",
+   "avatar": "Persecutor",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  },
+  {
+   "id": "cmuu483w9000106p2aa8x7lb5",
+   "name": "BLUE",
+   "url": "https://sorcerytcg.com/decks/cmuu483w9000106p2aa8x7lb5",
+   "avatar": "Sorcerer",
+   "entries": [
+    {
+     "event": "RCS: Quest for the 'Stone (Gongaii)",
+     "date": "2026-10-04",
+     "player": "Unknown",
+     "placement": null,
+     "top8": false,
+     "topCut": null
+    }
+   ]
+  }
+ ]
+}

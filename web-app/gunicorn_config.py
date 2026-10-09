@@ -67,6 +67,12 @@ def post_worker_init(worker):
         warm_deck_caches()
     except Exception as e:
         worker.log.warning("Could not warm deck rec caches: %s", e)
+    try:
+        from services.deck_archetypes import warm_cache
+
+        warm_cache()
+    except Exception as e:
+        worker.log.warning("Could not warm deck archetype cache: %s", e)
 
 
 def worker_exit(server, worker):

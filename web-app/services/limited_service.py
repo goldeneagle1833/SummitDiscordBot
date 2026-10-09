@@ -9,6 +9,7 @@ from services.curiosa import CuriosaService
 from repositories.limited_repo import (
     create_limited_tables,
     get_limited_elo,
+    get_limited_lifetime_elo,
     upsert_limited_elo,
     create_arena_run as _create_arena_run,
     get_active_arena_run,
@@ -105,8 +106,24 @@ def report_match(winner_id, winner_display_name, loser_id, loser_display_name,
     winner_elo_change = new_winner_elo - winner_elo_before
     loser_elo_change = new_loser_elo - loser_elo_before
 
-    upsert_limited_elo(winner_id, winner_display_name, new_winner_elo, elo_change=winner_elo_change)
-    upsert_limited_elo(loser_id, loser_display_name, new_loser_elo, elo_change=loser_elo_change)
+    # Lifetime is its own ladder: calculate from lifetime ratings, not season deltas
+    winner_lifetime_before = get_limited_lifetime_elo(winner_id)
+    loser_lifetime_before = get_limited_lifetime_elo(loser_id)
+    winner_lifetime_change = _calculate_elo(
+        winner_lifetime_before, loser_lifetime_before, did_win=True
+    ) - winner_lifetime_before
+    loser_lifetime_change = _calculate_elo(
+        loser_lifetime_before, winner_lifetime_before, did_win=False
+    ) - loser_lifetime_before
+
+    upsert_limited_elo(
+        winner_id, winner_display_name, new_winner_elo,
+        elo_change=winner_elo_change, lifetime_change=winner_lifetime_change,
+    )
+    upsert_limited_elo(
+        loser_id, loser_display_name, new_loser_elo,
+        elo_change=loser_elo_change, lifetime_change=loser_lifetime_change,
+    )
 
     # Determine who went first
     winner_went_first = "y" if first_player == str(winner_id) else "n"
@@ -226,7 +243,18 @@ def forfeit_arena_run(user_id):
             )
             current_elo = new_elo
 
-        upsert_limited_elo(user_id, run["user_display_name"], current_elo, elo_change=current_elo - original_elo)
+        # Lifetime phantom opponent: the player's own lifetime rating at forfeit
+        # time (runs only store a season starting ELO). Mirrors the bot.
+        lifetime_before = get_limited_lifetime_elo(user_id)
+        lifetime_current = lifetime_before
+        for _ in range(losses_to_apply):
+            lifetime_current = _calculate_elo(lifetime_current, lifetime_before, did_win=False, k=32)
+
+        upsert_limited_elo(
+            user_id, run["user_display_name"], current_elo,
+            elo_change=current_elo - original_elo,
+            lifetime_change=lifetime_current - lifetime_before,
+        )
 
     update_arena_run_record(run_id, run["wins"], MAX_ARENA_LOSSES)
     complete_arena_run(run_id, "forfeited")

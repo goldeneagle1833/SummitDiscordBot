@@ -13,6 +13,7 @@ from utils.deck_checker import scrape_Curosa
 from repositories.limited_repo import (
     create_limited_tables,
     get_limited_elo,
+    get_limited_lifetime_elo,
     upsert_limited_elo,
     create_arena_run as _create_arena_run,
     get_active_arena_run,
@@ -47,22 +48,47 @@ def update_limited_elo(user_id: int, display_name: str, did_win: bool, opponent_
 
     Uses constant K=32. Completely separate from main ELO system.
 
+    Season and lifetime are independent ladders: the season change is
+    calculated from both players' season ratings, and the lifetime change
+    from both players' lifetime ratings.
+
     Returns:
-        Tuple of (new_elo, elo_change)
+        Tuple of (new_elo, elo_change) for the season ladder
     """
     player_elo = get_limited_elo(user_id)
     opponent_elo = get_limited_elo(opponent_id)
-
     new_elo = update_elo(player_elo, opponent_elo, did_win, k=32)
     elo_change = new_elo - player_elo
 
-    upsert_limited_elo(user_id, display_name, new_elo, elo_change=elo_change)
+    player_lifetime = get_limited_lifetime_elo(user_id)
+    opponent_lifetime = get_limited_lifetime_elo(opponent_id)
+    lifetime_change = update_elo(player_lifetime, opponent_lifetime, did_win, k=32) - player_lifetime
+
+    upsert_limited_elo(
+        user_id, display_name, new_elo,
+        elo_change=elo_change, lifetime_change=lifetime_change,
+    )
 
     logger.info(
-        "Limited ELO update for %s: %d -> %d (%+d)",
+        "Limited ELO update for %s: season %d -> %d (%+d), lifetime %d -> %d (%+d)",
         user_id, player_elo, new_elo, elo_change,
+        player_lifetime, player_lifetime + lifetime_change, lifetime_change,
     )
     return (new_elo, elo_change)
+
+
+def forfeit_lifetime_change(lifetime_elo: int, losses_to_apply: int) -> int:
+    """Lifetime ELO change for a forfeit's phantom losses.
+
+    Runs only store a season starting ELO, so the phantom opponent on the
+    lifetime ladder is the player's own lifetime rating at forfeit time,
+    held fixed while the losses are applied sequentially.
+    """
+    phantom_opponent = lifetime_elo
+    current = lifetime_elo
+    for _ in range(losses_to_apply):
+        current = update_elo(current, phantom_opponent, did_win=False, k=32)
+    return current - lifetime_elo
 
 
 # --- Arena Run Management ---
@@ -399,7 +425,12 @@ def forfeit_arena_run(user_id: int) -> str:
             )
             current_elo = new_elo
 
-        upsert_limited_elo(user_id, run["user_display_name"], current_elo, elo_change=current_elo - original_elo)
+        lifetime_change = forfeit_lifetime_change(get_limited_lifetime_elo(user_id), losses_to_apply)
+
+        upsert_limited_elo(
+            user_id, run["user_display_name"], current_elo,
+            elo_change=current_elo - original_elo, lifetime_change=lifetime_change,
+        )
 
     # Update run record to show full loss cap and mark as forfeited
     update_arena_run_record(run_id, run["wins"], MAX_ARENA_LOSSES)

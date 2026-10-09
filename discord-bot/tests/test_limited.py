@@ -263,6 +263,49 @@ class TestLifetimeElo:
         assert "lifetime_elo" in player
         assert player["lifetime_elo"] == 1600
 
+    def test_lifetime_change_uses_lifetime_ratings_not_season_delta(self):
+        """After a season reset, lifetime must be calculated from lifetime ratings.
+
+        Season: both 1500, so the season swing is +/-16. Lifetime: the winner
+        is 1700 and the loser 1400, so the favourite should gain far less.
+        """
+        upsert_limited_elo(8101, "LTFav", 1500, lifetime_change=200)  # lifetime 1700
+        upsert_limited_elo(8102, "LTDog", 1500, lifetime_change=-100)  # lifetime 1400
+
+        _, season_change = update_limited_elo(8101, "LTFav", True, 8102)
+        assert season_change == 16
+
+        expected = update_elo(1700, 1400, True, k=32) - 1700
+        assert get_limited_lifetime_elo(8101) == 1700 + expected
+        assert expected != season_change
+
+    def test_limited_winner_report_moves_lifetime_independently(self):
+        upsert_limited_elo(8103, "LTW", 1500, lifetime_change=100)  # lifetime 1600
+        upsert_limited_elo(8104, "LTL", 1500, lifetime_change=100)  # lifetime 1600
+        upsert_limited_elo(8103, "LTW", 1600)  # season 1600 (spot fix)
+
+        limited_winner_report(
+            reporter_id=8103, winner_id=8103, winner_display_name="LTW",
+            loser_id=8104, loser_display_name="LTL", first_player="n",
+            match_time=0, curiosa_url_winner="", curiosa_url_loser="",
+            match_comment="", winner_went_first="n", loser_went_first="n",
+            winner_run_id=None, loser_run_id=None,
+        )
+        # Lifetime: equal 1600s -> +16 for the winner, regardless of the season gap
+        assert get_limited_lifetime_elo(8103) == 1616
+        assert get_limited_elo(8103) == update_elo(1600, 1500, True, k=32)
+
+    def test_forfeit_lifetime_uses_lifetime_rating(self):
+        upsert_limited_elo(8105, "LTForfeit", 1500, lifetime_change=300)  # lifetime 1800
+        create_arena_run(8105, "LTForfeit", "https://curiosa.io/deck/lt", "{}", 1500)
+
+        forfeit_arena_run(8105)
+
+        expected = 1800
+        for _ in range(2):
+            expected = update_elo(expected, 1800, False, k=32)
+        assert get_limited_lifetime_elo(8105) == expected
+
     def test_admin_spot_fix_does_not_affect_lifetime(self):
         """upsert without elo_change should not touch lifetime_elo."""
         upsert_limited_elo(8010, "SpotFix", 1600, elo_change=100)

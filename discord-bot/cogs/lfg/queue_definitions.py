@@ -5,12 +5,20 @@ from services.pilots_service import is_pilot_active
 
 QUEUE_DEFINITIONS = (
     {"type": "points", "label": "Rumble (Omens)", "emoji": "📊", "pilot": "PointsQueue", "deck_mode": "required"},
-    {"type": "ranked", "label": "Ranked", "emoji": "⚔️", "pilot": "RankedQueue", "deck_mode": "required"},
+    {
+        "type": "ranked",
+        "label": "Ranked",
+        "emoji": "⚔️",
+        "pilot": "RankedQueue",
+        "deck_mode": "required",
+        "status_note": "no Seer/Scry",
+    },
     {
         "type": "testing",
         "label": "Casual",
         "emoji": "⭐",
         "status_emoji": "🧪",
+        "status_note": "Spoiled cards are legal",
         "pilot": "CasualQueue",
         "deck_mode": "required",
     },
@@ -30,3 +38,13 @@ def queue_definition(queue_type):
 def queue_is_enabled(queue_type):
     definition = queue_definition(queue_type)
     return bool(definition and is_pilot_active(definition["pilot"]))
+
+
+def queue_notes_text():
+    """Rules notes for enabled queues, shown on the empty LFG status message."""
+    lines = [
+        f'{definition.get("status_emoji", definition["emoji"])} **{definition["label"]}:** {definition["status_note"]}'
+        for definition in enabled_queue_definitions()
+        if definition.get("status_note")
+    ]
+    return "\n\n" + "\n".join(lines) if lines else ""

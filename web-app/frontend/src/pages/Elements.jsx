@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
+import useRankSlide from '@/hooks/useRankSlide'
 import { getAvatarImageFiles } from '@/api/cards'
 import AvatarMetaChart from '@/components/analytics/AvatarMetaChart'
-import TimelineControls, { windowDays } from '@/components/analytics/TimelineControls'
+import TimelineControls, { windowDays, PLAY_TICK_MS } from '@/components/analytics/TimelineControls'
 import { mergeDates, buildCumulative, flattenElementDays, elementStatsAt } from '@/utils/elementTimeline'
 
 const ELEMENT_COLORS = {
@@ -27,20 +28,21 @@ function formatEventDate(dateStr) {
 function ElementBarChart({ data, title, subtitle }) {
   if (!data?.length) return null
   const sorted = [...data].sort((a, b) => b.win_rate - a.win_rate)
+  const listRef = useRankSlide()
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
       <h2 className="font-display text-secondary text-lg mb-1">{title}</h2>
       {subtitle && <p className="text-xs text-text-muted mb-4">{subtitle}</p>}
-      <div className="space-y-3">
+      <div ref={listRef} className="space-y-3">
         {sorted.map((el) => {
           const colors = ELEMENT_COLORS[el.name] || { bar: 'bg-gray-500', text: 'text-gray-400' }
           return (
-            <div key={el.name} className="flex items-center gap-3">
+            <div key={el.name} data-rank-key={el.name} className="flex items-center gap-3">
               <div className={`w-14 text-sm font-semibold ${colors.text}`}>{el.name}</div>
               <div className="flex-1 bg-bg-raised rounded-full h-6 overflow-hidden relative">
                 <div
-                  className={`${colors.bar} h-full rounded-full transition-all duration-300 flex items-center justify-end pr-2`}
+                  className={`${colors.bar} h-full rounded-full timeline-bar flex items-center justify-end pr-2`}
                   style={{ width: `${Math.max(el.win_rate, 2)}%` }}
                 >
                   <span className="text-xs font-semibold text-white drop-shadow">{el.win_rate}%</span>
@@ -59,6 +61,7 @@ function ElementBarChart({ data, title, subtitle }) {
 function PresenceChart({ data }) {
   if (!data?.length) return null
   const sorted = [...data].sort((a, b) => b.win_presence - a.win_presence)
+  const listRef = useRankSlide()
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
@@ -66,13 +69,13 @@ function PresenceChart({ data }) {
       <p className="text-xs text-text-muted mb-4">
         How often each element appears in winning vs losing decks. Delta indicates correlation, not causation.
       </p>
-      <div className="space-y-4">
+      <div ref={listRef} className="space-y-4">
         {sorted.map((el) => {
           const colors = ELEMENT_COLORS[el.name] || { text: 'text-gray-400' }
           const delta = (el.win_presence - el.loss_presence).toFixed(1)
           const deltaColor = parseFloat(delta) >= 0 ? 'text-green-400' : 'text-red-400'
           return (
-            <div key={el.name}>
+            <div key={el.name} data-rank-key={el.name}>
               <div className="flex items-center justify-between mb-1">
                 <span className={`text-sm font-semibold ${colors.text}`}>{el.name}</span>
                 <span className={`text-xs font-medium ${deltaColor}`}>
@@ -84,7 +87,7 @@ function PresenceChart({ data }) {
                   <span className="text-xs text-text-muted w-10">Wins</span>
                   <div className="flex-1 bg-bg-raised rounded-full h-4 overflow-hidden">
                     <div
-                      className="bg-green-500/70 h-full rounded-full transition-all duration-300 flex items-center justify-end pr-1.5"
+                      className="bg-green-500/70 h-full rounded-full timeline-bar flex items-center justify-end pr-1.5"
                       style={{ width: `${Math.max(el.win_presence, 1)}%` }}
                     >
                       <span className="text-[10px] font-medium text-white">{el.win_presence}%</span>
@@ -95,7 +98,7 @@ function PresenceChart({ data }) {
                   <span className="text-xs text-text-muted w-10">Losses</span>
                   <div className="flex-1 bg-bg-raised rounded-full h-4 overflow-hidden">
                     <div
-                      className="bg-red-500/70 h-full rounded-full transition-all duration-300 flex items-center justify-end pr-1.5"
+                      className="bg-red-500/70 h-full rounded-full timeline-bar flex items-center justify-end pr-1.5"
                       style={{ width: `${Math.max(el.loss_presence, 1)}%` }}
                     >
                       <span className="text-[10px] font-medium text-white">{el.loss_presence}%</span>
@@ -119,12 +122,13 @@ function PresenceChart({ data }) {
 function ComboBars({ data, title, subtitle, valueKey, valueLabel, sortKey }) {
   if (!data?.length) return null
   const sorted = [...data].sort((a, b) => b[sortKey || 'win_rate'] - a[sortKey || 'win_rate'])
+  const listRef = useRankSlide()
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
       <h2 className="font-display text-secondary text-lg mb-1">{title}</h2>
       {subtitle && <p className="text-xs text-text-muted mb-4">{subtitle}</p>}
-      <div className="space-y-2">
+      <div ref={listRef} className="space-y-2">
         {sorted.map((item) => {
           const elements = item.name ? item.name.split(', ') : (item.elements ? item.elements.split(', ') : [])
           const val = item[valueKey || 'win_rate']
@@ -133,7 +137,7 @@ function ComboBars({ data, title, subtitle, valueKey, valueLabel, sortKey }) {
             : `${item.wins}W - ${item.losses}L (${item.total})`
 
           return (
-            <div key={item.name || item.elements} className="flex items-center gap-3">
+            <div key={item.name || item.elements} data-rank-key={item.name || item.elements} className="flex items-center gap-3">
               <div className="w-28 flex gap-1 flex-shrink-0">
                 {elements.map((el) => {
                   const colors = ELEMENT_COLORS[el.trim()] || { text: 'text-gray-400' }
@@ -142,7 +146,7 @@ function ComboBars({ data, title, subtitle, valueKey, valueLabel, sortKey }) {
               </div>
               <div className="flex-1 bg-bg-raised rounded-full h-5 overflow-hidden relative">
                 <div
-                  className="bg-secondary/60 h-full rounded-full transition-all duration-300"
+                  className="bg-secondary/60 h-full rounded-full timeline-bar"
                   style={{ width: `${Math.max(val, 1)}%` }}
                 />
                 <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-white">
@@ -215,8 +219,13 @@ export default function Elements() {
   const { elements, dominant, splash, combinations, composition: comp } = stats
   const hasElementData = elements.some((e) => e.total > 0)
 
+  // Bars and rows glide at one pace: linear while playing so each step blends into the next
+  const motion = view.playing
+    ? { '--bar-ms': `${PLAY_TICK_MS}ms`, '--bar-ease': 'linear' }
+    : { '--bar-ms': '600ms', '--bar-ease': 'cubic-bezier(0.22, 1, 0.36, 1)' }
+
   return (
-    <div>
+    <div style={motion}>
       {/* Hero */}
       <section className="text-center mb-6">
         <h1 className="text-2xl font-display text-secondary mb-2">Elemental Win Rates</h1>

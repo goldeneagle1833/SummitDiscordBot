@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { getAvatarImagePath } from '@/utils/avatarBadges'
 import { countsAt } from '@/utils/elementTimeline'
+import useRankSlide from '@/hooks/useRankSlide'
 
 const TOP_N = 12
 
@@ -10,6 +11,7 @@ const TOP_N = 12
  */
 export default function AvatarMetaChart({ cumulative, endIdx, days, imageFiles = [] }) {
   const [showAll, setShowAll] = useState(false)
+  const listRef = useRankSlide()
 
   const rows = useMemo(() => countsAt(cumulative, endIdx, days), [cumulative, endIdx, days])
   const prevCounts = useMemo(() => {
@@ -32,14 +34,14 @@ export default function AvatarMetaChart({ cumulative, endIdx, days, imageFiles =
       {shown.length === 0 ? (
         <p className="text-sm text-text-muted py-4">No decks reported in this window.</p>
       ) : (
-        <div className="space-y-1.5">
+        <div ref={listRef} className="space-y-1.5">
           {shown.map((r) => {
             const imgFile = getAvatarImagePath(r.name, imageFiles)
             const share = total ? ((r.count / total) * 100).toFixed(1) : '0.0'
             const prev = prevCounts ? prevCounts[r.name] || 0 : null
             const delta = prev == null ? null : r.count - prev
             return (
-              <div key={r.name} className="flex items-center gap-2" data-testid="meta-row">
+              <div key={r.name} data-rank-key={r.name} className="flex items-center gap-2" data-testid="meta-row">
                 <div className="w-36 sm:w-44 flex items-center gap-2 flex-shrink-0 min-w-0">
                   {imgFile ? (
                     <img src={`/avatar-images/${imgFile}`} alt="" className="w-6 h-6 rounded-full object-cover object-top flex-shrink-0" />
@@ -50,7 +52,7 @@ export default function AvatarMetaChart({ cumulative, endIdx, days, imageFiles =
                 </div>
                 <div className="flex-1 bg-bg-raised rounded-full h-5 overflow-hidden">
                   <div
-                    className="bg-secondary/60 h-full rounded-full transition-all duration-300"
+                    className="bg-secondary/60 h-full rounded-full timeline-bar"
                     style={{ width: `${Math.max((r.count / max) * 100, 1)}%` }}
                   />
                 </div>

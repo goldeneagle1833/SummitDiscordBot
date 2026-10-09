@@ -7,6 +7,10 @@ export const WINDOWS = [
   { key: 'all', label: 'All time', days: null },
 ]
 
+// Playback: one step every PLAY_TICK_MS, about PLAY_STEPS steps start to end
+export const PLAY_TICK_MS = 220
+const PLAY_STEPS = 150
+
 export const windowDays = (key) => WINDOWS.find((w) => w.key === key)?.days ?? null
 
 export function formatDay(iso) {
@@ -26,8 +30,8 @@ export default function TimelineControls({ dates, windowKey, endIdx, playing, on
   // Play steps the slider from where it is to the latest day
   useEffect(() => {
     if (!playing) return undefined
-    const step = Math.max(1, Math.round(dates.length / 120))
-    const id = setInterval(() => onChange((s) => ({ ...s, endIdx: Math.min(s.endIdx + step, last) })), 100)
+    const step = Math.max(1, Math.round(dates.length / PLAY_STEPS))
+    const id = setInterval(() => onChange((s) => ({ ...s, endIdx: Math.min(s.endIdx + step, last) })), PLAY_TICK_MS)
     return () => clearInterval(id)
   }, [playing, dates.length, last, onChange])
 

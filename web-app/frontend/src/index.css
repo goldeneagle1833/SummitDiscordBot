@@ -26,3 +26,16 @@ option {
   background-color: #161b22;
   color: #f0f6fc;
 }
+
+/* Elements page timeline: bars and re-sorted rows share one timing.
+   The page sets --bar-ms / --bar-ease (linear while playing so steps blend). */
+.timeline-bar {
+  transition: width var(--bar-ms, 600ms) var(--bar-ease, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-bar,
+  [data-rank-key] {
+    transition: none !important;
+  }
+}

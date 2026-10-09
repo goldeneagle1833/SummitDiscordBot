@@ -203,9 +203,6 @@ export default function Elements() {
   useEffect(() => { fetchData() }, [fetchData])
 
 
-  if (loading) return <Spinner className="py-20" />
-  if (error) return <p className="text-center text-accent-red py-8">{error}</p>
-
   const elements = data?.elements || []
   const dominant = data?.dominant || []
   const splash = data?.splash || []
@@ -218,6 +215,13 @@ export default function Elements() {
       <section className="text-center mb-6">
         <h1 className="text-2xl font-display text-secondary mb-2">Elemental Win Rates</h1>
         <p className="text-text-muted text-sm">Win rates by element based on cards in reported decklists</p>
+      </section>
+
+      {/* Meta: avatar counts over time */}
+      <section className="mb-10">
+        <h2 className="text-xl font-display text-secondary mb-1 text-center">Meta</h2>
+        <p className="text-text-muted text-sm mb-4 text-center">How the avatar field has changed over time</p>
+        <AvatarMetaChart />
       </section>
 
       {/* Filters */}
@@ -251,7 +255,11 @@ export default function Elements() {
 
       </div>
 
-      {elements.length === 0 ? (
+      {loading ? (
+        <Spinner className="py-20" />
+      ) : error ? (
+        <p className="text-center text-accent-red py-8">{error}</p>
+      ) : elements.length === 0 ? (
         <p className="text-center text-text-muted py-8">
           No element data available yet. Report matches with decklists to see stats!
         </p>
@@ -307,13 +315,6 @@ export default function Elements() {
           )}
         </>
       )}
-
-      {/* Meta: avatar counts over time */}
-      <section className="mt-10">
-        <h2 className="text-xl font-display text-secondary mb-1 text-center">Meta</h2>
-        <p className="text-text-muted text-sm mb-4 text-center">How the avatar field has changed over time</p>
-        <AvatarMetaChart />
-      </section>
     </div>
   )
 }

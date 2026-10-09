@@ -11,7 +11,7 @@ from utils.database import check_milestone
 logger = logging.getLogger("discord_bot")
 
 # URL pattern for scrubbing URLs from public fallback channel messages
-_URL_PATTERN = re.compile(r"https?://\S+")
+_URL_PATTERN = re.compile(r"<?https?://[^\s>]+>?")
 
 # Channel where a player asks for a mis-reported result to be fixed.  The live
 # config file predates this setting, so fall back to the Summit server channel.

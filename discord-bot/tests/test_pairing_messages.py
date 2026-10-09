@@ -18,6 +18,7 @@ from cogs.lfg.pairing_messages import (
     PairingPlayer,
     announce_match_id,
     announce_pairing,
+    match_delivery_extras,
     match_type_presentation,
     send_pairing_messages,
 )
@@ -363,3 +364,16 @@ async def test_announcement_is_skipped_when_there_is_no_channel():
     # Nothing to assert beyond "does not raise" - the LFG channel can be
     # missing when the bot has not cached it yet.
     await announce_pairing(None, player_a=MagicMock(), player_b=MagicMock())
+
+
+def test_links_in_pairing_messages_are_wrapped_to_skip_embeds():
+    from cogs.lfg.helpers import scrub_urls
+    from cogs.lfg.voice import voice_match_text
+
+    assert f"(<{SUMMIT_VOICE_URL}>)" in voice_match_text(True)
+    *_, reporter_text, other_text, _ = match_delivery_extras(
+        {1: "https://pso/a", 2: "https://pso/b"}, 1, 2
+    )
+    assert "<https://pso/a>" in reporter_text
+    assert "<https://pso/b>" in other_text
+    assert scrub_urls("Deck: <https://curiosa.io/decks/a>") == "Deck: [link removed]"

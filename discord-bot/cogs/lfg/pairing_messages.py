@@ -47,7 +47,7 @@ class PrivateSeatLinkButton(discord.ui.Button):
             )
             return
         await interaction.response.send_message(
-            f"Your private Sorcery Online seat: {self.game_url}",
+            f"Your private Sorcery Online seat: <{self.game_url}>",
             ephemeral=True,
         )
 
@@ -70,12 +70,12 @@ def match_delivery_extras(provisioned_links, reporter_id, other_id, is_voice_mat
     if not reporter_game_url or not other_game_url:
         return None, None, "", "", voice_text
     reporter_game_text = (
-        f"\n\n🎴 **Play on Sorcery Online:** {reporter_game_url}"
+        f"\n\n🎴 **Play on Sorcery Online:** <{reporter_game_url}>"
         if reporter_game_url
         else ""
     )
     other_game_text = (
-        f"\n\n🎴 **Play on Sorcery Online:** {other_game_url}"
+        f"\n\n🎴 **Play on Sorcery Online:** <{other_game_url}>"
         if other_game_url
         else ""
     )
@@ -140,7 +140,7 @@ def _build_body(
     if self_mention:
         opening = f"{self_mention} {opening}"
     if self_deck_url:
-        opening = f"{opening}\n**Your Deck:** {self_deck_url}"
+        opening = f"{opening}\n**Your Deck:** <{self_deck_url}>"
     if self_avatar or opponent_avatar:
         opening = (
             f"{opening}\n**Avatars (locked for this match):** "

@@ -26,7 +26,7 @@ VOICE_ICONS = {
     EITHER: "🔊🔇",
 }
 
-SUMMIT_VOICE_URL = "https://discord.com/channels/1319120227643949211/1552047481129541713"
+SUMMIT_VOICE_URL = "https://discord.com/channels/1319120227643949211/1319121204480577586"
 
 
 def normalize_voice_preference(value):
@@ -69,5 +69,5 @@ def voice_match_tag(is_voice_match):
 def voice_match_text(is_voice_match):
     """Match-found DM line: the room link, voice matches only."""
     if is_voice_match:
-        return f"\n\n🔊 **Voice chat:** [Join To Make a Room]({SUMMIT_VOICE_URL})"
+        return f"\n\n🔊 **Voice chat:** [Join To Make a Room](<{SUMMIT_VOICE_URL}>)"
     return ""

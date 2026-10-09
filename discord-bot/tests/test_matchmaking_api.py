@@ -666,3 +666,31 @@ def test_callback_save_failure_is_not_fatal(monkeypatch):
     monkeypatch.setattr(summit_result_reporting, "_ensure_callback_table", boom)
     # Must not raise: audit rows are bookkeeping, never a reason to fail a result
     summit_result_reporting._save_callback(1, 6, "ranked", "decided", 10, 10, 20, 4, None, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("voice, voice_type", [(True, "voice"), (False, "no_voice")])
+async def test_sorcery_online_payload_carries_voice_type(monkeypatch, voice, voice_type):
+    monkeypatch.setenv("DRAFT_SORCERY_API_KEY", "configured-key")
+    monkeypatch.setattr(sorcery_online_matchmaking, "summit_matchmaking_api_key", lambda: "configured-key")
+    success = MagicMock(status=200)
+    success.json = AsyncMock(return_value={
+        "players": [
+            {"discordUserId": "10", "gameUrl": "https://playsorceryonline.com/?m=one"},
+            {"discordUserId": "20", "gameUrl": "https://playsorceryonline.com/?m=two"},
+        ],
+    })
+    success.__aenter__ = AsyncMock(return_value=success)
+    success.__aexit__ = AsyncMock(return_value=None)
+    session = MagicMock()
+    session.post.return_value = success
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("services.sorcery_online_matchmaking.aiohttp.ClientSession", return_value=session):
+        await provision_sorcery_online_match(1, 2, "ranked", [
+            {"discord_user_id": 10, "display_name": "Alice"},
+            {"discord_user_id": 20, "display_name": "Bob"},
+        ], voice=voice)
+
+    assert session.post.call_args.kwargs["json"]["voiceType"] == voice_type

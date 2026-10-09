@@ -55,7 +55,7 @@ def _clear_matching_web_users(*user_ids):
 async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, players, voice=False):
     """Provision seats and publish stable results for website-origin players."""
     provisioned_links = await provision_sorcery_online_match(
-        guild_id, pairing_id, queue_type, players
+        guild_id, pairing_id, queue_type, players, voice=voice
     ) or {}
     result_id_base = f"{guild_id}:{pairing_id}"
     matched_at = int(time.time() * 1000)

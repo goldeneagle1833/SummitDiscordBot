@@ -275,9 +275,10 @@ class TestVoiceWebsite:
             {"discord_user_id": 20, "origin": "discord", "opponent_name": "A"},
         ]
         with patch("cogs.lfg.queue.provision_sorcery_online_match",
-                   return_value={10: "https://so.test/10", 20: "https://so.test/20"}):
+                   return_value={10: "https://so.test/10", 20: "https://so.test/20"}) as provision:
             await provision_match_and_publish_results(1, 2, "ranked", players, voice=True)
         assert pending_web_matches[10]["voice"] is True
+        assert provision.call_args.kwargs["voice"] is True
 
 
 class TestVoiceModal:

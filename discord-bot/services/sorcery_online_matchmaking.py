@@ -8,6 +8,8 @@ from pathlib import Path
 import aiohttp
 from dotenv import dotenv_values
 
+from cogs.lfg.voice import NO_VOICE, VOICE
+
 
 logger = logging.getLogger("discord_bot")
 BOT_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
@@ -21,7 +23,7 @@ def summit_matchmaking_api_key():
     return str(file_key or os.getenv("DRAFT_SORCERY_API_KEY", "")).strip()
 
 
-async def provision_sorcery_online_match(guild_id, pairing_id, queue_type, players):
+async def provision_sorcery_online_match(guild_id, pairing_id, queue_type, players, voice=False):
     api_key = summit_matchmaking_api_key()
     endpoint = os.getenv(
         "SORCERY_ONLINE_MATCHMAKING_URL",
@@ -35,6 +37,7 @@ async def provision_sorcery_online_match(guild_id, pairing_id, queue_type, playe
         "guildId": str(guild_id),
         "pairingId": str(pairing_id),
         "queueType": queue_type,
+        "voiceType": VOICE if voice else NO_VOICE,
         "players": [
             {
                 "discordUserId": str(player["discord_user_id"]),

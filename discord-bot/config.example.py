@@ -63,6 +63,9 @@ SUMMIT_DISCORD_INVITE = "https://discord.gg/sorcererssummit"
 
 # Public website — used for player/leaderboard links in the daily & weekly recaps
 WEB_APP_URL = "https://sorcererssummit.com"
+# API key the bot sends to the web app (must be one of the web app's API_KEYS).
+# Every /api/* call on the web app requires it.
+WEB_APP_API_KEY = os.getenv("WEB_APP_API_KEY", "")
 
 # File names
 DECK_DATA_FILE = "deck_data_test.json"

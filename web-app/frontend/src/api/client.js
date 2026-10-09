@@ -1,3 +1,5 @@
+import { ensureSiteSession, refreshSiteSession, isGateRejection } from './siteSession'
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 export class ApiError extends Error {
@@ -7,7 +9,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request(method, url, body) {
+async function send(method, url, body) {
   const options = {
     method,
     credentials: 'include',
@@ -17,9 +19,23 @@ async function request(method, url, body) {
     options.headers['Content-Type'] = 'application/json'
     options.body = JSON.stringify(body)
   }
-  const res = await fetch(`${API_BASE_URL}${url}`, options)
+  return fetch(`${API_BASE_URL}${url}`, options)
+}
+
+async function request(method, url, body) {
+  // The API gate needs the site token cookie; make sure it exists first.
+  await ensureSiteSession().catch(() => {})
+
+  let res = await send(method, url, body)
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}))
+    let data = await res.json().catch(() => ({}))
+    if (isGateRejection(res, data)) {
+      // Token expired or was cleared — fetch a new one and retry once.
+      await refreshSiteSession().catch(() => {})
+      res = await send(method, url, body)
+      if (res.ok) return res.json()
+      data = await res.json().catch(() => ({}))
+    }
     const msg = data.error?.message || data.error || res.statusText
     throw new ApiError(res.status, msg)
   }

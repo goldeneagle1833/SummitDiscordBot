@@ -180,6 +180,8 @@ Add to the appropriate file in `web-app/routes/api/`. All endpoints return JSON.
 
 Every endpoint must use an auth decorator (`@require_auth`, `@require_api_key`, `@require_admin`) or be added to `KNOWN_PUBLIC_ENDPOINTS` in `web-app/tests/test_endpoint_auth.py`. A CI test enforces this.
 
+Independently of per-route auth, **no `/api/*` route is reachable without credentials**: `web-app/utils/site_gate.py` rejects every request that carries neither a valid API key (`X-API-Key` / `Bearer`, from `API_KEYS` or `DRAFT_SORCERY_API_KEY`) nor the site token cookie the server issues to the React app via `GET /api/site-token` (same-site browsers only). "Public" in the allowlist therefore means "no user login needed", not "open to the internet". Do not add endpoints to `EXEMPT_ENDPOINTS` unless an outside system must call them with no key at all (e.g. a signature-verified webhook). The React client bootstraps the token in `frontend/src/api/siteSession.js`; the shared `api/client.js` retries once if the token expired.
+
 ### New Frontend Page (React)
 1. Create `web-app/frontend/src/pages/MyPage.jsx`
 2. Add API call in `web-app/frontend/src/api/`

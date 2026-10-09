@@ -2,9 +2,15 @@
 
 When adding a new endpoint, you must either:
 1. Add an auth decorator (@require_auth, @require_api_key, @require_admin)
-2. Add the endpoint to KNOWN_PUBLIC_ENDPOINTS below (conscious opt-in to public)
+2. Add the endpoint to KNOWN_PUBLIC_ENDPOINTS below (conscious opt-in)
 
 This prevents accidentally exposing endpoints without authentication.
+
+NOTE: "public" here means "no *per-user* auth".  Nothing under /api/ is
+reachable from outside the site: utils/site_gate.py rejects every /api/*
+request that carries neither a valid API key nor the same-site token issued
+to the React front end (see tests/test_site_gate.py).  The only exceptions
+are listed in utils.site_gate.EXEMPT_ENDPOINTS.
 """
 
 import pytest
@@ -12,6 +18,9 @@ import pytest
 # Endpoints intentionally public (read-only data, auth flows, status, etc.)
 # To make a new endpoint public, add it here with a comment explaining why.
 KNOWN_PUBLIC_ENDPOINTS = {
+    # -- Site gate --
+    "api.site_token",  # issues the front-end token; same-site checked inside
+
     # -- Status / health --
     "api.misc.status",
     "api.misc.recent_event",

@@ -1,7 +1,6 @@
 import usePageTitle from '@/hooks/usePageTitle'
 import AdminCollapsible from '@/components/admin/AdminCollapsible'
 import DashboardSection from '@/components/admin/DashboardSection'
-import AnalyticsSection from '@/components/admin/AnalyticsSection'
 import BannersSection from '@/components/admin/BannersSection'
 import AdminActionsSection from '@/components/admin/AdminActionsSection'
 import TransferHistorySection from '@/components/admin/TransferHistorySection'
@@ -29,16 +28,7 @@ export default function AuditLog() {
         <SeasonFeedbackSection />
       </AdminCollapsible>
       <AdminCollapsible title="Dashboard" subtitle="Community health and site analytics at a glance" defaultOpen>
-        <div className="space-y-8">
-          <DashboardSection />
-          <div className="border-t border-border pt-6 space-y-4">
-            <div>
-              <h2 className="text-lg font-display text-secondary">Site Analytics</h2>
-              <p className="text-xs text-text-muted">Daily active users, page views and banner clicks</p>
-            </div>
-            <AnalyticsSection />
-          </div>
-        </div>
+        <DashboardSection />
       </AdminCollapsible>
       <AdminCollapsible title="Matches with Notes" subtitle="All matches where players left a comment">
         <MatchNotesSection />

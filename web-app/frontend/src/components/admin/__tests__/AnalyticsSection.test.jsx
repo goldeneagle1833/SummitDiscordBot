@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, within, fireEvent } from '@testing-library/react'
+import { screen, within, render } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
-import AnalyticsSection, { dailyActiveRange } from '../AnalyticsSection'
+import {
+  DailyActiveUsersChart, ActiveUsersTiles, PageViewsPanel, dailyActiveRange,
+} from '../AnalyticsSection'
 
 vi.mock('@/api/client', () => ({ get: vi.fn() }))
 
@@ -26,30 +28,42 @@ vi.mock('recharts', () => {
 
 import { get } from '@/api/client'
 
-const STATS = {
-  success: true,
-  page_views: { total: 1234, top_pages: [], daily: [] },
-  banner_clicks: { total: 5, by_type: [] },
-  active_users: {
-    daily: [
-      { date: '2026-10-08', visitors: 42, users: 17 },
-      { date: '2026-10-07', visitors: 30, users: 12 },
-    ],
-    today: { visitors: 42, users: 17 },
-    avg_7d: { visitors: 33.4, users: 11.9 },
-    avg_30d: { visitors: 28, users: 9.5 },
-  },
+const ACTIVE_USERS = {
+  daily: [
+    { date: '2026-10-08', visitors: 42, users: 17 },
+    { date: '2026-10-07', visitors: 30, users: 12 },
+  ],
+  today: { visitors: 42, users: 17 },
+  avg_7d: { visitors: 33.4, users: 11.9 },
+  avg_30d: { visitors: 28, users: 9.5 },
 }
 
-describe('AnalyticsSection — daily active users', () => {
-  beforeEach(() => {
-    get.mockReset()
-    get.mockResolvedValue(STATS)
+describe('DailyActiveUsersChart', () => {
+  it('charts visitors and logged-in users for every day in the range', () => {
+    render(<DailyActiveUsersChart daily={ACTIVE_USERS.daily} days={30} />)
+    const chart = screen.getByTestId('bar-chart')
+    expect(chart).toHaveAttribute('data-points', '30')
+    const series = within(chart).getAllByTestId('series').map((el) => el.textContent)
+    expect(series).toEqual(['Visitors', 'Logged in'])
   })
 
-  it('shows today and rolling averages with the logged-in split', async () => {
-    renderWithRouter(<AnalyticsSection />)
-    const today = await screen.findByTestId('dau-today')
+  it('follows the range it is given', () => {
+    const { rerender } = render(<DailyActiveUsersChart daily={ACTIVE_USERS.daily} days={7} />)
+    expect(screen.getByTestId('bar-chart')).toHaveAttribute('data-points', '7')
+    rerender(<DailyActiveUsersChart daily={ACTIVE_USERS.daily} days={90} />)
+    expect(screen.getByTestId('bar-chart')).toHaveAttribute('data-points', '90')
+  })
+
+  it('says so when there is no traffic yet', () => {
+    render(<DailyActiveUsersChart daily={[]} days={30} />)
+    expect(screen.getByText('No data yet.')).toBeInTheDocument()
+  })
+})
+
+describe('ActiveUsersTiles', () => {
+  it('shows today and rolling averages with the logged-in split', () => {
+    render(<ActiveUsersTiles activeUsers={ACTIVE_USERS} />)
+    const today = screen.getByTestId('dau-today')
     expect(today).toHaveTextContent('42')
     expect(today).toHaveTextContent('17 logged in')
     expect(screen.getByTestId('dau-7d')).toHaveTextContent('33.4')
@@ -57,37 +71,33 @@ describe('AnalyticsSection — daily active users', () => {
     expect(screen.getByTestId('dau-30d')).toHaveTextContent('28')
   })
 
-  it('charts visitors and logged-in users per day, last 30 days by default', async () => {
-    renderWithRouter(<AnalyticsSection />)
-    await screen.findByText('Active Users (Daily)')
-    const chart = screen.getAllByTestId('bar-chart')[0] // DAU chart renders first
-    expect(chart).toHaveAttribute('data-points', '30')
-    const series = within(chart).getAllByTestId('series').map((el) => el.textContent)
-    expect(series).toEqual(['Visitors', 'Logged in'])
+  it('renders nothing without data (older server)', () => {
+    const { container } = render(<ActiveUsersTiles activeUsers={undefined} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+})
+
+describe('PageViewsPanel', () => {
+  beforeEach(() => {
+    get.mockReset()
+    get.mockResolvedValue({
+      success: true,
+      page_views: { total: 1234, top_pages: [{ path: '/cards', count: 9 }], daily: [] },
+      banner_clicks: { total: 5, by_type: [] },
+    })
   })
 
-  it('switches the daily chart range without refetching', async () => {
-    renderWithRouter(<AnalyticsSection />)
-    await screen.findByText('Active Users (Daily)')
-    fireEvent.click(screen.getByRole('button', { name: 'Last 7 days' }))
-    expect(screen.getAllByTestId('bar-chart')[0]).toHaveAttribute('data-points', '7')
-    fireEvent.click(screen.getByRole('button', { name: 'Last 90 days' }))
-    expect(screen.getAllByTestId('bar-chart')[0]).toHaveAttribute('data-points', '90')
-    expect(get).toHaveBeenCalledTimes(1)
+  it('requests the range in hours and shows the totals', async () => {
+    renderWithRouter(<PageViewsPanel days={7} />)
+    expect(await screen.findByText('1,234')).toBeInTheDocument()
+    expect(get).toHaveBeenCalledWith('/api/analytics/stats?hours=168')
+    expect(screen.getByText('/cards')).toBeInTheDocument()
   })
 
-  it('still renders when the API has no active_users block (older server)', async () => {
-    get.mockResolvedValue({ ...STATS, active_users: undefined })
-    renderWithRouter(<AnalyticsSection />)
-    await screen.findByText('Page Views')
-    expect(screen.queryByText('Daily Active Users')).not.toBeInTheDocument()
-  })
-
-  it('says so when there is no traffic yet', async () => {
-    get.mockResolvedValue({ ...STATS, active_users: { ...STATS.active_users, daily: [] } })
-    renderWithRouter(<AnalyticsSection />)
-    await screen.findByText('Active Users (Daily)')
-    expect(screen.getAllByText('No data yet.').length).toBeGreaterThan(0)
+  it('requests all time without an hours filter', async () => {
+    renderWithRouter(<PageViewsPanel days={null} />)
+    await screen.findByText('1,234')
+    expect(get).toHaveBeenCalledWith('/api/analytics/stats')
   })
 })
 

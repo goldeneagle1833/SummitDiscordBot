@@ -1,21 +1,78 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
+import { DailyActiveUsersChart, ActiveUsersTiles, PageViewsPanel } from './AnalyticsSection'
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, Legend,
   ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 
-function weekLabel(yw) {
-  if (!yw) return ''
+/** Monday that starts a SQLite strftime('%Y-%W') week. */
+function weekStart(yw) {
   const [year, week] = yw.split('-').map(Number)
   const jan1 = new Date(year, 0, 1)
   const firstMonday = new Date(jan1)
   firstMonday.setDate(jan1.getDate() + ((8 - jan1.getDay()) % 7))
   const target = new Date(firstMonday)
   target.setDate(firstMonday.getDate() + (week - 1) * 7)
-  return target.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+  return target
+}
+
+function weekLabel(yw) {
+  if (!yw) return ''
+  return weekStart(yw).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+}
+
+const DAY_MS = 86400000
+
+/** Start of the window for the last `days` days, or null for all time. */
+function rangeCutoff(days, now = new Date()) {
+  return days == null ? null : new Date(now.getTime() - days * DAY_MS)
+}
+
+/** Weekly rows (with a `week` key) that overlap the last `days` days, labelled for the axis. */
+export function weeksInRange(rows, days, now = new Date()) {
+  const cutoff = rangeCutoff(days, now)
+  return (rows || [])
+    .filter(d => !cutoff || weekStart(d.week).getTime() + 7 * DAY_MS > cutoff.getTime())
+    .map(d => ({ ...d, label: weekLabel(d.week) }))
+}
+
+export const RANGES = [
+  { label: 'Last 7 days', days: 7 },
+  { label: 'Last 30 days', days: 30 },
+  { label: 'Last 60 days', days: 60 },
+  { label: 'Last 90 days', days: 90 },
+  { label: 'All Time', days: null },
+]
+
+const TABS = [
+  { key: 'site', label: 'Site Traffic' },
+  { key: 'matches', label: 'Matches' },
+  { key: 'players', label: 'Players' },
+]
+
+const STORAGE_KEY = 'admin-dashboard'
+
+function loadPrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}
+  } catch {
+    return {}
+  }
+}
+
+function savePrefs(prefs) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs))
+  } catch {
+    // storage blocked — preferences just won't stick
+  }
+}
+
+function rangeLabel(days) {
+  return days == null ? 'all time' : `last ${days} days`
 }
 
 const CHART_STYLE = {
@@ -202,19 +259,20 @@ function ActiveUsersCard() {
   )
 }
 
-function SessionAnalyticsCard() {
+function SessionAnalyticsCard({ days }) {
   const [stats, setStats] = useState(null)
 
   useEffect(() => {
-    get('/api/analytics/session-analytics?hours=168')
+    setStats(null)
+    get(days != null ? `/api/analytics/session-analytics?hours=${days * 24}` : '/api/analytics/session-analytics')
       .then(d => { if (d.success) setStats(d) })
       .catch(() => {})
-  }, [])
+  }, [days])
 
   return (
     <Link to="/admin/session-analytics" className="bg-bg-raised border border-border rounded-lg p-4 text-center hover:border-blue-400/50 transition-colors cursor-pointer block">
       <div className="text-2xl font-bold text-blue-400">{stats?.bounce_rate != null ? `${stats.bounce_rate}%` : '--'}</div>
-      <div className="text-xs text-text-muted mt-1 leading-tight">Bounce Rate (7d)</div>
+      <div className="text-xs text-text-muted mt-1 leading-tight">Bounce Rate</div>
     </Link>
   )
 }
@@ -246,7 +304,13 @@ const VOICE_FILTERS = [
 ]
 const VOICE_QUEUES = VOICE_FILTERS.filter(f => f.key !== 'all')
 
-function voiceSplit(counts, filter) {
+function voiceSplit(counts, filter, acrossDays = false) {
+  if (acrossDays) {
+    return counts.reduce((acc, day) => {
+      const c = voiceSplit(day, filter)
+      return { voice: acc.voice + c.voice, no_voice: acc.no_voice + c.no_voice }
+    }, { voice: 0, no_voice: 0 })
+  }
   const queues = filter === 'all' ? VOICE_QUEUES.map(f => f.key) : [filter]
   return queues.reduce(
     (acc, q) => ({
@@ -280,7 +344,7 @@ function VoiceDayTooltip({ active, payload, label }) {
   )
 }
 
-export function VoiceStatsCard() {
+export function VoiceStatsCard({ days = null }) {
   const [stats, setStats] = useState(null)
   const [filter, setFilter] = useState('all')
 
@@ -290,11 +354,17 @@ export function VoiceStatsCard() {
       .catch(() => {})
   }, [])
 
+  const cutoff = days != null ? rangeCutoff(days).toISOString().slice(0, 10) : null
+  const inRange = (stats?.days || []).filter(day => !cutoff || day.date > cutoff)
+  // Season totals come from the server; a narrower range re-totals the visible days.
+  const totals = cutoff
+    ? Object.fromEntries(VOICE_QUEUES.map(f => [f.key, voiceSplit(inRange, f.key, true)]))
+    : stats?.queues
   const rows = [
-    ...VOICE_QUEUES.map(f => [f.label, voiceSplit(stats?.queues, f.key)]),
-    ['Total', voiceSplit(stats?.queues, 'all')],
+    ...VOICE_QUEUES.map(f => [f.label, voiceSplit(totals, f.key)]),
+    ['Total', voiceSplit(totals, 'all')],
   ]
-  const days = (stats?.days || []).map(day => ({
+  const chartDays = inRange.map(day => ({
     label: dayLabel(day.date),
     ...voiceSplit(day, filter),
   }))
@@ -304,7 +374,9 @@ export function VoiceStatsCard() {
       <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
         <div>
           <h3 className="text-sm font-semibold mb-1">Voice vs No-Voice Games</h3>
-          <p className="text-xs text-text-muted">Queue games this season, by day</p>
+          <p className="text-xs text-text-muted">
+            Queue games this season, by day{days != null ? ` (${rangeLabel(days)})` : ''}
+          </p>
         </div>
         <div className="flex gap-1" role="group" aria-label="Queue">
           {VOICE_FILTERS.map(f => (
@@ -329,9 +401,9 @@ export function VoiceStatsCard() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
           <div className="lg:col-span-2">
-            {days.length ? (
+            {chartDays.length ? (
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={days}>
+                <BarChart data={chartDays}>
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_STYLE.grid.stroke} />
                   <XAxis dataKey="label" {...CHART_STYLE.axis} interval="preserveStartEnd" />
                   <YAxis {...CHART_STYLE.axis} allowDecimals={false} />
@@ -371,97 +443,114 @@ export function VoiceStatsCard() {
   )
 }
 
-export default function DashboardSection() {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  useEffect(() => {
-    get('/api/admin/dashboard-stats')
-      .then(setData)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [])
-
-  if (loading) return <Spinner className="py-12" />
-  if (error || !data?.success) return (
-    <p className="text-text-muted text-sm">Dashboard unavailable{error ? `: ${error}` : '.'}</p>
+function StatTile({ label, value, link, color = 'text-secondary' }) {
+  const inner = (
+    <>
+      <div className={`text-2xl font-bold ${color}`}>{value ?? '--'}</div>
+      <div className="text-xs text-text-muted mt-1 leading-tight">{label}</div>
+    </>
   )
+  return link ? (
+    <Link to={link} className="bg-bg-raised border border-border rounded-lg p-4 text-center hover:border-secondary transition-colors cursor-pointer block">
+      {inner}
+    </Link>
+  ) : (
+    <div className="bg-bg-raised border border-border rounded-lg p-4 text-center">{inner}</div>
+  )
+}
 
-  const { summary, games_over_time, players_over_time, new_players_per_week, avg_games_per_player, dominance, heatmap } = data
-
-  const gamesData = games_over_time.map(d => ({ ...d, label: weekLabel(d.week) }))
-  const playersData = players_over_time.map(d => ({ ...d, label: weekLabel(d.week) }))
-  const newPlayersData = new_players_per_week.map(d => ({ ...d, label: weekLabel(d.week) }))
-  const avgGppData = avg_games_per_player.map(d => ({ ...d, label: weekLabel(d.week) }))
-
-  const summaryCards = [
-    { label: 'Total Players', value: summary.total_players?.toLocaleString() },
-    { label: 'Total Matches', value: summary.total_matches?.toLocaleString() },
-    { label: 'Avg Games/Week (12wk)', value: summary.avg_weekly_games },
-    { label: 'Online Matches', value: summary.total_bot_matches?.toLocaleString() },
-    { label: 'Paper Matches', value: summary.total_web_matches?.toLocaleString() },
-    { label: 'Omens Matches', value: (summary.total_points_matches || 0).toLocaleString(), link: '/admin/omens-matches' },
-    { label: 'External Matches', value: (summary.total_external_matches || 0).toLocaleString(), link: '/admin/external-matches' },
-    { label: 'Users Logged In', value: (summary.total_logins || 0).toLocaleString() },
-  ]
-
+function TileGroup({ title, children }) {
   return (
-    <section className="space-y-6">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-3">
+    <div>
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-2">{title}</h3>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">{children}</div>
+    </div>
+  )
+}
+
+function SiteTab({ days, activeUsers }) {
+  return (
+    <div className="space-y-6">
+      <TileGroup title="Visitors">
         <ActiveUsersCard />
         <UniqueUsersCard />
-        <SessionAnalyticsCard />
-        {summaryCards.map(c => {
-          const inner = (
-            <>
-              <div className="text-2xl font-bold text-secondary">{c.value ?? '--'}</div>
-              <div className="text-xs text-text-muted mt-1 leading-tight">{c.label}</div>
-            </>
-          )
-          return c.link ? (
-            <Link key={c.label} to={c.link} className="bg-bg-raised border border-border rounded-lg p-4 text-center hover:border-secondary transition-colors cursor-pointer block">
-              {inner}
-            </Link>
-          ) : (
-            <div key={c.label} className="bg-bg-raised border border-border rounded-lg p-4 text-center">
-              {inner}
-            </div>
-          )
-        })}
-      </div>
+        <SessionAnalyticsCard days={days} />
+        <ActiveUsersTiles activeUsers={activeUsers} />
+      </TileGroup>
+      <PageViewsPanel days={days} />
+    </div>
+  )
+}
 
-      <VoiceStatsCard />
+function MatchesTab({ days, stats }) {
+  const { summary, games_over_time, heatmap } = stats
+  const gamesData = useMemo(() => weeksInRange(games_over_time, days), [games_over_time, days])
+  const gamesInRange = gamesData.reduce((n, w) => n + (w.bot || 0) + (w.web || 0), 0)
+
+  return (
+    <div className="space-y-6">
+      <TileGroup title="Match totals (all time)">
+        <StatTile label="Total Matches" value={summary.total_matches?.toLocaleString()} />
+        <StatTile label="Online Matches" value={summary.total_bot_matches?.toLocaleString()} />
+        <StatTile label="Paper Matches" value={summary.total_web_matches?.toLocaleString()} />
+        <StatTile label="Omens Matches" value={(summary.total_points_matches || 0).toLocaleString()} link="/admin/omens-matches" />
+        <StatTile label="External Matches" value={(summary.total_external_matches || 0).toLocaleString()} link="/admin/external-matches" />
+        <StatTile label="Avg Games/Week (12wk)" value={summary.avg_weekly_games} />
+      </TileGroup>
+
+      <ChartCard title={`Games Over Time — ${gamesInRange.toLocaleString()} in ${rangeLabel(days)}`} to="/admin/chart/games-over-time">
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={gamesData}>
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_STYLE.grid.stroke} />
+            <XAxis dataKey="label" {...CHART_STYLE.axis} interval="preserveStartEnd" />
+            <YAxis {...CHART_STYLE.axis} />
+            <Tooltip {...CHART_STYLE.tooltip} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="bot" name="Online" stackId="a" fill="rgba(77,184,255,0.8)" radius={[0, 0, 2, 2]} />
+            <Bar dataKey="web" name="Paper" stackId="a" fill="rgba(63,185,80,0.8)" radius={[2, 2, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
+      <VoiceStatsCard days={days} />
+
+      <div className="bg-bg-raised border border-border rounded-lg p-4">
+        <h3 className="text-sm font-semibold mb-1">Peak Activity Hours</h3>
+        <p className="text-xs text-text-muted mb-3">Matches by day of week and hour (all time, EST)</p>
+        <Heatmap data={heatmap} />
+      </div>
+    </div>
+  )
+}
+
+function PlayersTab({ days, stats }) {
+  const { summary, players_over_time, new_players_per_week, avg_games_per_player, dominance } = stats
+  const playersData = useMemo(() => weeksInRange(players_over_time, days), [players_over_time, days])
+  const newPlayersData = useMemo(() => weeksInRange(new_players_per_week, days), [new_players_per_week, days])
+  const avgGppData = useMemo(() => weeksInRange(avg_games_per_player, days), [avg_games_per_player, days])
+  const newInRange = newPlayersData.reduce((n, w) => n + (w.count || 0), 0)
+
+  return (
+    <div className="space-y-6">
+      <TileGroup title="Players">
+        <StatTile label="Total Players (all time)" value={summary.total_players?.toLocaleString()} />
+        <StatTile label={`New Players (${rangeLabel(days)})`} value={newInRange.toLocaleString()} color="text-orange-400" />
+        <StatTile label="Users Logged In (all time)" value={(summary.total_logins || 0).toLocaleString()} />
+      </TileGroup>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <ChartCard title="Games Over Time" to="/admin/chart/games-over-time">
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={gamesData}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_STYLE.grid.stroke} />
-              <XAxis dataKey="label" {...CHART_STYLE.axis} interval="preserveStartEnd" />
-              <YAxis {...CHART_STYLE.axis} />
-              <Tooltip {...CHART_STYLE.tooltip} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="bot" name="Online" stackId="a" fill="rgba(77,184,255,0.8)" radius={[0, 0, 2, 2]} />
-              <Bar dataKey="web" name="Paper" stackId="a" fill="rgba(63,185,80,0.8)" radius={[2, 2, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        <ChartCard title="Unique Players Over Time" to="/admin/chart/unique-players">
+        <ChartCard title="Unique Players per Week" to="/admin/chart/unique-players">
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={playersData}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_STYLE.grid.stroke} />
               <XAxis dataKey="label" {...CHART_STYLE.axis} interval="preserveStartEnd" />
               <YAxis {...CHART_STYLE.axis} />
               <Tooltip {...CHART_STYLE.tooltip} />
-              <Line dataKey="combined" name="Unique Players" stroke="rgba(168,130,255,0.8)" dot={false} strokeWidth={2} />
+              <Line dataKey="combined" name="Unique Players" stroke="rgba(168,130,255,0.8)" dot={playersData.length < 15} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <ChartCard title="New Player Acquisition" to="/admin/chart/new-players">
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={newPlayersData}>
@@ -473,28 +562,121 @@ export default function DashboardSection() {
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-
-        <ChartCard title="Avg Games per Player per Week" to="/admin/chart/avg-games-per-player">
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={avgGppData}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_STYLE.grid.stroke} />
-              <XAxis dataKey="label" {...CHART_STYLE.axis} interval="preserveStartEnd" />
-              <YAxis {...CHART_STYLE.axis} />
-              <Tooltip {...CHART_STYLE.tooltip} />
-              <Line dataKey="avg" name="Avg Games/Player" stroke="rgba(219,154,4,0.8)" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
       </div>
 
-      <ChartCard title="Top Player Dominance">
-        <DominancePanel dom={dominance} />
+      <ChartCard title="Avg Games per Player per Week" to="/admin/chart/avg-games-per-player">
+        <ResponsiveContainer width="100%" height={200}>
+          <LineChart data={avgGppData}>
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_STYLE.grid.stroke} />
+            <XAxis dataKey="label" {...CHART_STYLE.axis} interval="preserveStartEnd" />
+            <YAxis {...CHART_STYLE.axis} />
+            <Tooltip {...CHART_STYLE.tooltip} />
+            <Line dataKey="avg" name="Avg Games/Player" stroke="rgba(219,154,4,0.8)" dot={avgGppData.length < 15} strokeWidth={2} />
+          </LineChart>
+        </ResponsiveContainer>
       </ChartCard>
 
       <div className="bg-bg-raised border border-border rounded-lg p-4">
-        <h3 className="text-sm font-semibold mb-1">Peak Activity Hours</h3>
-        <p className="text-xs text-text-muted mb-3">Matches by day of week and hour (all time, EST)</p>
-        <Heatmap data={heatmap} />
+        <h3 className="text-sm font-semibold mb-3">Top Player Dominance (all time)</h3>
+        <DominancePanel dom={dominance} />
+      </div>
+    </div>
+  )
+}
+
+function SegmentedButtons({ options, value, onChange, label }) {
+  return (
+    <div className="flex gap-1 flex-wrap" role="group" aria-label={label}>
+      {options.map(o => (
+        <button
+          key={o.label}
+          type="button"
+          onClick={() => onChange(o.value)}
+          aria-pressed={value === o.value}
+          className={`px-3 py-1 text-xs rounded border transition-colors ${
+            value === o.value
+              ? 'bg-secondary text-black border-secondary'
+              : 'bg-bg-raised border-border text-text-muted hover:border-secondary'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Admin dashboard: one date range drives everything, the daily active users
+ * chart sits on top, and the rest is split into Site Traffic / Matches / Players tabs.
+ */
+export default function DashboardSection() {
+  const prefs = useMemo(loadPrefs, [])
+  const [days, setDays] = useState(RANGES.some(r => r.days === prefs.days) ? prefs.days : 30)
+  const [tab, setTab] = useState(TABS.some(t => t.key === prefs.tab) ? prefs.tab : 'site')
+  const [activeUsers, setActiveUsers] = useState(null)
+  const [stats, setStats] = useState(null)
+  const [statsError, setStatsError] = useState(null)
+
+  useEffect(() => { savePrefs({ days, tab }) }, [days, tab])
+
+  useEffect(() => {
+    // All-time payload; the chart applies the range client-side.
+    get('/api/analytics/stats')
+      .then(d => { if (d?.success) setActiveUsers(d.active_users ?? null) })
+      .catch(console.error)
+    get('/api/admin/dashboard-stats')
+      .then(d => (d?.success ? setStats(d) : setStatsError('')))
+      .catch(e => setStatsError(e.message))
+  }, [])
+
+  const matchTab = (Body) => {
+    if (statsError != null) {
+      return <p className="text-text-muted text-sm">Dashboard unavailable{statsError ? `: ${statsError}` : '.'}</p>
+    }
+    if (!stats) return <Spinner className="py-12" />
+    return <Body days={days} stats={stats} />
+  }
+
+  return (
+    <section className="space-y-6">
+      <div className="sticky top-0 z-10 bg-bg-base/95 backdrop-blur py-2 -my-2">
+        <SegmentedButtons
+          label="Date range"
+          options={RANGES.map(r => ({ label: r.label, value: r.days }))}
+          value={days}
+          onChange={setDays}
+        />
+      </div>
+
+      {activeUsers ? (
+        <DailyActiveUsersChart daily={activeUsers.daily} days={days} />
+      ) : null}
+
+      <div>
+        <div className="flex gap-1 border-b border-border mb-4" role="tablist">
+          {TABS.map(t => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2 text-sm -mb-px border-b-2 transition-colors ${
+                tab === t.key
+                  ? 'border-secondary text-secondary'
+                  : 'border-transparent text-text-muted hover:text-text'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div role="tabpanel">
+          {tab === 'site' && <SiteTab days={days} activeUsers={activeUsers} />}
+          {tab === 'matches' && matchTab(MatchesTab)}
+          {tab === 'players' && matchTab(PlayersTab)}
+        </div>
       </div>
     </section>
   )

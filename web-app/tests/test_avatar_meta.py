@@ -66,3 +66,56 @@ def test_empty_database(monkeypatch, match_db, client):
     monkeypatch.setattr(cards, "MATCH_RECORDS_DB_PATH", match_db)
     data = client.get("/api/elements/avatar-meta").get_json()
     assert data == {"dates": [], "avatars": {}, "daily_totals": {}}
+
+
+def test_event_filter_limits_to_that_event(patched):
+    data = patched.get("/api/elements/avatar-meta?event=7").get_json()
+    assert data["dates"] == ["2026-08-30"]
+    assert data["avatars"] == {"Geomancer": {"2026-08-30": 1}, "Sorcerer": {"2026-08-30": 1}}
+
+
+# --- /api/elements/timeline ---
+
+def _spellbook(*cards):
+    return json.dumps({"avatar": [{"name": "Sorcerer"}],
+                       "spellbook": [{"name": n, "quantity": q} for n, q in cards]})
+
+
+@pytest.fixture()
+def timeline(monkeypatch, match_db, client):
+    import routes.api.cards as cards
+    monkeypatch.setattr(cards, "MATCH_RECORDS_DB_PATH", match_db)
+    monkeypatch.setattr(cards, "_load_card_elements", lambda: {
+        "fireball": ["Fire"], "tide": ["Water"], "boulder": ["Earth"],
+    })
+    conn = sqlite3.connect(str(match_db))
+    rows = [
+        # Fire-heavy Fire/Water deck beats an Earth deck
+        ("2026-09-01 12:00:00", _spellbook(("Fireball", 3), ("Tide", 1)), _spellbook(("Boulder", 2))),
+        ("2026-09-03 12:00:00", _spellbook(("Boulder", 2)), _spellbook(("Tide", 2))),
+    ]
+    for ts, w, l in rows:
+        conn.execute(
+            "INSERT INTO match_records (timestamp, json_deck_data_winner, json_deck_data_loser, source) "
+            "VALUES (?, ?, ?, 'Discord')", (ts, w, l),
+        )
+    conn.commit()
+    conn.close()
+    return client
+
+
+def test_timeline_daily_counts_public(timeline):
+    data = timeline.get("/api/elements/timeline").get_json()
+    assert data["dates"] == ["2026-09-01", "2026-09-02", "2026-09-03"]
+    assert data["days"]["2026-09-01"] == {
+        "el": {"Fire": [1, 0], "Water": [1, 0], "Earth": [0, 1]},
+        "dom": {"Fire": [1, 0], "Earth": [0, 1]},
+    }
+    assert data["days"]["2026-09-03"]["el"] == {"Earth": [1, 0], "Water": [0, 1]}
+    assert data["is_admin"] is False
+
+
+def test_timeline_admin_gets_splash_and_combos(timeline, admin_session):
+    day = timeline.get("/api/elements/timeline").get_json()["days"]["2026-09-01"]
+    assert day["spl"] == {"Water": [1, 0]}
+    assert day["combo"] == {"Fire, Water": [1, 0], "Earth": [0, 1]}

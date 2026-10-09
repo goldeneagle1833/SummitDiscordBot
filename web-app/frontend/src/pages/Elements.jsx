@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
-import { useAuth } from '@/context/AuthContext'
 import usePageTitle from '@/hooks/usePageTitle'
+import { getAvatarImageFiles } from '@/api/cards'
 import AvatarMetaChart from '@/components/analytics/AvatarMetaChart'
+import TimelineControls, { windowDays } from '@/components/analytics/TimelineControls'
+import { mergeDates, buildCumulative, flattenElementDays, elementStatsAt } from '@/utils/elementTimeline'
 
 const ELEMENT_COLORS = {
   Fire: { bar: 'bg-red-500', text: 'text-red-400' },
@@ -38,7 +40,7 @@ function ElementBarChart({ data, title, subtitle }) {
               <div className={`w-14 text-sm font-semibold ${colors.text}`}>{el.name}</div>
               <div className="flex-1 bg-bg-raised rounded-full h-6 overflow-hidden relative">
                 <div
-                  className={`${colors.bar} h-full rounded-full transition-all duration-500 flex items-center justify-end pr-2`}
+                  className={`${colors.bar} h-full rounded-full transition-all duration-300 flex items-center justify-end pr-2`}
                   style={{ width: `${Math.max(el.win_rate, 2)}%` }}
                 >
                   <span className="text-xs font-semibold text-white drop-shadow">{el.win_rate}%</span>
@@ -82,7 +84,7 @@ function PresenceChart({ data }) {
                   <span className="text-xs text-text-muted w-10">Wins</span>
                   <div className="flex-1 bg-bg-raised rounded-full h-4 overflow-hidden">
                     <div
-                      className="bg-green-500/70 h-full rounded-full flex items-center justify-end pr-1.5"
+                      className="bg-green-500/70 h-full rounded-full transition-all duration-300 flex items-center justify-end pr-1.5"
                       style={{ width: `${Math.max(el.win_presence, 1)}%` }}
                     >
                       <span className="text-[10px] font-medium text-white">{el.win_presence}%</span>
@@ -93,7 +95,7 @@ function PresenceChart({ data }) {
                   <span className="text-xs text-text-muted w-10">Losses</span>
                   <div className="flex-1 bg-bg-raised rounded-full h-4 overflow-hidden">
                     <div
-                      className="bg-red-500/70 h-full rounded-full flex items-center justify-end pr-1.5"
+                      className="bg-red-500/70 h-full rounded-full transition-all duration-300 flex items-center justify-end pr-1.5"
                       style={{ width: `${Math.max(el.loss_presence, 1)}%` }}
                     >
                       <span className="text-[10px] font-medium text-white">{el.loss_presence}%</span>
@@ -140,7 +142,7 @@ function ComboBars({ data, title, subtitle, valueKey, valueLabel, sortKey }) {
               </div>
               <div className="flex-1 bg-bg-raised rounded-full h-5 overflow-hidden relative">
                 <div
-                  className="bg-secondary/60 h-full rounded-full transition-all duration-500"
+                  className="bg-secondary/60 h-full rounded-full transition-all duration-300"
                   style={{ width: `${Math.max(val, 1)}%` }}
                 />
                 <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-white">
@@ -159,55 +161,59 @@ function ComboBars({ data, title, subtitle, valueKey, valueLabel, sortKey }) {
 /* ---- Main Page ---- */
 export default function Elements() {
   usePageTitle('Elemental Win Rates')
-  const { user } = useAuth()
-  const isAdmin = user?.is_admin === true
 
-  // Online only: the Paper source is hidden (nobody plays on the paper ladder)
-  const source = 'discord'
   const [eventFilter, setEventFilter] = useState('all')
   const [events, setEvents] = useState([])
-  const [data, setData] = useState(null)
-  const [composition, setComposition] = useState(null)
+  const [timeline, setTimeline] = useState(null)
+  const [meta, setMeta] = useState(null)
+  const [imageFiles, setImageFiles] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // Shared by every chart: which window, ending on which day, and whether it's playing
+  const [view, setView] = useState({ windowKey: 'all', endIdx: -1, playing: false })
 
-  // Load event filters on mount
+  // Load event filters and avatar art on mount
   useEffect(() => {
     get('/api/elements/filters')
       .then((d) => setEvents(d.events || []))
       .catch(() => {})
+    getAvatarImageFiles().then((f) => setImageFiles(Array.isArray(f) ? f : [])).catch(() => {})
   }, [])
 
-  // Fetch element stats when filters change
+  // Online only: the Paper source is hidden (nobody plays on the paper ladder)
   const fetchData = useCallback(() => {
     setLoading(true)
-    const params = new URLSearchParams({ source })
-    if (eventFilter !== 'all') params.set('event', eventFilter)
-    const qs = params.toString()
-
-    const fetches = [get(`/api/elements?${qs}`)]
-    // Deck composition is admin-only, attempt it silently
-    fetches.push(
-      get(`/api/deck-composition?${qs}`).catch(() => null)
-    )
-
-    Promise.all(fetches)
-      .then(([elemData, compData]) => {
-        setData(elemData)
-        setComposition(compData)
+    setError(null)
+    const qs = eventFilter !== 'all' ? `?${new URLSearchParams({ event: eventFilter })}` : ''
+    Promise.all([
+      get(`/api/elements/timeline${qs}`),
+      get(`/api/elements/avatar-meta${qs}`).catch(() => null),
+    ])
+      .then(([tl, am]) => {
+        setTimeline(tl)
+        setMeta(am)
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [source, eventFilter])
+  }, [eventFilter])
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  const dates = useMemo(() => mergeDates(timeline?.dates || [], meta?.dates || []), [timeline, meta])
+  const elementCumulative = useMemo(() => buildCumulative(dates, flattenElementDays(timeline?.days)), [dates, timeline])
+  const avatarCumulative = useMemo(() => buildCumulative(dates, meta?.avatars), [dates, meta])
 
-  const elements = data?.elements || []
-  const dominant = data?.dominant || []
-  const splash = data?.splash || []
-  const combinations = data?.combinations || []
-  const comp = composition?.composition || []
+  // New data: jump to the latest day
+  useEffect(() => {
+    setView((s) => ({ ...s, endIdx: dates.length - 1, playing: false }))
+  }, [dates])
+
+  const endIdx = Math.min(view.endIdx, dates.length - 1)
+  const days = windowDays(view.windowKey)
+  const stats = useMemo(() => elementStatsAt(elementCumulative, endIdx, days), [elementCumulative, endIdx, days])
+
+  const { elements, dominant, splash, combinations, composition: comp } = stats
+  const hasElementData = elements.some((e) => e.total > 0)
 
   return (
     <div>
@@ -217,15 +223,8 @@ export default function Elements() {
         <p className="text-text-muted text-sm">Win rates by element based on cards in reported decklists</p>
       </section>
 
-      {/* Meta: avatar counts over time */}
-      <section className="mb-10">
-        <h2 className="text-xl font-display text-secondary mb-1 text-center">Meta</h2>
-        <p className="text-text-muted text-sm mb-4 text-center">How the avatar field has changed over time</p>
-        <AvatarMetaChart />
-      </section>
-
       {/* Filters */}
-      <div className="flex flex-wrap items-center justify-center gap-4 mb-6">
+      <div className="flex flex-wrap items-center justify-center gap-4 mb-4">
         <div className="flex items-center gap-2">
           <label className="text-sm text-text-muted">Event:</label>
           <select
@@ -252,66 +251,89 @@ export default function Elements() {
             })}
           </select>
         </div>
-
       </div>
 
       {loading ? (
         <Spinner className="py-20" />
       ) : error ? (
         <p className="text-center text-accent-red py-8">{error}</p>
-      ) : elements.length === 0 ? (
+      ) : dates.length === 0 ? (
         <p className="text-center text-text-muted py-8">
           No element data available yet. Report matches with decklists to see stats!
         </p>
       ) : (
         <>
-          {/* Chart 1: Win Rate by Element */}
-          <ElementBarChart
-            data={elements}
-            title="Win Rate by Element"
-            subtitle="Each deck can contain multiple elements, so totals overlap. A deck with Fire and Water cards counts toward both."
-          />
-
-          {/* Chart 2: Element Presence */}
-          <PresenceChart data={elements} />
-
-          {/* Chart 3: Dominant Element Win Rate */}
-          <ElementBarChart
-            data={dominant}
-            title="Dominant Element Win Rate"
-            subtitle="Only the element with the most cards in each deck is counted. Spellbook only, no sites."
-          />
-
-          {/* Chart 4: Splash Element (admin only) */}
-          {splash.length > 0 && (
-            <ElementBarChart
-              data={splash}
-              title="Splash Element Win Rate"
-              subtitle="Only the element with the least cards in each deck is counted. Multi-element decks only, spellbook only."
+          {/* Timeline: one slider drives every chart below; stays in view under the nav */}
+          <div className="sticky top-16 z-20 mb-6">
+            <TimelineControls
+              dates={dates}
+              windowKey={view.windowKey}
+              endIdx={endIdx}
+              playing={view.playing}
+              onChange={setView}
             />
-          )}
+          </div>
 
-          {/* Chart 5: Element Combinations (admin only) */}
-          {combinations.length > 0 && (
-            <ComboBars
-              data={combinations}
-              title="Element Combination Win Rates"
-              subtitle="Win rates for specific element pairings (minimum 3 games to show)."
-              valueKey="win_rate"
-              sortKey="win_rate"
-            />
-          )}
+          {/* Meta: avatar counts over time */}
+          <section className="mb-10">
+            <h2 className="text-xl font-display text-secondary mb-1 text-center">Meta</h2>
+            <p className="text-text-muted text-sm mb-4 text-center">How the avatar field has changed over time</p>
+            <AvatarMetaChart cumulative={avatarCumulative} endIdx={endIdx} days={days} imageFiles={imageFiles} />
+          </section>
 
-          {/* Chart 6: Deck Composition (admin only) */}
-          {comp.length > 0 && (
-            <ComboBars
-              data={comp}
-              title="Deck Element Composition"
-              subtitle="Element combinations across all decks in the database (spellbook only, excludes sites)."
-              valueKey="percent"
-              sortKey="percent"
-              valueLabel={(item) => `${item.count} deck${item.count !== 1 ? 's' : ''}`}
-            />
+          {!hasElementData ? (
+            <p className="text-center text-text-muted py-8">No element data in this window.</p>
+          ) : (
+            <>
+              {/* Chart 1: Win Rate by Element */}
+              <ElementBarChart
+                data={elements}
+                title="Win Rate by Element"
+                subtitle="Each deck can contain multiple elements, so totals overlap. A deck with Fire and Water cards counts toward both."
+              />
+
+              {/* Chart 2: Element Presence */}
+              <PresenceChart data={elements} />
+
+              {/* Chart 3: Dominant Element Win Rate */}
+              <ElementBarChart
+                data={dominant}
+                title="Dominant Element Win Rate"
+                subtitle="Only the element with the most cards in each deck is counted. Spellbook only, no sites."
+              />
+
+              {/* Chart 4: Splash Element (admin only) */}
+              {splash.length > 0 && (
+                <ElementBarChart
+                  data={splash}
+                  title="Splash Element Win Rate"
+                  subtitle="Only the element with the least cards in each deck is counted. Multi-element decks only, spellbook only."
+                />
+              )}
+
+              {/* Chart 5: Element Combinations (admin only) */}
+              {combinations.length > 0 && (
+                <ComboBars
+                  data={combinations}
+                  title="Element Combination Win Rates"
+                  subtitle="Win rates for specific element pairings (minimum 3 games to show)."
+                  valueKey="win_rate"
+                  sortKey="win_rate"
+                />
+              )}
+
+              {/* Chart 6: Deck Composition (admin only) */}
+              {comp.length > 0 && (
+                <ComboBars
+                  data={comp}
+                  title="Deck Element Composition"
+                  subtitle="Element combinations across all decks in the selected window (spellbook only, excludes sites)."
+                  valueKey="percent"
+                  sortKey="percent"
+                  valueLabel={(item) => `${item.count} deck${item.count !== 1 ? 's' : ''}`}
+                />
+              )}
+            </>
           )}
         </>
       )}

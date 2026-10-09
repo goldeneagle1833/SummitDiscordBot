@@ -88,6 +88,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.cards.get_element_filters",
     "api.cards.get_elements",
     "api.cards.get_avatar_meta",
+    "api.cards.get_element_timeline",
     "api.cards.get_card_stats",
     "api.cards.get_card_popularity",
     "api.cards.get_all_cards_popularity",

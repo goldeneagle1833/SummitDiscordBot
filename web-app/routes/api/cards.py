@@ -403,11 +403,13 @@ def get_element_filters():
     return jsonify({"events": events})
 
 
-def _collect_element_rows(cur, source_filter, event_filter):
+def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False):
     """Collect deck data rows for element stats based on source and event filters.
 
-    Returns (rows, use_new_columns).
+    Returns (rows, use_new_columns). With ``with_timestamp`` each row gains the
+    match timestamp as its last column.
     """
+    ts = ", timestamp" if with_timestamp else ""
     all_rows = []
     use_new_columns = True
 
@@ -426,19 +428,19 @@ def _collect_element_rows(cur, source_filter, event_filter):
         if event_filter in ("all", "current"):
             try:
                 cur.execute(f"""
-                    SELECT json_deck_data_winner, json_deck_data_loser
+                    SELECT json_deck_data_winner, json_deck_data_loser{ts}
                     FROM match_records
                     WHERE {deck_where} {source_clause}
                 """)
                 all_rows.extend(cur.fetchall())
             except sqlite3.OperationalError:
                 try:
-                    cur.execute("""
+                    cur.execute(f"""
                         SELECT
                             CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
-                            json_deck_data
+                            json_deck_data{ts}
                         FROM match_records
-                        WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                        WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
                     """)
                     all_rows.extend(cur.fetchall())
                     use_new_columns = False
@@ -449,7 +451,7 @@ def _collect_element_rows(cur, source_filter, event_filter):
         if event_filter == "all" and use_new_columns:
             try:
                 cur.execute(f"""
-                    SELECT json_deck_data_winner, json_deck_data_loser
+                    SELECT json_deck_data_winner, json_deck_data_loser{ts}
                     FROM match_records_archive
                     WHERE {deck_where}
                 """)
@@ -463,7 +465,7 @@ def _collect_element_rows(cur, source_filter, event_filter):
                 if start_date and end_date:
                     try:
                         cur.execute(f"""
-                            SELECT json_deck_data_winner, json_deck_data_loser
+                            SELECT json_deck_data_winner, json_deck_data_loser{ts}
                             FROM match_records
                             WHERE {deck_where} {source_clause}
                               AND timestamp >= ? AND timestamp <= ?
@@ -473,7 +475,7 @@ def _collect_element_rows(cur, source_filter, event_filter):
                         pass
                     try:
                         cur.execute(f"""
-                            SELECT json_deck_data_winner, json_deck_data_loser
+                            SELECT json_deck_data_winner, json_deck_data_loser{ts}
                             FROM match_records_archive
                             WHERE {deck_where}
                               AND timestamp >= ? AND timestamp <= ?
@@ -484,7 +486,7 @@ def _collect_element_rows(cur, source_filter, event_filter):
             else:
                 try:
                     cur.execute(f"""
-                        SELECT json_deck_data_winner, json_deck_data_loser
+                        SELECT json_deck_data_winner, json_deck_data_loser{ts}
                         FROM match_records_archive
                         WHERE event_id = ?
                           AND {deck_where}
@@ -513,13 +515,50 @@ def _collect_element_rows(cur, source_filter, event_filter):
             params.append(event_end)
 
         try:
-            query = f"SELECT json_deck_data_winner, json_deck_data_loser FROM match_records WHERE {' AND '.join(where_parts)}"
+            query = f"SELECT json_deck_data_winner, json_deck_data_loser{ts} FROM match_records WHERE {' AND '.join(where_parts)}"
             cur.execute(query, params)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
             pass
 
     return all_rows, use_new_columns
+
+
+_PRESENCE_SECTIONS = ("spellbook", "atlas", "sideboard")
+
+
+def _deck_element_profile(deck_json, card_elements):
+    """Element breakdown of one deck.
+
+    Returns (elements_set, element_counts, dominant_element, splash_element, combo_key):
+    elements across all sections; counts, dominant, splash and combo from the
+    spellbook only (no sites). Splash needs 2+ spellbook elements.
+    """
+    elements = set()
+    element_counts = Counter()
+    if not deck_json or deck_json in ("", "{}"):
+        return elements, element_counts, None, None, None
+    try:
+        deck_data = json.loads(deck_json)
+        deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+        for sec in _PRESENCE_SECTIONS:
+            for card in deck.get(sec, []) or []:
+                card_name = (card.get("name") or "").lower()
+                if card_name in card_elements:
+                    elements.update(card_elements[card_name])
+        for card in deck.get("spellbook", []) or []:
+            card_name = (card.get("name") or "").lower()
+            if card_name in card_elements:
+                qty = card.get("quantity", 1) or 1
+                for el in card_elements[card_name]:
+                    element_counts[el] += qty
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError, AttributeError):
+        pass
+
+    dominant = element_counts.most_common(1)[0][0] if element_counts else None
+    splash = element_counts.most_common()[-1][0] if len(element_counts) >= 2 else None
+    combo_key = ", ".join(sorted(element_counts)) if element_counts else None
+    return elements, element_counts, dominant, splash, combo_key
 
 
 @cards_bp.route("/elements")
@@ -572,46 +611,9 @@ def get_elements():
     # Stats for element combinations
     combination_stats = {}  # {"Fire, Water": {"wins": 0, "losses": 0}, ...}
 
-    sections = ["spellbook", "atlas", "sideboard"]
-    # For dominant/splash, only count spellbook (no sites)
-    spellbook_only = ["spellbook"]
-
     def get_deck_elements_detailed(deck_json):
         """Returns (elements_set, element_counts, dominant_element, splash_element, combo_key)."""
-        elements = set()
-        element_counts = Counter()  # For spellbook only (no sites)
-        if not deck_json or deck_json in ("", "{}"):
-            return elements, element_counts, None, None, None
-        try:
-            deck_data = json.loads(deck_json)
-            deck = deck_data[0] if isinstance(deck_data, list) else deck_data
-            # Count all elements for presence tracking
-            for sec in sections:
-                for card in deck.get(sec, []) or []:
-                    card_name = (card.get("name") or "").lower()
-                    if card_name in card_elements:
-                        elements.update(card_elements[card_name])
-            # Count only spellbook for dominant/splash calculation
-            for sec in spellbook_only:
-                for card in deck.get(sec, []) or []:
-                    card_name = (card.get("name") or "").lower()
-                    if card_name in card_elements:
-                        card_els = card_elements[card_name]
-                        qty = card.get("quantity", 1) or 1
-                        for el in card_els:
-                            element_counts[el] += qty
-        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-            pass
-
-        dominant = element_counts.most_common(1)[0][0] if element_counts else None
-        # Splash is the least common element (only if 2+ elements)
-        splash = None
-        if len(element_counts) >= 2:
-            splash = element_counts.most_common()[-1][0]
-        # Combo key uses spellbook elements only (no sites)
-        spellbook_elements = set(element_counts.keys())
-        combo_key = ", ".join(sorted(spellbook_elements)) if spellbook_elements else None
-        return elements, element_counts, dominant, splash, combo_key
+        return _deck_element_profile(deck_json, card_elements)
 
     def get_deck_elements(deck_json):
         """Legacy function - returns just elements set."""
@@ -1209,70 +1211,113 @@ def _deck_avatar_name(deck_str):
         return None
 
 
+def _timeline_decks():
+    """Yield (day, deck_json, is_win) for each Discord deck under the request's event filter.
+
+    Matches with an unparseable timestamp are skipped. Non-admins asking for
+    the active event get every event, as on /api/elements.
+    """
+    from datetime import date
+
+    event_filter = request.args.get("event", "all")
+    if event_filter == "current" and not is_admin():
+        event_filter = "all"
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+        rows, use_new_columns = _collect_element_rows(cur, "discord", event_filter, with_timestamp=True)
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not read element timeline: {e}")
+        return
+
+    for row in rows:
+        day = str(row[-1] or "")[:10]
+        try:
+            date.fromisoformat(day)
+        except ValueError:
+            continue
+        if use_new_columns:
+            if row[0]:
+                yield day, row[0], True
+            if row[1]:
+                yield day, row[1], False
+        else:
+            yield day, row[1], bool(row[0])
+
+
+def _date_range(days):
+    """Every ISO day from the earliest to the latest in ``days``."""
+    from datetime import date, timedelta
+    if not days:
+        return []
+    first = date.fromisoformat(min(days))
+    last = date.fromisoformat(max(days))
+    return [(first + timedelta(days=i)).isoformat() for i in range((last - first).days + 1)]
+
+
 @cards_bp.route("/elements/avatar-meta")
 def get_avatar_meta():
     """Daily avatar counts from reported Discord decks, for the Elements page Meta chart.
 
     Each deck in a match (winner and loser) counts once for its avatar on the
-    day the match was reported. Reads both live and archived matches.
+    day the match was reported. Takes the same ?event= filter as /api/elements.
 
     Returns {"dates": [first..last day], "avatars": {name: {date: count}},
              "daily_totals": {date: decks}}.
     """
-    deck_where = ("((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
-                  " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))")
-    queries = [
-        f"""SELECT json_deck_data_winner, json_deck_data_loser, timestamp
-            FROM match_records
-            WHERE {deck_where} AND (source = 'Discord' OR source IS NULL)""",
-        f"""SELECT json_deck_data_winner, json_deck_data_loser, timestamp
-            FROM match_records_archive
-            WHERE {deck_where}""",
-    ]
-    rows = []
-    try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
-        cur = conn.cursor()
-        for query in queries:
-            try:
-                cur.execute(query)
-                rows.extend(cur.fetchall())
-            except sqlite3.OperationalError:
-                pass
-        conn.close()
-    except sqlite3.OperationalError as e:
-        logger.warning(f"Could not read avatar meta: {e}")
-
-    from datetime import date, timedelta
-
     avatars = {}
     daily_totals = Counter()
-    for winner_deck, loser_deck, timestamp in rows:
-        day = str(timestamp or "")[:10]
-        try:
-            date.fromisoformat(day)
-        except ValueError:
+    for day, deck_json, _ in _timeline_decks():
+        name = _deck_avatar_name(deck_json)
+        if not name:
             continue
-        for deck_str in (winner_deck, loser_deck):
-            name = _deck_avatar_name(deck_str)
-            if not name:
-                continue
-            daily_totals[day] += 1
-            per_day = avatars.setdefault(name, Counter())
-            per_day[day] += 1
-
-    if not daily_totals:
-        return jsonify({"dates": [], "avatars": {}, "daily_totals": {}})
-
-    first = date.fromisoformat(min(daily_totals))
-    last = date.fromisoformat(max(daily_totals))
-    dates = [(first + timedelta(days=i)).isoformat() for i in range((last - first).days + 1)]
+        daily_totals[day] += 1
+        avatars.setdefault(name, Counter())[day] += 1
 
     return jsonify({
-        "dates": dates,
+        "dates": _date_range(daily_totals),
         "avatars": {name: dict(counts) for name, counts in avatars.items()},
         "daily_totals": dict(daily_totals),
     })
+
+
+@cards_bp.route("/elements/timeline")
+def get_element_timeline():
+    """Daily element win/loss counts, so the Elements page can chart any date window.
+
+    Same decks and ?event= filter as /api/elements. Per day, each group maps a
+    key to [wins, losses]:
+      el:  every element present in the deck (all sections)
+      dom: the deck's dominant spellbook element
+      spl: its splash element (admin only)
+      combo: its spellbook element combination (admin only)
+    """
+    card_elements = _load_card_elements()
+    admin = is_admin()
+    days = {}
+
+    def bump(group, key, is_win):
+        pair = group.setdefault(key, [0, 0])
+        pair[0 if is_win else 1] += 1
+
+    for day, deck_json, is_win in _timeline_decks():
+        elements, _, dominant, splash, combo = _deck_element_profile(deck_json, card_elements)
+        if not elements and not combo:
+            continue
+        entry = days.setdefault(day, {"el": {}, "dom": {}})
+        for element in elements:
+            if element in ("Fire", "Water", "Earth", "Air"):
+                bump(entry["el"], element, is_win)
+        if dominant:
+            bump(entry["dom"], dominant, is_win)
+        if admin:
+            if splash:
+                bump(entry.setdefault("spl", {}), splash, is_win)
+            if combo:
+                bump(entry.setdefault("combo", {}), combo, is_win)
+
+    return jsonify({"dates": _date_range(days), "days": days, "is_admin": admin})
 
 
 @cards_bp.route("/deck-composition")

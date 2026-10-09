@@ -86,6 +86,58 @@ class AnalyticsRepository:
         conn.close()
         return {"total": total, "top_pages": top_pages, "daily": daily}
 
+    def get_daily_active_users(self, hours: int | None = None) -> dict:
+        """Daily active users from session page views.
+
+        Two counts per day:
+        - ``visitors``: distinct browser sessions that viewed a page
+        - ``users``: distinct logged-in accounts (``user_id``) that viewed a page
+
+        Returns ``{"daily": [{date, visitors, users}, ...] (newest first),
+        "today": {...}, "avg_7d": {...}, "avg_30d": {...}}``. Days with no
+        traffic are absent from ``daily`` and count as zero in the averages.
+        """
+        self._ensure_session_views_table()
+        conn = self._connect()
+        cur = conn.cursor()
+
+        where = ""
+        params: tuple = ()
+        if hours:
+            cutoff = (datetime.utcnow() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+            where = "WHERE timestamp >= ?"
+            params = (cutoff,)
+
+        limit = " LIMIT 90" if hours else ""
+        cur.execute(
+            f"""SELECT date(timestamp) AS day,
+                       COUNT(DISTINCT session_id) AS visitors,
+                       COUNT(DISTINCT CASE WHEN user_id IS NOT NULL AND user_id != '' THEN user_id END) AS users
+                  FROM session_page_views {where}
+                 GROUP BY day
+                 ORDER BY day DESC{limit}""",
+            params,
+        )
+        daily = [{"date": r[0], "visitors": r[1], "users": r[2]} for r in cur.fetchall()]
+        conn.close()
+
+        by_day = {d["date"]: d for d in daily}
+        today = datetime.utcnow().date()
+
+        def window(days: int) -> dict:
+            keys = [(today - timedelta(days=i)).isoformat() for i in range(days)]
+            visitors = sum(by_day.get(k, {}).get("visitors", 0) for k in keys)
+            users = sum(by_day.get(k, {}).get("users", 0) for k in keys)
+            return {"visitors": round(visitors / days, 1), "users": round(users / days, 1)}
+
+        today_row = by_day.get(today.isoformat(), {"visitors": 0, "users": 0})
+        return {
+            "daily": daily,
+            "today": {"visitors": today_row["visitors"], "users": today_row["users"]},
+            "avg_7d": window(7),
+            "avg_30d": window(30),
+        }
+
     def get_banner_click_stats(self) -> dict:
         """Get banner click counts grouped by type."""
         conn = self._connect()

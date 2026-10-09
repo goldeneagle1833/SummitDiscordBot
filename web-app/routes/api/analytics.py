@@ -110,6 +110,7 @@ def analytics_stats():
     return jsonify({
         "success": True,
         "page_views": repo.get_page_view_stats(hours=hours),
+        "active_users": repo.get_daily_active_users(hours=hours),
         "banner_clicks": repo.get_banner_click_stats(),
     })
 

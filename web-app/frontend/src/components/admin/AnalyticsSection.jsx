@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts'
 
 const FILTERS = [
@@ -15,6 +15,19 @@ const FILTERS = [
 
 const TOOLTIP_STYLE = {
   contentStyle: { background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, fontSize: 11 },
+}
+
+const AXIS_TICK = { fill: 'rgba(255,255,255,0.4)', fontSize: 10 }
+
+/** "4 visitors · 2 logged in" style tile for the DAU summary row. */
+function ActiveUsersTile({ label, visitors, users, testId }) {
+  return (
+    <div className="bg-bg-raised border border-border rounded-lg p-4 text-center" data-testid={testId}>
+      <div className="text-2xl font-bold text-secondary">{Number(visitors).toLocaleString()}</div>
+      <div className="text-xs text-text-muted mt-1">{label}</div>
+      <div className="text-[11px] text-green-400 mt-0.5">{Number(users).toLocaleString()} logged in</div>
+    </div>
+  )
 }
 
 export default function AnalyticsSection() {
@@ -78,6 +91,41 @@ export default function AnalyticsSection() {
               <div className="text-xs text-text-muted mt-1">TCGPlayer Clicks</div>
             </div>
           </div>
+
+          {data.active_users && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2">Daily Active Users</h3>
+              <p className="text-xs text-text-muted mb-3">
+                Visitors = distinct browser sessions that viewed a page that day (UTC); logged in = distinct accounts.
+              </p>
+              <div className="grid grid-cols-3 gap-3">
+                <ActiveUsersTile label="Today" testId="dau-today" {...data.active_users.today} />
+                <ActiveUsersTile label="7-day avg" testId="dau-7d" {...data.active_users.avg_7d} />
+                <ActiveUsersTile label="30-day avg" testId="dau-30d" {...data.active_users.avg_30d} />
+              </div>
+            </div>
+          )}
+
+          {data.active_users && (
+            <div className="bg-bg-raised border border-border rounded-lg p-4">
+              <h3 className="text-sm font-semibold mb-3">Active Users (Daily)</h3>
+              {data.active_users.daily?.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={[...data.active_users.daily].reverse()}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                    <XAxis dataKey="date" tick={AXIS_TICK} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                    <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <Tooltip {...TOOLTIP_STYLE} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="visitors" name="Visitors" fill="rgba(77,184,255,0.7)" radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="users" name="Logged in" fill="rgba(74,222,128,0.8)" radius={[2, 2, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-text-muted text-sm">No data yet.</p>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-bg-raised border border-border rounded-lg p-4">

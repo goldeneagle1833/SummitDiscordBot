@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '@/test/test-utils'
 import DeckArchetypes from '../DeckArchetypes'
@@ -50,7 +50,7 @@ describe('DeckArchetypes', () => {
     get.mockReset()
     get.mockImplementation((url) => {
       if (url === '/api/avatars/image-files') return Promise.resolve([])
-      if (url === '/api/deck-archetypes?source=all') return Promise.resolve({ status: 'ready', meta: META, groups: [GROUP] })
+      if (url.startsWith('/api/deck-archetypes?source=all')) return Promise.resolve({ status: 'ready', meta: META, groups: [GROUP] })
       if (url === '/api/deck-archetypes?source=tournament') return Promise.resolve({ status: 'ready', meta: { ...META, source: 'tournament' }, groups: [TOURNAMENT_GROUP] })
       if (url.startsWith('/api/deck-archetypes/')) return Promise.resolve(DETAIL)
       return Promise.resolve({})
@@ -79,6 +79,16 @@ describe('DeckArchetypes', () => {
     expect(get).toHaveBeenCalledWith('/api/deck-archetypes/sorcerer-fire-d1?source=all')
     // A ranked deck reported without a link isn't rendered as a link.
     expect(screen.getByText('Ranked Burn').closest('a')).toBeNull()
+  })
+
+  it('asks the server again when a date range and event size are picked', async () => {
+    renderWithRouter(<DeckArchetypes />)
+    await screen.findByText('Sorcerer · Fire')
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-01-01' } })
+    await userEvent.selectOptions(screen.getByLabelText('Event size'), '32')
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/deck-archetypes?source=all&from=2026-01-01&min_event_decks=32'))
+    await userEvent.click(screen.getByRole('button', { name: 'Clear dates and size' }))
+    await waitFor(() => expect(get).toHaveBeenLastCalledWith('/api/deck-archetypes?source=all'))
   })
 
   it('waits while the server builds its first snapshot', async () => {

@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from services.curiosa import get_curiosa_deck_id, get_pso_deck_id, normalize_deck_url
+from utils.formatting import extract_year_from_name
 from webapp_config import BASE_DIR, MATCH_RECORDS_DB_PATH, TOP_8_DIR
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,18 @@ class TournamentEntry:
     placement: int | None
     top8: bool
     top_cut: bool
+    # Decks published for the event (not attendance; some events only publish a Top 8).
+    event_size: int = 0
+    # Events with no exact date still have a year in their name.
+    year: int | None = None
+
+    def date_span(self) -> tuple[str, str] | None:
+        """(first, last) ISO day the event could have been on, or None if unknown."""
+        if self.date:
+            return self.date[:10], self.date[:10]
+        if self.year:
+            return f"{self.year}-01-01", f"{self.year}-12-31"
+        return None
 
     def to_dict(self) -> dict:
         return {
@@ -52,7 +65,15 @@ class TournamentEntry:
             "placement": self.placement,
             "top8": self.top8,
             "topCut": self.top_cut,
+            "eventSize": self.event_size,
         }
+
+
+@dataclass
+class RankedGame:
+    day: str | None  # ISO date the match was reported
+    won: bool
+    player: str | None
 
 
 @dataclass
@@ -65,17 +86,11 @@ class ArchetypeDeck:
     # zone -> {card name: copies}
     cards: dict
     entries: list = field(default_factory=list)
-    ranked_wins: int = 0
-    ranked_losses: int = 0
-    ranked_players: Counter = field(default_factory=Counter)
+    games: list = field(default_factory=list)
 
     @property
     def is_tournament(self) -> bool:
         return bool(self.entries)
-
-    @property
-    def ranked_games(self) -> int:
-        return self.ranked_wins + self.ranked_losses
 
 
 def _card_counts(cards: list) -> dict:
@@ -240,12 +255,14 @@ class ArchetypeDeckRepository:
                         placement=placement,
                         top8=placement is not None,
                         top_cut=ranked_file,
+                        year=extract_year_from_name(folder.name) or None,
                     )
                     in_event[deck_id] = (deck, entry)
 
             if in_event:
                 events += 1
             for deck_id, (deck, entry) in in_event.items():
+                entry.event_size = len(in_event)
                 existing = decks.get(deck_id)
                 if existing is None:
                     deck.entries.append(entry)
@@ -258,15 +275,19 @@ class ArchetypeDeckRepository:
     # Seed events from the original snapshot                               #
     # ------------------------------------------------------------------ #
 
-    def load_seed_list(self) -> list[dict]:
+    def _load_seed_file(self) -> dict:
         try:
             with open(self._seed_events_path, "r", encoding="utf-8") as f:
-                return json.load(f).get("decks") or []
+                data = json.load(f)
+                return data if isinstance(data, dict) else {}
         except FileNotFoundError:
-            return []
+            return {}
         except Exception:
             logger.exception("Could not read %s", self._seed_events_path)
-            return []
+            return {}
+
+    def load_seed_list(self) -> list[dict]:
+        return self._load_seed_file().get("decks") or []
 
     def load_seed_cache(self) -> dict:
         """{deck id: legacy deck dict, or {"unavailable": true}}."""
@@ -293,11 +314,14 @@ class ArchetypeDeckRepository:
     def load_seed_decks(self) -> tuple[dict[str, ArchetypeDeck], set[str], list[str], int]:
         """(decks with card lists, event names, deck ids still to fetch, unavailable count)."""
         cache = self.load_seed_cache()
+        seed_file = self._load_seed_file()
+        # Decks each event published, including ones already on the Top 8 page.
+        event_sizes = seed_file.get("eventSizes") or {}
         decks: dict[str, ArchetypeDeck] = {}
         events: set[str] = set()
         pending: list[str] = []
         unavailable = 0
-        for seed in self.load_seed_list():
+        for seed in seed_file.get("decks") or []:
             deck_id = str(seed.get("id") or "").strip()
             if not deck_id:
                 continue
@@ -316,13 +340,15 @@ class ArchetypeDeckRepository:
             deck.avatar = seed.get("avatar") or deck.avatar
             for e in seed.get("entries") or []:
                 placement = e.get("placement") if isinstance(e.get("placement"), int) else None
+                event = e.get("event") or "Unknown event"
                 deck.entries.append(TournamentEntry(
-                    event=e.get("event") or "Unknown event",
+                    event=event,
                     date=e.get("date"),
                     player=e.get("player") or "Unknown",
                     placement=placement,
                     top8=bool(e.get("top8")) or (placement is not None and placement <= TOP8_SIZE),
                     top_cut=bool(e.get("topCut")) or bool(e.get("top8")),
+                    event_size=int(event_sizes.get(event) or 0),
                 ))
                 events.add(e.get("event") or "Unknown event")
             decks[deck_id] = deck
@@ -339,28 +365,33 @@ class ArchetypeDeckRepository:
 
     def _ranked_rows(self, cur: sqlite3.Cursor, table: str):
         """Newest first, so the first time a deck is seen is its latest list."""
-        select = f"""
+        try:
+            columns = {row[1] for row in cur.execute(f"PRAGMA table_info({table})")}
+        except sqlite3.Error:
+            return
+        needed = {"json_deck_data_winner", "json_deck_data_loser", "curiosa_url_winner",
+                  "curiosa_url_loser", "winner_display_name", "losser_display_name"}
+        if not needed <= columns:
+            return
+        timestamp = "timestamp" if "timestamp" in columns else "NULL"
+        # Older archives have no match_type column; everything there was ranked.
+        ranked_only = " AND (match_type = 'ranked' OR match_type IS NULL)" if "match_type" in columns else ""
+        cur.execute(f"""
             SELECT json_deck_data_winner, json_deck_data_loser,
                    curiosa_url_winner, curiosa_url_loser,
-                   winner_display_name, losser_display_name
+                   winner_display_name, losser_display_name, {timestamp}
             FROM {table}
             WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner NOT IN ('', '{{}}'))
                 OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser NOT IN ('', '{{}}')))
-        """
-        try:
-            cur.execute(select + " AND (match_type = 'ranked' OR match_type IS NULL) ORDER BY rowid DESC")
-        except sqlite3.OperationalError:
-            try:
-                # Older archives have no match_type column; everything there was ranked.
-                cur.execute(select + " ORDER BY rowid DESC")
-            except sqlite3.OperationalError:
-                return
+                {ranked_only}
+            ORDER BY rowid DESC
+        """)
         yield from cur
 
-    def load_ranked_decks(self) -> tuple[dict[str, ArchetypeDeck], int]:
-        """Every deck reported in a ranked match with its record, plus the game count."""
+    def load_ranked_decks(self) -> tuple[dict[str, ArchetypeDeck], list]:
+        """Every deck reported in a ranked match with its games, plus each game's day."""
         decks: dict[str, ArchetypeDeck] = {}
-        games = 0
+        games: list = []
         if not self._db_path.exists():
             logger.warning("match_records.db not found: %s", self._db_path)
             return decks, games
@@ -373,12 +404,13 @@ class ArchetypeDeckRepository:
             cur = conn.cursor()
             for table in ("match_records", "match_records_archive"):
                 for row in self._ranked_rows(cur, table):
-                    games += 1
                     values = dict(zip(
                         ("json_deck_data_winner", "json_deck_data_loser", "curiosa_url_winner",
-                         "curiosa_url_loser", "winner_display_name", "losser_display_name"),
+                         "curiosa_url_loser", "winner_display_name", "losser_display_name", "timestamp"),
                         row,
                     ))
+                    day = str(values["timestamp"])[:10] if values["timestamp"] else None
+                    games.append(day)
                     for json_col, url_col, name_col, won in self._SIDES:
                         raw_json = values[json_col]
                         if not raw_json or raw_json in ("", "{}"):
@@ -399,13 +431,7 @@ class ArchetypeDeckRepository:
                                 if deck is None:
                                     continue
                                 decks[key] = deck
-                        if won:
-                            deck.ranked_wins += 1
-                        else:
-                            deck.ranked_losses += 1
-                        player = values[name_col]
-                        if player:
-                            deck.ranked_players[player] += 1
+                        deck.games.append(RankedGame(day=day, won=won, player=values[name_col] or None))
         except sqlite3.Error:
             logger.exception("Failed reading ranked match decks")
         finally:

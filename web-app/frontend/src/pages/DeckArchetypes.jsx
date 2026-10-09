@@ -14,6 +14,9 @@ const SOURCES = [
 const MIN_GAMES_FOR_WIN_RATE = 20
 // While the server builds its first snapshot, check back this often.
 const BUILDING_POLL_MS = 4000
+// "Event size" options: tournaments that published at least this many decks.
+const EVENT_SIZE_OPTIONS = [0, 8, 16, 32, 64, 100]
+const NO_FILTERS = { from: '', to: '', minEventDecks: 0 }
 const SORT_OPTIONS = [
   { value: 'wins', label: 'Most wins' },
   { value: 'top8', label: 'Most Top 8s' },
@@ -176,7 +179,7 @@ function ArchetypeCard({ group, imageFiles, onSelect }) {
   )
 }
 
-function ArchetypeDetails({ group, source, imageFiles, onClose }) {
+function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
   const [zone, setZone] = useState('spellbook')
   const [showAll, setShowAll] = useState(false)
   const [detail, setDetail] = useState(null)
@@ -184,11 +187,11 @@ function ArchetypeDetails({ group, source, imageFiles, onClose }) {
 
   useEffect(() => {
     let active = true
-    getDeckArchetype(group.id, source)
+    getDeckArchetype(group.id, source, filters)
       .then((data) => { if (active) setDetail(data) })
       .catch((err) => { if (active) setDetailError(err.status === 404 ? 'This archetype was just regrouped. Close this panel and pick it again.' : 'Could not load this archetype.') })
     return () => { active = false }
-  }, [group.id, source])
+  }, [group.id, source, filters])
 
   useEffect(() => {
     const oldOverflow = document.body.style.overflow
@@ -360,6 +363,7 @@ function AboutDataPanel({ meta, onClose }) {
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">How to interpret the figures</h3>
             <p><strong className="text-text-primary">Decks</strong> counts lists grouped into an archetype. <strong className="text-text-primary">Top 8</strong> counts decks with a Top 8 finish. <strong className="text-text-primary">Wins</strong> counts tournament victories. These are not match win rates.</p>
+            <p className="mt-2"><strong className="text-text-primary">Dates</strong> limit tournaments and ranked games to that range. Events with only a year in their name count for that whole year. <strong className="text-text-primary">Event size</strong> keeps only tournaments that published at least that many decklists; it doesn't affect ranked games. Filters change which decks and results count; they don't regroup decks.</p>
             <p className="mt-2"><strong className="text-text-primary">Ranked win rate</strong> is every ranked game played with a deck in the archetype. Sorting by win rate only ranks archetypes with at least {MIN_GAMES_FOR_WIN_RATE} ranked games.</p>
             <p className="mt-2">Missing placements are not counted as losses. Finalist-only events can overrepresent successful builds, so tournament figures describe the collected records rather than the entire competitive player population.</p>
           </section>
@@ -386,6 +390,8 @@ export default function DeckArchetypes() {
   const [selectedId, setSelectedId] = useState(null)
   const [showAbout, setShowAbout] = useState(false)
   const [source, setSource] = useState('all')
+  const [filters, setFilters] = useState(NO_FILTERS)
+  const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -397,28 +403,45 @@ export default function DeckArchetypes() {
     return () => { active = false }
   }, [])
 
+  // Switching between tournaments and ranked starts over; changing a filter
+  // keeps the current cards on screen until the new numbers arrive.
+  useEffect(() => {
+    setData(null)
+    setSelectedId(null)
+  }, [source])
+
   useEffect(() => {
     let active = true
     let timer = null
-    setData(null)
     setError('')
-    setSelectedId(null)
+    setUpdating(true)
     const load = () => {
-      getDeckArchetypes(source)
+      getDeckArchetypes(source, filters)
         .then((result) => {
           if (!active) return
           // The server is still building its first snapshot; check back shortly.
-          if (result.status === 'building') timer = setTimeout(load, BUILDING_POLL_MS)
-          else setData(result)
+          if (result.status === 'building') {
+            timer = setTimeout(load, BUILDING_POLL_MS)
+            return
+          }
+          setData(result)
+          setUpdating(false)
         })
-        .catch((err) => { if (active) setError(err.message || 'Could not load deck archetypes') })
+        .catch((err) => {
+          if (!active) return
+          setError(err.message || 'Could not load deck archetypes')
+          setUpdating(false)
+        })
     }
     load()
     return () => {
       active = false
       clearTimeout(timer)
     }
-  }, [source])
+  }, [source, filters])
+
+  const setFilter = (name, value) => setFilters((current) => ({ ...current, [name]: value }))
+  const filtersActive = filters.from || filters.to || filters.minEventDecks > 0
 
   const avatars = useMemo(() => {
     if (!data) return []
@@ -501,6 +524,39 @@ export default function DeckArchetypes() {
               {[1, 2, 3, 4, 5, 8, 10, 20, 50].map((value) => <option key={value} value={value}>{value} deck{value === 1 ? '' : 's'}</option>)}
             </select>
           </label>
+          <label className="flex flex-col gap-1 text-xs text-text-muted min-w-[140px] flex-1 sm:flex-none">
+            From
+            <input
+              type="date"
+              value={filters.from}
+              max={filters.to || undefined}
+              onChange={(event) => setFilter('from', event.target.value)}
+              className="bg-bg-raised border border-border rounded px-3 py-2 text-sm text-text-primary"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-text-muted min-w-[140px] flex-1 sm:flex-none">
+            To
+            <input
+              type="date"
+              value={filters.to}
+              min={filters.from || undefined}
+              onChange={(event) => setFilter('to', event.target.value)}
+              className="bg-bg-raised border border-border rounded px-3 py-2 text-sm text-text-primary"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-text-muted min-w-[150px] flex-1 sm:flex-none">
+            Event size
+            <select value={filters.minEventDecks} onChange={(event) => setFilter('minEventDecks', Number(event.target.value))} className="bg-bg-raised border border-border rounded px-3 py-2 text-sm text-text-primary">
+              {EVENT_SIZE_OPTIONS.map((value) => (
+                <option key={value} value={value}>{value === 0 ? 'Any size' : `${value}+ decks`}</option>
+              ))}
+            </select>
+          </label>
+          {filtersActive && (
+            <button type="button" onClick={() => setFilters(NO_FILTERS)} className="text-sm text-secondary hover:underline pb-2">
+              Clear dates and size
+            </button>
+          )}
           <label className="flex items-center gap-2 text-sm text-text-muted pb-2 cursor-pointer">
             <input type="checkbox" checked={top8Only} onChange={(event) => setTop8Only(event.target.checked)} className="accent-yellow-500" />
             Has Top 8
@@ -511,14 +567,14 @@ export default function DeckArchetypes() {
             {data ? formatNumber(groups.length) : '…'} archetypes · {formatNumber(data?.meta?.fetchedDecks)} decks · {formatNumber(data?.meta?.tournamentCount)} tournaments
             {source === 'all' && data && ` · ${formatNumber(data.meta.rankedGames)} ranked games`}
           </span>
-          <span>Updated hourly · {Math.round((data?.meta?.threshold ?? 0.35) * 100)}% similarity</span>
+          <span>{updating && data ? 'Updating… · ' : ''}Updated hourly · {Math.round((data?.meta?.threshold ?? 0.35) * 100)}% similarity</span>
         </div>
       </div>
 
       {!data ? (
         <p className="text-center text-text-muted py-12">Loading deck archetypes…</p>
       ) : groups.length === 0 ? (
-        <p className="text-center text-text-muted py-12">No archetypes match these filters. Try a smaller minimum group size.</p>
+        <p className="text-center text-text-muted py-12">No archetypes match these filters. Try a smaller minimum group size, a wider date range or any event size.</p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {groups.map((group) => <ArchetypeCard key={group.id} group={group} imageFiles={imageFiles} onSelect={() => setSelectedId(group.id)} />)}
@@ -529,7 +585,7 @@ export default function DeckArchetypes() {
         Top 8 results and wins are tournament placements. Ranked win rates come from games reported on Sorcerers Summit.
       </p>
       {showAbout && <AboutDataPanel meta={data?.meta} onClose={() => setShowAbout(false)} />}
-      {selected && <ArchetypeDetails key={`${source}-${selected.id}`} group={selected} source={source} imageFiles={imageFiles} onClose={() => setSelectedId(null)} />}
+      {selected && <ArchetypeDetails key={`${source}-${selected.id}`} group={selected} source={source} filters={filters} imageFiles={imageFiles} onClose={() => setSelectedId(null)} />}
     </div>
   )
 }

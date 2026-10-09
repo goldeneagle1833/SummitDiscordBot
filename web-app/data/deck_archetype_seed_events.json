@@ -2,6 +2,24 @@
  "description": "Tournament decklists from the Deck Archetypes contribution (PR #72) whose events are not on the Top 8 page. Card lists are fetched from sorcerytcg.com once and cached in archetype_seed_decks.cache.json.",
  "source": "Tournament data compiled by Golden Eagle at Sorcerers Summit",
  "generated": "2026-10-08T22:29:52.210133+00:00",
+ "eventSizes": {
+  "Germany Grand Contest": 103,
+  "Gothic Season 1": 15,
+  "Gothic Season 2": 14,
+  "Gothic Season 3": 5,
+  "Gothic Season 4": 22,
+  "Gothic Season 5": 24,
+  "Great Stories Cornerstone (61 players)": 6,
+  "New Zealand Grand Contest": 8,
+  "RCS: Quest for the 'Stone (Gongaii)": 57,
+  "SCG CON Baltimore": 65,
+  "SCG CON Dallas": 62,
+  "SCG CON Las Vegas": 8,
+  "SCG CON Washington DC": 8,
+  "SorceryCon Constructed Championship": 172,
+  "SorceryFest 2026": 121,
+  "Thieves Guild Explorer Series (46 players)": 8
+ },
  "decks": [
   {
    "id": "cmobu9jsm00f804l1i7xlnpl0",

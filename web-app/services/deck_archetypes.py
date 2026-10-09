@@ -36,11 +36,12 @@ import math
 import threading
 import time
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import numpy as np
 
-from repositories.archetype_decks import ZONES, ArchetypeDeck, ArchetypeDeckRepository
+from repositories.archetype_decks import ZONES, ArchetypeDeck, ArchetypeDeckRepository, TournamentEntry
 
 logger = logging.getLogger(__name__)
 
@@ -168,27 +169,103 @@ def cluster(sim: np.ndarray, threshold: float = SIMILARITY_THRESHOLD) -> list[li
 # ---------------------------------------------------------------------- #
 # Archetype summaries                                                     #
 # ---------------------------------------------------------------------- #
+#
+# Clustering runs once per build over every deck. Filters (date range,
+# minimum event size) don't regroup decks; they decide which of a group's
+# decks, tournament results and ranked games count, so a group's numbers
+# and its place in the list change while its identity stays put.
 
 
-def _best_placement(deck: ArchetypeDeck) -> int | None:
-    known = [e.placement for e in deck.entries if e.placement is not None]
-    return min(known) if known else None
+@dataclass(frozen=True)
+class Filters:
+    start: str | None = None  # ISO date, inclusive
+    end: str | None = None  # ISO date, inclusive
+    min_event_decks: int = 0
+
+    @property
+    def dated(self) -> bool:
+        return bool(self.start or self.end)
+
+    def keeps_entry(self, entry: TournamentEntry) -> bool:
+        if entry.event_size < self.min_event_decks:
+            return False
+        if not self.dated:
+            return True
+        span = entry.date_span()
+        if span is None:
+            return False
+        first, last = span
+        return (not self.start or last >= self.start) and (not self.end or first <= self.end)
+
+    def keeps_day(self, day: str | None) -> bool:
+        if not self.dated:
+            return True
+        if not day:
+            return False
+        return (not self.start or day >= self.start) and (not self.end or day <= self.end)
 
 
-def deck_to_dict(deck: ArchetypeDeck) -> dict:
+NO_FILTERS = Filters()
+
+
+@dataclass
+class DeckView:
+    """One deck with only the results the current filters count."""
+
+    deck: ArchetypeDeck
+    entries: list
+    wins: int
+    losses: int
+    players: Counter
+
+    @property
+    def key(self) -> str:
+        return self.deck.key
+
+    @property
+    def games(self) -> int:
+        return self.wins + self.losses
+
+    @property
+    def best_placement(self) -> int | None:
+        known = [e.placement for e in self.entries if e.placement is not None]
+        return min(known) if known else None
+
+
+def view_deck(deck: ArchetypeDeck, filters: Filters, with_ranked: bool) -> DeckView | None:
+    """The deck as `filters` see it, or None if nothing about it is left to count."""
+    entries = [e for e in deck.entries if filters.keeps_entry(e)]
+    wins = losses = 0
+    players: Counter = Counter()
+    if with_ranked:
+        for game in deck.games:
+            if filters.keeps_day(game.day):
+                if game.won:
+                    wins += 1
+                else:
+                    losses += 1
+                if game.player:
+                    players[game.player] += 1
+    if not entries and not (wins or losses):
+        return None
+    return DeckView(deck, entries, wins, losses, players)
+
+
+def deck_to_dict(view: DeckView) -> dict:
+    deck = view.deck
     out = {
         "id": deck.key,
         "name": deck.name or "Unnamed deck",
         "url": deck.url,
         "avatar": deck.avatar,
         "elements": deck.elements,
-        "entries": [e.to_dict() for e in deck.entries],
+        "entries": [e.to_dict() for e in view.entries],
     }
-    if deck.ranked_games:
+    if view.games:
         out["ranked"] = {
-            "wins": deck.ranked_wins,
-            "losses": deck.ranked_losses,
-            "player": deck.ranked_players.most_common(1)[0][0] if deck.ranked_players else None,
+            "wins": view.wins,
+            "losses": view.losses,
+            "player": view.players.most_common(1)[0][0] if view.players else None,
         }
     return out
 
@@ -217,81 +294,121 @@ def _patterns(decks: list[ArchetypeDeck]) -> dict:
     return out
 
 
-def _summarize(decks: list[ArchetypeDeck], sim: np.ndarray) -> tuple[dict, dict]:
-    """(list entry, detail) for one archetype. `sim` is the members' similarity matrix."""
-    centrality = sim.mean(axis=1) if len(decks) > 1 else np.ones(1)
-    order = np.argsort(-centrality, kind="stable")
-    representative = decks[int(order[0])]
+@dataclass
+class Cluster:
+    id: str
+    avatar: str
+    elements: str
+    decks: list  # most central first
 
-    avatars = Counter(d.avatar for d in decks)
-    elements = Counter(d.elements for d in decks)
-    elements_label = elements.most_common(1)[0][0]
-    avatar = avatars.most_common(1)[0][0]
 
-    events = {e.event for d in decks for e in d.entries}
-    ranked_wins = sum(d.ranked_wins for d in decks)
-    ranked_losses = sum(d.ranked_losses for d in decks)
+def summarize(cluster_: Cluster, views: list[DeckView]) -> dict:
+    """The list entry for one archetype; `views` keep the cluster's central-first order."""
+    events = {e.event for v in views for e in v.entries}
+    ranked_wins = sum(v.wins for v in views)
+    ranked_losses = sum(v.losses for v in views)
     ranked_games = ranked_wins + ranked_losses
-
-    summary = {
-        "id": f"{avatar.lower().replace(' ', '-')}-{elements_label.lower().replace(' / ', '-')}-{representative.key}",
-        "name": f"{avatar} · {elements_label}",
-        "avatar": avatar,
-        "avatars": avatars.most_common(),
-        "elements": elements.most_common(),
-        "elementsLabel": elements_label,
-        "size": len(decks),
-        "tournamentDecks": sum(1 for d in decks if d.is_tournament),
-        "wins": sum(1 for d in decks if _best_placement(d) == 1),
-        "top8": sum(1 for d in decks if any(e.top8 for e in d.entries)),
-        "topCut": sum(1 for d in decks if any(e.top_cut for e in d.entries)),
+    return {
+        "id": cluster_.id,
+        "name": f"{cluster_.avatar} · {cluster_.elements}",
+        "avatar": cluster_.avatar,
+        "avatars": [[cluster_.avatar, len(views)]],
+        "elements": [[cluster_.elements, len(views)]],
+        "elementsLabel": cluster_.elements,
+        "size": len(views),
+        "tournamentDecks": sum(1 for v in views if v.entries),
+        "wins": sum(1 for v in views if v.best_placement == 1),
+        "top8": sum(1 for v in views if any(e.top8 for e in v.entries)),
+        "topCut": sum(1 for v in views if any(e.top_cut for e in v.entries)),
         "events": len(events),
         "rankedGames": ranked_games,
         "rankedWins": ranked_wins,
         "rankedLosses": ranked_losses,
         "rankedWinRate": round(ranked_wins / ranked_games, 4) if ranked_games else None,
-        "players": len({e.player for d in decks for e in d.entries}
-                       | {p for d in decks for p in d.ranked_players}),
+        "players": len({e.player for v in views for e in v.entries} | {p for v in views for p in v.players}),
     }
 
-    picks = [(representative, "Representative deck")]
-    placed = [d for d in decks if _best_placement(d) is not None]
+
+def detail(views: list[DeckView]) -> dict:
+    """Cards, picks and decks for one archetype's panel."""
+    picks = [(views[0], "Representative deck")]
+    placed = [v for v in views if v.best_placement is not None]
     if placed:
-        rank = {d.key: i for i, d in enumerate(decks[int(k)] for k in order)}
-        finisher = min(placed, key=lambda d: (_best_placement(d), rank[d.key]))
-        picks.append((finisher, f"Best finish: #{_best_placement(finisher)}"))
-    ranked = [d for d in decks if d.ranked_games >= RANKED_PICK_MIN_GAMES and d.ranked_wins > d.ranked_losses]
+        # min() keeps the first of equals, and views are central-first.
+        finisher = min(placed, key=lambda v: v.best_placement)
+        picks.append((finisher, f"Best finish: #{finisher.best_placement}"))
+    ranked = [v for v in views if v.games >= RANKED_PICK_MIN_GAMES and v.wins > v.losses]
     if ranked:
-        top = max(ranked, key=lambda d: (d.ranked_wins - d.ranked_losses, d.ranked_games))
-        picks.append((top, f"Best on ranked: {top.ranked_wins}-{top.ranked_losses}"))
+        top = max(ranked, key=lambda v: (v.wins - v.losses, v.games))
+        picks.append((top, f"Best on ranked: {top.wins}-{top.losses}"))
     recommendations, seen = [], set()
-    for deck, label in picks:
-        if deck.key in seen:
+    for view, label in picks:
+        if view.key in seen:
             continue
-        seen.add(deck.key)
-        recommendations.append({"deckId": deck.key, "label": label})
+        seen.add(view.key)
+        recommendations.append({"deckId": view.key, "label": label})
 
     listed = sorted(
-        decks,
-        key=lambda d: (
-            _best_placement(d) or 999,
-            -d.ranked_games,
-            (d.name or "").lower(),
-        ),
+        views,
+        key=lambda v: (v.best_placement or 999, -v.games, (v.deck.name or "").lower()),
     )[:MEMBER_LIMIT]
-    picked = {r["deckId"] for r in recommendations}
-    shown = listed + [d for d in decks if d.key in picked and d not in listed]
-    detail = {
-        "patterns": _patterns(decks),
+    listed_keys = {v.key for v in listed}
+    shown = listed + [v for v in views if v.key in seen and v.key not in listed_keys]
+    return {
+        "patterns": _patterns([v.deck for v in views]),
         "recommendations": recommendations,
-        "members": [d.key for d in listed],
-        "decks": {d.key: deck_to_dict(d) for d in shown},
+        "members": [v.key for v in listed],
+        "decks": {v.key: deck_to_dict(v) for v in shown},
     }
-    return summary, detail
 
 
-def build_snapshot(decks: list[ArchetypeDeck], meta: dict, keep_singletons: bool) -> dict:
-    """Cluster `decks` and summarize every archetype."""
+def _cluster_views(snapshot: dict, cluster_: Cluster, filters: Filters) -> list[DeckView]:
+    with_ranked = snapshot["meta"]["source"] == "all"
+    views = [v for v in (view_deck(d, filters, with_ranked) for d in cluster_.decks) if v]
+    # A lone ranked deck that matches nothing else isn't an archetype.
+    if with_ranked and len(views) == 1 and not views[0].entries and len(cluster_.decks) == 1:
+        return []
+    return views
+
+
+def filtered_list(snapshot: dict, filters: Filters = NO_FILTERS) -> dict:
+    """{meta, groups} with every count limited to what `filters` keep."""
+    groups = []
+    events: set[str] = set()
+    tournament_decks = ranked_decks = 0
+    for cluster_ in snapshot["clusters"]:
+        views = _cluster_views(snapshot, cluster_, filters)
+        if not views:
+            continue
+        groups.append(summarize(cluster_, views))
+        for v in views:
+            events.update(e.event for e in v.entries)
+            tournament_decks += 1 if v.entries else 0
+            ranked_decks += 1 if v.games else 0
+    groups.sort(key=lambda g: (-g["size"], g["name"]))
+    meta = {
+        **snapshot["meta"],
+        "tournamentCount": len(events),
+        "tournamentDecks": tournament_decks,
+        "rankedDecks": ranked_decks,
+        "rankedGames": sum(1 for day in snapshot["game_days"] if filters.keeps_day(day)),
+        "fetchedDecks": sum(g["size"] for g in groups),
+        "archetypes": len(groups),
+        "filters": {"from": filters.start, "to": filters.end, "minEventDecks": filters.min_event_decks},
+    }
+    return {"meta": meta, "groups": groups}
+
+
+def filtered_detail(snapshot: dict, group_id: str, filters: Filters = NO_FILTERS) -> dict | None:
+    cluster_ = snapshot["by_id"].get(group_id)
+    if cluster_ is None:
+        return None
+    views = _cluster_views(snapshot, cluster_, filters)
+    return detail(views) if views else None
+
+
+def build_snapshot(decks: list[ArchetypeDeck], meta: dict, game_days: list | None = None) -> dict:
+    """Cluster `decks`; numbers are worked out per request by filtered_list()."""
     started = time.monotonic()
     vocab: dict = {}
     features = [_deck_features(d, vocab) for d in decks]
@@ -301,35 +418,37 @@ def build_snapshot(decks: list[ArchetypeDeck], meta: dict, keep_singletons: bool
     for i, deck in enumerate(decks):
         by_identity[(deck.avatar, deck.elements)].append(i)
 
-    groups, details = [], {}
-    for indices in by_identity.values():
+    clusters = []
+    for (avatar, elements), indices in by_identity.items():
         sim = similarity_matrix([features[i] for i in indices], weights)
         for local in cluster(sim):
-            members = [decks[indices[k]] for k in local]
-            if len(members) == 1 and not keep_singletons and not members[0].is_tournament:
-                continue
-            summary, detail = _summarize(members, sim[np.ix_(local, local)])
-            groups.append(summary)
-            details[summary["id"]] = detail
+            sub = sim[np.ix_(local, local)]
+            centrality = sub.mean(axis=1) if len(local) > 1 else np.ones(1)
+            order = np.argsort(-centrality, kind="stable")
+            members = [decks[indices[local[int(k)]]] for k in order]
+            slug = f"{avatar}-{elements}".lower().replace(" / ", "-").replace(" ", "-")
+            clusters.append(Cluster(f"{slug}-{members[0].key}", avatar, elements, members))
 
-    groups.sort(key=lambda g: (-g["size"], g["name"]))
-    meta = {
-        **meta,
-        "generated": datetime.now(timezone.utc).isoformat(),
-        "threshold": SIMILARITY_THRESHOLD,
-        "fetchedDecks": len(decks),
-        "archetypes": len(groups),
+    snapshot = {
+        "meta": {
+            **meta,
+            "generated": datetime.now(timezone.utc).isoformat(),
+            "threshold": SIMILARITY_THRESHOLD,
+        },
+        "clusters": clusters,
+        "by_id": {c.id: c for c in clusters},
+        "game_days": game_days or [],
     }
-    logger.info("Built %d archetypes from %d decks in %.1fs", len(groups), len(decks), time.monotonic() - started)
-    return {"meta": meta, "groups": groups, "details": details}
+    logger.info("Grouped %d decks into %d clusters in %.1fs", len(decks), len(clusters), time.monotonic() - started)
+    return snapshot
 
 
 def build_snapshots(repo: ArchetypeDeckRepository | None = None) -> dict[str, dict]:
     """Load every source once and build both snapshots."""
     repo = repo or ArchetypeDeckRepository()
-    tournament, tournament_events = repo.load_tournament_decks()
-    seeds, seed_events, pending, unavailable = repo.load_seed_decks()
-    ranked, ranked_games = repo.load_ranked_decks()
+    tournament, _tournament_events = repo.load_tournament_decks()
+    seeds, _seed_events, pending, unavailable = repo.load_seed_decks()
+    ranked, game_days = repo.load_ranked_decks()
 
     merged: dict[str, ArchetypeDeck] = dict(tournament)
     for key, deck in seeds.items():
@@ -340,27 +459,19 @@ def build_snapshots(repo: ArchetypeDeckRepository | None = None) -> dict[str, di
     tournament_keys = set(merged)
     for key, deck in ranked.items():
         if key in merged:
-            target = merged[key]
-            target.ranked_wins += deck.ranked_wins
-            target.ranked_losses += deck.ranked_losses
-            target.ranked_players.update(deck.ranked_players)
+            merged[key].games.extend(deck.games)
         else:
             merged[key] = deck
 
     base_meta = {
-        "tournamentCount": tournament_events + len(seed_events),
-        "tournamentDecks": len(tournament_keys),
-        "rankedDecks": len(ranked),
-        "rankedGames": ranked_games,
         "pendingDecks": len(pending),
         "unavailableDecks": unavailable,
     }
-    all_decks = list(merged.values())
     return {
         "tournament": build_snapshot(
-            [merged[k] for k in sorted(tournament_keys)], {**base_meta, "source": "tournament"}, True
+            [merged[k] for k in sorted(tournament_keys)], {**base_meta, "source": "tournament"}
         ),
-        "all": build_snapshot(all_decks, {**base_meta, "source": "all"}, False),
+        "all": build_snapshot(list(merged.values()), {**base_meta, "source": "all"}, game_days),
     }
 
 
@@ -407,6 +518,40 @@ def get_snapshot(source: str) -> dict | None:
     if snapshots is None or (time.monotonic() - _snapshots_time) >= CACHE_TTL:
         _build_in_background()
     return snapshots.get(source) if snapshots else None
+
+
+# Filtered views are cheap but not free (every ranked game is checked), so
+# recent ones are kept per snapshot.
+_VIEW_CACHE_SIZE = 64
+_view_cache: dict = {}
+
+
+def _cached(kind: str, snapshot: dict, filters: Filters, key, make):
+    cache_key = (kind, snapshot["meta"]["source"], snapshot["meta"]["generated"], filters, key)
+    hit = _view_cache.get(cache_key)
+    if hit is None:
+        hit = make()
+        if len(_view_cache) >= _VIEW_CACHE_SIZE:
+            _view_cache.pop(next(iter(_view_cache)))
+        _view_cache[cache_key] = hit
+    return hit
+
+
+def get_list(source: str, filters: Filters = NO_FILTERS) -> dict | None:
+    """{meta, groups} for `source` under `filters`, or None while the first build runs."""
+    snapshot = get_snapshot(source)
+    if snapshot is None:
+        return None
+    return _cached("list", snapshot, filters, None, lambda: filtered_list(snapshot, filters))
+
+
+def get_detail(source: str, group_id: str, filters: Filters = NO_FILTERS) -> dict | None:
+    """One archetype's panel, {} if the group is unknown or empty, None while building."""
+    snapshot = get_snapshot(source)
+    if snapshot is None:
+        return None
+    return _cached("detail", snapshot, filters, group_id,
+                   lambda: filtered_detail(snapshot, group_id, filters) or {})
 
 
 def is_building() -> bool:

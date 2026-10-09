@@ -48,18 +48,19 @@ def write_event(top8_dir, folder, top8=None, full=None):
 
 
 def make_match_db(path, rows):
+    """rows: (winner deck, loser deck, match_type[, timestamp])."""
     conn = sqlite3.connect(path)
     cols = ("json_deck_data_winner, json_deck_data_loser, curiosa_url_winner, curiosa_url_loser, "
-            "winner_display_name, losser_display_name, match_type")
+            "winner_display_name, losser_display_name, match_type, timestamp")
     conn.execute(f"CREATE TABLE match_records ({cols})")
     conn.execute(f"CREATE TABLE match_records_archive ({cols})")
-    for winner, loser, match_type in rows:
+    for winner, loser, match_type, *timestamp in rows:
         conn.execute(
-            "INSERT INTO match_records VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO match_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 json.dumps(winner), json.dumps(loser),
                 f"https://sorcerytcg.com/decks/{winner['id']}", f"https://sorcerytcg.com/decks/{loser['id']}",
-                "Winner", "Loser", match_type,
+                "Winner", "Loser", match_type, (timestamp or ["2026-06-01 12:00:00"])[0],
             ),
         )
     conn.commit()
@@ -78,6 +79,14 @@ def repo(tmp_path):
     )
 
 
+def built(repo, source, filters=deck_archetypes.NO_FILTERS):
+    """{meta, groups, details} for one source, the way the API serves it."""
+    snapshot = deck_archetypes.build_snapshots(repo)[source]
+    listing = deck_archetypes.filtered_list(snapshot, filters)
+    details = {g["id"]: deck_archetypes.filtered_detail(snapshot, g["id"], filters) for g in listing["groups"]}
+    return {**listing, "details": details}
+
+
 def groups_by_member(snapshot):
     out = {}
     for group in snapshot["groups"]:
@@ -89,7 +98,7 @@ def groups_by_member(snapshot):
 def test_similar_decks_group_and_different_decks_do_not(repo):
     write_event(repo._top8_dir, "Cup", top8=[fire_deck("f1"), fire_deck("f2", swap=2), water_deck("w1")])
 
-    snapshot = deck_archetypes.build_snapshots(repo)["tournament"]
+    snapshot = built(repo, "tournament")
     member = groups_by_member(snapshot)
 
     assert member["f1"]["id"] == member["f2"]["id"]
@@ -101,7 +110,7 @@ def test_decks_with_different_avatars_never_group(repo):
     other["avatar"] = [{"name": "Druid"}]
     write_event(repo._top8_dir, "Cup", top8=[fire_deck("f1"), other])
 
-    member = groups_by_member(deck_archetypes.build_snapshots(repo)["tournament"])
+    member = groups_by_member(built(repo, "tournament"))
 
     assert member["f1"]["id"] != member["f2"]["id"]
 
@@ -110,7 +119,7 @@ def test_placements_count_wins_and_top8(repo):
     field = [fire_deck(f"f{i}", swap=1) for i in range(10)]
     write_event(repo._top8_dir, "Cup", top8=field)
 
-    group = groups_by_member(deck_archetypes.build_snapshots(repo)["tournament"])["f0"]
+    group = groups_by_member(built(repo, "tournament"))["f0"]
 
     assert group["size"] == 10
     assert group["wins"] == 1
@@ -129,31 +138,29 @@ def test_ranked_record_merges_into_tournament_deck_and_casual_is_ignored(repo):
         (w1, f1, "casual"),
     ])
 
-    snapshots = deck_archetypes.build_snapshots(repo)
-    group = groups_by_member(snapshots["all"])["f1"]
-    detail = snapshots["all"]["details"][group["id"]]
+    everything = built(repo, "all")
+    group = groups_by_member(everything)["f1"]
+    detail = everything["details"][group["id"]]
 
     assert detail["decks"]["f1"]["ranked"]["wins"] == 2
     assert detail["decks"]["f1"]["ranked"]["losses"] == 1
     assert detail["decks"]["f1"]["entries"][0]["placement"] == 1
-    assert snapshots["all"]["meta"]["rankedGames"] == 3
+    assert everything["meta"]["rankedGames"] == 3
 
 
 def test_tournament_source_leaves_out_ranked_only_decks(repo):
     write_event(repo._top8_dir, "Cup", top8=[fire_deck("f1")])
     make_match_db(repo._db_path, [(water_deck("w1"), water_deck("w2"), "ranked")])
 
-    snapshots = deck_archetypes.build_snapshots(repo)
-
-    assert set(groups_by_member(snapshots["tournament"])) == {"f1"}
-    assert {"w1", "w2"} <= set(groups_by_member(snapshots["all"]))
+    assert set(groups_by_member(built(repo, "tournament"))) == {"f1"}
+    assert {"w1", "w2"} <= set(groups_by_member(built(repo, "all")))
 
 
 def test_one_off_ranked_decks_are_dropped_from_all(repo):
     lonely = deck("x1", "Druid", [f"Odd card {i}" for i in range(20)])
     make_match_db(repo._db_path, [(lonely, water_deck("w1"), "ranked")])
 
-    member = groups_by_member(deck_archetypes.build_snapshots(repo)["all"])
+    member = groups_by_member(built(repo, "all"))
 
     assert "x1" not in member
     assert "w1" not in member
@@ -169,7 +176,7 @@ def test_seed_decks_wait_for_their_card_lists(repo):
     repo.save_seed_cache_entry("s1", fire_deck("s1"))
     repo.save_seed_cache_entry("s2", {"unavailable": True})
 
-    snapshot = deck_archetypes.build_snapshots(repo)["tournament"]
+    snapshot = built(repo, "tournament")
     group = groups_by_member(snapshot)["s1"]
 
     assert snapshot["meta"]["pendingDecks"] == 1
@@ -194,41 +201,79 @@ def test_cluster_stops_at_threshold():
 
 
 class TestApi:
-    SNAPSHOT = {
-        "meta": {"source": "all"},
-        "groups": [{"id": "g1", "name": "Sorcerer · Fire"}],
-        "details": {"g1": {"patterns": {}, "recommendations": [], "members": [], "decks": {}}},
-    }
+    LISTING = {"meta": {"source": "all"}, "groups": [{"id": "g1", "name": "Sorcerer · Fire"}]}
+    DETAIL = {"patterns": {}, "recommendations": [], "members": [], "decks": {}}
 
     def test_building_returns_202(self, client, monkeypatch):
-        monkeypatch.setattr(deck_archetypes, "get_snapshot", lambda source: None)
+        monkeypatch.setattr(deck_archetypes, "get_list", lambda source, filters: None)
         res = client.get("/api/deck-archetypes")
         assert res.status_code == 202
         assert res.get_json()["status"] == "building"
 
-    def test_list_and_detail(self, client, monkeypatch):
+    def test_list_and_detail_pass_source_and_filters(self, client, monkeypatch):
         seen = []
 
-        def fake(source):
-            seen.append(source)
-            return self.SNAPSHOT
+        def fake_list(source, filters):
+            seen.append((source, filters))
+            return self.LISTING
 
-        monkeypatch.setattr(deck_archetypes, "get_snapshot", fake)
-        listing = client.get("/api/deck-archetypes?source=tournament").get_json()
-        detail = client.get("/api/deck-archetypes/g1?source=bogus")
+        def fake_detail(source, group_id, filters):
+            seen.append((source, filters))
+            return self.DETAIL if group_id == "g1" else {}
+
+        monkeypatch.setattr(deck_archetypes, "get_list", fake_list)
+        monkeypatch.setattr(deck_archetypes, "get_detail", fake_detail)
+        listing = client.get(
+            "/api/deck-archetypes?source=tournament&from=2026-06-30&to=2026-01-01&min_event_decks=32"
+        ).get_json()
+        detail = client.get("/api/deck-archetypes/g1?source=bogus&from=junk&min_event_decks=x")
         missing = client.get("/api/deck-archetypes/nope")
 
         assert listing["groups"][0]["id"] == "g1"
         assert detail.status_code == 200
         assert missing.status_code == 404
-        assert seen == ["tournament", "all", "all"]
+        # Reversed dates are swapped; junk values are ignored.
+        assert seen[0] == ("tournament", deck_archetypes.Filters("2026-01-01", "2026-06-30", 32))
+        assert seen[1] == ("all", deck_archetypes.Filters())
 
 
 def test_decks_with_different_elements_never_group(repo):
     # Same cards, but one deck's element pair differs.
     write_event(repo._top8_dir, "Cup", top8=[fire_deck("f1"), deck("f2", "Sorcerer", FIRE, elements="Air")])
 
-    member = groups_by_member(deck_archetypes.build_snapshots(repo)["tournament"])
+    member = groups_by_member(built(repo, "tournament"))
 
     assert member["f1"]["id"] != member["f2"]["id"]
     assert member["f2"]["name"] == "Sorcerer · Air"
+
+
+def test_date_range_counts_only_results_inside_it(repo):
+    early = [fire_deck(f"e{i}", swap=1) for i in range(2)]
+    late = [fire_deck(f"l{i}", swap=1) for i in range(2)]
+    write_event(repo._top8_dir, "Spring Cup 3-1-2026", top8=early)
+    write_event(repo._top8_dir, "Fall Cup 9-1-2026", top8=late)
+    make_match_db(repo._db_path, [
+        (early[0], water_deck("w1"), "ranked", "2026-02-01 10:00:00"),
+        (water_deck("w1"), early[0], "ranked", "2026-08-01 10:00:00"),
+    ])
+
+    fall = deck_archetypes.Filters(start="2026-07-01")
+    result = built(repo, "all", fall)
+    group = groups_by_member(result)["l0"]
+
+    assert "e0" in groups_by_member(result)  # still in the group for its ranked game
+    assert group["wins"] == 1  # only the fall winner
+    assert group["events"] == 1
+    assert group["rankedWins"] == 0 and group["rankedLosses"] == 1
+    assert result["meta"]["rankedGames"] == 1
+    assert set(groups_by_member(built(repo, "tournament", fall))) == {"l0", "l1"}
+
+
+def test_min_event_decks_drops_small_events(repo):
+    write_event(repo._top8_dir, "Small", top8=[fire_deck("s0", swap=1), fire_deck("s1", swap=1)])
+    write_event(repo._top8_dir, "Big", top8=[fire_deck(f"b{i}", swap=1) for i in range(5)])
+
+    result = built(repo, "tournament", deck_archetypes.Filters(min_event_decks=5))
+
+    assert set(groups_by_member(result)) == {f"b{i}" for i in range(5)}
+    assert result["meta"]["tournamentCount"] == 1

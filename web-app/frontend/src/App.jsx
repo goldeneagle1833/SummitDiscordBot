@@ -30,6 +30,7 @@ import Stats from '@/pages/Stats'
 import StatsEvent from '@/pages/StatsEvent'
 import DeckDetail from '@/pages/DeckDetail'
 import DeckRecommendations from '@/pages/DeckRecommendations'
+import DeckArchetypes from '@/pages/DeckArchetypes'
 
 // Phase 5: Cards & Avatars
 import Avatars from '@/pages/Avatars'
@@ -186,6 +187,7 @@ const router = createBrowserRouter([
       { path: '/stats', element: <Stats /> },
       { path: '/stats/:folder', element: <StatsEvent /> },
       { path: '/deck-rec', element: <DeckRecommendations /> },
+      { path: '/deck-archetypes', element: <DeckArchetypes /> },
       { path: '/deck-rec/:deckId', element: <DeckDetail /> },
       // Phase 5: Cards & Avatars
       { path: '/avatars', element: <Avatars /> },

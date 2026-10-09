@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getEventsWithAdmin, getEvent, reorderEvents, updateEventMetadata, createEvent, importEventFromUrl, pollEventJob, setFeaturedEvent } from '@/api/events'
 import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
+import { useIsDesktop, usePrefersReducedMotion } from '@/hooks/useMediaQuery'
 
 const ELEMENT_COLORS = {
   Fire: { label: 'text-red-400', bar: 'bg-red-500' },
@@ -98,6 +99,13 @@ export default function Events() {
   const [selectedTop8, setSelectedTop8] = useState([])
   const [selectedEventData, setSelectedEventData] = useState(null)
 
+  // Mobile accordion behaviour + a11y
+  const isDesktop = useIsDesktop()
+  const reducedMotion = usePrefersReducedMotion()
+  const rowRefs = useRef({})               // folder -> row <button>
+  const userPickedRef = useRef(false)      // only scroll/announce after a real tap
+  const [announcement, setAnnouncement] = useState('')
+
   // Admin state
   const [editModal, setEditModal] = useState(null)
   const [editSaving, setEditSaving] = useState(false)
@@ -179,6 +187,23 @@ export default function Events() {
       })
       .catch(() => { setSelectedTop8([]); setSelectedEventData(null) })
   }, [selected?.folder])
+
+  // After the user picks an event: keep the tapped row in view on mobile (an
+  // earlier row collapsing above it would otherwise shove it off-screen) and
+  // tell screen-reader users what changed, since the preview lives elsewhere.
+  useEffect(() => {
+    if (!userPickedRef.current || !selected) return
+    userPickedRef.current = false
+    setAnnouncement(`Showing ${selected.name || selected.folder}`)
+    if (isDesktop) return
+    const row = rowRefs.current[selected.folder]
+    if (!row || typeof row.scrollIntoView !== 'function') return
+    // Let the accordion render first so the measurement is right.
+    const id = requestAnimationFrame(() => {
+      row.scrollIntoView({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' })
+    })
+    return () => cancelAnimationFrame(id)
+  }, [selected?.folder, isDesktop, reducedMotion])
 
   const yearGroups = useMemo(() => groupByYear(filtered), [filtered])
 
@@ -283,16 +308,102 @@ export default function Events() {
     } catch { /* ignore */ }
   }, [])
 
+  // The big event preview tile. On desktop it sits in the sticky left panel;
+  // on mobile it renders inside the accordion, right under the tapped row.
+  const renderHeroCard = (event, { inAccordion = false } = {}) => {
+    const img = getAvatarImagePath(event.winner_avatar, imageFiles)
+    return (
+      <div className={`relative overflow-hidden bg-bg-surface ${inAccordion ? 'border-b border-border' : 'rounded-lg border-2 border-primary/30'}`} style={{ minHeight: inAccordion ? '220px' : '280px' }}>
+        {img && (
+          <>
+            <div
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: `url('/avatar-images/${img}')`, opacity: 0.35, filter: 'brightness(0.8)' }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
+          </>
+        )}
+        <div className={`relative flex flex-col justify-end ${inAccordion ? 'p-4 min-h-[220px]' : 'p-6 min-h-[280px]'}`}>
+          <div className="flex items-center gap-2 mb-2">
+            {event.folder === (featuredFolder || filtered[0]?.folder) && (
+              <span className="text-xs font-semibold text-primary uppercase tracking-wide bg-primary/10 px-2 py-0.5 rounded">
+                Latest
+              </span>
+            )}
+            {event.rating > 0 && (
+              <span className="text-yellow-400 text-sm">
+                {'★'.repeat(event.rating)}{'☆'.repeat(3 - event.rating)}
+              </span>
+            )}
+          </div>
+          <h2 className={`font-display text-secondary mb-2 ${inAccordion ? 'text-xl' : 'text-2xl'}`}>{event.name || event.folder}</h2>
+          {event.event_date_display && (
+            <p className="text-sm text-text-muted mb-2">{event.event_date_display}</p>
+          )}
+          <div className="flex flex-wrap items-center gap-4 text-sm text-text-muted mb-4">
+            {event.winner_username && (
+              <span>
+                Winner: <span className="text-text font-semibold">{event.winner_username}</span>
+                {event.winner_avatar && <span className="text-text-muted"> ({event.winner_avatar})</span>}
+              </span>
+            )}
+            <span>{event.player_count || 0} decks</span>
+          </div>
+          <Link
+            to={`/top-8/${event.folder}`}
+            className="inline-flex items-center gap-2 bg-primary text-black px-4 py-2 rounded font-semibold text-sm hover:bg-primary-light transition-colors w-fit"
+          >
+            View Decks
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden="true">
+              <path fillRule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clipRule="evenodd" />
+            </svg>
+          </Link>
+          {isAdmin && (
+            <div className="absolute top-3 right-3 flex gap-1">
+              {featuredFolder === event.folder ? (
+                <button
+                  onClick={handleClearFeatured}
+                  className="text-xs text-text-muted hover:text-accent-red bg-bg-raised/80 px-2 py-1 rounded transition-colors"
+                >
+                  Unpin
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleSetFeatured(event.folder)}
+                  className="p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-primary transition-colors"
+                  title="Pin as featured"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" />
+                  </svg>
+                </button>
+              )}
+              <button
+                onClick={() => setEditModal({ folder: event.folder, name: event.name || event.folder, rating: event.rating || 1, event_date: event.event_date || '' })}
+                className="p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-secondary transition-colors"
+                title="Edit event"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   if (loading) return <Spinner className="py-20" />
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
-
-  const selectedImg = selected ? getAvatarImagePath(selected.winner_avatar, imageFiles) : null
 
   return (
     <div>
       {/* Hero */}
       <section className="text-center mb-6">
         <h1 className="text-2xl font-display text-secondary mb-2">Event Results</h1>
+        {/* Announces the newly selected event to assistive tech (preview renders elsewhere) */}
+        <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
         <p className="text-text-muted text-sm">Browse winning decks from competitive Sorcery events</p>
         <p className="text-text-muted/50 text-xs mt-1">
           Want to see your event here? Send me a list of Curiosa deck URLs on the{' '}
@@ -306,87 +417,10 @@ export default function Events() {
       {/* Split View */}
       <div className="flex flex-col lg:flex-row gap-4">
         {/* Left Panel — Featured/Selected Event Preview */}
-        <div className="lg:w-5/12 xl:w-5/12 shrink-0">
+        <div className="hidden lg:block lg:w-5/12 xl:w-5/12 shrink-0">
           {selected ? (
             <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
-              <div className="relative rounded-lg overflow-hidden border-2 border-primary/30 bg-bg-surface" style={{ minHeight: '280px' }}>
-                {selectedImg && (
-                  <>
-                    <div
-                      className="absolute inset-0 bg-cover bg-center"
-                      style={{ backgroundImage: `url('/avatar-images/${selectedImg}')`, opacity: 0.35, filter: 'brightness(0.8)' }}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
-                  </>
-                )}
-                <div className="relative p-6 flex flex-col justify-end min-h-[280px]">
-                  <div className="flex items-center gap-2 mb-2">
-                    {selected.folder === (featuredFolder || filtered[0]?.folder) && (
-                      <span className="text-xs font-semibold text-primary uppercase tracking-wide bg-primary/10 px-2 py-0.5 rounded">
-                        Latest
-                      </span>
-                    )}
-                    {selected.rating > 0 && (
-                      <span className="text-yellow-400 text-sm">
-                        {'★'.repeat(selected.rating)}{'☆'.repeat(3 - selected.rating)}
-                      </span>
-                    )}
-                  </div>
-                  <h2 className="text-2xl font-display text-secondary mb-2">{selected.name || selected.folder}</h2>
-                  {selected.event_date_display && (
-                    <p className="text-sm text-text-muted mb-2">{selected.event_date_display}</p>
-                  )}
-                  <div className="flex flex-wrap items-center gap-4 text-sm text-text-muted mb-4">
-                    {selected.winner_username && (
-                      <span>
-                        Winner: <span className="text-text font-semibold">{selected.winner_username}</span>
-                        {selected.winner_avatar && <span className="text-text-muted"> ({selected.winner_avatar})</span>}
-                      </span>
-                    )}
-                    <span>{selected.player_count || 0} decks</span>
-                  </div>
-                  <Link
-                    to={`/top-8/${selected.folder}`}
-                    className="inline-flex items-center gap-2 bg-primary text-black px-4 py-2 rounded font-semibold text-sm hover:bg-primary-light transition-colors w-fit"
-                  >
-                    View Decks
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path fillRule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clipRule="evenodd" />
-                    </svg>
-                  </Link>
-                  {isAdmin && (
-                    <div className="absolute top-3 right-3 flex gap-1">
-                      {featuredFolder === selected.folder ? (
-                        <button
-                          onClick={handleClearFeatured}
-                          className="text-xs text-text-muted hover:text-accent-red bg-bg-raised/80 px-2 py-1 rounded transition-colors"
-                        >
-                          Unpin
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleSetFeatured(selected.folder)}
-                          className="p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-primary transition-colors"
-                          title="Pin as featured"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                            <path d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" />
-                          </svg>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setEditModal({ folder: selected.folder, name: selected.name || selected.folder, rating: selected.rating || 1, event_date: selected.event_date || '' })}
-                        className="p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-secondary transition-colors"
-                        title="Edit event"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
-                        </svg>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
+              {renderHeroCard(selected)}
               {/* Event Details Card (desktop only — mobile uses accordion in event list) */}
               {(selectedTop8.length > 0 || selectedEventData) && (
                 <div className="mt-3 bg-bg-surface border border-border rounded-lg divide-y divide-border hidden lg:block">
@@ -593,16 +627,22 @@ export default function Events() {
                           </button>
                         )}
                         <button
+                          id={`event-row-${event.folder}`}
+                          ref={(el) => { rowRefs.current[event.folder] = el }}
+                          aria-expanded={compareMode || isDesktop ? undefined : isSelected}
+                          aria-controls={compareMode || isDesktop ? undefined : `event-panel-${event.folder}`}
+                          aria-current={!compareMode && isSelected ? 'true' : undefined}
+                          aria-pressed={compareMode ? isCompareChecked : undefined}
                           onClick={() => {
                             if (compareMode) {
                               toggleCompareEvent(event.folder)
                               return
                             }
                             // On mobile: toggle accordion. On desktop: always select.
-                            const isLg = window.matchMedia('(min-width: 1024px)').matches
-                            setSelectedFolder(isSelected && !isLg ? null : event.folder)
+                            userPickedRef.current = true
+                            setSelectedFolder(isSelected && !isDesktop ? null : event.folder)
                           }}
-                          className={`w-full text-left p-3 transition-all group ${
+                          className={`w-full text-left p-3 transition-all group scroll-mt-20 ${
                             compareMode
                               ? `rounded-r-lg border border-l-0 ${isCompareChecked ? 'bg-secondary/10 border-secondary/40' : 'bg-bg-surface border-border hover:bg-bg-elevated/50'}`
                               : `rounded-lg ${isSelected
@@ -612,7 +652,10 @@ export default function Events() {
                         >
                           <div className="flex items-center gap-3">
                             {/* Selection indicator */}
-                            {!compareMode && <div className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-primary' : 'bg-border'}`} />}
+                            {!compareMode && (
+                              <div className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-primary' : 'bg-border'}`} aria-hidden="true" />
+                            )}
+                            {!compareMode && isSelected && <span className="sr-only">Selected event: </span>}
 
                             {/* Event info */}
                             <div className="flex-1 min-w-0">
@@ -642,7 +685,7 @@ export default function Events() {
                               View →
                             </Link>
                             <svg
-                              xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                              xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"
                               className={`w-4 h-4 shrink-0 text-text-muted transition-transform lg:hidden ${isSelected ? 'rotate-180' : ''}`}
                             >
                               <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
@@ -650,20 +693,15 @@ export default function Events() {
                           </div>
                         </button>
                         {/* Mobile accordion */}
-                        {isSelected && (
-                          <div className="lg:hidden border border-t-0 border-primary/40 rounded-b-lg bg-bg-surface overflow-hidden">
-                            {/* View Decks link */}
-                            <div className="p-3 border-b border-border">
-                              <Link
-                                to={`/top-8/${event.folder}`}
-                                className="inline-flex items-center gap-2 bg-primary text-black px-3 py-1.5 rounded font-semibold text-sm hover:bg-primary-light transition-colors"
-                              >
-                                View Decks
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                  <path fillRule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clipRule="evenodd" />
-                                </svg>
-                              </Link>
-                            </div>
+                        {isSelected && !compareMode && !isDesktop && (
+                          <div
+                            id={`event-panel-${event.folder}`}
+                            role="region"
+                            aria-labelledby={`event-row-${event.folder}`}
+                            className="lg:hidden border border-t-0 border-primary/40 rounded-b-lg bg-bg-surface overflow-hidden"
+                          >
+                            {/* Event preview tile — same card as the desktop left panel, with View Decks */}
+                            {renderHeroCard(event, { inAccordion: true })}
                             {/* Stats + Placements */}
                             {selectedEventData && (
                               <div className="grid grid-cols-2 divide-x divide-border border-b border-border">

@@ -1195,6 +1195,86 @@ def get_all_cards_popularity():
     return jsonify({"cards": result, "dates": complete_dates, "daily_totals": totals})
 
 
+def _deck_avatar_name(deck_str):
+    """Return the avatar name from a JSON deck string, or None."""
+    if not deck_str or deck_str in ("", "{}"):
+        return None
+    try:
+        deck_data = json.loads(deck_str)
+        deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+        avatar = deck.get("avatar") or [{}]
+        name = (avatar[0].get("name") or "").strip()
+        return name or None
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError, AttributeError):
+        return None
+
+
+@cards_bp.route("/elements/avatar-meta")
+def get_avatar_meta():
+    """Daily avatar counts from reported Discord decks, for the Elements page Meta chart.
+
+    Each deck in a match (winner and loser) counts once for its avatar on the
+    day the match was reported. Reads both live and archived matches.
+
+    Returns {"dates": [first..last day], "avatars": {name: {date: count}},
+             "daily_totals": {date: decks}}.
+    """
+    deck_where = ("((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
+                  " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))")
+    queries = [
+        f"""SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+            FROM match_records
+            WHERE {deck_where} AND (source = 'Discord' OR source IS NULL)""",
+        f"""SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+            FROM match_records_archive
+            WHERE {deck_where}""",
+    ]
+    rows = []
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+        for query in queries:
+            try:
+                cur.execute(query)
+                rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not read avatar meta: {e}")
+
+    from datetime import date, timedelta
+
+    avatars = {}
+    daily_totals = Counter()
+    for winner_deck, loser_deck, timestamp in rows:
+        day = str(timestamp or "")[:10]
+        try:
+            date.fromisoformat(day)
+        except ValueError:
+            continue
+        for deck_str in (winner_deck, loser_deck):
+            name = _deck_avatar_name(deck_str)
+            if not name:
+                continue
+            daily_totals[day] += 1
+            per_day = avatars.setdefault(name, Counter())
+            per_day[day] += 1
+
+    if not daily_totals:
+        return jsonify({"dates": [], "avatars": {}, "daily_totals": {}})
+
+    first = date.fromisoformat(min(daily_totals))
+    last = date.fromisoformat(max(daily_totals))
+    dates = [(first + timedelta(days=i)).isoformat() for i in range((last - first).days + 1)]
+
+    return jsonify({
+        "dates": dates,
+        "avatars": {name: dict(counts) for name, counts in avatars.items()},
+        "daily_totals": dict(daily_totals),
+    })
+
+
 @cards_bp.route("/deck-composition")
 def get_deck_composition():
     """API endpoint for deck element composition across all decks.

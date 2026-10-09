@@ -3,6 +3,7 @@ import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
 import { useAuth } from '@/context/AuthContext'
 import usePageTitle from '@/hooks/usePageTitle'
+import AvatarMetaChart from '@/components/analytics/AvatarMetaChart'
 
 const ELEMENT_COLORS = {
   Fire: { bar: 'bg-red-500', text: 'text-red-400' },
@@ -306,6 +307,13 @@ export default function Elements() {
           )}
         </>
       )}
+
+      {/* Meta: avatar counts over time */}
+      <section className="mt-10">
+        <h2 className="text-xl font-display text-secondary mb-1 text-center">Meta</h2>
+        <p className="text-text-muted text-sm mb-4 text-center">How the avatar field has changed over time</p>
+        <AvatarMetaChart />
+      </section>
     </div>
   )
 }

@@ -12,7 +12,7 @@ sys.modules.setdefault("config", MagicMock(GUILD_ID=1))
 
 from cogs.lfg import state
 from cogs.lfg.queue import match_delivery_extras, provision_match_and_publish_results
-from cogs.lfg.queue_definitions import enabled_queue_definitions, queue_definition
+from cogs.lfg.queue_definitions import enabled_queue_definitions, queue_definition, queue_notes_text
 from cogs.lfg.persistent_confirm import (
     create_match_card_view,
     ensure_match_cards_table,
@@ -694,3 +694,11 @@ async def test_sorcery_online_payload_carries_voice_type(monkeypatch, voice, voi
         ], voice=voice)
 
     assert session.post.call_args.kwargs["json"]["voiceType"] == voice_type
+
+
+def test_queue_notes_text_lists_rules_for_enabled_queues():
+    with patch("cogs.lfg.queue_definitions.is_pilot_active", side_effect=lambda pilot: pilot in {"RankedQueue", "CasualQueue"}):
+        text = queue_notes_text()
+    assert text == "\n\n⚔️ **Ranked:** no Seer/Scry\n🧪 **Casual:** Spoiled cards are legal"
+    with patch("cogs.lfg.queue_definitions.is_pilot_active", return_value=False):
+        assert queue_notes_text() == ""

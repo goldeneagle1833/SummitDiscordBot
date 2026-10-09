@@ -43,7 +43,7 @@ from cogs.lfg.pairing_messages import (
     ladder_stakes_note,
     send_pairing_messages,
 )
-from cogs.lfg.queue_definitions import enabled_queue_definitions
+from cogs.lfg.queue_definitions import enabled_queue_definitions, queue_notes_text
 from cogs.lfg.voice import (
     DEFAULT_VOICE,
     VOICE_ICONS,
@@ -899,7 +899,7 @@ class LFGCog(commands.Cog):
             # RED - Empty queue
             embed = discord.Embed(
                 title="\U0001f534 LFG Queue Status",
-                description="**Queue is empty**\n\nClick a button below to find a match!",
+                description="**Queue is empty**\n\nClick a button below to find a match!" + queue_notes_text(),
                 color=discord.Color.red(),
             )
             embed.set_footer(text="Status updates automatically")
@@ -924,8 +924,9 @@ class LFGCog(commands.Cog):
                     placeholder = SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]
                     voice_icon = VOICE_ICONS.get(entry.get("voice"), VOICE_ICONS[DEFAULT_VOICE])
                     details.append(f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min` {voice_icon}")
+                note = f' ({definition["status_note"]})' if definition.get("status_note") else ""
                 embed.add_field(
-                    name=f'{definition.get("status_emoji", definition["emoji"])} {definition["label"]} Queue',
+                    name=f'{definition.get("status_emoji", definition["emoji"])} {definition["label"]} Queue{note}',
                     value="\n".join(details) if details else "`Empty`",
                     inline=False,
                 )

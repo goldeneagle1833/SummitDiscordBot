@@ -28,11 +28,17 @@ export default function AuditLog() {
       <AdminCollapsible title="Season Feedback" subtitle="Post-season survey responses and CSV export">
         <SeasonFeedbackSection />
       </AdminCollapsible>
-      <AdminCollapsible title="Dashboard" subtitle="Community health at a glance" defaultOpen>
-        <DashboardSection />
-      </AdminCollapsible>
-      <AdminCollapsible title="Site Analytics" subtitle="Daily active users, page views and banner clicks">
-        <AnalyticsSection />
+      <AdminCollapsible title="Dashboard" subtitle="Community health and site analytics at a glance" defaultOpen>
+        <div className="space-y-8">
+          <DashboardSection />
+          <div className="border-t border-border pt-6 space-y-4">
+            <div>
+              <h2 className="text-lg font-display text-secondary">Site Analytics</h2>
+              <p className="text-xs text-text-muted">Daily active users, page views and banner clicks</p>
+            </div>
+            <AnalyticsSection />
+          </div>
+        </div>
       </AdminCollapsible>
       <AdminCollapsible title="Matches with Notes" subtitle="All matches where players left a comment">
         <MatchNotesSection />

@@ -101,6 +101,29 @@ class TestProvisionDeckTable:
         assert players[1]["deckUrl"] is None
         assert players[1]["displayName"] == pso.OPEN_SEAT_NAME
         assert players[1]["discordUserId"] != players[0]["discordUserId"]
+        assert captured["json"]["voiceType"] == "voice"
+
+    def test_bracket_table_always_sends_voice_type(self, configured, monkeypatch):
+        captured = {}
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            captured["json"] = json
+            return FakeResponse(payload={
+                "players": [
+                    {"discordUserId": "1", "gameUrl": "https://playsorceryonline.com/?m=one"},
+                    {"discordUserId": "2", "gameUrl": "https://playsorceryonline.com/?m=two"},
+                ]
+            })
+
+        monkeypatch.setattr(pso.requests, "post", fake_post)
+
+        pso.provision_match_table("bracket-1", [
+            {"user_id": "1", "display_name": "Alice", "deck_url": None},
+            {"user_id": "2", "display_name": "Bob", "deck_url": None},
+        ])
+
+        assert captured["json"]["queueType"] == "ranked"
+        assert captured["json"]["voiceType"] == "voice"
 
     def test_visitor_gets_their_own_seat_whatever_the_order(self, configured, monkeypatch):
         """The visitor's link is matched by id, not by position in the response."""

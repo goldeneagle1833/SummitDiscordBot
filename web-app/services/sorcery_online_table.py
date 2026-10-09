@@ -31,6 +31,10 @@ QUEUE_TYPE = "testing"
 # Bracket games are ranked; the "Try this Deck" launcher stays casual.
 BRACKET_QUEUE_TYPE = "ranked"
 OPEN_SEAT_NAME = "Open Seat"
+# Sorcery Online reads a missing voiceType as voice but skips its voice
+# prompt, so every table says explicitly. "voice" matches the LFG queue's
+# default; the bot sends "no_voice" for no-voice pairings.
+DEFAULT_VOICE_TYPE = "voice"
 
 # Per-visitor cooldown. In-process only (each Gunicorn worker keeps its own
 # table), which is enough to stop a held-down button from hammering a partner
@@ -107,6 +111,7 @@ def provision_deck_table(deck_url: str, *, display_name: str, player_id: str | N
         "guildId": str(webapp_config.DISCORD_GUILD_ID),
         "pairingId": f"trydeck-{uuid.uuid4().hex[:16]}",
         "queueType": QUEUE_TYPE,
+        "voiceType": DEFAULT_VOICE_TYPE,
         "players": [
             {
                 "discordUserId": seat_id,
@@ -187,6 +192,7 @@ def provision_match_table(pairing_id: str, players: list[dict]) -> dict:
         "guildId": str(webapp_config.DISCORD_GUILD_ID),
         "pairingId": str(pairing_id)[:64],
         "queueType": BRACKET_QUEUE_TYPE,
+        "voiceType": DEFAULT_VOICE_TYPE,
         "players": [
             {
                 "discordUserId": str(player["user_id"]),

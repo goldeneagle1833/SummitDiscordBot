@@ -31,7 +31,7 @@ export default function AuditLog() {
       <AdminCollapsible title="Dashboard" subtitle="Community health at a glance" defaultOpen>
         <DashboardSection />
       </AdminCollapsible>
-      <AdminCollapsible title="Site Analytics" subtitle="Page views and banner clicks">
+      <AdminCollapsible title="Site Analytics" subtitle="Daily active users, page views and banner clicks">
         <AnalyticsSection />
       </AdminCollapsible>
       <AdminCollapsible title="Matches with Notes" subtitle="All matches where players left a comment">

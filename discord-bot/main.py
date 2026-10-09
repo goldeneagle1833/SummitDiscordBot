@@ -30,6 +30,8 @@ from cogs.content_monitor import ContentMonitorCog
 from cogs.health_monitor import HealthMonitorCog
 from cogs.pairing_bans import PairingBanCog
 from repositories.pairing_bans_repo import create_pairing_bans_table
+from repositories.player_reports_repo import create_player_reports_table
+from cogs.lfg.player_report import PersistentReportPlayerButton
 from cogs.lfg.persistent_confirm import (
     PersistentConfirmButton,
     PersistentDisputeButton,
@@ -202,12 +204,14 @@ async def main():
         _migrate_match_cards_columns()
         ensure_card_catalog_table()
         create_pairing_bans_table()
+        create_player_reports_table()
         # Register DynamicItem buttons so Confirm/Dispute survive bot restarts
         bot.add_dynamic_items(
             PersistentConfirmButton, PersistentDisputeButton,
             PersistentCorrectionConfirmButton, PersistentCorrectionDenyButton,
             PersistentMatchCardReportButton, PersistentMatchCardCancelButton,
             PersistentPSOConfirmButton, PersistentPSODisputeButton,
+            PersistentReportPlayerButton,
         )
         await setup_cogs()
         matchmaking_runner = await start_matchmaking_api(bot)

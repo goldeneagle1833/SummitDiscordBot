@@ -19,6 +19,7 @@ from cogs.lfg.helpers import (
     scrub_urls,
 )
 from cogs.lfg.persistent_confirm import update_match_card_message_ref
+from cogs.lfg.player_report import report_player_button
 from utils.database import (
     delete_pairing_announcement,
     get_pairing_announcement,
@@ -265,8 +266,20 @@ async def _send_reporter(
     return True
 
 
-async def _send_other(bot, reporter, other, *, title, game_url, game_text, voice_text):
-    """Deliver the informational copy to the player without the buttons.
+def _report_player_view(other, reporter, pairing_id, match_type, view=None):
+    """The other player's message gets just the Report Player button."""
+    view = view or discord.ui.View(timeout=None)
+    view.add_item(report_player_button(other.user_id, reporter.user_id, pairing_id, match_type))
+    return view
+
+
+async def _send_other(
+    bot, reporter, other, *, title, game_url, game_text, voice_text,
+    pairing_id=None, match_type="ranked",
+):
+    """Deliver the informational copy to the player without the report buttons.
+
+    It still carries Report Player, like every match message.
 
     Returns True if it had to go to the fallback channel.
     """
@@ -284,13 +297,19 @@ async def _send_other(bot, reporter, other, *, title, game_url, game_text, voice
 
     if other.interaction is not None:
         try:
-            await other.interaction.followup.send(content, ephemeral=True)
+            await other.interaction.followup.send(
+                content,
+                view=_report_player_view(other, reporter, pairing_id, match_type),
+                ephemeral=True,
+            )
         except Exception as e:
             logger.error("Failed to send match info to %s: %s", other.user_id, e)
         return False
 
     try:
-        await other.user.send(content)
+        await other.user.send(
+            content, view=_report_player_view(other, reporter, pairing_id, match_type)
+        )
         return False
     except discord.HTTPException:
         pass
@@ -311,10 +330,16 @@ async def _send_other(bot, reporter, other, *, title, game_url, game_text, voice
             if game_url:
                 await dm_channel.send(
                     fallback + voice_text,
-                    view=PrivateSeatLinkView(other.user_id, game_url),
+                    view=_report_player_view(
+                        other, reporter, pairing_id, match_type,
+                        view=PrivateSeatLinkView(other.user_id, game_url),
+                    ),
                 )
             else:
-                await dm_channel.send(fallback + voice_text)
+                await dm_channel.send(
+                    fallback + voice_text,
+                    view=_report_player_view(other, reporter, pairing_id, match_type),
+                )
     except Exception as e:
         logger.error(
             "Failed to handle DM failure for other player %s: %s", other.user_id, e
@@ -382,6 +407,12 @@ async def send_pairing_messages(
         is_voice_match=bool(voice),
     )
 
+    # Every match message carries Report Player, so each side can flag the other.
+    pairing_id = getattr(match_card_view, "pairing_id", None)
+    match_card_view.add_item(
+        report_player_button(reporter.user_id, other.user_id, pairing_id, match_type)
+    )
+
     reporter_fell_back = await _send_reporter(
         bot,
         reporter,
@@ -400,6 +431,8 @@ async def send_pairing_messages(
         game_url=other_game_url,
         game_text=other_game_text,
         voice_text=voice_text,
+        pairing_id=pairing_id,
+        match_type=match_type,
     )
     return PairingDelivery(
         reporter.user_id, reporter_fell_back, other.user_id, other_fell_back

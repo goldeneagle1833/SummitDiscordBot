@@ -1526,7 +1526,6 @@ def list_external_matches():
 def all_blocked_users():
     """List every block record with resolved names (admin only)."""
     from repositories.blocked_users_repo import BlockedUsersRepository
-    from repositories.elo import EloRepository
 
     limit = request.args.get("limit", 100, type=int)
     offset = request.args.get("offset", 0, type=int)
@@ -1536,21 +1535,7 @@ def all_blocked_users():
     repo = BlockedUsersRepository()
     rows, total = repo.get_all_blocks(limit=limit, offset=offset)
 
-    profile_repo = UserProfileRepository()
-    elo_repo = EloRepository()
-    name_cache: dict[str, str] = {}
-
-    def resolve_name(uid: str) -> str:
-        if uid in name_cache:
-            return name_cache[uid]
-        profile = profile_repo.get_by_user_id(uid)
-        if profile:
-            name = profile["display_name"]
-        else:
-            # Bot-only players have no user_profiles row; use elo standings
-            name = elo_repo.get_display_name(uid) or uid
-        name_cache[uid] = name
-        return name
+    resolve_name = _player_name_resolver()
 
     entries = [
         {
@@ -1559,6 +1544,59 @@ def all_blocked_users():
             "blocked_id": row["blocked_user_id"],
             "blocked_name": resolve_name(row["blocked_user_id"]),
             "reason": row["reason"],
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+
+    return jsonify({"success": True, "entries": entries, "total": total}), 200
+
+
+def _player_name_resolver():
+    """Return a cached user id -> display name lookup for admin lists."""
+    profile_repo = UserProfileRepository()
+    elo_repo = EloRepository()
+    name_cache: dict[str, str] = {}
+
+    def resolve_name(uid: str, fallback: str | None = None) -> str:
+        if uid in name_cache:
+            return name_cache[uid]
+        profile = profile_repo.get_by_user_id(uid)
+        if profile:
+            name = profile["display_name"]
+        else:
+            # Bot-only players have no user_profiles row; use elo standings
+            name = elo_repo.get_display_name(uid) or fallback or uid
+        name_cache[uid] = name
+        return name
+
+    return resolve_name
+
+
+@admin_bp.route("/admin/player-reports", methods=["GET"])
+@require_admin
+def all_player_reports():
+    """List player reports filed from the bot's Report Player button (admin only)."""
+    from repositories.player_reports_repo import PlayerReportsRepository
+
+    limit = request.args.get("limit", 100, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    limit = min(max(1, limit), 200)
+    offset = max(0, offset)
+
+    rows, total = PlayerReportsRepository().get_all_reports(limit=limit, offset=offset)
+    resolve_name = _player_name_resolver()
+
+    entries = [
+        {
+            "id": row["id"],
+            "reporter_id": row["reporter_id"],
+            "reporter_name": resolve_name(row["reporter_id"], row["reporter_name"]),
+            "reported_id": row["reported_id"],
+            "reported_name": resolve_name(row["reported_id"], row["reported_name"]),
+            "match_type": row["match_type"],
+            "reasons": row["reasons"],
+            "details": row["details"],
             "created_at": row["created_at"],
         }
         for row in rows

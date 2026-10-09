@@ -40,6 +40,7 @@ def _patch_db_paths(elo_db, match_db, tmp_path):
     import repositories.match_confirmation
     import repositories.audit
     import repositories.blocked_users_repo
+    import repositories.player_reports_repo
     import repositories.explorer
     import migrations.create_explorer_tables
 
@@ -58,6 +59,7 @@ def _patch_db_paths(elo_db, match_db, tmp_path):
     repositories.match_confirmation.MATCH_RECORDS_DB_PATH = match_db
     repositories.audit.MATCH_RECORDS_DB_PATH = match_db
     repositories.blocked_users_repo.MATCH_RECORDS_DB_PATH = match_db
+    repositories.player_reports_repo.MATCH_RECORDS_DB_PATH = match_db
     # The player routes open the match DB directly, so without this a second
     # test in the same run keeps reading the first test's database.
     import routes.api.players

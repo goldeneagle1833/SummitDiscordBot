@@ -178,3 +178,47 @@ class TestBlockedUsersRoutes:
         self._seed_user(match_db, "some_user", "SomeUser")
         resp = admin_session.get("/api/player/some_user/blocked-users")
         assert resp.status_code == 200
+
+
+class TestPlayerReportsRoute:
+    def _seed_report(self, match_db, **overrides):
+        from repositories.player_reports_repo import PlayerReportsRepository
+
+        PlayerReportsRepository(db_path=match_db)  # creates the table
+        row = {
+            "reporter_id": "100",
+            "reporter_name": "Reporter",
+            "reported_id": "200",
+            "reported_name": "Opponent",
+            "match_type": "ranked",
+            "reasons": '["voice_refused", "left_early"]',
+            "details": "Left at 3 life",
+        }
+        row.update(overrides)
+        conn = sqlite3.connect(match_db)
+        conn.execute(
+            "INSERT INTO player_reports (reporter_id, reporter_name, reported_id, reported_name,"
+            " match_type, reasons, details) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            tuple(row.values()),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_requires_admin(self, user_session):
+        resp = user_session.get("/api/admin/player-reports")
+        assert resp.status_code in (401, 403)
+
+    def test_empty(self, admin_session):
+        resp = admin_session.get("/api/admin/player-reports")
+        assert resp.status_code == 200
+        assert resp.get_json() == {"success": True, "entries": [], "total": 0}
+
+    def test_lists_reports_with_reasons(self, admin_session, match_db):
+        self._seed_report(match_db)
+        data = admin_session.get("/api/admin/player-reports").get_json()
+        assert data["total"] == 1
+        [entry] = data["entries"]
+        assert entry["reporter_name"] == "Reporter"
+        assert entry["reported_name"] == "Opponent"
+        assert entry["reasons"] == ["voice_refused", "left_early"]
+        assert entry["details"] == "Left at 3 life"

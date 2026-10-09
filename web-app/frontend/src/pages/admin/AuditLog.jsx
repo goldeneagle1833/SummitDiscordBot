@@ -6,6 +6,7 @@ import AdminActionsSection from '@/components/admin/AdminActionsSection'
 import TransferHistorySection from '@/components/admin/TransferHistorySection'
 import MatchNotesSection from '@/components/admin/MatchNotesSection'
 import BlockedUsersSection from '@/components/admin/BlockedUsersSection'
+import PlayerReportsSection from '@/components/admin/PlayerReportsSection'
 import CardPointsSection from '@/components/admin/CardPointsSection'
 import ReactionRolesSection from '@/components/admin/ReactionRolesSection'
 import AuditLogTable from '@/components/admin/AuditLogTable'
@@ -48,8 +49,18 @@ export default function AuditLog() {
       <AdminCollapsible title="Admin Actions" subtitle="Perform administrative operations">
         <AdminActionsSection />
       </AdminCollapsible>
-      <AdminCollapsible title="Blocked Users" subtitle="All block records across players">
-        <BlockedUsersSection />
+      <AdminCollapsible title="Blocked Users" subtitle="All block records and player reports across players">
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-text-primary">Blocks</h3>
+            <BlockedUsersSection />
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-text-primary">Player Reports</h3>
+            <p className="text-xs text-text-muted">Filed from the Report Player button on Discord match messages.</p>
+            <PlayerReportsSection />
+          </div>
+        </div>
       </AdminCollapsible>
       <AdminCollapsible title="Audit Log" subtitle="History of administrative actions">
         <AuditLogTable />

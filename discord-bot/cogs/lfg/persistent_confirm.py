@@ -34,6 +34,7 @@ from repositories.limited_repo import (
 )
 from services.limited_service import limited_winner_report, get_run_summary
 from utils.deck_checker import clean_deck_url
+from cogs.lfg.player_report import is_report_player_item, report_player_only_view
 
 logger = logging.getLogger("discord_bot")
 
@@ -1268,6 +1269,8 @@ def _load_match_cards_for_pairing_all(pairing_id: int, match_type: str = None):
 async def edit_match_card_messages(bot, pairing_id: int, match_type: str, result_text: str):
     """Edit the original match card DM messages to show the result and remove buttons.
 
+    The Report Player button is the exception: it stays on the message.
+
     Called when a match is recorded via an external source (e.g. Sorcery Online)
     where there is no live interaction to update.
     """
@@ -1280,7 +1283,8 @@ async def edit_match_card_messages(bot, pairing_id: int, match_type: str, result
         try:
             channel = bot.get_channel(ch_id) or await bot.fetch_channel(ch_id)
             message = await channel.fetch_message(msg_id)
-            await message.edit(content=result_text, view=None)
+            # Keep Report Player on the card; drop Report Result / Cancel.
+            await message.edit(content=result_text, view=report_player_only_view(message))
         except Exception as e:
             logger.warning("Could not edit match card message %s in channel %s: %s", msg_id, ch_id, e)
 
@@ -1366,9 +1370,11 @@ class PersistentMatchCardReportButton(
             opponent_run_id = data["player2_run_id"] if reporter_id == player1_id else data["player1_run_id"]
 
             # Disable buttons while reporter fills in the dropdowns
+            # (Report Player stays usable)
             if self.view:
                 for item in self.view.children:
-                    item.disabled = True
+                    if not is_report_player_item(item):
+                        item.disabled = True
                 try:
                     await interaction.message.edit(view=self.view)
                 except Exception:
@@ -1484,7 +1490,8 @@ class PersistentMatchCardCancelButton(
 
             if self.view:
                 for item in self.view.children:
-                    item.disabled = True
+                    if not is_report_player_item(item):
+                        item.disabled = True
                 try:
                     await interaction.message.edit(content="**Match Cancelled**", view=self.view)
                 except Exception:
@@ -1583,7 +1590,11 @@ def create_match_card_view(
         "player2_run_id": player2_run_id,
     }
     card_id = save_match_card(data)
-    return PersistentMatchCardView(card_id)
+    view = PersistentMatchCardView(card_id)
+    # send_pairing_messages reads these to build each player's Report Player button
+    view.pairing_id = pairing_id
+    view.match_type = match_type
+    return view
 
 
 # ──────────────────────────────────────────────

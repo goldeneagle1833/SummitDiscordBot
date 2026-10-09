@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, LabelList,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList,
 } from 'recharts'
 
 const TOOLTIP_STYLE = {
@@ -37,9 +37,20 @@ export function dailyActiveRange(daily, days, now = new Date()) {
   return rows
 }
 
-const BAR_LABEL = { position: 'top', fill: 'rgba(255,255,255,0.75)', fontSize: 10 }
+/** Narrowest bar (px) that still carries a readable value label. */
+export const MIN_LABEL_BAR_WIDTH = 22
 
-/** Daily visitors / logged-in users for the last `days` days (null = all time). */
+/** Value above a bar; dropped once bars get too thin to fit it. */
+export function BarValueLabel({ x, y, width, value }) {
+  if (width < MIN_LABEL_BAR_WIDTH) return null
+  return (
+    <text x={x + width / 2} y={y - 4} textAnchor="middle" fill="rgba(255,255,255,0.75)" fontSize={10}>
+      {value}
+    </text>
+  )
+}
+
+/** Daily visitors for the last `days` days (null = all time). Bars shrink to fit the width. */
 export function DailyActiveUsersChart({ daily, days }) {
   const rows = useMemo(() => dailyActiveRange(daily, days), [daily, days])
 
@@ -47,30 +58,20 @@ export function DailyActiveUsersChart({ daily, days }) {
     <div className="bg-bg-raised border border-border rounded-lg p-4">
       <h3 className="text-sm font-semibold mb-1">Active Users (Daily)</h3>
       <p className="text-xs text-text-muted mb-3">
-        Visitors = distinct browser sessions that viewed a page that day (UTC); logged in = distinct accounts.
+        Visitors = distinct browser sessions that viewed a page that day (UTC).
       </p>
       {rows.length > 0 ? (
-        <div className="overflow-x-auto">
-          {/* ~56px per day keeps both bars wide enough to carry a readable label;
-              long ranges scroll sideways instead of squashing. */}
-          <div style={{ minWidth: rows.length * 56 }}>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={rows} margin={{ top: 20, right: 8, left: 0, bottom: 0 }} barCategoryGap="12%" barGap={2}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="date" tick={AXIS_TICK} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-                <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip {...TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="visitors" name="Visitors" fill="rgba(77,184,255,0.7)" radius={[2, 2, 0, 0]}>
-                  <LabelList dataKey="visitors" {...BAR_LABEL} />
-                </Bar>
-                <Bar dataKey="users" name="Logged in" fill="rgba(74,222,128,0.8)" radius={[2, 2, 0, 0]}>
-                  <LabelList dataKey="users" {...BAR_LABEL} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <ResponsiveContainer width="100%" height={260}>
+          <BarChart data={rows} margin={{ top: 20, right: 8, left: 0, bottom: 0 }} barCategoryGap="12%">
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+            <XAxis dataKey="date" tick={AXIS_TICK} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+            <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
+            <Tooltip {...TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+            <Bar dataKey="visitors" name="Visitors" fill="rgba(77,184,255,0.7)" radius={[2, 2, 0, 0]}>
+              <LabelList dataKey="visitors" content={BarValueLabel} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
       ) : (
         <p className="text-text-muted text-sm">No data yet.</p>
       )}

@@ -3,6 +3,7 @@ import { screen, within, render } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
 import {
   DailyActiveUsersChart, ActiveUsersTiles, PageViewsPanel, dailyActiveRange,
+  BarValueLabel, MIN_LABEL_BAR_WIDTH,
 } from '../AnalyticsSection'
 
 vi.mock('@/api/client', () => ({ get: vi.fn() }))
@@ -21,7 +22,6 @@ vi.mock('recharts', () => {
     YAxis: () => null,
     Tooltip: () => null,
     CartesianGrid: () => null,
-    Legend: () => null,
     LabelList: () => null,
   }
 })
@@ -39,12 +39,12 @@ const ACTIVE_USERS = {
 }
 
 describe('DailyActiveUsersChart', () => {
-  it('charts visitors and logged-in users for every day in the range', () => {
+  it('charts visitors only for every day in the range', () => {
     render(<DailyActiveUsersChart daily={ACTIVE_USERS.daily} days={30} />)
     const chart = screen.getByTestId('bar-chart')
     expect(chart).toHaveAttribute('data-points', '30')
     const series = within(chart).getAllByTestId('series').map((el) => el.textContent)
-    expect(series).toEqual(['Visitors', 'Logged in'])
+    expect(series).toEqual(['Visitors'])
   })
 
   it('follows the range it is given', () => {
@@ -54,9 +54,31 @@ describe('DailyActiveUsersChart', () => {
     expect(screen.getByTestId('bar-chart')).toHaveAttribute('data-points', '90')
   })
 
+  it('never wraps the chart in a horizontal scroller', () => {
+    const { container } = render(<DailyActiveUsersChart daily={ACTIVE_USERS.daily} days={null} />)
+    expect(container.querySelector('.overflow-x-auto')).toBeNull()
+    expect(container.querySelector('[style*="min-width"]')).toBeNull()
+  })
+
   it('says so when there is no traffic yet', () => {
     render(<DailyActiveUsersChart daily={[]} days={30} />)
     expect(screen.getByText('No data yet.')).toBeInTheDocument()
+  })
+})
+
+describe('BarValueLabel', () => {
+  const renderLabel = (width) => render(
+    <svg><BarValueLabel x={10} y={50} width={width} value={1568} /></svg>,
+  )
+
+  it('labels bars wide enough to hold the number', () => {
+    renderLabel(MIN_LABEL_BAR_WIDTH)
+    expect(screen.getByText('1568')).toBeInTheDocument()
+  })
+
+  it('drops the label on skinny bars', () => {
+    renderLabel(MIN_LABEL_BAR_WIDTH - 1)
+    expect(screen.queryByText('1568')).toBeNull()
   })
 })
 

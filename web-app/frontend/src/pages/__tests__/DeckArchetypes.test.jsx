@@ -36,7 +36,11 @@ const TOURNAMENT_GROUP = { ...GROUP, id: 'sorcerer-fire-t1', name: 'Sorcerer · 
 const META = { source: 'all', threshold: 0.35, fetchedDecks: 5, tournamentCount: 1, rankedGames: 40, tournamentDecks: 2, rankedDecks: 3, pendingDecks: 0, unavailableDecks: 0 }
 const DETAIL = {
   status: 'ready',
-  patterns: { spellbook: [{ name: 'Fireball', count: 5, rate: 1, avgCopies: 3 }], atlas: [], collection: [] },
+  patterns: {
+    spellbook: [{ name: 'Fireball', count: 5, rate: 1, avgCopies: 3, image: 'fireball.webp' }],
+    atlas: [{ name: 'Arid Desert', count: 5, rate: 1, avgCopies: 2, image: 'arid_desert.webp' }],
+    collection: [],
+  },
   recommendations: [{ deckId: 'd1', label: 'Representative deck' }],
   members: ['d1', 'd2'],
   decks: {
@@ -93,6 +97,19 @@ describe('DeckArchetypes', () => {
     await waitFor(() => expect(get).toHaveBeenCalledWith('/api/deck-archetypes?source=all&from=2026-01-01&min_event_decks=32'))
     await userEvent.click(screen.getByRole('button', { name: 'Clear dates and size' }))
     await waitFor(() => expect(get).toHaveBeenLastCalledWith('/api/deck-archetypes?source=all'))
+  })
+
+  it('previews hovered cards and turns sites sideways', async () => {
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ left: 960, top: 100, right: 1920, bottom: 140, width: 960, height: 40 })
+    renderWithRouter(<DeckArchetypes />)
+    await userEvent.click(await screen.findByRole('button', { name: /View Sorcerer · Fire/ }))
+    fireEvent.mouseEnter((await screen.findByText('Fireball')).parentElement)
+    expect(screen.getByAltText('Fireball')).not.toHaveClass('rotate-90')
+    await userEvent.click(screen.getByRole('button', { name: 'atlas' }))
+    fireEvent.mouseEnter((await screen.findByText('Arid Desert')).parentElement)
+    expect(screen.getByAltText('Arid Desert')).toHaveClass('rotate-90')
+    rect.mockRestore()
   })
 
   it('waits while the server builds its first snapshot', async () => {

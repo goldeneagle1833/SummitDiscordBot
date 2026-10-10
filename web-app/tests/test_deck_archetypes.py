@@ -84,15 +84,17 @@ def built(repo, source, filters=deck_archetypes.NO_FILTERS):
     snapshot = deck_archetypes.build_snapshots(repo)[source]
     listing = deck_archetypes.filtered_list(snapshot, filters)
     details = {g["id"]: deck_archetypes.filtered_detail(snapshot, g["id"], filters) for g in listing["groups"]}
-    return {**listing, "details": details}
+    grouped = {
+        g["id"]: [v.key for v in deck_archetypes._cluster_views(snapshot, snapshot["by_id"][g["id"]], filters)]
+        for g in listing["groups"]
+    }
+    return {**listing, "details": details, "grouped": grouped}
 
 
-def groups_by_member(snapshot):
-    out = {}
-    for group in snapshot["groups"]:
-        for deck_id in snapshot["details"][group["id"]]["members"]:
-            out[deck_id] = group
-    return out
+def groups_by_member(result):
+    """{deck id: group} for every deck grouped, ranked-only decks included."""
+    by_id = {g["id"]: g for g in result["groups"]}
+    return {key: by_id[gid] for gid, keys in result["grouped"].items() for key in keys}
 
 
 def test_similar_decks_group_and_different_decks_do_not(repo):
@@ -186,18 +188,18 @@ def test_seed_decks_wait_for_their_card_lists(repo):
     assert snapshot["details"][group["id"]]["decks"]["s1"]["name"] == "Seed"
 
 
-def test_cluster_stops_at_threshold():
-    import numpy as np
+def test_same_avatar_and_elements_always_share_one_group(repo):
+    # Two Fire Sorcerer decks with no spells in common are still one archetype.
+    other = deck("o1", "Sorcerer", [f"Other fire card {i}" for i in range(20)])
+    write_event(repo._top8_dir, "Cup", top8=[fire_deck("f1"), fire_deck("f2", swap=1), other])
 
-    sim = np.array([
-        [1.0, 0.9, 0.1],
-        [0.9, 1.0, 0.1],
-        [0.1, 0.1, 1.0],
-    ], dtype=np.float32)
+    result = built(repo, "tournament")
+    member = groups_by_member(result)
 
-    groups = sorted(sorted(g) for g in deck_archetypes.cluster(sim, 0.5))
-
-    assert groups == [[0, 1], [2]]
+    assert member["f1"]["id"] == member["o1"]["id"] == "sorcerer-fire"
+    assert len(result["groups"]) == 1
+    # The two similar decks come before the outlier.
+    assert result["grouped"]["sorcerer-fire"][-1] == "o1"
 
 
 class TestApi:
@@ -306,8 +308,10 @@ def test_recommendations_only_use_top8_page_decks(repo):
     group = groups_by_member(result)["f1"]
     detail = result["details"][group["id"]]
 
-    assert {"s1", "r1"} <= set(detail["members"])
+    assert {"s1", "r1"} <= set(result["grouped"][group["id"]])
     assert [r["deckId"] for r in detail["recommendations"]] == ["f1"]
+    # The deck list shows tournament lists (Top 8 page and seed events), not ranked-only decks.
+    assert set(detail["members"]) == {"f1", "s1"}
 
 
 def test_group_without_top8_page_decks_has_no_recommendations(repo):

@@ -209,19 +209,24 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
 
   // Card art for a hovered "Most played" row, shown in the dimmed space beside
   // the panel. Skipped when the window leaves no room beside it.
+  // Sites (the atlas) are landscape cards whose images are stored upright, so
+  // they are turned 90° clockwise.
   const showPreview = (card, event) => {
     const panel = panelRef.current?.getBoundingClientRect()
-    if (!card.image || !panel || panel.left < PREVIEW_WIDTH + 32) return
+    const site = zone === 'atlas'
+    const width = site ? PREVIEW_HEIGHT : PREVIEW_WIDTH
+    const height = site ? PREVIEW_WIDTH : PREVIEW_HEIGHT
+    if (!card.image || !panel || panel.left < width + 32) return
     const row = event.currentTarget.getBoundingClientRect()
-    const top = Math.max(16, Math.min(row.top + row.height / 2 - PREVIEW_HEIGHT / 2, window.innerHeight - PREVIEW_HEIGHT - 16))
-    setPreview({ image: card.image, name: card.name, top, right: window.innerWidth - panel.left + 24 })
+    const top = Math.max(16, Math.min(row.top + row.height / 2 - height / 2, window.innerHeight - height - 16))
+    setPreview({ image: card.image, name: card.name, site, width, height, top, right: window.innerWidth - panel.left + 24 })
   }
 
   useEffect(() => {
     let active = true
     getDeckArchetype(group.id, source, filters)
       .then((data) => { if (active) setDetail(data) })
-      .catch((err) => { if (active) setDetailError(err.status === 404 ? 'This archetype was just regrouped. Close this panel and pick it again.' : 'Could not load this archetype.') })
+      .catch((err) => { if (active) setDetailError(err.status === 404 ? 'This archetype has no decks right now. Close this panel and pick another.' : 'Could not load this archetype.') })
     return () => { active = false }
   }, [group.id, source, filters])
 
@@ -249,12 +254,17 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}
     >
       {preview && (
-        <img
-          src={`/card-images/${encodeURIComponent(preview.image)}`}
-          alt={preview.name}
-          className="fixed rounded-xl shadow-2xl pointer-events-none"
-          style={{ top: preview.top, right: preview.right, width: PREVIEW_WIDTH }}
-        />
+        <div
+          className="fixed pointer-events-none flex items-center justify-center"
+          style={{ top: preview.top, right: preview.right, width: preview.width, height: preview.height }}
+        >
+          <img
+            src={`/card-images/${encodeURIComponent(preview.image)}`}
+            alt={preview.name}
+            className={`max-w-none rounded-xl shadow-2xl ${preview.site ? 'rotate-90' : ''}`}
+            style={{ width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT }}
+          />
+        </div>
       )}
       <section
         ref={panelRef}
@@ -325,11 +335,12 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
           </section>
           <section>
             <h3 className="text-lg font-semibold text-text-primary mb-3">
-              {members.length < group.size ? `Top ${formatNumber(members.length)} of ${formatNumber(group.size)} decks` : `All decks in this archetype (${members.length})`}
+              {members.length < (group.tournamentDecks ?? 0) ? `Top ${formatNumber(members.length)} of ${formatNumber(group.tournamentDecks)} tournament decks` : `Tournament decks in this archetype (${members.length})`}
             </h3>
             <div className="grid gap-2">
               {(showAll ? members : members.slice(0, 10)).map((deck) => <DeckLink key={deck.id} deck={deck} />)}
             </div>
+            {members.length === 0 && <p className="text-sm text-text-muted">No public tournament lists in this archetype yet.</p>}
             {members.length > 10 && (
               <button type="button" className="mt-3 text-sm text-secondary hover:underline" onClick={() => setShowAll((value) => !value)}>
                 {showAll ? 'Show fewer decks' : `Show all ${members.length} decks`}
@@ -384,8 +395,8 @@ function AboutDataPanel({ meta, onClose }) {
           </section>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">How archetypes are identified</h3>
-            <p>Each deck contributes once. Decks are compared with weighted Jaccard similarity over their Spellbooks, Atlases and Collections, counting copies of each card. Spellbook cards count most, and cards that nearly every deck plays count less than distinctive ones. Decks are only grouped with decks of the same Avatar and the same element pair (their top two elements by Spellbook copies), using hierarchical clustering. A popular Avatar and element pair can still split into several archetypes when its builds differ.</p>
-            <p className="mt-2">These are statistical groups, not manually assigned labels such as “aggro” or “control”. Decks in a group are on average at least <strong className="text-text-primary">{Math.round((meta?.threshold ?? 0.35) * 100)}% similar</strong>. Changing the minimum deck count hides or shows smaller groups; it does not recalculate the clusters. With ranked decks included, one-off ranked lists that match nothing are left out.</p>
+            <p>Each deck contributes once. Decks are compared with weighted Jaccard similarity over their Spellbooks, Atlases and Collections, counting copies of each card. Spellbook cards count most, and cards that nearly every deck plays count less than distinctive ones. Every archetype is one Avatar and element pair (a deck's top two elements by Spellbook copies), so all decks with the same Avatar and elements are in the same group. Similarity decides the order inside a group: the deck most similar to the rest comes first.</p>
+            <p className="mt-2">These are Avatar and element groups, not manually assigned labels such as “aggro” or “control”. Changing the minimum deck count hides or shows smaller groups. With ranked decks included, a ranked deck that is the only one of its Avatar and elements is left out.</p>
           </section>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">Deck recommendations</h3>
@@ -618,7 +629,7 @@ export default function DeckArchetypes() {
             {data ? formatNumber(groups.length) : '…'} archetypes · {formatNumber(data?.meta?.fetchedDecks)} decks · {formatNumber(data?.meta?.tournamentCount)} tournaments
             {source === 'all' && data && ` · ${formatNumber(data.meta.rankedGames)} ranked games`}
           </span>
-          <span>{updating && data ? 'Updating… · ' : ''}Updated hourly · {Math.round((data?.meta?.threshold ?? 0.35) * 100)}% similarity</span>
+          <span>{updating && data ? 'Updating… · ' : ''}Updated hourly</span>
         </div>
       </div>
 

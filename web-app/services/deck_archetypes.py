@@ -23,11 +23,10 @@ Feature weights:
 
 How decks are grouped
 ---------------------
-Decks are only grouped with decks of the same Avatar and the same element
-pair (their top two elements by Spellbook copies), so every archetype is one
-"Avatar · Elements" identity. Within each, average-linkage agglomerative clustering repeatedly merges the two most similar
-groups (similarity of two groups = the mean similarity of all their deck pairs)
-until no two groups are at least SIMILARITY_THRESHOLD alike.
+Every archetype is one "Avatar · Elements" identity: all decks with the same
+Avatar and the same element pair (their top two elements by Spellbook copies)
+form one group. Similarity only orders a group's decks: the deck most similar
+to the rest of its group comes first and is the representative list.
 """
 
 import fcntl
@@ -47,7 +46,6 @@ from repositories.archetype_decks import ZONES, ArchetypeDeck, ArchetypeDeckRepo
 
 logger = logging.getLogger(__name__)
 
-SIMILARITY_THRESHOLD = 0.35
 MAX_COPIES = 4
 ZONE_WEIGHTS = {"spellbook": 1.0, "atlas": 0.5, "collection": 0.5}
 RARITY_MIN = 0.5
@@ -121,51 +119,6 @@ def similarity_matrix(feature_lists: list[list[int]], weights: np.ndarray) -> np
         sim = np.where(union > 0, inter / union, 0.0).astype(np.float32)
     np.fill_diagonal(sim, 1.0)
     return sim
-
-
-def cluster(sim: np.ndarray, threshold: float = SIMILARITY_THRESHOLD) -> list[list[int]]:
-    """Average-linkage agglomerative clustering; returns groups of row indices."""
-    n = sim.shape[0]
-    if n <= 1:
-        return [list(range(n))]
-    s = sim.astype(np.float64, copy=True)
-    np.fill_diagonal(s, -np.inf)
-    sizes = np.ones(n)
-    members = {i: [i] for i in range(n)}
-    best = s.argmax(axis=1)
-    best_val = s[np.arange(n), best]
-
-    while members:
-        i = int(best_val.argmax())
-        if best_val[i] < threshold:
-            break
-        j = int(best[i])
-        # Merge j into i (Lance-Williams update for average linkage).
-        merged = (sizes[i] * s[i] + sizes[j] * s[j]) / (sizes[i] + sizes[j])
-        s[i, :] = merged
-        s[:, i] = merged
-        s[i, i] = -np.inf
-        s[j, :] = -np.inf
-        s[:, j] = -np.inf
-        sizes[i] += sizes[j]
-        members[i].extend(members.pop(j))
-        best_val[j] = -np.inf
-
-        # Rows whose best partner was i or j must look again; others only
-        # need to know if the merged group is now their best.
-        stale = np.where((best == i) | (best == j))[0]
-        for k in stale:
-            if k == j:
-                continue
-            best[k] = s[k].argmax()
-            best_val[k] = s[k, best[k]]
-        improved = s[:, i] > best_val
-        improved[i] = False
-        best[improved] = i
-        best_val[improved] = s[improved, i]
-        best[i] = s[i].argmax()
-        best_val[i] = s[i, best[i]]
-    return list(members.values())
 
 
 # ---------------------------------------------------------------------- #
@@ -339,7 +292,8 @@ def summarize(cluster_: Cluster, views: list[DeckView]) -> dict:
 def detail(views: list[DeckView]) -> dict:
     """Cards, picks and decks for one archetype's panel.
 
-    Recommended lists only come from decks on the Top 8 page."""
+    Card stats use every deck in the group. Recommended lists only come from
+    decks on the Top 8 page; the deck list only shows tournament decks."""
     top8_page = [v for v in views if v.deck.on_top8_page and v.entries]
     picks = [(top8_page[0], "Representative deck")] if top8_page else []
     placed = [v for v in top8_page if v.best_placement is not None]
@@ -358,8 +312,9 @@ def detail(views: list[DeckView]) -> dict:
         seen.add(view.key)
         recommendations.append({"deckId": view.key, "label": label})
 
+    # The deck list shows public tournament lists only, never ranked-only decks.
     listed = sorted(
-        views,
+        [v for v in views if v.entries],
         key=lambda v: (v.best_placement or 999, -v.games, (v.deck.name or "").lower()),
     )[:MEMBER_LIMIT]
     listed_keys = {v.key for v in listed}
@@ -431,25 +386,22 @@ def build_snapshot(decks: list[ArchetypeDeck], meta: dict, game_days: list | Non
     clusters = []
     for (avatar, elements), indices in by_identity.items():
         sim = similarity_matrix([features[i] for i in indices], weights)
-        for local in cluster(sim):
-            sub = sim[np.ix_(local, local)]
-            centrality = sub.mean(axis=1) if len(local) > 1 else np.ones(1)
-            order = np.argsort(-centrality, kind="stable")
-            members = [decks[indices[local[int(k)]]] for k in order]
-            slug = f"{avatar}-{elements}".lower().replace(" / ", "-").replace(" ", "-")
-            clusters.append(Cluster(f"{slug}-{members[0].key}", avatar, elements, members))
+        centrality = sim.mean(axis=1)
+        order = np.argsort(-centrality, kind="stable")
+        members = [decks[indices[int(k)]] for k in order]
+        slug = f"{avatar}-{elements}".lower().replace(" / ", "-").replace(" ", "-")
+        clusters.append(Cluster(slug, avatar, elements, members))
 
     snapshot = {
         "meta": {
             **meta,
             "generated": datetime.now(timezone.utc).isoformat(),
-            "threshold": SIMILARITY_THRESHOLD,
         },
         "clusters": clusters,
         "by_id": {c.id: c for c in clusters},
         "game_days": game_days or [],
     }
-    logger.info("Grouped %d decks into %d clusters in %.1fs", len(decks), len(clusters), time.monotonic() - started)
+    logger.info("Grouped %d decks into %d archetypes in %.1fs", len(decks), len(clusters), time.monotonic() - started)
     return snapshot
 
 

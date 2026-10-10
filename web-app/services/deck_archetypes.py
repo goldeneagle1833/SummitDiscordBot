@@ -41,6 +41,8 @@ from datetime import datetime, timezone
 
 import numpy as np
 
+from services.curiosa import get_curiosa_deck_id
+from utils.card_images import resolve_card_image
 from repositories.archetype_decks import ZONES, ArchetypeDeck, ArchetypeDeckRepository, TournamentEntry
 
 logger = logging.getLogger(__name__)
@@ -257,6 +259,8 @@ def deck_to_dict(view: DeckView) -> dict:
         "id": deck.key,
         "name": deck.name or "Unnamed deck",
         "url": deck.url,
+        # Deck Rec opens any sorcerytcg.com list by id; PSO and unlinked decks have none.
+        "deckRecId": get_curiosa_deck_id(deck.url) if deck.url else None,
         "avatar": deck.avatar,
         "elements": deck.elements,
         "entries": [e.to_dict() for e in view.entries],
@@ -290,7 +294,10 @@ def _patterns(decks: list[ArchetypeDeck]) -> dict:
             for name, count in present.items()
         ]
         rows.sort(key=lambda r: (-r["count"], r["name"]))
-        out[zone] = rows[:PATTERN_LIMIT]
+        rows = rows[:PATTERN_LIMIT]
+        for row in rows:
+            row["image"] = resolve_card_image(row["name"])
+        out[zone] = rows
     return out
 
 

@@ -277,3 +277,14 @@ def test_min_event_decks_drops_small_events(repo):
 
     assert set(groups_by_member(result)) == {f"b{i}" for i in range(5)}
     assert result["meta"]["tournamentCount"] == 1
+
+
+def test_decks_link_to_deck_rec_and_cards_carry_images(repo, monkeypatch):
+    monkeypatch.setattr(deck_archetypes, "resolve_card_image", lambda name: f"{name}.webp")
+    write_event(repo._top8_dir, "Cup", top8=[fire_deck("cmabc123")])
+
+    result = built(repo, "tournament")
+    detail = next(iter(result["details"].values()))
+
+    assert detail["decks"]["cmabc123"]["deckRecId"] == "cmabc123"
+    assert detail["patterns"]["spellbook"][0]["image"].endswith(".webp")

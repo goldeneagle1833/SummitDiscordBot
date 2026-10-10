@@ -1213,6 +1213,17 @@ def _deck_avatar_name(deck_str):
         return None
 
 
+def _element_pair(element_counts):
+    """Top two spellbook elements by copies, alphabetical ("Air / Fire").
+
+    Same rule as the Deck Archetypes page, so an Avatar + pair names the same
+    group in both places. Empty string when the deck has no element data.
+    """
+    order = ("Air", "Earth", "Fire", "Water")
+    top = [e for e in sorted(order, key=lambda e: -element_counts.get(e, 0)) if element_counts.get(e, 0) > 0][:2]
+    return " / ".join(sorted(top))
+
+
 def _timeline_event_filter():
     """The request's ?event= filter; non-admins asking for the active event get every event."""
     event_filter = request.args.get("event", "all")
@@ -1271,6 +1282,7 @@ def _build_timeline(event_filter):
     card_elements = _load_card_elements()
     avatars = {}
     avatar_totals = Counter()
+    pairs = {}
     element_days = {}
 
     def bump(group, key, is_win):
@@ -1279,11 +1291,12 @@ def _build_timeline(event_filter):
 
     for day, deck_json, is_win in _timeline_decks(event_filter):
         name = _deck_avatar_name(deck_json)
+        elements, counts, dominant, splash, combo = _deck_element_profile(deck_json, card_elements)
         if name:
             avatar_totals[day] += 1
             avatars.setdefault(name, Counter())[day] += 1
+            pairs.setdefault(f"{name}|{_element_pair(counts)}", Counter())[day] += 1
 
-        elements, _, dominant, splash, combo = _deck_element_profile(deck_json, card_elements)
         if not elements and not combo:
             continue
         entry = element_days.setdefault(day, {"el": {}, "dom": {}})
@@ -1301,6 +1314,7 @@ def _build_timeline(event_filter):
         "meta": {
             "dates": _date_range(avatar_totals),
             "avatars": {name: dict(counts) for name, counts in avatars.items()},
+            "pairs": {key: dict(counts) for key, counts in pairs.items()},
             "daily_totals": dict(avatar_totals),
         },
         "elements": {"dates": _date_range(element_days), "days": element_days},
@@ -1368,7 +1382,9 @@ def get_avatar_meta():
     day the match was reported. Takes the same ?event= filter as /api/elements.
 
     Returns {"dates": [first..last day], "avatars": {name: {date: count}},
-             "daily_totals": {date: decks}}.
+             "pairs": {"Avatar|Air / Fire": {date: count}}, "daily_totals": {date: decks}}.
+    A pair is the deck's top two spellbook elements, as on Deck Archetypes;
+    it is empty when the deck's cards have no element data.
     """
     return jsonify(_timeline_data(_timeline_event_filter())["meta"])
 

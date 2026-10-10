@@ -196,7 +196,7 @@ export default function Elements() {
 
   const dates = useMemo(() => mergeDates(timeline?.dates || [], meta?.dates || []), [timeline, meta])
   const elementCumulative = useMemo(() => buildCumulative(dates, flattenElementDays(timeline?.days)), [dates, timeline])
-  const avatarCumulative = useMemo(() => buildCumulative(dates, meta?.avatars), [dates, meta])
+  const avatarCumulative = useMemo(() => buildCumulative(dates, meta?.pairs || meta?.avatars), [dates, meta])
 
   // New data: jump to the latest day
   useEffect(() => {

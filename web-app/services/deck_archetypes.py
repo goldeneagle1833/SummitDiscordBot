@@ -54,8 +54,6 @@ RARITY_MAX = 1.5
 PATTERN_LIMIT = 40
 # Decks listed on an archetype's detail panel.
 MEMBER_LIMIT = 500
-# A ranked deck needs this many games before it can be "Best on ranked".
-RANKED_PICK_MIN_GAMES = 5
 
 SOURCES = ("all", "tournament")
 
@@ -293,7 +291,8 @@ def detail(views: list[DeckView]) -> dict:
     """Cards, picks and decks for one archetype's panel.
 
     Card stats use every deck in the group. Recommended lists only come from
-    decks on the Top 8 page; the deck list only shows tournament decks."""
+    decks on the Top 8 page and are picked on tournament results alone; the
+    deck list only shows tournament decks."""
     top8_page = [v for v in views if v.deck.on_top8_page and v.entries]
     picks = [(top8_page[0], "Representative deck")] if top8_page else []
     placed = [v for v in top8_page if v.best_placement is not None]
@@ -301,10 +300,10 @@ def detail(views: list[DeckView]) -> dict:
         # min() keeps the first of equals, and views are central-first.
         finisher = min(placed, key=lambda v: v.best_placement)
         picks.append((finisher, f"Best finish: #{finisher.best_placement}"))
-    ranked = [v for v in top8_page if v.games >= RANKED_PICK_MIN_GAMES and v.wins > v.losses]
-    if ranked:
-        top = max(ranked, key=lambda v: (v.wins - v.losses, v.games))
-        picks.append((top, f"Best on ranked: {top.wins}-{top.losses}"))
+    repeat = [v for v in top8_page if len({e.event for e in v.entries}) > 1]
+    if repeat:
+        most = max(repeat, key=lambda v: len({e.event for e in v.entries}))
+        picks.append((most, f"Most tournaments: {len({e.event for e in most.entries})}"))
     recommendations, seen = [], set()
     for view, label in picks:
         if view.key in seen:

@@ -89,10 +89,11 @@ function deckPlayer(deck) {
   return deck.entries?.[0]?.player || deck.ranked?.player
 }
 
-function DeckLink({ deck, label, description }) {
+// `tournament` shows the deck's event results only, never its ranked record.
+function DeckLink({ deck, label, description, tournament = false }) {
   if (!deck) return null
   const placement = bestPlacement(deck)
-  const player = deckPlayer(deck)
+  const player = tournament ? deck.entries?.[0]?.player : deckPlayer(deck)
   const content = (
     <>
       <span className="min-w-0">
@@ -102,7 +103,7 @@ function DeckLink({ deck, label, description }) {
           {description || `${deck.avatar} · ${deck.elements || 'Elements unspecified'}`}
           {player && ` · ${player}`}
           {placement != null && ` · Best finish: #${placement}`}
-          {deck.ranked && ` · Ranked ${deck.ranked.wins}–${deck.ranked.losses}`}
+          {deck.ranked && !tournament && ` · Ranked ${deck.ranked.wins}–${deck.ranked.losses}`}
         </span>
       </span>
       {(deck.deckRecId || deck.url) && <span aria-hidden="true" className="text-secondary shrink-0">{deck.deckRecId ? '→' : '↗'}</span>}
@@ -302,7 +303,7 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
             <p className="text-xs text-text-muted mb-3">Decks from the Top 8 page in this archetype. Open a list on Summit's Deck Rec page.</p>
             <div className="grid gap-2">
               {recommendations.length === 0 && <p className="text-sm text-text-muted">No Top 8 decks in this archetype yet.</p>}
-              {recommendations.map((rec) => <DeckLink key={rec.deckId} deck={rec.deck} label={rec.label} />)}
+              {recommendations.map((rec) => <DeckLink key={rec.deckId} deck={rec.deck} label={rec.label} description={rec.deck.entries?.[0]?.event} tournament />)}
             </div>
           </section>
           <section>
@@ -338,7 +339,7 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
               {members.length < (group.tournamentDecks ?? 0) ? `Top ${formatNumber(members.length)} of ${formatNumber(group.tournamentDecks)} tournament decks` : `Tournament decks in this archetype (${members.length})`}
             </h3>
             <div className="grid gap-2">
-              {(showAll ? members : members.slice(0, 10)).map((deck) => <DeckLink key={deck.id} deck={deck} />)}
+              {(showAll ? members : members.slice(0, 10)).map((deck) => <DeckLink key={deck.id} deck={deck} description={deck.entries?.[0]?.event} tournament />)}
             </div>
             {members.length === 0 && <p className="text-sm text-text-muted">No public tournament lists in this archetype yet.</p>}
             {members.length > 10 && (
@@ -400,7 +401,7 @@ function AboutDataPanel({ meta, onClose }) {
           </section>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">Deck recommendations</h3>
-            <p>Recommended lists only come from decks on the Top 8 page. The representative list is the Top 8 deck most similar to the rest of its archetype. Others highlight the best tournament finish and the best ranked record among those Top 8 decks. Card inclusion percentages describe how often a card appears among decks in that group.</p>
+            <p>Recommended lists only come from decks on the Top 8 page. The representative list is the Top 8 deck most similar to the rest of its archetype. Others highlight the best tournament finish and the deck taken to the most tournaments. Ranked games never decide a recommendation. Card inclusion percentages describe how often a card appears among decks in that group.</p>
           </section>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">Dataset coverage</h3>

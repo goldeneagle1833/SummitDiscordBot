@@ -321,3 +321,18 @@ def test_group_without_top8_page_decks_has_no_recommendations(repo):
     detail = result["details"][groups_by_member(result)["r1"]["id"]]
 
     assert detail["recommendations"] == []
+
+
+def test_recommendations_ignore_ranked_records(repo):
+    f1, f2 = fire_deck("f1"), fire_deck("f2", swap=1)
+    write_event(repo._top8_dir, "Cup", top8=[f1])
+    write_event(repo._top8_dir, "Open", top8=[f2])
+    write_event(repo._top8_dir, "Open 2", top8=[water_deck("w9"), f2])
+    make_match_db(repo._db_path, [(f1, water_deck("w1"), "ranked")] * 8)
+
+    result = built(repo, "all")
+    detail = result["details"][groups_by_member(result)["f1"]["id"]]
+    labels = [r["label"] for r in detail["recommendations"]]
+
+    assert not any("ranked" in label.lower() for label in labels)
+    assert {"deckId": "f2", "label": "Most tournaments: 2"} in detail["recommendations"]

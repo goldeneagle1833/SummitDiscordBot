@@ -5,12 +5,7 @@ import RankedList from './RankedList'
 
 const TOP_N = 12
 
-const PAIR_COLORS = {
-  Fire: { hex: '#ef4444', chip: 'bg-red-500/15 text-red-400 border-red-500/40' },
-  Water: { hex: '#3b82f6', chip: 'bg-blue-500/15 text-blue-400 border-blue-500/40' },
-  Earth: { hex: '#22c55e', chip: 'bg-green-500/15 text-green-400 border-green-500/40' },
-  Air: { hex: '#22d3ee', chip: 'bg-cyan-400/15 text-cyan-300 border-cyan-400/40' },
-}
+const ELEMENT_DOT = { Fire: '#ef4444', Water: '#3b82f6', Earth: '#22c55e', Air: '#22d3ee' }
 
 /** "Geomancer|Earth / Fire" -> { avatar, elements: ['Earth', 'Fire'] }. Plain avatar names have no elements. */
 export function splitPairKey(key) {
@@ -18,15 +13,6 @@ export function splitPairKey(key) {
   if (cut < 0) return { avatar: key, elements: [] }
   const pair = key.slice(cut + 1)
   return { avatar: key.slice(0, cut), elements: pair ? pair.split(' / ') : [] }
-}
-
-/** Bar fill: one solid color per element, side by side. */
-function pairFill(elements) {
-  const hexes = elements.map((e) => PAIR_COLORS[e]?.hex).filter(Boolean)
-  if (hexes.length === 0) return undefined
-  if (hexes.length === 1) return hexes[0]
-  const step = 100 / hexes.length
-  return `linear-gradient(90deg, ${hexes.map((h, i) => `${h} ${i * step}%, ${h} ${(i + 1) * step}%`).join(', ')})`
 }
 
 /**
@@ -77,7 +63,6 @@ export default function AvatarMetaChart({ cumulative, endIdx, days, imageFiles =
         <RankedList items={ranked} itemKey={(r) => r.name} gap={6} visible={visible} renderItem={(r) => {
             const { avatar, elements } = splitPairKey(r.name)
             const imgFile = getAvatarImagePath(avatar, imageFiles)
-            const fill = pairFill(elements)
             const share = total ? ((r.count / total) * 100).toFixed(1) : '0.0'
             const prev = prevCounts ? prevCounts[r.name] || 0 : null
             const delta = prev == null ? null : r.count - prev
@@ -93,7 +78,8 @@ export default function AvatarMetaChart({ cumulative, endIdx, days, imageFiles =
                   {elements.length > 0 && (
                     <span className="flex gap-1 flex-shrink-0" title={elements.join(' / ')}>
                       {elements.map((el) => (
-                        <span key={el} className={`text-[10px] font-bold px-1.5 py-px rounded-full border ${PAIR_COLORS[el]?.chip || 'border-border text-text-muted'}`}>
+                        <span key={el} className="text-[10px] font-semibold px-1.5 py-px rounded-full border border-border bg-bg-raised text-text-muted inline-flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: ELEMENT_DOT[el] }} />
                           <span className="hidden sm:inline">{el}</span>
                           <span className="sm:hidden" aria-label={el}>{el[0]}</span>
                         </span>
@@ -103,8 +89,8 @@ export default function AvatarMetaChart({ cumulative, endIdx, days, imageFiles =
                 </div>
                 <div className="flex-1 bg-bg-raised rounded-full h-5 overflow-hidden">
                   <div
-                    className={`h-full rounded-full timeline-bar ${fill ? 'opacity-80' : 'bg-secondary/60'}`}
-                    style={{ width: `${Math.max((r.count / max) * 100, 1)}%`, background: fill }}
+                    className="bg-secondary/60 h-full rounded-full timeline-bar"
+                    style={{ width: `${Math.max((r.count / max) * 100, 1)}%` }}
                   />
                 </div>
                 <div className="w-28 text-right text-xs text-text-muted flex-shrink-0">

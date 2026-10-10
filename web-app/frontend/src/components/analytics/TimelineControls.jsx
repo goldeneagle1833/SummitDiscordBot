@@ -5,14 +5,19 @@ import { useEffect, useState } from 'react'
 export const ROLLING = [7, 14, 30, 90]
 const MAX_ROLLING_DAYS = 365
 
-// Playback speed: how long each Play step lasts (bars glide for the whole step)
+// Playback speed: each Play step the bars move for `move` ms, then hold still
+// for `hold` ms so the new day's numbers can be read before the next one.
 export const SPEEDS = [
-  { key: 'slow', label: 'Slow', ms: 1400 },
-  { key: 'normal', label: 'Normal', ms: 800 },
-  { key: 'fast', label: 'Fast', ms: 350 },
+  { key: 'slow', label: 'Slow', move: 700, hold: 1500 },
+  { key: 'normal', label: 'Normal', move: 500, hold: 1000 },
+  { key: 'fast', label: 'Fast', move: 300, hold: 300 },
 ]
 export const DEFAULT_SPEED = 'normal'
-export const tickMs = (speed) => (SPEEDS.find((s) => s.key === speed) || SPEEDS[1]).ms
+const speedOf = (speed) => SPEEDS.find((s) => s.key === speed) || SPEEDS[1]
+/** How long bars take to move each step. */
+export const moveMs = (speed) => speedOf(speed).move
+/** Time from one Play step to the next: move, then hold. */
+export const tickMs = (speed) => speedOf(speed).move + speedOf(speed).hold
 // All-time Play covers the whole range in about this many steps
 const PLAY_STEPS = 150
 

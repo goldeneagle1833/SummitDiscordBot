@@ -5,7 +5,7 @@ import usePageTitle from '@/hooks/usePageTitle'
 import RankedList from '@/components/analytics/RankedList'
 import { getAvatarImageFiles } from '@/api/cards'
 import AvatarMetaChart from '@/components/analytics/AvatarMetaChart'
-import TimelineControls, { windowDays, tickMs, DEFAULT_SPEED } from '@/components/analytics/TimelineControls'
+import TimelineControls, { windowDays, moveMs, DEFAULT_SPEED } from '@/components/analytics/TimelineControls'
 import { mergeDates, buildCumulative, flattenElementDays, elementStatsAt } from '@/utils/elementTimeline'
 
 const ELEMENT_COLORS = {
@@ -210,9 +210,10 @@ export default function Elements() {
   const { elements, dominant, splash, combinations, composition: comp } = stats
   const hasElementData = elements.some((e) => e.total > 0)
 
-  // Bars and rows glide at one pace: linear while playing so each step blends into the next
+  // Bars and rows move at one pace; while playing they ease into each day's
+  // values, then sit still for the rest of the step
   const motion = view.playing
-    ? { '--bar-ms': `${tickMs(view.speed)}ms`, '--bar-ease': 'linear' }
+    ? { '--bar-ms': `${moveMs(view.speed)}ms`, '--bar-ease': 'cubic-bezier(0.45, 0, 0.55, 1)' }
     : { '--bar-ms': '600ms', '--bar-ease': 'cubic-bezier(0.22, 1, 0.36, 1)' }
 
   return (

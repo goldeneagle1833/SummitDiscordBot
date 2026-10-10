@@ -87,6 +87,8 @@ class ArchetypeDeck:
     cards: dict
     entries: list = field(default_factory=list)
     games: list = field(default_factory=list)
+    # True for decks listed on the Top 8 page (not seed or ranked-only decks).
+    on_top8_page: bool = False
 
     @property
     def is_tournament(self) -> bool:
@@ -247,6 +249,7 @@ class ArchetypeDeckRepository:
                     deck = deck_from_json(raw, deck_id, f"{CURIOSA_DECK_URL}{deck_id}")
                     if deck is None:
                         continue
+                    deck.on_top8_page = True
                     placement = index + 1 if ranked_file and index < TOP8_SIZE else None
                     entry = TournamentEntry(
                         event=event_name,

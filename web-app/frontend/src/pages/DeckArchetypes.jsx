@@ -261,7 +261,7 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="archetype-detail-title"
-        className={`w-full max-w-xl h-full overflow-y-auto bg-bg-base border-l border-border shadow-2xl transition-transform duration-300 ease-out ${open ? 'translate-x-0' : 'translate-x-full'}`}
+        className={`w-full md:w-1/2 h-full overflow-y-auto bg-bg-base border-l border-border shadow-2xl transition-transform duration-300 ease-out ${open ? 'translate-x-0' : 'translate-x-full'}`}
       >
         <div className="sticky top-0 z-20 flex justify-between items-center p-3 border-b border-border bg-bg-base/95 backdrop-blur-sm">
           <span className="uppercase text-xs tracking-widest font-semibold text-secondary">Deck Archetypes</span>
@@ -289,8 +289,9 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
         <div className="p-4 sm:p-5 space-y-8">
           <section>
             <h3 className="text-lg font-semibold text-text-primary mb-1">Recommended decklists</h3>
-            <p className="text-xs text-text-muted mb-3">Real decks selected from this archetype. Open a list on Summit's Deck Rec page.</p>
+            <p className="text-xs text-text-muted mb-3">Decks from the Top 8 page in this archetype. Open a list on Summit's Deck Rec page.</p>
             <div className="grid gap-2">
+              {recommendations.length === 0 && <p className="text-sm text-text-muted">No Top 8 decks in this archetype yet.</p>}
               {recommendations.map((rec) => <DeckLink key={rec.deckId} deck={rec.deck} label={rec.label} />)}
             </div>
           </section>
@@ -388,7 +389,7 @@ function AboutDataPanel({ meta, onClose }) {
           </section>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">Deck recommendations</h3>
-            <p>Recommended lists are actual decks. The representative list is the one most similar to the rest of its archetype. Others highlight the best tournament finish and the best ranked record. Card inclusion percentages describe how often a card appears among decks in that group.</p>
+            <p>Recommended lists only come from decks on the Top 8 page. The representative list is the Top 8 deck most similar to the rest of its archetype. Others highlight the best tournament finish and the best ranked record among those Top 8 decks. Card inclusion percentages describe how often a card appears among decks in that group.</p>
           </section>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">Dataset coverage</h3>

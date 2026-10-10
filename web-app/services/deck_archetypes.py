@@ -337,14 +337,17 @@ def summarize(cluster_: Cluster, views: list[DeckView]) -> dict:
 
 
 def detail(views: list[DeckView]) -> dict:
-    """Cards, picks and decks for one archetype's panel."""
-    picks = [(views[0], "Representative deck")]
-    placed = [v for v in views if v.best_placement is not None]
+    """Cards, picks and decks for one archetype's panel.
+
+    Recommended lists only come from decks on the Top 8 page."""
+    top8_page = [v for v in views if v.deck.on_top8_page and v.entries]
+    picks = [(top8_page[0], "Representative deck")] if top8_page else []
+    placed = [v for v in top8_page if v.best_placement is not None]
     if placed:
         # min() keeps the first of equals, and views are central-first.
         finisher = min(placed, key=lambda v: v.best_placement)
         picks.append((finisher, f"Best finish: #{finisher.best_placement}"))
-    ranked = [v for v in views if v.games >= RANKED_PICK_MIN_GAMES and v.wins > v.losses]
+    ranked = [v for v in top8_page if v.games >= RANKED_PICK_MIN_GAMES and v.wins > v.losses]
     if ranked:
         top = max(ranked, key=lambda v: (v.wins - v.losses, v.games))
         picks.append((top, f"Best on ranked: {top.wins}-{top.losses}"))

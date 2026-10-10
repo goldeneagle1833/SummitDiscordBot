@@ -5,7 +5,7 @@ import RankedList from './RankedList'
 
 const TOP_N = 12
 
-const ELEMENT_DOT = { Fire: '#ef4444', Water: '#3b82f6', Earth: '#22c55e', Air: '#22d3ee' }
+const ELEMENT_TEXT = { Fire: 'text-red-400', Water: 'text-blue-400', Earth: 'text-green-400', Air: 'text-cyan-300' }
 
 /** "Geomancer|Earth / Fire" -> { avatar, elements: ['Earth', 'Fire'] }. Plain avatar names have no elements. */
 export function splitPairKey(key) {
@@ -76,12 +76,11 @@ export default function AvatarMetaChart({ cumulative, endIdx, days, imageFiles =
                   )}
                   <span className="text-xs font-semibold text-text truncate" title={avatar}>{avatar}</span>
                   {elements.length > 0 && (
-                    <span className="flex gap-1 flex-shrink-0" title={elements.join(' / ')}>
-                      {elements.map((el) => (
-                        <span key={el} className="text-[10px] font-semibold px-1.5 py-px rounded-full border border-border bg-bg-raised text-text-muted inline-flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: ELEMENT_DOT[el] }} />
-                          <span className="hidden sm:inline">{el}</span>
-                          <span className="sm:hidden" aria-label={el}>{el[0]}</span>
+                    <span className="text-[11px] font-semibold flex-shrink-0 whitespace-nowrap">
+                      {elements.map((el, i) => (
+                        <span key={el}>
+                          {i > 0 && <span className="text-text-muted"> · </span>}
+                          <span className={ELEMENT_TEXT[el] || 'text-text-muted'}>{el}</span>
                         </span>
                       ))}
                     </span>

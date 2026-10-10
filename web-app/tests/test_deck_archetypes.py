@@ -188,18 +188,18 @@ def test_seed_decks_wait_for_their_card_lists(repo):
     assert snapshot["details"][group["id"]]["decks"]["s1"]["name"] == "Seed"
 
 
-def test_cluster_stops_at_threshold():
-    import numpy as np
+def test_same_avatar_and_elements_always_share_one_group(repo):
+    # Two Fire Sorcerer decks with no spells in common are still one archetype.
+    other = deck("o1", "Sorcerer", [f"Other fire card {i}" for i in range(20)])
+    write_event(repo._top8_dir, "Cup", top8=[fire_deck("f1"), fire_deck("f2", swap=1), other])
 
-    sim = np.array([
-        [1.0, 0.9, 0.1],
-        [0.9, 1.0, 0.1],
-        [0.1, 0.1, 1.0],
-    ], dtype=np.float32)
+    result = built(repo, "tournament")
+    member = groups_by_member(result)
 
-    groups = sorted(sorted(g) for g in deck_archetypes.cluster(sim, 0.5))
-
-    assert groups == [[0, 1], [2]]
+    assert member["f1"]["id"] == member["o1"]["id"] == "sorcerer-fire"
+    assert len(result["groups"]) == 1
+    # The two similar decks come before the outlier.
+    assert result["grouped"]["sorcerer-fire"][-1] == "o1"
 
 
 class TestApi:

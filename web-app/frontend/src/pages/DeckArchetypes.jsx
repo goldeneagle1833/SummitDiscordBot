@@ -226,7 +226,7 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
     let active = true
     getDeckArchetype(group.id, source, filters)
       .then((data) => { if (active) setDetail(data) })
-      .catch((err) => { if (active) setDetailError(err.status === 404 ? 'This archetype was just regrouped. Close this panel and pick it again.' : 'Could not load this archetype.') })
+      .catch((err) => { if (active) setDetailError(err.status === 404 ? 'This archetype has no decks right now. Close this panel and pick another.' : 'Could not load this archetype.') })
     return () => { active = false }
   }, [group.id, source, filters])
 
@@ -395,8 +395,8 @@ function AboutDataPanel({ meta, onClose }) {
           </section>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">How archetypes are identified</h3>
-            <p>Each deck contributes once. Decks are compared with weighted Jaccard similarity over their Spellbooks, Atlases and Collections, counting copies of each card. Spellbook cards count most, and cards that nearly every deck plays count less than distinctive ones. Decks are only grouped with decks of the same Avatar and the same element pair (their top two elements by Spellbook copies), using hierarchical clustering. A popular Avatar and element pair can still split into several archetypes when its builds differ.</p>
-            <p className="mt-2">These are statistical groups, not manually assigned labels such as “aggro” or “control”. Decks in a group are on average at least <strong className="text-text-primary">{Math.round((meta?.threshold ?? 0.35) * 100)}% similar</strong>. Changing the minimum deck count hides or shows smaller groups; it does not recalculate the clusters. With ranked decks included, one-off ranked lists that match nothing are left out.</p>
+            <p>Each deck contributes once. Decks are compared with weighted Jaccard similarity over their Spellbooks, Atlases and Collections, counting copies of each card. Spellbook cards count most, and cards that nearly every deck plays count less than distinctive ones. Every archetype is one Avatar and element pair (a deck's top two elements by Spellbook copies), so all decks with the same Avatar and elements are in the same group. Similarity decides the order inside a group: the deck most similar to the rest comes first.</p>
+            <p className="mt-2">These are Avatar and element groups, not manually assigned labels such as “aggro” or “control”. Changing the minimum deck count hides or shows smaller groups. With ranked decks included, a ranked deck that is the only one of its Avatar and elements is left out.</p>
           </section>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">Deck recommendations</h3>
@@ -629,7 +629,7 @@ export default function DeckArchetypes() {
             {data ? formatNumber(groups.length) : '…'} archetypes · {formatNumber(data?.meta?.fetchedDecks)} decks · {formatNumber(data?.meta?.tournamentCount)} tournaments
             {source === 'all' && data && ` · ${formatNumber(data.meta.rankedGames)} ranked games`}
           </span>
-          <span>{updating && data ? 'Updating… · ' : ''}Updated hourly · {Math.round((data?.meta?.threshold ?? 0.35) * 100)}% similarity</span>
+          <span>{updating && data ? 'Updating… · ' : ''}Updated hourly</span>
         </div>
       </div>
 

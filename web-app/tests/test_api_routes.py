@@ -108,6 +108,31 @@ class TestMatchRoutes:
         data = resp.get_json()
         assert isinstance(data, list)
 
+    def test_match_history_recap(self, client, match_db):
+        import json
+        import sqlite3
+
+        conn = sqlite3.connect(match_db)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS daily_summaries (kind TEXT NOT NULL, date TEXT NOT NULL, "
+            "payload TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (kind, date))"
+        )
+        conn.execute(
+            "INSERT INTO daily_summaries VALUES (?, ?, ?, ?)",
+            ("daily", "2025-03-10", json.dumps({"title": "Daily Recap", "stats": {"total_matches": 4}}), "2025-03-10T23:00:00"),
+        )
+        conn.commit()
+        conn.close()
+
+        resp = client.get("/api/match-history/recap?date=2025-03-10")
+        assert resp.status_code == 200
+        assert resp.get_json()["stats"]["total_matches"] == 4
+
+        assert client.get("/api/match-history/recap?date=2025-03-11").status_code == 404
+        assert client.get("/api/match-history/recap?kind=weekly&date=2025-03-10").status_code == 404
+        assert client.get("/api/match-history/recap?kind=monthly&date=2025-03-10").status_code == 400
+        assert client.get("/api/match-history/recap?date=bad").status_code == 400
+
 
 class TestMiscRoutes:
     def test_status(self, client):

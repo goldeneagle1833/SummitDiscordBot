@@ -2,6 +2,7 @@
 
 import asyncio
 import datetime
+import json
 import logging
 import sqlite3
 from zoneinfo import ZoneInfo
@@ -68,6 +69,78 @@ def _delta(current: int, previous: int) -> str:
     return "±0"
 
 
+def _recap_url(period: dict) -> str:
+    """Match History link that opens with this recap shown at the top."""
+    return f"{WEB_APP_URL}/match-history?recap={period['kind']}&date={period['date']}"
+
+
+def _player_ids(stats: dict) -> set:
+    """Every user id the recap mentions, so their names can be saved with it."""
+    ids = set()
+    for key in ("most_active", "top_gainer", "biggest_loser", "deck_variety"):
+        if stats.get(key):
+            ids.add(stats[key][0])
+    if stats.get("biggest_upset"):
+        ids.update((stats["biggest_upset"][0], stats["biggest_upset"][2]))
+    if stats.get("highest_rated"):
+        ids.update((stats["highest_rated"][0], stats["highest_rated"][2]))
+    if stats.get("rivalry"):
+        ids.update((stats["rivalry"][0], stats["rivalry"][2]))
+    for entry in stats.get("hot_streaks") or []:
+        ids.add(entry[0])
+    for entry in stats.get("broken_streaks") or []:
+        ids.update((entry["player_id"], entry["broken_by_id"]))
+    return ids
+
+
+def _save_recap(period: dict, stats: dict, previous: dict, guild) -> None:
+    """Store the posted recap so the Match History page can show the same thing.
+
+    Names are resolved the same way the embed does (live server display name
+    first), keyed by user id. Runs in a thread.
+    """
+    names = {}
+    for user_id in _player_ids(stats):
+        member = guild.get_member(int(user_id)) if guild and str(user_id).isdigit() else None
+        if member:
+            names[str(user_id)] = member.display_name
+    payload = json.dumps(
+        {
+            "kind": period["kind"],
+            "date": period["date"],
+            "start": period["start"],
+            "end": period["end"],
+            "title": period["title"],
+            "compare_label": period["compare_label"],
+            "footer": period["footer"],
+            "stats": stats,
+            "previous": previous,
+            "names": names,
+        },
+        default=str,
+    )
+    conn = sqlite3.connect("match_records.db")
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_summaries (
+                kind TEXT NOT NULL,
+                date TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (kind, date)
+            )
+            """
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO daily_summaries (kind, date, payload, created_at) VALUES (?, ?, ?, ?)",
+            (period["kind"], period["date"], payload, datetime.datetime.now(EST).isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _period(kind: str, today: datetime.date) -> dict:
     """Date range [start, end) for the recap plus the matching previous period."""
     days = 7 if kind == "weekly" else 1
@@ -84,6 +157,7 @@ def _period(kind: str, today: datetime.date) -> dict:
         footer = "Summit Bot • Matches tracked since midnight EST"
     return {
         "kind": kind,
+        "date": today.isoformat(),
         "start": start.isoformat(),
         "end": end.isoformat(),
         "prev_start": prev_start.isoformat(),
@@ -165,7 +239,13 @@ class DailySummaryCog(commands.Cog):
         stats.update(streak_data)
         previous = await asyncio.to_thread(self._query_counts, period["prev_start"], period["prev_end"])
 
-        embed = _build_embed(period, stats, previous, getattr(channel, "guild", None))
+        guild = getattr(channel, "guild", None)
+        embed = _build_embed(period, stats, previous, guild)
+        try:
+            await asyncio.to_thread(_save_recap, period, stats, previous, guild)
+        except Exception:
+            # The Discord post matters more than the website copy
+            logger.error("Could not save recap for the website", exc_info=True)
         await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
         logger.info(f"{kind.capitalize()} summary posted to #{channel.name}")
 
@@ -582,14 +662,14 @@ def _build_embed(period: dict, stats: dict, previous: dict, guild) -> discord.Em
     compare = period["compare_label"]
     embed = discord.Embed(
         title=period["title"],
-        url=f"{WEB_APP_URL}/match-history",
+        url=_recap_url(period),
         color=0xFFD700,
     )
     embed.set_footer(text=period["footer"])
 
     links = (
         f"🔗 [Leaderboard]({WEB_APP_URL}/elo) • "
-        f"[Match History]({WEB_APP_URL}/match-history) • "
+        f"[Match History]({_recap_url(period)}) • "
         f"[Fun Stats]({WEB_APP_URL}/fun-stats)"
     )
 

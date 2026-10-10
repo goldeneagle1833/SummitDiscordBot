@@ -87,6 +87,27 @@ class MatchRepository:
         conn.close()
         return dates
 
+    def get_recap(self, kind: str, date: str) -> dict | None:
+        """Get the recap the Discord bot posted for a day (or week ending that day)."""
+        import json
+
+        conn = self._get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='daily_summaries'"
+            )
+            if not cur.fetchone():
+                return None
+            cur.execute(
+                "SELECT payload FROM daily_summaries WHERE kind = ? AND date = ?",
+                (kind, date),
+            )
+            row = cur.fetchone()
+        finally:
+            conn.close()
+        return json.loads(row[0]) if row else None
+
     def get_matches_by_date(self, date: str) -> list[dict]:
         """Get matches for a specific date."""
         conn = self._get_connection()

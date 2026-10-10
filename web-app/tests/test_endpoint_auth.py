@@ -63,6 +63,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # -- Match history (public read-only) --
     "api.matches.available_dates",
     "api.matches.match_history",
+    "api.matches.match_history_recap",
 
     # -- Player profiles (public read-only) --
     "api.players.player_api",

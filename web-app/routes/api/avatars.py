@@ -5,6 +5,7 @@ import logging
 import math
 import os
 import sqlite3
+import threading
 from collections import Counter
 from urllib.parse import unquote
 
@@ -412,11 +413,88 @@ def _collect_external_rows(cur, source_filter, event_start=None, event_end=None)
     return rows
 
 
+def _deck_avatar_columns(cur):
+    """SELECT list for the winner and loser decks, trimmed to their avatars.
+
+    Avatar stats only need each deck's avatar, but the deck columns hold the
+    whole card list (~15 KB each). Pulling every deck into Python took over
+    ten seconds and ~1 GB per request. SQLite cuts each deck down to
+    {"avatar": [...]} instead, which _extract_avatar_from_deck reads exactly
+    like a full deck. Falls back to the full columns if SQLite has no JSON
+    functions.
+    """
+    global _sqlite_has_json
+    if _sqlite_has_json is None:
+        try:
+            cur.execute("SELECT json_object('a', json_extract('{\"a\": 1}', '$.a'))")
+            cur.fetchone()
+            _sqlite_has_json = True
+        except sqlite3.OperationalError:
+            _sqlite_has_json = False
+    if not _sqlite_has_json:
+        return "json_deck_data_winner, json_deck_data_loser"
+    return ", ".join(
+        f"CASE WHEN json_valid({col}) THEN json_object('avatar', json_extract({col}, '$.avatar')) END"
+        for col in ("json_deck_data_winner", "json_deck_data_loser")
+    )
+
+
+_sqlite_has_json = None
+
+# The Avatars page asks for the same match rows from several endpoints at once.
+# Rows are kept until match_records.db changes on disk, so repeat requests
+# skip the scan entirely.
+_ROWS_CACHE_SIZE = 16
+_rows_cache = {}
+_rows_cache_lock = threading.Lock()
+
+
+def _match_db_signature():
+    """Changes whenever match_records.db (or its WAL file) is written."""
+    parts = [str(MATCH_RECORDS_DB_PATH)]
+    for suffix in ("", "-wal"):
+        try:
+            st = os.stat(f"{MATCH_RECORDS_DB_PATH}{suffix}")
+            parts.append((st.st_mtime_ns, st.st_size))
+        except OSError:
+            parts.append(None)
+    return tuple(parts)
+
+
+def _cached_rows(key, build):
+    key = (key, _match_db_signature())
+    with _rows_cache_lock:
+        hit = _rows_cache.get(key)
+    if hit is not None:
+        return hit
+    value = build()
+    with _rows_cache_lock:
+        if len(_rows_cache) >= _ROWS_CACHE_SIZE:
+            _rows_cache.pop(next(iter(_rows_cache)))
+        _rows_cache[key] = value
+    return value
+
+
+def reset_rows_cache():
+    with _rows_cache_lock:
+        _rows_cache.clear()
+
+
 def _collect_discord_rows_with_players(cur, event_filter, play_draw=False):
+    """Like _collect_discord_rows but also includes player IDs and names.
+
+    Cached until the database changes; see _query_discord_rows_with_players.
+    """
+    return _cached_rows(("discord", event_filter, play_draw),
+                        lambda: _query_discord_rows_with_players(cur, event_filter, play_draw))
+
+
+def _query_discord_rows_with_players(cur, event_filter, play_draw=False):
     """Like _collect_discord_rows but also includes player IDs and names.
 
     Returns (rows, use_new_columns) where rows are tuples of
     (winner_deck_json, loser_deck_json, winner_id, winner_name, loser_id, loser_name).
+    The deck JSON holds only the avatar (see _deck_avatar_columns).
 
     With play_draw=True each row gains a 7th column: whether the winner went
     first ('y'/'n'), or NULL when unknown or before PLAY_DRAW_CUTOFF.
@@ -424,7 +502,7 @@ def _collect_discord_rows_with_players(cur, event_filter, play_draw=False):
     all_rows = []
     use_new_columns = True
 
-    cols = "json_deck_data_winner, json_deck_data_loser, winner_id, winner_display_name, losser_id, losser_display_name"
+    cols = f"{_deck_avatar_columns(cur)}, winner_id, winner_display_name, losser_id, losser_display_name"
     if play_draw:
         cols += (f", CASE WHEN timestamp >= '{PLAY_DRAW_CUTOFF}'"
                  " THEN COALESCE(winner_went_first, first_player) END")
@@ -486,7 +564,12 @@ def _collect_discord_rows_with_players(cur, event_filter, play_draw=False):
 
 
 def _collect_external_rows_with_players(cur, source_filter, event_start=None, event_end=None):
-    """Like _collect_external_rows but also includes player IDs and names."""
+    """Like _collect_external_rows but also includes player IDs and names (avatar-only decks, cached)."""
+    return _cached_rows(("external", source_filter, event_start, event_end),
+                        lambda: _query_external_rows_with_players(cur, source_filter, event_start, event_end))
+
+
+def _query_external_rows_with_players(cur, source_filter, event_start=None, event_end=None):
     rows = []
     try:
         params = []
@@ -508,7 +591,7 @@ def _collect_external_rows_with_players(cur, source_filter, event_start=None, ev
             where_parts.append("timestamp <= ?")
             params.append(event_end)
 
-        query = f"""SELECT json_deck_data_winner, json_deck_data_loser,
+        query = f"""SELECT {_deck_avatar_columns(cur)},
                            winner_id, winner_display_name, losser_id, losser_display_name
                     FROM match_records WHERE {' AND '.join(where_parts)}"""
         cur.execute(query, params)
@@ -533,7 +616,7 @@ def _collect_external_rows_with_players(cur, source_filter, event_start=None, ev
             ext_where.append("timestamp <= ?")
             ext_params.append(event_end)
 
-        query = f"""SELECT json_deck_data_winner, json_deck_data_loser,
+        query = f"""SELECT {_deck_avatar_columns(cur)},
                            winner_id, winner_display_name, loser_id, loser_display_name
                     FROM external_matches WHERE {' AND '.join(ext_where)}"""
         cur.execute(query, ext_params)

@@ -277,3 +277,43 @@ def test_min_event_decks_drops_small_events(repo):
 
     assert set(groups_by_member(result)) == {f"b{i}" for i in range(5)}
     assert result["meta"]["tournamentCount"] == 1
+
+
+def test_decks_link_to_deck_rec_and_cards_carry_images(repo, monkeypatch):
+    monkeypatch.setattr(deck_archetypes, "resolve_card_image", lambda name: f"{name}.webp")
+    write_event(repo._top8_dir, "Cup", top8=[fire_deck("cmabc123")])
+
+    result = built(repo, "tournament")
+    detail = next(iter(result["details"].values()))
+
+    assert detail["decks"]["cmabc123"]["deckRecId"] == "cmabc123"
+    assert detail["patterns"]["spellbook"][0]["image"].endswith(".webp")
+
+
+def test_recommendations_only_use_top8_page_decks(repo):
+    f1 = fire_deck("f1", swap=2)
+    write_event(repo._top8_dir, "Cup", top8=[f1])
+    repo._seed_events_path.write_text(json.dumps({"decks": [
+        {"id": "s1", "name": "Seed", "avatar": "Sorcerer",
+         "entries": [{"event": "Grand Contest", "date": "2026-01-01", "player": "p", "placement": 1, "top8": True, "topCut": True}]},
+    ]}))
+    repo.save_seed_cache_entry("s1", fire_deck("s1"))
+    # A ranked-only deck that wins a lot and sits at the center of the group.
+    r1 = fire_deck("r1")
+    make_match_db(repo._db_path, [(r1, water_deck("w1"), "ranked")] * 6)
+
+    result = built(repo, "all")
+    group = groups_by_member(result)["f1"]
+    detail = result["details"][group["id"]]
+
+    assert {"s1", "r1"} <= set(detail["members"])
+    assert [r["deckId"] for r in detail["recommendations"]] == ["f1"]
+
+
+def test_group_without_top8_page_decks_has_no_recommendations(repo):
+    make_match_db(repo._db_path, [(fire_deck("r1"), fire_deck("r2", swap=1), "ranked")])
+
+    result = built(repo, "all")
+    detail = result["details"][groups_by_member(result)["r1"]["id"]]
+
+    assert detail["recommendations"] == []

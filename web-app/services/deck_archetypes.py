@@ -41,6 +41,8 @@ from datetime import datetime, timezone
 
 import numpy as np
 
+from services.curiosa import get_curiosa_deck_id
+from utils.card_images import resolve_card_image
 from repositories.archetype_decks import ZONES, ArchetypeDeck, ArchetypeDeckRepository, TournamentEntry
 
 logger = logging.getLogger(__name__)
@@ -257,6 +259,8 @@ def deck_to_dict(view: DeckView) -> dict:
         "id": deck.key,
         "name": deck.name or "Unnamed deck",
         "url": deck.url,
+        # Deck Rec opens any sorcerytcg.com list by id; PSO and unlinked decks have none.
+        "deckRecId": get_curiosa_deck_id(deck.url) if deck.url else None,
         "avatar": deck.avatar,
         "elements": deck.elements,
         "entries": [e.to_dict() for e in view.entries],
@@ -290,7 +294,10 @@ def _patterns(decks: list[ArchetypeDeck]) -> dict:
             for name, count in present.items()
         ]
         rows.sort(key=lambda r: (-r["count"], r["name"]))
-        out[zone] = rows[:PATTERN_LIMIT]
+        rows = rows[:PATTERN_LIMIT]
+        for row in rows:
+            row["image"] = resolve_card_image(row["name"])
+        out[zone] = rows
     return out
 
 
@@ -330,14 +337,17 @@ def summarize(cluster_: Cluster, views: list[DeckView]) -> dict:
 
 
 def detail(views: list[DeckView]) -> dict:
-    """Cards, picks and decks for one archetype's panel."""
-    picks = [(views[0], "Representative deck")]
-    placed = [v for v in views if v.best_placement is not None]
+    """Cards, picks and decks for one archetype's panel.
+
+    Recommended lists only come from decks on the Top 8 page."""
+    top8_page = [v for v in views if v.deck.on_top8_page and v.entries]
+    picks = [(top8_page[0], "Representative deck")] if top8_page else []
+    placed = [v for v in top8_page if v.best_placement is not None]
     if placed:
         # min() keeps the first of equals, and views are central-first.
         finisher = min(placed, key=lambda v: v.best_placement)
         picks.append((finisher, f"Best finish: #{finisher.best_placement}"))
-    ranked = [v for v in views if v.games >= RANKED_PICK_MIN_GAMES and v.wins > v.losses]
+    ranked = [v for v in top8_page if v.games >= RANKED_PICK_MIN_GAMES and v.wins > v.losses]
     if ranked:
         top = max(ranked, key=lambda v: (v.wins - v.losses, v.games))
         picks.append((top, f"Best on ranked: {top.wins}-{top.losses}"))

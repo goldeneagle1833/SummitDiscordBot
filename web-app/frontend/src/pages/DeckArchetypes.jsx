@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 import { getAvatarImageFiles } from '@/api/cards'
 import { getDeckArchetype, getDeckArchetypes } from '@/api/deckArchetypes'
@@ -17,6 +19,9 @@ const BUILDING_POLL_MS = 4000
 // "Event size" options: tournaments that published at least this many decks.
 const EVENT_SIZE_OPTIONS = [0, 8, 16, 32, 64, 100]
 const NO_FILTERS = { from: '', to: '', minEventDecks: 0 }
+// Card art shown beside the detail panel (Sorcery cards are 5:7).
+const PREVIEW_WIDTH = 260
+const PREVIEW_HEIGHT = Math.round(PREVIEW_WIDTH * 7 / 5)
 const SORT_OPTIONS = [
   { value: 'wins', label: 'Most wins' },
   { value: 'top8', label: 'Most Top 8s' },
@@ -100,10 +105,18 @@ function DeckLink({ deck, label, description }) {
           {deck.ranked && ` · Ranked ${deck.ranked.wins}–${deck.ranked.losses}`}
         </span>
       </span>
-      {deck.url && <span aria-hidden="true" className="text-secondary shrink-0">↗</span>}
+      {(deck.deckRecId || deck.url) && <span aria-hidden="true" className="text-secondary shrink-0">{deck.deckRecId ? '→' : '↗'}</span>}
     </>
   )
   const className = 'flex items-center justify-between gap-3 rounded-lg border border-border bg-bg-raised/50 p-3'
+  // Lists on Sorcery TCG open on Summit's Deck Rec page.
+  if (deck.deckRecId) {
+    return (
+      <Link className={`${className} hover:border-secondary/60 transition-colors`} to={`/deck-rec/${encodeURIComponent(deck.deckRecId)}`}>
+        {content}
+      </Link>
+    )
+  }
   // Ranked decks reported without a link have no page to open.
   if (!deck.url) return <div className={className}>{content}</div>
   return (
@@ -184,6 +197,25 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
   const [showAll, setShowAll] = useState(false)
   const [detail, setDetail] = useState(null)
   const [detailError, setDetailError] = useState('')
+  const [open, setOpen] = useState(false)
+  const [preview, setPreview] = useState(null)
+  const panelRef = useRef(null)
+
+  // Slide in from the right on the frame after mounting.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setOpen(true))
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
+  // Card art for a hovered "Most played" row, shown in the dimmed space beside
+  // the panel. Skipped when the window leaves no room beside it.
+  const showPreview = (card, event) => {
+    const panel = panelRef.current?.getBoundingClientRect()
+    if (!card.image || !panel || panel.left < PREVIEW_WIDTH + 32) return
+    const row = event.currentTarget.getBoundingClientRect()
+    const top = Math.max(16, Math.min(row.top + row.height / 2 - PREVIEW_HEIGHT / 2, window.innerHeight - PREVIEW_HEIGHT - 16))
+    setPreview({ image: card.image, name: card.name, top, right: window.innerWidth - panel.left + 24 })
+  }
 
   useEffect(() => {
     let active = true
@@ -211,13 +243,25 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
   const recommendations = (detail?.recommendations || []).map((rec) => ({ ...rec, deck: decks[rec.deckId] })).filter((rec) => rec.deck)
   const image = avatarImage(group, imageFiles)
 
-  return (
-    <div className="fixed inset-0 z-[1000] flex justify-end bg-black/75" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+  return createPortal(
+    <div
+      className={`fixed inset-0 z-[1000] flex justify-end transition-colors duration-300 ${open ? 'bg-black/75' : 'bg-black/0'}`}
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}
+    >
+      {preview && (
+        <img
+          src={`/card-images/${encodeURIComponent(preview.image)}`}
+          alt={preview.name}
+          className="fixed rounded-xl shadow-2xl pointer-events-none"
+          style={{ top: preview.top, right: preview.right, width: PREVIEW_WIDTH }}
+        />
+      )}
       <section
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="archetype-detail-title"
-        className="w-full max-w-2xl h-full overflow-y-auto bg-bg-base border-l border-border shadow-2xl"
+        className={`w-full md:w-1/2 h-full overflow-y-auto bg-bg-base border-l border-border shadow-2xl transition-transform duration-300 ease-out ${open ? 'translate-x-0' : 'translate-x-full'}`}
       >
         <div className="sticky top-0 z-20 flex justify-between items-center p-3 border-b border-border bg-bg-base/95 backdrop-blur-sm">
           <span className="uppercase text-xs tracking-widest font-semibold text-secondary">Deck Archetypes</span>
@@ -245,8 +289,9 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
         <div className="p-4 sm:p-5 space-y-8">
           <section>
             <h3 className="text-lg font-semibold text-text-primary mb-1">Recommended decklists</h3>
-            <p className="text-xs text-text-muted mb-3">Real decks selected from this archetype. Open a list on Sorcery TCG.</p>
+            <p className="text-xs text-text-muted mb-3">Decks from the Top 8 page in this archetype. Open a list on Summit's Deck Rec page.</p>
             <div className="grid gap-2">
+              {recommendations.length === 0 && <p className="text-sm text-text-muted">No Top 8 decks in this archetype yet.</p>}
               {recommendations.map((rec) => <DeckLink key={rec.deckId} deck={rec.deck} label={rec.label} />)}
             </div>
           </section>
@@ -258,7 +303,7 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
                 <button
                   type="button"
                   key={name}
-                  onClick={() => setZone(name)}
+                  onClick={() => { setZone(name); setPreview(null) }}
                   className={`text-sm px-3 py-1.5 rounded border capitalize transition-colors ${zone === name ? 'border-secondary text-secondary bg-secondary/10' : 'border-border bg-bg-surface text-text-muted hover:border-secondary/40'}`}
                 >{name}</button>
               ))}
@@ -266,7 +311,12 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
             <div className="rounded-lg border border-border bg-bg-surface divide-y divide-border/60">
               {patterns.length === 0 && <p className="p-3 text-sm text-text-muted">No cards recorded in this section.</p>}
               {patterns.map((card) => (
-                <div key={card.name} className="flex items-center justify-between gap-4 px-3 py-2 text-sm">
+                <div
+                  key={card.name}
+                  className={`flex items-center justify-between gap-4 px-3 py-2 text-sm ${card.image ? 'hover:bg-bg-raised/60' : ''}`}
+                  onMouseEnter={(event) => showPreview(card, event)}
+                  onMouseLeave={() => setPreview(null)}
+                >
                   <span className="text-text-primary min-w-0 truncate">{card.name}</span>
                   <span className="text-text-muted shrink-0 tabular-nums">{Math.round(card.rate * 100)}% · {card.avgCopies} avg.</span>
                 </div>
@@ -289,7 +339,8 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
         </div>
         )}
       </section>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -338,7 +389,7 @@ function AboutDataPanel({ meta, onClose }) {
           </section>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">Deck recommendations</h3>
-            <p>Recommended lists are actual decks. The representative list is the one most similar to the rest of its archetype. Others highlight the best tournament finish and the best ranked record. Card inclusion percentages describe how often a card appears among decks in that group.</p>
+            <p>Recommended lists only come from decks on the Top 8 page. The representative list is the Top 8 deck most similar to the rest of its archetype. Others highlight the best tournament finish and the best ranked record among those Top 8 decks. Card inclusion percentages describe how often a card appears among decks in that group.</p>
           </section>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">Dataset coverage</h3>

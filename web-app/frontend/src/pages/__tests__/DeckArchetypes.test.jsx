@@ -40,7 +40,7 @@ const DETAIL = {
   recommendations: [{ deckId: 'd1', label: 'Representative deck' }],
   members: ['d1', 'd2'],
   decks: {
-    d1: { id: 'd1', name: 'Burn It', url: 'https://sorcerytcg.com/decks/d1', avatar: 'Sorcerer', elements: 'Fire', entries: [{ event: 'Cup', player: 'alice', placement: 1, top8: true, topCut: true }] },
+    d1: { id: 'd1', name: 'Burn It', url: 'https://sorcerytcg.com/decks/d1', deckRecId: 'd1', avatar: 'Sorcerer', elements: 'Fire', entries: [{ event: 'Cup', player: 'alice', placement: 1, top8: true, topCut: true }] },
     d2: { id: 'd2', name: 'Ranked Burn', url: null, avatar: 'Sorcerer', elements: 'Fire', entries: [], ranked: { wins: 9, losses: 3, player: 'bob' } },
   },
 }
@@ -79,6 +79,10 @@ describe('DeckArchetypes', () => {
     expect(get).toHaveBeenCalledWith('/api/deck-archetypes/sorcerer-fire-d1?source=all')
     // A ranked deck reported without a link isn't rendered as a link.
     expect(screen.getByText('Ranked Burn').closest('a')).toBeNull()
+    // Sorcery TCG lists open on Summit's Deck Rec page.
+    for (const name of screen.getAllByText('Burn It')) {
+      expect(name.closest('a')).toHaveAttribute('href', '/deck-rec/d1')
+    }
   })
 
   it('asks the server again when a date range and event size are picked', async () => {

@@ -20,6 +20,10 @@ class MatchService:
         """Get matches between two dates (inclusive, YYYY-MM-DD)."""
         return self._match_repo.get_matches_by_date_range(start_date, end_date)
 
+    def get_recap(self, kind: str, date: str) -> dict | None:
+        """Get the recap the Discord bot posted for a date."""
+        return self._match_repo.get_recap(kind, date)
+
     def get_available_dates(self) -> list[str]:
         """Get dates that have match data."""
         return self._match_repo.get_available_dates()

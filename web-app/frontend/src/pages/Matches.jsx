@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
-import { getMatches, getAvailableDates } from '@/api/matches'
+import { Link, useSearchParams } from 'react-router-dom'
+import { getMatches, getAvailableDates, getRecap } from '@/api/matches'
 import Spinner from '@/components/ui/Spinner'
+import RecapPanel from '@/components/matches/RecapPanel'
 import usePageTitle from '@/hooks/usePageTitle'
 
 export default function Matches() {
@@ -11,17 +12,34 @@ export default function Matches() {
   const [selectedDate, setSelectedDate] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [recap, setRecap] = useState(null)
   const dateRef = useRef(null)
+  const [searchParams] = useSearchParams()
+
+  // The Discord recap links here as ?recap=daily|weekly&date=YYYY-MM-DD
+  const recapKind = searchParams.get('recap')
+  const recapDate = searchParams.get('date')
+  const linkedDate = /^\d{4}-\d{2}-\d{2}$/.test(recapDate || '') ? recapDate : ''
 
   useEffect(() => {
-    Promise.all([getMatches(), getAvailableDates()])
+    if (linkedDate) setSelectedDate(linkedDate)
+    Promise.all([getMatches(linkedDate || undefined), getAvailableDates()])
       .then(([matchData, dateData]) => {
         setMatches(matchData)
         setAvailableDates(dateData)
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [])
+  }, [linkedDate])
+
+  useEffect(() => {
+    if (!linkedDate || !['daily', 'weekly'].includes(recapKind)) {
+      setRecap(null)
+      return
+    }
+    // A missing recap just means the page shows matches as usual
+    getRecap(recapKind, linkedDate).then(setRecap).catch(() => setRecap(null))
+  }, [recapKind, linkedDate])
 
   const handleDateChange = (e) => {
     const date = e.target.value
@@ -64,6 +82,8 @@ export default function Matches() {
         <h1 className="text-2xl font-display text-secondary mb-2">Match History</h1>
         <p className="text-text-muted text-sm">Matches from the last 24 hours</p>
       </section>
+
+      {recap && <RecapPanel recap={recap} />}
 
       {/* Section title + date controls */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">

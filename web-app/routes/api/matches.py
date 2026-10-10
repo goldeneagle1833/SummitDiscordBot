@@ -26,6 +26,30 @@ def available_dates():
         return jsonify({"error": str(e)}), 500
 
 
+@matches_bp.route("/match-history/recap")
+def match_history_recap():
+    """Get the daily or weekly recap the Discord bot posted.
+
+    Query params:
+        kind: daily (default) or weekly
+        date (required): YYYY-MM-DD, the day the recap covered (last day for weekly)
+    """
+    kind = request.args.get("kind", "daily").strip()
+    date = request.args.get("date", "").strip()
+    if kind not in ("daily", "weekly"):
+        return jsonify({"error": "kind must be daily or weekly"}), 400
+    if not _DATE_RE.match(date):
+        return jsonify({"error": "date must be in YYYY-MM-DD format"}), 400
+    try:
+        recap = MatchService().get_recap(kind, date)
+    except Exception as e:
+        logger.error(f"Error fetching recap: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
+    if not recap:
+        return jsonify({"error": "No recap for that date"}), 404
+    return jsonify(recap)
+
+
 @matches_bp.route("/matches/date-range")
 @require_api_key
 def matches_date_range():

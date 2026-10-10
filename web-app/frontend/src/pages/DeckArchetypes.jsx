@@ -209,12 +209,17 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
 
   // Card art for a hovered "Most played" row, shown in the dimmed space beside
   // the panel. Skipped when the window leaves no room beside it.
+  // Sites (the atlas) are landscape cards whose images are stored upright, so
+  // they are turned 90° clockwise.
   const showPreview = (card, event) => {
     const panel = panelRef.current?.getBoundingClientRect()
-    if (!card.image || !panel || panel.left < PREVIEW_WIDTH + 32) return
+    const site = zone === 'atlas'
+    const width = site ? PREVIEW_HEIGHT : PREVIEW_WIDTH
+    const height = site ? PREVIEW_WIDTH : PREVIEW_HEIGHT
+    if (!card.image || !panel || panel.left < width + 32) return
     const row = event.currentTarget.getBoundingClientRect()
-    const top = Math.max(16, Math.min(row.top + row.height / 2 - PREVIEW_HEIGHT / 2, window.innerHeight - PREVIEW_HEIGHT - 16))
-    setPreview({ image: card.image, name: card.name, top, right: window.innerWidth - panel.left + 24 })
+    const top = Math.max(16, Math.min(row.top + row.height / 2 - height / 2, window.innerHeight - height - 16))
+    setPreview({ image: card.image, name: card.name, site, width, height, top, right: window.innerWidth - panel.left + 24 })
   }
 
   useEffect(() => {
@@ -249,12 +254,17 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}
     >
       {preview && (
-        <img
-          src={`/card-images/${encodeURIComponent(preview.image)}`}
-          alt={preview.name}
-          className="fixed rounded-xl shadow-2xl pointer-events-none"
-          style={{ top: preview.top, right: preview.right, width: PREVIEW_WIDTH }}
-        />
+        <div
+          className="fixed pointer-events-none flex items-center justify-center"
+          style={{ top: preview.top, right: preview.right, width: preview.width, height: preview.height }}
+        >
+          <img
+            src={`/card-images/${encodeURIComponent(preview.image)}`}
+            alt={preview.name}
+            className={`max-w-none rounded-xl shadow-2xl ${preview.site ? 'rotate-90' : ''}`}
+            style={{ width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT }}
+          />
+        </div>
       )}
       <section
         ref={panelRef}

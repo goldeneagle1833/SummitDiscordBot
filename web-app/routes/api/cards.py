@@ -1,7 +1,12 @@
 """Card and element statistics API routes."""
 
+import fcntl
+import itertools
 import json
 import math
+import os
+import re
+import tempfile
 import logging
 import sqlite3
 import threading
@@ -405,15 +410,26 @@ def get_element_filters():
     return jsonify({"events": events})
 
 
-def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False):
+def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False, stream=False):
     """Collect deck data rows for element stats based on source and event filters.
 
     Returns (rows, use_new_columns). With ``with_timestamp`` each row gains the
-    match timestamp as its last column.
+    match timestamp as its last column. With ``stream`` the rows come back as
+    an iterator read from the database as it is consumed (the connection must
+    stay open until then), instead of every deck's JSON held in one list.
     """
     ts = ", timestamp" if with_timestamp else ""
     all_rows = []
+    streams = []
     use_new_columns = True
+
+    def run(sql, params=()):
+        if stream:
+            # Each query gets its own cursor so they can be read one after another.
+            streams.append(cur.connection.execute(sql, params))
+        else:
+            cur.execute(sql, params)
+            all_rows.extend(cur.fetchall())
 
     deck_where = ("((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
                   " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))")
@@ -429,22 +445,20 @@ def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False
     if source_filter == "discord":
         if event_filter in ("all", "current"):
             try:
-                cur.execute(f"""
+                run(f"""
                     SELECT json_deck_data_winner, json_deck_data_loser{ts}
                     FROM match_records
                     WHERE {deck_where} {source_clause}
                 """)
-                all_rows.extend(cur.fetchall())
             except sqlite3.OperationalError:
                 try:
-                    cur.execute(f"""
+                    run(f"""
                         SELECT
                             CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
                             json_deck_data{ts}
                         FROM match_records
                         WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
                     """)
-                    all_rows.extend(cur.fetchall())
                     use_new_columns = False
                 except sqlite3.OperationalError:
                     pass
@@ -452,12 +466,11 @@ def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False
         # Archive: all events or specific past event
         if event_filter == "all" and use_new_columns:
             try:
-                cur.execute(f"""
+                run(f"""
                     SELECT json_deck_data_winner, json_deck_data_loser{ts}
                     FROM match_records_archive
                     WHERE {deck_where}
                 """)
-                all_rows.extend(cur.fetchall())
             except sqlite3.OperationalError:
                 pass
         elif event_filter not in ("all", "current") and use_new_columns:
@@ -466,34 +479,31 @@ def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False
                 start_date, end_date = _get_event_date_range(event_filter)
                 if start_date and end_date:
                     try:
-                        cur.execute(f"""
+                        run(f"""
                             SELECT json_deck_data_winner, json_deck_data_loser{ts}
                             FROM match_records
                             WHERE {deck_where} {source_clause}
                               AND timestamp >= ? AND timestamp <= ?
                         """, (start_date, end_date))
-                        all_rows.extend(cur.fetchall())
                     except sqlite3.OperationalError:
                         pass
                     try:
-                        cur.execute(f"""
+                        run(f"""
                             SELECT json_deck_data_winner, json_deck_data_loser{ts}
                             FROM match_records_archive
                             WHERE {deck_where}
                               AND timestamp >= ? AND timestamp <= ?
                         """, (start_date, end_date))
-                        all_rows.extend(cur.fetchall())
                     except sqlite3.OperationalError:
                         pass
             else:
                 try:
-                    cur.execute(f"""
+                    run(f"""
                         SELECT json_deck_data_winner, json_deck_data_loser{ts}
                         FROM match_records_archive
                         WHERE event_id = ?
                           AND {deck_where}
                     """, (int(event_filter),))
-                    all_rows.extend(cur.fetchall())
                 except (sqlite3.OperationalError, ValueError):
                     pass
 
@@ -518,11 +528,12 @@ def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False
 
         try:
             query = f"SELECT json_deck_data_winner, json_deck_data_loser{ts} FROM match_records WHERE {' AND '.join(where_parts)}"
-            cur.execute(query, params)
-            all_rows.extend(cur.fetchall())
+            run(query, params)
         except sqlite3.OperationalError:
             pass
 
+    if stream:
+        return itertools.chain.from_iterable(streams), use_new_columns
     return all_rows, use_new_columns
 
 
@@ -541,7 +552,7 @@ def _deck_element_profile(deck_json, card_elements):
     if not deck_json or deck_json in ("", "{}"):
         return elements, element_counts, None, None, None
     try:
-        deck_data = json.loads(deck_json)
+        deck_data = json.loads(deck_json) if isinstance(deck_json, str) else deck_json
         deck = deck_data[0] if isinstance(deck_data, list) else deck_data
         for sec in _PRESENCE_SECTIONS:
             for card in deck.get(sec, []) or []:
@@ -1200,11 +1211,11 @@ def get_all_cards_popularity():
 
 
 def _deck_avatar_name(deck_str):
-    """Return the avatar name from a JSON deck string, or None."""
+    """Return the avatar name from a JSON deck string (or already-parsed deck), or None."""
     if not deck_str or deck_str in ("", "{}"):
         return None
     try:
-        deck_data = json.loads(deck_str)
+        deck_data = json.loads(deck_str) if isinstance(deck_str, str) else deck_str
         deck = deck_data[0] if isinstance(deck_data, list) else deck_data
         avatar = deck.get("avatar") or [{}]
         name = (avatar[0].get("name") or "").strip()
@@ -1225,42 +1236,64 @@ def _element_pair(element_counts):
 
 
 def _timeline_event_filter():
-    """The request's ?event= filter; non-admins asking for the active event get every event."""
+    """The request's ?event= filter; non-admins asking for the active event get every event.
+
+    Anything that isn't a real filter value is treated as "all", so made-up
+    values can't each start a build and fill the cache.
+    """
     event_filter = request.args.get("event", "all")
+    if not _EVENT_FILTER_RE.match(event_filter):
+        event_filter = "all"
     if event_filter == "current" and not is_admin():
         event_filter = "all"
     return event_filter
 
 
 def _timeline_decks(event_filter):
-    """Yield (day, deck_json, is_win) for each Discord deck under an event filter.
+    """Yield (day, deck, is_win) for each Discord deck under an event filter.
 
-    Matches with an unparseable timestamp are skipped.
+    Rows are read from the database one at a time and each deck's JSON is
+    parsed once, so a build never holds the whole match archive in memory.
+    Matches with an unparseable timestamp or deck JSON are skipped.
     """
     from datetime import date
 
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
-        cur = conn.cursor()
-        rows, use_new_columns = _collect_element_rows(cur, "discord", event_filter, with_timestamp=True)
-        conn.close()
+        conn = sqlite3.connect(f"file:{MATCH_RECORDS_DB_PATH}?mode=ro", uri=True)
     except sqlite3.OperationalError as e:
         logger.warning(f"Could not read element timeline: {e}")
         return
+    try:
+        rows, use_new_columns = _collect_element_rows(
+            conn.cursor(), "discord", event_filter, with_timestamp=True, stream=True)
 
-    for row in rows:
-        day = str(row[-1] or "")[:10]
-        try:
-            date.fromisoformat(day)
-        except ValueError:
-            continue
-        if use_new_columns:
-            if row[0]:
-                yield day, row[0], True
-            if row[1]:
-                yield day, row[1], False
-        else:
-            yield day, row[1], bool(row[0])
+        def parsed(deck_json):
+            if not deck_json or deck_json in ("", "{}"):
+                return None
+            try:
+                return json.loads(deck_json)
+            except (TypeError, ValueError):
+                return None
+
+        for row in rows:
+            day = str(row[-1] or "")[:10]
+            try:
+                date.fromisoformat(day)
+            except ValueError:
+                continue
+            if use_new_columns:
+                for deck_json, is_win in ((row[0], True), (row[1], False)):
+                    deck = parsed(deck_json)
+                    if deck:
+                        yield day, deck, is_win
+            else:
+                deck = parsed(row[1])
+                if deck:
+                    yield day, deck, bool(row[0])
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not read element timeline: {e}")
+    finally:
+        conn.close()
 
 
 def _date_range(days):
@@ -1289,9 +1322,9 @@ def _build_timeline(event_filter):
         pair = group.setdefault(key, [0, 0])
         pair[0 if is_win else 1] += 1
 
-    for day, deck_json, is_win in _timeline_decks(event_filter):
-        name = _deck_avatar_name(deck_json)
-        elements, counts, dominant, splash, combo = _deck_element_profile(deck_json, card_elements)
+    for day, deck, is_win in _timeline_decks(event_filter):
+        name = _deck_avatar_name(deck)
+        elements, counts, dominant, splash, combo = _deck_element_profile(deck, card_elements)
         if name:
             avatar_totals[day] += 1
             avatars.setdefault(name, Counter())[day] += 1
@@ -1321,57 +1354,129 @@ def _build_timeline(event_filter):
     }
 
 
-# Parsing every reported deck takes a while, so the result is kept per event
-# filter. A stale entry is still served while a background thread rebuilds it,
-# so only the very first visit after a restart waits for the build.
-_TIMELINE_TTL = 300  # seconds
-_timeline_cache = {}  # event_filter -> (built_at, data)
-_timeline_refreshing = set()
+# Parsing every reported deck takes tens of seconds and a lot of memory, so it
+# never runs per request. Each event filter's result is built by one worker at a
+# time (a lock file), written to a shared cache file, and read from there by
+# the other workers. In each worker a stale copy keeps being served while a
+# single background thread refreshes it; only the very first visit after a
+# restart waits, and concurrent first visits wait on the same build.
+_TIMELINE_TTL = 1800  # seconds
+_TIMELINE_CACHE_DIR = Path(tempfile.gettempdir()) / "summit-web-cache"
+_TIMELINE_MAX_FILTERS = 8  # event filters kept in memory per worker
+_TIMELINE_WAIT = 90  # seconds a first visit waits for a build (gunicorn timeout is 120)
+_timeline_cache = {}  # event_filter -> (built_at wall time, data)
+_timeline_builds = {}  # event_filter -> threading.Event set when its build ends
 _timeline_lock = threading.Lock()
+_EVENT_FILTER_RE = re.compile(r"^(all|current|\d{1,9}|season_[A-Za-z0-9_-]{1,40})$")
 
 
-def _refresh_timeline(event_filter):
+def _timeline_file(event_filter):
+    return _TIMELINE_CACHE_DIR / f"elements-timeline-{event_filter}.json"
+
+
+def _fresh_timeline_file(path):
+    """(built_at, data) from a cache file younger than the TTL, else None."""
     try:
+        built_at = path.stat().st_mtime
+        if time.time() - built_at >= _TIMELINE_TTL:
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            return built_at, json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def _load_or_build_timeline(event_filter):
+    """Another worker's fresh build if there is one, else build it here."""
+    path = _timeline_file(event_filter)
+    fresh = _fresh_timeline_file(path)
+    if fresh:
+        return fresh
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path.with_suffix(".lock"), "w") as lock:
+        # Waits while another worker builds the same filter, then uses its result.
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        fresh = _fresh_timeline_file(path)
+        if fresh:
+            return fresh
         data = _build_timeline(event_filter)
+        tmp = path.with_suffix(f".{os.getpid()}.tmp")
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            os.replace(tmp, path)
+        except OSError as e:
+            logger.warning(f"Could not write element timeline cache: {e}")
+        return time.time(), data
+
+
+def _refresh_timeline(event_filter, done):
+    try:
+        built_at, data = _load_or_build_timeline(event_filter)
         with _timeline_lock:
-            _timeline_cache[event_filter] = (time.monotonic(), data)
+            _timeline_cache[event_filter] = (built_at, data)
+            while len(_timeline_cache) > _TIMELINE_MAX_FILTERS:
+                oldest = min((k for k in _timeline_cache if k != "all"),
+                             key=lambda k: _timeline_cache[k][0], default=None)
+                if oldest is None:
+                    break
+                del _timeline_cache[oldest]
     except Exception as e:  # keep serving the stale copy
         logger.warning(f"Element timeline rebuild failed for {event_filter}: {e}")
     finally:
         with _timeline_lock:
-            _timeline_refreshing.discard(event_filter)
+            _timeline_builds.pop(event_filter, None)
+        done.set()
+
+
+def _start_timeline_build(event_filter):
+    """The in-flight build for this filter, starting one if none is running.
+
+    Caller holds _timeline_lock.
+    """
+    done = _timeline_builds.get(event_filter)
+    if done is None:
+        done = _timeline_builds[event_filter] = threading.Event()
+        threading.Thread(target=_refresh_timeline, args=(event_filter, done),
+                         name=f"elements-timeline-{event_filter}", daemon=True).start()
+    return done
+
+
+class TimelineBuilding(Exception):
+    pass
 
 
 def _timeline_data(event_filter):
     with _timeline_lock:
         cached = _timeline_cache.get(event_filter)
-        stale = cached is None or time.monotonic() - cached[0] >= _TIMELINE_TTL
-        start_refresh = cached is not None and stale and event_filter not in _timeline_refreshing
-        if start_refresh:
-            _timeline_refreshing.add(event_filter)
+        done = None
+        if cached is None or time.time() - cached[0] >= _TIMELINE_TTL:
+            done = _start_timeline_build(event_filter)
+    if cached is not None:
+        return cached[1]
+    done.wait(_TIMELINE_WAIT)
+    with _timeline_lock:
+        cached = _timeline_cache.get(event_filter)
     if cached is None:
-        data = _build_timeline(event_filter)
-        with _timeline_lock:
-            _timeline_cache[event_filter] = (time.monotonic(), data)
-        return data
-    if start_refresh:
-        threading.Thread(target=_refresh_timeline, args=(event_filter,), daemon=True).start()
+        raise TimelineBuilding()
     return cached[1]
 
 
 def warm_timeline_cache():
     """Build the all-events timeline in the background (called when a worker starts)."""
     with _timeline_lock:
-        if "all" in _timeline_refreshing:
-            return
-        _timeline_refreshing.add("all")
-    threading.Thread(target=_refresh_timeline, args=("all",), daemon=True).start()
+        _start_timeline_build("all")
 
 
 def reset_timeline_cache():
     with _timeline_lock:
         _timeline_cache.clear()
-        _timeline_refreshing.clear()
+        _timeline_builds.clear()
+
+
+@cards_bp.errorhandler(TimelineBuilding)
+def _timeline_building(_e):
+    return jsonify({"error": "Element stats are still being prepared, try again shortly."}), 503
 
 
 @cards_bp.route("/elements/avatar-meta")

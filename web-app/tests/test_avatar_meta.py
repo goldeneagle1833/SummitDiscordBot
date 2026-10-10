@@ -7,8 +7,9 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _fresh_timeline_cache():
+def _fresh_timeline_cache(monkeypatch, tmp_path):
     import routes.api.cards as cards
+    monkeypatch.setattr(cards, "_TIMELINE_CACHE_DIR", tmp_path / "cache")
     cards.reset_timeline_cache()
     yield
     cards.reset_timeline_cache()
@@ -167,17 +168,71 @@ def test_stale_cache_serves_old_data_while_rebuilding(timeline, monkeypatch):
     started = []
 
     class FakeThread:
-        def __init__(self, target, args, daemon):
+        def __init__(self, target, args, name, daemon):
             self.target, self.args = target, args
 
         def start(self):
-            started.append(self.args)
+            started.append(self.args[0])
 
     monkeypatch.setattr(cards.threading, "Thread", FakeThread)
     monkeypatch.setattr(cards, "_TIMELINE_TTL", 0)
     again = timeline.get("/api/elements/avatar-meta").get_json()
     assert again == first
-    assert started == [("all",)]
+    assert started == ["all"]
     # A second request while that rebuild is running doesn't start another
     timeline.get("/api/elements/avatar-meta")
-    assert started == [("all",)]
+    assert started == ["all"]
+
+
+def test_other_workers_reuse_the_shared_cache_file(timeline, monkeypatch):
+    import routes.api.cards as cards
+    first = timeline.get("/api/elements/timeline").get_json()
+    # A fresh worker: empty memory, same cache directory
+    cards.reset_timeline_cache()
+    calls = []
+    monkeypatch.setattr(cards, "_build_timeline", lambda ev: calls.append(ev))
+    assert timeline.get("/api/elements/timeline").get_json() == first
+    assert calls == []
+
+
+def test_made_up_event_filters_share_the_all_events_build(timeline, monkeypatch):
+    import routes.api.cards as cards
+    calls = []
+    real = cards._build_timeline
+    monkeypatch.setattr(cards, "_build_timeline", lambda ev: calls.append(ev) or real(ev))
+    for junk in ("x" * 500, "../etc", "1; drop", "all"):
+        assert timeline.get("/api/elements/timeline", query_string={"event": junk}).status_code == 200
+    assert calls == ["all"]
+
+
+def test_concurrent_first_visits_wait_on_one_build(timeline, monkeypatch):
+    import threading
+    import time as time_mod
+    import routes.api.cards as cards
+    calls = []
+    real = cards._build_timeline
+
+    def slow(ev):
+        calls.append(ev)
+        time_mod.sleep(0.3)
+        return real(ev)
+
+    monkeypatch.setattr(cards, "_build_timeline", slow)
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(cards._timeline_data("all"))) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert calls == ["all"]
+    assert len(results) == 4 and all(r == results[0] for r in results)
+
+
+def test_failed_first_build_answers_503(timeline, monkeypatch):
+    import routes.api.cards as cards
+
+    def boom(ev):
+        raise RuntimeError("db gone")
+
+    monkeypatch.setattr(cards, "_build_timeline", boom)
+    assert timeline.get("/api/elements/timeline").status_code == 503

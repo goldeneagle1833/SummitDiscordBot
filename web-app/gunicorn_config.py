@@ -73,6 +73,12 @@ def post_worker_init(worker):
         warm_cache()
     except Exception as e:
         worker.log.warning("Could not warm deck archetype cache: %s", e)
+    try:
+        from routes.api.cards import warm_timeline_cache
+
+        warm_timeline_cache()
+    except Exception as e:
+        worker.log.warning("Could not warm Elements timeline cache: %s", e)
 
 
 def worker_exit(server, worker):

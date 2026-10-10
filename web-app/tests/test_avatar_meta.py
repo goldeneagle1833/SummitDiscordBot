@@ -6,6 +6,14 @@ import sqlite3
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _fresh_timeline_cache():
+    import routes.api.cards as cards
+    cards.reset_timeline_cache()
+    yield
+    cards.reset_timeline_cache()
+
+
 def _deck(avatar):
     return json.dumps({"avatar": [{"name": avatar}]})
 
@@ -119,3 +127,41 @@ def test_timeline_admin_gets_splash_and_combos(timeline, admin_session):
     day = timeline.get("/api/elements/timeline").get_json()["days"]["2026-09-01"]
     assert day["spl"] == {"Water": [1, 0]}
     assert day["combo"] == {"Fire, Water": [1, 0], "Earth": [0, 1]}
+
+
+# --- caching ---
+
+def test_timeline_is_built_once_and_shared_by_both_endpoints(timeline, monkeypatch):
+    import routes.api.cards as cards
+    calls = []
+    real = cards._build_timeline
+    monkeypatch.setattr(cards, "_build_timeline", lambda ev: calls.append(ev) or real(ev))
+    timeline.get("/api/elements/timeline")
+    timeline.get("/api/elements/avatar-meta")
+    timeline.get("/api/elements/timeline")
+    assert calls == ["all"]
+    timeline.get("/api/elements/timeline?event=7")
+    assert calls == ["all", "7"]
+
+
+def test_stale_cache_serves_old_data_while_rebuilding(timeline, monkeypatch):
+    import routes.api.cards as cards
+    first = timeline.get("/api/elements/avatar-meta").get_json()
+
+    started = []
+
+    class FakeThread:
+        def __init__(self, target, args, daemon):
+            self.target, self.args = target, args
+
+        def start(self):
+            started.append(self.args)
+
+    monkeypatch.setattr(cards.threading, "Thread", FakeThread)
+    monkeypatch.setattr(cards, "_TIMELINE_TTL", 0)
+    again = timeline.get("/api/elements/avatar-meta").get_json()
+    assert again == first
+    assert started == [("all",)]
+    # A second request while that rebuild is running doesn't start another
+    timeline.get("/api/elements/avatar-meta")
+    assert started == [("all",)]

@@ -10,80 +10,99 @@ import CreatorGuard from '@/components/layout/CreatorGuard'
 import ExplorerAdminGuard from '@/components/layout/ExplorerAdminGuard'
 import Spinner from '@/components/ui/Spinner'
 
+/**
+ * A page loaded on demand. After a deploy, a tab opened earlier still asks for
+ * the old page files, which are gone; reload once to pick up the new build.
+ */
+function lazyPage(load) {
+  return lazy(() => load().catch((err) => {
+    let reloaded = false
+    try { reloaded = sessionStorage.getItem('page-chunk-reload') === '1' } catch { /* storage blocked */ }
+    if (!reloaded) {
+      try { sessionStorage.setItem('page-chunk-reload', '1') } catch { /* storage blocked */ }
+      window.location.reload()
+      return new Promise(() => {})
+    }
+    throw err
+  }).then((mod) => {
+    try { sessionStorage.removeItem('page-chunk-reload') } catch { /* storage blocked */ }
+    return mod
+  }))
+}
+
 // Phase 3: Core data pages
-import Leaderboard from '@/pages/Leaderboard'
-import LimitedLeaderboard from '@/pages/LimitedLeaderboard'
-import Season from '@/pages/Season'
-import Player from '@/pages/Player'
-import DeckStats from '@/pages/DeckStats'
-import PlayerAvatar from '@/pages/PlayerAvatar'
-import Matches from '@/pages/Matches'
-import DeckSnapshot from '@/pages/DeckSnapshot'
+const Leaderboard = lazyPage(() => import('@/pages/Leaderboard'))
+const LimitedLeaderboard = lazyPage(() => import('@/pages/LimitedLeaderboard'))
+const Season = lazyPage(() => import('@/pages/Season'))
+const Player = lazyPage(() => import('@/pages/Player'))
+const DeckStats = lazyPage(() => import('@/pages/DeckStats'))
+const PlayerAvatar = lazyPage(() => import('@/pages/PlayerAvatar'))
+const Matches = lazyPage(() => import('@/pages/Matches'))
+const DeckSnapshot = lazyPage(() => import('@/pages/DeckSnapshot'))
 
 // Phase 4: Events & Decks
-import Events from '@/pages/Events'
-import Brackets from '@/pages/Brackets'
-import Bracket from '@/pages/Bracket'
-import EventDetail from '@/pages/EventDetail'
-import EventCompare from '@/pages/EventCompare'
-import Stats from '@/pages/Stats'
-import StatsEvent from '@/pages/StatsEvent'
-import DeckDetail from '@/pages/DeckDetail'
-import DeckRecommendations from '@/pages/DeckRecommendations'
-import DeckArchetypes from '@/pages/DeckArchetypes'
+const Events = lazyPage(() => import('@/pages/Events'))
+const Brackets = lazyPage(() => import('@/pages/Brackets'))
+const Bracket = lazyPage(() => import('@/pages/Bracket'))
+const EventDetail = lazyPage(() => import('@/pages/EventDetail'))
+const EventCompare = lazyPage(() => import('@/pages/EventCompare'))
+const Stats = lazyPage(() => import('@/pages/Stats'))
+const StatsEvent = lazyPage(() => import('@/pages/StatsEvent'))
+const DeckDetail = lazyPage(() => import('@/pages/DeckDetail'))
+const DeckRecommendations = lazyPage(() => import('@/pages/DeckRecommendations'))
+const DeckArchetypes = lazyPage(() => import('@/pages/DeckArchetypes'))
 
 // Phase 5: Cards & Avatars
-import Avatars from '@/pages/Avatars'
-import AvatarDetail from '@/pages/AvatarDetail'
-import AvatarTopPlayers from '@/pages/AvatarTopPlayers'
-import EloBreakdownMatches from '@/pages/EloBreakdownMatches'
-import Cards from '@/pages/Cards'
-import CardDetail from '@/pages/CardDetail'
-import CardPlayedWinrates from '@/pages/CardPlayedWinrates'
-import Elements from '@/pages/Elements'
+const Avatars = lazyPage(() => import('@/pages/Avatars'))
+const AvatarDetail = lazyPage(() => import('@/pages/AvatarDetail'))
+const AvatarTopPlayers = lazyPage(() => import('@/pages/AvatarTopPlayers'))
+const EloBreakdownMatches = lazyPage(() => import('@/pages/EloBreakdownMatches'))
+const Cards = lazyPage(() => import('@/pages/Cards'))
+const CardDetail = lazyPage(() => import('@/pages/CardDetail'))
+const CardPlayedWinrates = lazyPage(() => import('@/pages/CardPlayedWinrates'))
+const Elements = lazyPage(() => import('@/pages/Elements'))
 // Phase 6: Content & Interactive
 import Home from '@/pages/Home'
-import About from '@/pages/About'
-import Help from '@/pages/Help'
-import Privacy from '@/pages/Privacy'
-import Terms from '@/pages/Terms'
-import DeckHelp from '@/pages/DeckHelp'
-import Community from '@/pages/Community'
-import LifeCounter from '@/pages/LifeCounter'
-import FunStats from '@/pages/FunStats'
-import FartLeaderboard from '@/pages/FartLeaderboard'
-import Rumble from '@/pages/Rumble'
-import CardPoints from '@/pages/CardPoints'
-import DeckBuilder from '@/pages/DeckBuilder'
-import Login from '@/pages/Login'
-import Store from '@/pages/Store'
-import StoreCheckout from '@/pages/StoreCheckout'
-import StoreSuccess from '@/pages/StoreSuccess'
-import StoreCancelled from '@/pages/StoreCancelled'
-import StoreApply from '@/pages/StoreApply'
-import MyOrders from '@/pages/MyOrders'
-import Creator from '@/pages/Creator'
-import Feedback from '@/pages/Feedback'
+const About = lazyPage(() => import('@/pages/About'))
+const Help = lazyPage(() => import('@/pages/Help'))
+const Privacy = lazyPage(() => import('@/pages/Privacy'))
+const Terms = lazyPage(() => import('@/pages/Terms'))
+const DeckHelp = lazyPage(() => import('@/pages/DeckHelp'))
+const Community = lazyPage(() => import('@/pages/Community'))
+const LifeCounter = lazyPage(() => import('@/pages/LifeCounter'))
+const FunStats = lazyPage(() => import('@/pages/FunStats'))
+const FartLeaderboard = lazyPage(() => import('@/pages/FartLeaderboard'))
+const Rumble = lazyPage(() => import('@/pages/Rumble'))
+const CardPoints = lazyPage(() => import('@/pages/CardPoints'))
+const DeckBuilder = lazyPage(() => import('@/pages/DeckBuilder'))
+const Login = lazyPage(() => import('@/pages/Login'))
+const Store = lazyPage(() => import('@/pages/Store'))
+const StoreCheckout = lazyPage(() => import('@/pages/StoreCheckout'))
+const StoreSuccess = lazyPage(() => import('@/pages/StoreSuccess'))
+const StoreCancelled = lazyPage(() => import('@/pages/StoreCancelled'))
+const StoreApply = lazyPage(() => import('@/pages/StoreApply'))
+const MyOrders = lazyPage(() => import('@/pages/MyOrders'))
+const Creator = lazyPage(() => import('@/pages/Creator'))
+const Feedback = lazyPage(() => import('@/pages/Feedback'))
 
-// Lazy-loaded pages
-const ExplorerStandings = lazy(() => import('@/pages/ExplorerStandings'))
+const ExplorerStandings = lazyPage(() => import('@/pages/ExplorerStandings'))
 
 // Phase 7: Admin
-import AuditLog from '@/pages/admin/AuditLog'
-import StoreAdmin from '@/pages/admin/StoreAdmin'
-import StoreOrderPrint from '@/pages/admin/StoreOrderPrint'
-import ActiveConnections from '@/pages/admin/ActiveConnections'
-import UniqueUsers from '@/pages/admin/UniqueUsers'
-import SessionAnalytics from '@/pages/admin/SessionAnalytics'
-import ExternalMatchesAdmin from '@/pages/admin/ExternalMatches'
-import OmensMatchesAdmin from '@/pages/admin/OmensMatches'
-import ChartDetail from '@/pages/admin/ChartDetail'
-import Monitoring from '@/pages/admin/Monitoring'
-import BracketsAdmin from '@/pages/admin/BracketsAdmin'
-import UserProfiles from '@/pages/admin/UserProfiles'
-import ExplorerApplications from '@/pages/admin/ExplorerApplications'
-import ExplorerApply from '@/pages/ExplorerApply'
-import SeasonFeedback from '@/pages/SeasonFeedback'
+const AuditLog = lazyPage(() => import('@/pages/admin/AuditLog'))
+const StoreAdmin = lazyPage(() => import('@/pages/admin/StoreAdmin'))
+const StoreOrderPrint = lazyPage(() => import('@/pages/admin/StoreOrderPrint'))
+const ActiveConnections = lazyPage(() => import('@/pages/admin/ActiveConnections'))
+const UniqueUsers = lazyPage(() => import('@/pages/admin/UniqueUsers'))
+const SessionAnalytics = lazyPage(() => import('@/pages/admin/SessionAnalytics'))
+const ExternalMatchesAdmin = lazyPage(() => import('@/pages/admin/ExternalMatches'))
+const OmensMatchesAdmin = lazyPage(() => import('@/pages/admin/OmensMatches'))
+const ChartDetail = lazyPage(() => import('@/pages/admin/ChartDetail'))
+const Monitoring = lazyPage(() => import('@/pages/admin/Monitoring'))
+const BracketsAdmin = lazyPage(() => import('@/pages/admin/BracketsAdmin'))
+const UserProfiles = lazyPage(() => import('@/pages/admin/UserProfiles'))
+const ExplorerApplications = lazyPage(() => import('@/pages/admin/ExplorerApplications'))
+const ExplorerApply = lazyPage(() => import('@/pages/ExplorerApply'))
+const SeasonFeedback = lazyPage(() => import('@/pages/SeasonFeedback'))
 
 // Error pages
 import ErrorPage from '@/pages/ErrorPage'
@@ -153,7 +172,10 @@ function Layout() {
         <div className="min-h-screen flex flex-col">
           <Nav />
           <main className="flex-1 max-w-content mx-auto w-full px-4 py-6">
-            <Outlet />
+            {/* Pages load on demand, so a visit only downloads the page it opens */}
+            <Suspense fallback={<Spinner className="py-20" />}>
+              <Outlet />
+            </Suspense>
           </main>
           <Footer />
         </div>

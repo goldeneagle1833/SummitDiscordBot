@@ -4,6 +4,8 @@ import json
 import math
 import logging
 import sqlite3
+import threading
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -1211,17 +1213,21 @@ def _deck_avatar_name(deck_str):
         return None
 
 
-def _timeline_decks():
-    """Yield (day, deck_json, is_win) for each Discord deck under the request's event filter.
-
-    Matches with an unparseable timestamp are skipped. Non-admins asking for
-    the active event get every event, as on /api/elements.
-    """
-    from datetime import date
-
+def _timeline_event_filter():
+    """The request's ?event= filter; non-admins asking for the active event get every event."""
     event_filter = request.args.get("event", "all")
     if event_filter == "current" and not is_admin():
         event_filter = "all"
+    return event_filter
+
+
+def _timeline_decks(event_filter):
+    """Yield (day, deck_json, is_win) for each Discord deck under an event filter.
+
+    Matches with an unparseable timestamp are skipped.
+    """
+    from datetime import date
+
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
@@ -1256,6 +1262,104 @@ def _date_range(days):
     return [(first + timedelta(days=i)).isoformat() for i in range((last - first).days + 1)]
 
 
+def _build_timeline(event_filter):
+    """One pass over every deck: daily avatar counts and daily element win/loss counts.
+
+    Element days hold every group, admin-only ones included; the routes strip
+    those for other viewers.
+    """
+    card_elements = _load_card_elements()
+    avatars = {}
+    avatar_totals = Counter()
+    element_days = {}
+
+    def bump(group, key, is_win):
+        pair = group.setdefault(key, [0, 0])
+        pair[0 if is_win else 1] += 1
+
+    for day, deck_json, is_win in _timeline_decks(event_filter):
+        name = _deck_avatar_name(deck_json)
+        if name:
+            avatar_totals[day] += 1
+            avatars.setdefault(name, Counter())[day] += 1
+
+        elements, _, dominant, splash, combo = _deck_element_profile(deck_json, card_elements)
+        if not elements and not combo:
+            continue
+        entry = element_days.setdefault(day, {"el": {}, "dom": {}})
+        for element in elements:
+            if element in ("Fire", "Water", "Earth", "Air"):
+                bump(entry["el"], element, is_win)
+        if dominant:
+            bump(entry["dom"], dominant, is_win)
+        if splash:
+            bump(entry.setdefault("spl", {}), splash, is_win)
+        if combo:
+            bump(entry.setdefault("combo", {}), combo, is_win)
+
+    return {
+        "meta": {
+            "dates": _date_range(avatar_totals),
+            "avatars": {name: dict(counts) for name, counts in avatars.items()},
+            "daily_totals": dict(avatar_totals),
+        },
+        "elements": {"dates": _date_range(element_days), "days": element_days},
+    }
+
+
+# Parsing every reported deck takes a while, so the result is kept per event
+# filter. A stale entry is still served while a background thread rebuilds it,
+# so only the very first visit after a restart waits for the build.
+_TIMELINE_TTL = 300  # seconds
+_timeline_cache = {}  # event_filter -> (built_at, data)
+_timeline_refreshing = set()
+_timeline_lock = threading.Lock()
+
+
+def _refresh_timeline(event_filter):
+    try:
+        data = _build_timeline(event_filter)
+        with _timeline_lock:
+            _timeline_cache[event_filter] = (time.monotonic(), data)
+    except Exception as e:  # keep serving the stale copy
+        logger.warning(f"Element timeline rebuild failed for {event_filter}: {e}")
+    finally:
+        with _timeline_lock:
+            _timeline_refreshing.discard(event_filter)
+
+
+def _timeline_data(event_filter):
+    with _timeline_lock:
+        cached = _timeline_cache.get(event_filter)
+        stale = cached is None or time.monotonic() - cached[0] >= _TIMELINE_TTL
+        start_refresh = cached is not None and stale and event_filter not in _timeline_refreshing
+        if start_refresh:
+            _timeline_refreshing.add(event_filter)
+    if cached is None:
+        data = _build_timeline(event_filter)
+        with _timeline_lock:
+            _timeline_cache[event_filter] = (time.monotonic(), data)
+        return data
+    if start_refresh:
+        threading.Thread(target=_refresh_timeline, args=(event_filter,), daemon=True).start()
+    return cached[1]
+
+
+def warm_timeline_cache():
+    """Build the all-events timeline in the background (called when a worker starts)."""
+    with _timeline_lock:
+        if "all" in _timeline_refreshing:
+            return
+        _timeline_refreshing.add("all")
+    threading.Thread(target=_refresh_timeline, args=("all",), daemon=True).start()
+
+
+def reset_timeline_cache():
+    with _timeline_lock:
+        _timeline_cache.clear()
+        _timeline_refreshing.clear()
+
+
 @cards_bp.route("/elements/avatar-meta")
 def get_avatar_meta():
     """Daily avatar counts from reported Discord decks, for the Elements page Meta chart.
@@ -1266,20 +1370,7 @@ def get_avatar_meta():
     Returns {"dates": [first..last day], "avatars": {name: {date: count}},
              "daily_totals": {date: decks}}.
     """
-    avatars = {}
-    daily_totals = Counter()
-    for day, deck_json, _ in _timeline_decks():
-        name = _deck_avatar_name(deck_json)
-        if not name:
-            continue
-        daily_totals[day] += 1
-        avatars.setdefault(name, Counter())[day] += 1
-
-    return jsonify({
-        "dates": _date_range(daily_totals),
-        "avatars": {name: dict(counts) for name, counts in avatars.items()},
-        "daily_totals": dict(daily_totals),
-    })
+    return jsonify(_timeline_data(_timeline_event_filter())["meta"])
 
 
 @cards_bp.route("/elements/timeline")
@@ -1293,31 +1384,12 @@ def get_element_timeline():
       spl: its splash element (admin only)
       combo: its spellbook element combination (admin only)
     """
-    card_elements = _load_card_elements()
     admin = is_admin()
-    days = {}
-
-    def bump(group, key, is_win):
-        pair = group.setdefault(key, [0, 0])
-        pair[0 if is_win else 1] += 1
-
-    for day, deck_json, is_win in _timeline_decks():
-        elements, _, dominant, splash, combo = _deck_element_profile(deck_json, card_elements)
-        if not elements and not combo:
-            continue
-        entry = days.setdefault(day, {"el": {}, "dom": {}})
-        for element in elements:
-            if element in ("Fire", "Water", "Earth", "Air"):
-                bump(entry["el"], element, is_win)
-        if dominant:
-            bump(entry["dom"], dominant, is_win)
-        if admin:
-            if splash:
-                bump(entry.setdefault("spl", {}), splash, is_win)
-            if combo:
-                bump(entry.setdefault("combo", {}), combo, is_win)
-
-    return jsonify({"dates": _date_range(days), "days": days, "is_admin": admin})
+    data = _timeline_data(_timeline_event_filter())["elements"]
+    days = data["days"]
+    if not admin:
+        days = {day: {"el": entry["el"], "dom": entry["dom"]} for day, entry in days.items()}
+    return jsonify({"dates": data["dates"], "days": days, "is_admin": admin})
 
 
 @cards_bp.route("/deck-composition")

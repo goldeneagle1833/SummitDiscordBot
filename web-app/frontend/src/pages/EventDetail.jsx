@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { getEvent, updateEventMetadata, updateEventDecks, refreshEvent, deleteEvent, pollEventJob, getEventMatchHistory, importMatchHistory } from '@/api/events'
 import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
+import ShareLinkButton from '@/components/ui/ShareLinkButton'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const ELEMENT_COLORS = {
@@ -889,10 +890,16 @@ export default function EventDetail() {
     <div className="space-y-6">
       <Link to="/top-8" className="text-sm text-secondary hover:underline">&larr; Back to Events</Link>
 
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-display text-text-primary">{event_name}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-display text-text-primary">{event_name}</h1>
+          <ShareLinkButton
+            path={`/top-8/${encodeURIComponent(folder)}`}
+            className="text-xs bg-bg-raised text-text-muted px-3 py-1.5 border border-border hover:text-primary"
+          />
+        </div>
         {is_admin && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               className="text-xs bg-bg-raised text-text-muted px-3 py-1.5 rounded border border-border hover:text-text disabled:opacity-50"
               onClick={handleRefresh}

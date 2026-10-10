@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { getEventsWithAdmin, getEvent, reorderEvents, updateEventMetadata, createEvent, importEventFromUrl, pollEventJob, setFeaturedEvent } from '@/api/events'
 import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
+import ShareLinkButton from '@/components/ui/ShareLinkButton'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useIsDesktop, usePrefersReducedMotion } from '@/hooks/useMediaQuery'
 
@@ -349,6 +350,7 @@ export default function Events() {
             )}
             <span>{event.player_count || 0} decks</span>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
           <Link
             to={`/top-8/${event.folder}`}
             className="inline-flex items-center gap-2 bg-primary text-black px-4 py-2 rounded font-semibold text-sm hover:bg-primary-light transition-colors w-fit"
@@ -358,6 +360,11 @@ export default function Events() {
               <path fillRule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clipRule="evenodd" />
             </svg>
           </Link>
+          <ShareLinkButton
+            path={`/top-8/${encodeURIComponent(event.folder)}`}
+            className="bg-bg-raised/80 text-text px-4 py-2 font-semibold text-sm border border-border hover:text-primary"
+          />
+          </div>
           {isAdmin && (
             <div className="absolute top-3 right-3 flex gap-1">
               {featuredFolder === event.folder ? (

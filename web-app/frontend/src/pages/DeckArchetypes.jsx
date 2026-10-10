@@ -325,11 +325,12 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
           </section>
           <section>
             <h3 className="text-lg font-semibold text-text-primary mb-3">
-              {members.length < group.size ? `Top ${formatNumber(members.length)} of ${formatNumber(group.size)} decks` : `All decks in this archetype (${members.length})`}
+              {members.length < (group.tournamentDecks ?? 0) ? `Top ${formatNumber(members.length)} of ${formatNumber(group.tournamentDecks)} tournament decks` : `Tournament decks in this archetype (${members.length})`}
             </h3>
             <div className="grid gap-2">
               {(showAll ? members : members.slice(0, 10)).map((deck) => <DeckLink key={deck.id} deck={deck} />)}
             </div>
+            {members.length === 0 && <p className="text-sm text-text-muted">No public tournament lists in this archetype yet.</p>}
             {members.length > 10 && (
               <button type="button" className="mt-3 text-sm text-secondary hover:underline" onClick={() => setShowAll((value) => !value)}>
                 {showAll ? 'Show fewer decks' : `Show all ${members.length} decks`}

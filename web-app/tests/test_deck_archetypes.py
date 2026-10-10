@@ -84,15 +84,17 @@ def built(repo, source, filters=deck_archetypes.NO_FILTERS):
     snapshot = deck_archetypes.build_snapshots(repo)[source]
     listing = deck_archetypes.filtered_list(snapshot, filters)
     details = {g["id"]: deck_archetypes.filtered_detail(snapshot, g["id"], filters) for g in listing["groups"]}
-    return {**listing, "details": details}
+    grouped = {
+        g["id"]: [v.key for v in deck_archetypes._cluster_views(snapshot, snapshot["by_id"][g["id"]], filters)]
+        for g in listing["groups"]
+    }
+    return {**listing, "details": details, "grouped": grouped}
 
 
-def groups_by_member(snapshot):
-    out = {}
-    for group in snapshot["groups"]:
-        for deck_id in snapshot["details"][group["id"]]["members"]:
-            out[deck_id] = group
-    return out
+def groups_by_member(result):
+    """{deck id: group} for every deck grouped, ranked-only decks included."""
+    by_id = {g["id"]: g for g in result["groups"]}
+    return {key: by_id[gid] for gid, keys in result["grouped"].items() for key in keys}
 
 
 def test_similar_decks_group_and_different_decks_do_not(repo):
@@ -306,8 +308,10 @@ def test_recommendations_only_use_top8_page_decks(repo):
     group = groups_by_member(result)["f1"]
     detail = result["details"][group["id"]]
 
-    assert {"s1", "r1"} <= set(detail["members"])
+    assert {"s1", "r1"} <= set(result["grouped"][group["id"]])
     assert [r["deckId"] for r in detail["recommendations"]] == ["f1"]
+    # The deck list shows tournament lists (Top 8 page and seed events), not ranked-only decks.
+    assert set(detail["members"]) == {"f1", "s1"}
 
 
 def test_group_without_top8_page_decks_has_no_recommendations(repo):

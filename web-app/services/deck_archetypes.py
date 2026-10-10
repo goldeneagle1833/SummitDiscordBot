@@ -339,7 +339,8 @@ def summarize(cluster_: Cluster, views: list[DeckView]) -> dict:
 def detail(views: list[DeckView]) -> dict:
     """Cards, picks and decks for one archetype's panel.
 
-    Recommended lists only come from decks on the Top 8 page."""
+    Card stats use every deck in the group. Recommended lists only come from
+    decks on the Top 8 page; the deck list only shows tournament decks."""
     top8_page = [v for v in views if v.deck.on_top8_page and v.entries]
     picks = [(top8_page[0], "Representative deck")] if top8_page else []
     placed = [v for v in top8_page if v.best_placement is not None]
@@ -358,8 +359,9 @@ def detail(views: list[DeckView]) -> dict:
         seen.add(view.key)
         recommendations.append({"deckId": view.key, "label": label})
 
+    # The deck list shows public tournament lists only, never ranked-only decks.
     listed = sorted(
-        views,
+        [v for v in views if v.entries],
         key=lambda v: (v.best_placement or 999, -v.games, (v.deck.name or "").lower()),
     )[:MEMBER_LIMIT]
     listed_keys = {v.key for v in listed}

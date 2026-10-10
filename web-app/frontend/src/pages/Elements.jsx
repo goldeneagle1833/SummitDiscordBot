@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
-import useRankSlide from '@/hooks/useRankSlide'
+import RankedList from '@/components/analytics/RankedList'
 import { getAvatarImageFiles } from '@/api/cards'
 import AvatarMetaChart from '@/components/analytics/AvatarMetaChart'
-import TimelineControls, { windowDays, PLAY_TICK_MS } from '@/components/analytics/TimelineControls'
+import TimelineControls, { windowDays, tickMs, DEFAULT_SPEED } from '@/components/analytics/TimelineControls'
 import { mergeDates, buildCumulative, flattenElementDays, elementStatsAt } from '@/utils/elementTimeline'
 
 const ELEMENT_COLORS = {
@@ -28,17 +28,15 @@ function formatEventDate(dateStr) {
 function ElementBarChart({ data, title, subtitle }) {
   if (!data?.length) return null
   const sorted = [...data].sort((a, b) => b.win_rate - a.win_rate)
-  const listRef = useRankSlide()
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
       <h2 className="font-display text-secondary text-lg mb-1">{title}</h2>
       {subtitle && <p className="text-xs text-text-muted mb-4">{subtitle}</p>}
-      <div ref={listRef} className="space-y-3">
-        {sorted.map((el) => {
+      <RankedList items={sorted} itemKey={(el) => el.name} gap={12} renderItem={(el) => {
           const colors = ELEMENT_COLORS[el.name] || { bar: 'bg-gray-500', text: 'text-gray-400' }
           return (
-            <div key={el.name} data-rank-key={el.name} className="flex items-center gap-3">
+            <div className="flex items-center gap-3">
               <div className={`w-14 text-sm font-semibold ${colors.text}`}>{el.name}</div>
               <div className="flex-1 bg-bg-raised rounded-full h-6 overflow-hidden relative">
                 <div
@@ -51,8 +49,7 @@ function ElementBarChart({ data, title, subtitle }) {
               <div className="text-xs text-text-muted w-24 text-right">{el.wins}W - {el.losses}L</div>
             </div>
           )
-        })}
-      </div>
+        }} />
     </div>
   )
 }
@@ -61,7 +58,6 @@ function ElementBarChart({ data, title, subtitle }) {
 function PresenceChart({ data }) {
   if (!data?.length) return null
   const sorted = [...data].sort((a, b) => b.win_presence - a.win_presence)
-  const listRef = useRankSlide()
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
@@ -69,13 +65,12 @@ function PresenceChart({ data }) {
       <p className="text-xs text-text-muted mb-4">
         How often each element appears in winning vs losing decks. Delta indicates correlation, not causation.
       </p>
-      <div ref={listRef} className="space-y-4">
-        {sorted.map((el) => {
+      <RankedList items={sorted} itemKey={(el) => el.name} gap={16} renderItem={(el) => {
           const colors = ELEMENT_COLORS[el.name] || { text: 'text-gray-400' }
           const delta = (el.win_presence - el.loss_presence).toFixed(1)
           const deltaColor = parseFloat(delta) >= 0 ? 'text-green-400' : 'text-red-400'
           return (
-            <div key={el.name} data-rank-key={el.name}>
+            <div>
               <div className="flex items-center justify-between mb-1">
                 <span className={`text-sm font-semibold ${colors.text}`}>{el.name}</span>
                 <span className={`text-xs font-medium ${deltaColor}`}>
@@ -108,8 +103,7 @@ function PresenceChart({ data }) {
               </div>
             </div>
           )
-        })}
-      </div>
+        }} />
       <div className="flex gap-4 mt-4 text-xs text-text-muted">
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500/70 inline-block" /> % of winning decks</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500/70 inline-block" /> % of losing decks</span>
@@ -122,14 +116,12 @@ function PresenceChart({ data }) {
 function ComboBars({ data, title, subtitle, valueKey, valueLabel, sortKey }) {
   if (!data?.length) return null
   const sorted = [...data].sort((a, b) => b[sortKey || 'win_rate'] - a[sortKey || 'win_rate'])
-  const listRef = useRankSlide()
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
       <h2 className="font-display text-secondary text-lg mb-1">{title}</h2>
       {subtitle && <p className="text-xs text-text-muted mb-4">{subtitle}</p>}
-      <div ref={listRef} className="space-y-2">
-        {sorted.map((item) => {
+      <RankedList items={sorted} itemKey={(item) => item.name || item.elements} renderItem={(item) => {
           const elements = item.name ? item.name.split(', ') : (item.elements ? item.elements.split(', ') : [])
           const val = item[valueKey || 'win_rate']
           const label = valueLabel
@@ -137,7 +129,7 @@ function ComboBars({ data, title, subtitle, valueKey, valueLabel, sortKey }) {
             : `${item.wins}W - ${item.losses}L (${item.total})`
 
           return (
-            <div key={item.name || item.elements} data-rank-key={item.name || item.elements} className="flex items-center gap-3">
+            <div className="flex items-center gap-3">
               <div className="w-28 flex gap-1 flex-shrink-0">
                 {elements.map((el) => {
                   const colors = ELEMENT_COLORS[el.trim()] || { text: 'text-gray-400' }
@@ -156,8 +148,7 @@ function ComboBars({ data, title, subtitle, valueKey, valueLabel, sortKey }) {
               <div className="text-xs text-text-muted w-32 text-right">{label}</div>
             </div>
           )
-        })}
-      </div>
+        }} />
     </div>
   )
 }
@@ -174,7 +165,7 @@ export default function Elements() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   // Shared by every chart: which window, ending on which day, and whether it's playing
-  const [view, setView] = useState({ windowKey: 'all', endIdx: -1, playing: false })
+  const [view, setView] = useState({ windowKey: 'all', endIdx: -1, playing: false, speed: DEFAULT_SPEED })
 
   // Load event filters and avatar art on mount
   useEffect(() => {
@@ -221,7 +212,7 @@ export default function Elements() {
 
   // Bars and rows glide at one pace: linear while playing so each step blends into the next
   const motion = view.playing
-    ? { '--bar-ms': `${PLAY_TICK_MS}ms`, '--bar-ease': 'linear' }
+    ? { '--bar-ms': `${tickMs(view.speed)}ms`, '--bar-ease': 'linear' }
     : { '--bar-ms': '600ms', '--bar-ease': 'cubic-bezier(0.22, 1, 0.36, 1)' }
 
   return (
@@ -279,6 +270,7 @@ export default function Elements() {
               windowKey={view.windowKey}
               endIdx={endIdx}
               playing={view.playing}
+              speed={view.speed}
               onChange={setView}
             />
           </div>

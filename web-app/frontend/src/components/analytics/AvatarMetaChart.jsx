@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { getAvatarImagePath } from '@/utils/avatarBadges'
-import { countsAt } from '@/utils/elementTimeline'
-import useRankSlide from '@/hooks/useRankSlide'
+import { countsAt, windowSum } from '@/utils/elementTimeline'
+import RankedList from './RankedList'
 
 const TOP_N = 12
 
@@ -11,9 +11,23 @@ const TOP_N = 12
  */
 export default function AvatarMetaChart({ cumulative, endIdx, days, imageFiles = [] }) {
   const [showAll, setShowAll] = useState(false)
-  const listRef = useRankSlide()
+  const lastRank = useRef(new Map())
 
-  const rows = useMemo(() => countsAt(cumulative, endIdx, days), [cumulative, endIdx, days])
+  // Every avatar, ranked by count. Ties keep their previous order so near-equal
+  // avatars don't swap back and forth on every step; zero-count avatars sit
+  // below the visible rows and slide in when they show up.
+  const ranked = useMemo(() => {
+    const prev = lastRank.current
+    const far = Number.MAX_SAFE_INTEGER
+    return Object.entries(cumulative)
+      .map(([name, running]) => ({ name, count: windowSum(running, endIdx, days) }))
+      .sort((a, b) => b.count - a.count || (prev.get(a.name) ?? far) - (prev.get(b.name) ?? far) || a.name.localeCompare(b.name))
+  }, [cumulative, endIdx, days])
+  useEffect(() => {
+    lastRank.current = new Map(ranked.map((r, i) => [r.name, i]))
+  }, [ranked])
+
+  const rows = ranked.filter((r) => r.count > 0)
   const prevCounts = useMemo(() => {
     if (days == null || endIdx - days < 0) return null
     return Object.fromEntries(countsAt(cumulative, endIdx - days, days).map((r) => [r.name, r.count]))
@@ -21,7 +35,7 @@ export default function AvatarMetaChart({ cumulative, endIdx, days, imageFiles =
 
   const total = rows.reduce((s, r) => s + r.count, 0)
   const max = rows[0]?.count || 1
-  const shown = showAll ? rows : rows.slice(0, TOP_N)
+  const visible = showAll ? rows.length : Math.min(TOP_N, rows.length)
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
@@ -31,17 +45,16 @@ export default function AvatarMetaChart({ cumulative, endIdx, days, imageFiles =
         <span className="text-text"> · {total} deck{total !== 1 ? 's' : ''}</span>
       </p>
 
-      {shown.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="text-sm text-text-muted py-4">No decks reported in this window.</p>
       ) : (
-        <div ref={listRef} className="space-y-1.5">
-          {shown.map((r) => {
+        <RankedList items={ranked} itemKey={(r) => r.name} gap={6} visible={visible} renderItem={(r) => {
             const imgFile = getAvatarImagePath(r.name, imageFiles)
             const share = total ? ((r.count / total) * 100).toFixed(1) : '0.0'
             const prev = prevCounts ? prevCounts[r.name] || 0 : null
             const delta = prev == null ? null : r.count - prev
             return (
-              <div key={r.name} data-rank-key={r.name} className="flex items-center gap-2" data-testid="meta-row">
+              <div className="flex items-center gap-2" data-testid={r.count > 0 ? 'meta-row' : undefined}>
                 <div className="w-36 sm:w-44 flex items-center gap-2 flex-shrink-0 min-w-0">
                   {imgFile ? (
                     <img src={`/avatar-images/${imgFile}`} alt="" className="w-6 h-6 rounded-full object-cover object-top flex-shrink-0" />
@@ -66,8 +79,7 @@ export default function AvatarMetaChart({ cumulative, endIdx, days, imageFiles =
                 </div>
               </div>
             )
-          })}
-        </div>
+          }} />
       )}
 
       {rows.length > TOP_N && (

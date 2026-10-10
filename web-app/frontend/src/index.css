@@ -33,9 +33,21 @@ option {
   transition: width var(--bar-ms, 600ms) var(--bar-ease, cubic-bezier(0.22, 1, 0.36, 1));
 }
 
+.timeline-row {
+  transition:
+    transform var(--bar-ms, 600ms) var(--bar-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    opacity var(--bar-ms, 600ms) ease;
+  will-change: transform;
+}
+
+.timeline-list {
+  transition: height var(--bar-ms, 600ms) var(--bar-ease, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
 @media (prefers-reduced-motion: reduce) {
   .timeline-bar,
-  [data-rank-key] {
+  .timeline-row,
+  .timeline-list {
     transition: none !important;
   }
 }

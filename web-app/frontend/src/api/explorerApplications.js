@@ -6,8 +6,11 @@ export const submitApplication = (payload) =>
 
 export const getMyApplication = () => get('/api/explorer/applications/mine')
 
-export const updateMyApplication = (payload) =>
-  put('/api/explorer/applications/mine', payload)
+// With an id, edits that application; without one, their newest.
+export const updateMyApplication = (id, payload) =>
+  id == null
+    ? put('/api/explorer/applications/mine', payload)
+    : put(`/api/explorer/applications/mine/${id}`, payload)
 
 // Explorer admin review
 export const getApplications = (status) =>

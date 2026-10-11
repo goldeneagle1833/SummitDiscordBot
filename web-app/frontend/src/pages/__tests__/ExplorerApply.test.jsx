@@ -134,6 +134,49 @@ describe('ExplorerApply page', () => {
       read_navigator_role: true,
     })
     expect(await screen.findByText(/your application is in/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Submit another application' })).toBeInTheDocument()
+  })
+
+  it('lists their applications with a button to submit another', async () => {
+    getMyApplication.mockResolvedValue({
+      applications: [
+        { id: 2, status: 'pending', editable: true, lgs_name: 'Second Store', first_name: 'Ruben',
+          last_name: 'Sanchez', email: 'r@example.com', city: 'Richmond' },
+        { id: 1, status: 'approved', editable: false, lgs_name: 'Waterloo Games' },
+      ],
+    })
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerApply />)
+
+    expect(await screen.findByText('Your applications')).toBeInTheDocument()
+    expect(screen.getByText('Second Store')).toBeInTheDocument()
+    expect(screen.getByText('Waterloo Games')).toBeInTheDocument()
+    expect(screen.getByText('Approved')).toBeInTheDocument()
+    // Only the undecided one can still be edited.
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: 'Submit another application' }))
+    // A blank application, with their contact details carried over.
+    expect(await screen.findByLabelText(/First name/)).toHaveValue('Ruben')
+    expect(screen.getByLabelText(/Email address/)).toHaveValue('r@example.com')
+    expect(screen.getByLabelText(/City or town/)).toHaveValue('')
+    expect(screen.getByLabelText(/Name of the LGS/)).toHaveValue('')
+    expect(screen.getByRole('button', { name: /Submit Application/ })).toBeInTheDocument()
+  })
+
+  it('submits a second application as a new one', async () => {
+    getMyApplication.mockResolvedValue({
+      applications: [{ id: 1, status: 'pending', editable: true, lgs_name: 'Waterloo Games' }],
+    })
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerApply />)
+
+    await user.click(await screen.findByRole('button', { name: 'Submit another application' }))
+    await fillRequiredFields(user)
+    await user.click(screen.getByRole('button', { name: /Submit Application/ }))
+
+    await waitFor(() => expect(submitApplication).toHaveBeenCalled())
+    expect(updateMyApplication).not.toHaveBeenCalled()
   })
 
   it('reopens the answers for editing when an application is still open', async () => {
@@ -142,8 +185,10 @@ describe('ExplorerApply page', () => {
         id: 1, status: 'pending', editable: true, first_name: 'Ruben', city: 'Mechanicsville',
       },
     })
+    const user = userEvent.setup()
     renderWithRouter(<ExplorerApply />)
 
+    await user.click(await screen.findByRole('button', { name: 'Edit' }))
     expect(await screen.findByText(/You have already applied/)).toBeInTheDocument()
     // Prefilled from what they sent, not a blank form.
     await waitFor(() => expect(screen.getByLabelText(/First name/)).toHaveValue('Ruben'))
@@ -179,6 +224,7 @@ describe('ExplorerApply page', () => {
     const user = userEvent.setup()
     renderWithRouter(<ExplorerApply />)
 
+    await user.click(await screen.findByRole('button', { name: 'Edit' }))
     const city = await screen.findByLabelText(/City or town/)
     // Wait for the prefill to land before editing, or it overwrites the change.
     await waitFor(() => expect(city).toHaveValue('Mechanicsville'))
@@ -187,7 +233,8 @@ describe('ExplorerApply page', () => {
     await user.click(screen.getByRole('button', { name: /Update Application/ }))
 
     await waitFor(() => expect(updateMyApplication).toHaveBeenCalled())
-    expect(updateMyApplication.mock.calls[0][0].city).toBe('Richmond')
+    expect(updateMyApplication.mock.calls[0][0]).toBe(1)
+    expect(updateMyApplication.mock.calls[0][1].city).toBe('Richmond')
     expect(submitApplication).not.toHaveBeenCalled()
     expect(await screen.findByText(/application has been updated/)).toBeInTheDocument()
   })
@@ -199,6 +246,7 @@ describe('ExplorerApply page', () => {
     renderWithRouter(<ExplorerApply />)
 
     expect(await screen.findByText(/has made its decision/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Submit another application' })).toBeInTheDocument()
     expect(screen.getByText('Approved')).toBeInTheDocument()
     expect(screen.getByText(/Congratulations/)).toBeInTheDocument()
     expect(screen.queryByLabelText(/First name/)).toBeNull()

@@ -87,12 +87,23 @@ class ExplorerApplicationRepository:
             return dict(row) if row else None
 
     def get_by_discord_user(self, discord_user_id: str) -> dict | None:
+        """The user's most recent application, if any."""
+        applications = self.list_by_discord_user(discord_user_id)
+        return applications[0] if applications else None
+
+    def list_by_discord_user(self, discord_user_id: str) -> list[dict]:
+        """Every application a user has made, newest first.
+
+        One person may apply more than once, e.g. to host at several stores.
+        """
         with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM explorer_applications WHERE discord_user_id = ?",
+            rows = conn.execute(
+                """SELECT * FROM explorer_applications
+                   WHERE discord_user_id = ?
+                   ORDER BY id DESC""",
                 (str(discord_user_id),),
-            ).fetchone()
-            return dict(row) if row else None
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def get_by_handle(self, discord_handle: str | None) -> dict | None:
         """Find an application by Discord handle, ignoring case and a leading @."""

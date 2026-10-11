@@ -29,8 +29,6 @@ const STATUS_LABELS = {
   rejected: 'Not accepted',
 }
 
-const DECIDED = ['approved', 'rejected']
-
 const SORCERY_STORES_URL = 'https://sorcerytcg.com/stores'
 // Kept in step with SORCERY_STORE_URL_RE on the server.
 const STORE_URL_RE = /^https?:\/\/(play\.)?sorcerytcg\.com\/stores\/[A-Za-z0-9_-]+/i
@@ -55,17 +53,7 @@ const inputClass =
   'w-full bg-bg-surface border border-border rounded px-3 py-2 text-sm text-text-primary' +
   ' focus:outline-none focus:border-primary/60 placeholder:text-text-muted'
 
-export default function ExplorerApply() {
-  usePageTitle('Apply to Host an Explorer Event')
-
-  const { user, loading } = useAuth()
-  const [existing, setExisting] = useState(null)
-  const [checking, setChecking] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState(null)
-  const [submitted, setSubmitted] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [form, setForm] = useState({
+const EMPTY_FORM = {
     first_name: '',
     last_name: '',
     email: '',
@@ -86,17 +74,73 @@ export default function ExplorerApply() {
     reference_contact: '',
     anything_else: '',
     referral: '',
+}
+
+// Carried from their latest application into a new one so they don't retype them.
+const CONTACT_FIELDS = ['first_name', 'last_name', 'email', 'discord_handle']
+
+// Copy an application's saved answers over a form, skipping blanks.
+function fillForm(base, application, keys = Object.keys(base)) {
+  const filled = { ...base }
+  keys.forEach((key) => {
+    const value = application?.[key]
+    if (value === null || value === undefined) return
+    filled[key] = key === 'read_navigator_role' ? Boolean(value) : value
   })
+  return filled
+}
+
+// An admin-added row the applicant hasn't filled in themselves yet.
+const isUnfinishedCandidate = (application) =>
+  application.source === 'admin_added' &&
+  application.editable !== false &&
+  !application.read_navigator_role
+
+export default function ExplorerApply() {
+  usePageTitle('Apply to Host an Explorer Event')
+
+  const { user, loading } = useAuth()
+  // All of the user's applications, newest first. One person may apply more
+  // than once, e.g. to host at several stores.
+  const [applications, setApplications] = useState([])
+  // null = writing a new application; otherwise the id being edited.
+  const [editingId, setEditingId] = useState(null)
+  // 'form' shows the form; 'list' shows their applications.
+  const [view, setView] = useState('form')
+  const [checking, setChecking] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState(null)
+  const [submitted, setSubmitted] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [form, setForm] = useState(EMPTY_FORM)
+
+  const loadApplications = () =>
+    getMyApplication().then((data) => {
+      const list = data.applications || (data.application ? [data.application] : [])
+      setApplications(list)
+      return list
+    })
 
   useEffect(() => {
     if (!user) {
       setChecking(false)
       return
     }
-    getMyApplication()
-      .then((data) => setExisting(data.application))
-      .catch(() => setExisting(null))
+    loadApplications()
+      .then((list) => {
+        if (list.length === 0) return
+        // An admin started one for them: take them straight to finishing it.
+        const candidate = list.length === 1 && isUnfinishedCandidate(list[0]) ? list[0] : null
+        if (candidate) {
+          setEditingId(candidate.id)
+          setForm((f) => fillForm(f, candidate))
+        } else {
+          setView('list')
+        }
+      })
+      .catch(() => setApplications([]))
       .finally(() => setChecking(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   useEffect(() => {
@@ -106,19 +150,39 @@ export default function ExplorerApply() {
     }
   }, [user])
 
-  // Load their existing answers in so they can correct them.
-  useEffect(() => {
-    if (!existing) return
-    setForm((f) => {
-      const filled = { ...f }
-      Object.keys(f).forEach((key) => {
-        const value = existing[key]
-        if (value === null || value === undefined) return
-        filled[key] = key === 'read_navigator_role' ? Boolean(value) : value
-      })
-      return filled
-    })
-  }, [existing])
+  const sessionHandle = () =>
+    user?.username && user?.auth_provider === 'discord' ? user.username : ''
+
+  // Load an application's answers in so they can correct them.
+  const startEditing = (application) => {
+    setEditingId(application.id)
+    setForm(fillForm({ ...EMPTY_FORM, discord_handle: sessionHandle() }, application))
+    setSubmitted(false)
+    setSaved(false)
+    setError(null)
+    setView('form')
+    window.scrollTo({ top: 0 })
+  }
+
+  // A fresh application, with their contact details carried over.
+  const startNew = () => {
+    setEditingId(null)
+    setForm(
+      fillForm({ ...EMPTY_FORM, discord_handle: sessionHandle() }, applications[0], CONTACT_FIELDS)
+    )
+    setSubmitted(false)
+    setSaved(false)
+    setError(null)
+    setView('form')
+    window.scrollTo({ top: 0 })
+  }
+
+  const showList = () => {
+    setSubmitted(false)
+    setSaved(false)
+    setError(null)
+    setView('list')
+  }
 
   const update = (name) => (e) => {
     const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value
@@ -132,8 +196,8 @@ export default function ExplorerApply() {
       ? 'That doesn’t look like a sorcerytcg.com store page. It should start with https://sorcerytcg.com/stores/'
       : null
 
+  const existing = applications.find((a) => a.id === editingId) || null
   const editing = Boolean(existing) && existing.editable !== false
-  const locked = Boolean(existing) && !editing
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -146,13 +210,18 @@ export default function ExplorerApply() {
     setSaved(false)
     try {
       if (editing) {
-        const data = await updateMyApplication(form)
-        setExisting(data.application)
+        const data = await updateMyApplication(existing.id, form)
+        setApplications((list) =>
+          list.map((a) => (a.id === existing.id ? { ...a, ...data.application } : a))
+        )
         setSaved(true)
         window.scrollTo({ top: 0, behavior: 'smooth' })
       } else {
-        await submitApplication(form)
+        const data = await submitApplication(form)
+        const newId = data?.application_id ?? null
+        setEditingId(newId)
         setSubmitted(true)
+        loadApplications().catch(() => {})
       }
     } catch (err) {
       setError(err.message || 'Something went wrong submitting your application.')
@@ -188,32 +257,21 @@ export default function ExplorerApply() {
     )
   }
 
-  if (submitted || locked) {
-    const status = existing?.status || 'pending'
-    const decided = DECIDED.includes(status)
+  if (submitted) {
+    const justSubmitted = applications.find((a) => a.id === editingId)
     return (
       <div className="max-w-content mx-auto px-4 py-8 space-y-4">
         <h1 className="text-2xl font-display text-text-primary">
           Apply to Host an Explorer Event
         </h1>
         <div className="bg-bg-surface border border-border rounded-lg p-6 space-y-2">
-          <p className="text-text-primary font-medium">
-            {submitted
-              ? 'Thanks — your application is in.'
-              : decided
-                ? 'The Council has made its decision.'
-                : 'Your application is with the Council.'}
+          <p className="text-text-primary font-medium">Thanks — your application is in.</p>
+          <p className="text-sm text-text-muted">
+            Status: <span className="text-text-primary">{STATUS_LABELS.pending}</span>
           </p>
           <p className="text-sm text-text-muted">
-            Status: <span className="text-text-primary">{STATUS_LABELS[status] || status}</span>
-          </p>
-          <p className="text-sm text-text-muted">
-            {status === 'approved'
-              ? "Congratulations! We'll be in touch with next steps."
-              : status === 'rejected'
-                ? "Thank you for applying. We weren't able to accept your application this time."
-                : 'The Explorer Series Council reviews applications in batches.'}{' '}
-            If you have questions or need to change anything, join the{' '}
+            The Explorer Series Council reviews applications in batches. If you have questions
+            or need to change anything, join the{' '}
             <a
               href={EXPLORER_DISCORD_INVITE}
               target="_blank"
@@ -225,12 +283,20 @@ export default function ExplorerApply() {
             and ask for help in our #questions channel.
           </p>
           <div className="flex flex-wrap items-center gap-4 pt-1">
-            {submitted && (
+            {justSubmitted && (
               <button
-                onClick={() => { setSubmitted(false); setSaved(false) }}
+                onClick={() => startEditing(justSubmitted)}
                 className="text-sm text-primary hover:underline"
               >
                 Edit your application
+              </button>
+            )}
+            <button onClick={startNew} className="text-sm text-primary hover:underline">
+              Submit another application
+            </button>
+            {applications.length > 1 && (
+              <button onClick={showList} className="text-sm text-primary hover:underline">
+                View all your applications
               </button>
             )}
             <Link to="/explorer" className="text-sm text-primary hover:underline">
@@ -238,6 +304,94 @@ export default function ExplorerApply() {
             </Link>
           </div>
         </div>
+      </div>
+    )
+  }
+
+  if (view === 'list') {
+    return (
+      <div className="max-w-content mx-auto px-4 py-8 space-y-4">
+        <h1 className="text-2xl font-display text-text-primary">
+          Apply to Host an Explorer Event
+        </h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-text-primary font-medium">
+            {applications.length === 1 ? 'Your application' : 'Your applications'}
+          </p>
+          <button
+            onClick={startNew}
+            className="px-4 py-2 text-sm bg-secondary text-black font-medium rounded hover:bg-secondary/80 transition-colors"
+          >
+            Submit another application
+          </button>
+        </div>
+        <ul className="space-y-3">
+          {applications.map((app) => {
+            const status = app.status || 'pending'
+            const canEdit = app.editable !== false
+            return (
+              <li
+                key={app.id}
+                className="bg-bg-surface border border-border rounded-lg p-4 space-y-1"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="text-text-primary font-medium">
+                    {app.lgs_name || 'Application'}
+                    {(app.city || app.state) && (
+                      <span className="text-sm text-text-muted font-normal">
+                        {' '}· {[app.city, app.state].filter(Boolean).join(', ')}
+                      </span>
+                    )}
+                  </p>
+                  {canEdit && (
+                    <button
+                      onClick={() => startEditing(app)}
+                      className="text-sm text-primary hover:underline"
+                    >
+                      {isUnfinishedCandidate(app) ? 'Finish this application' : 'Edit'}
+                    </button>
+                  )}
+                </div>
+                <p className="text-sm text-text-muted">
+                  Status: <span className="text-text-primary">{STATUS_LABELS[status] || status}</span>
+                </p>
+                {status === 'approved' && (
+                  <p className="text-sm text-text-muted">
+                    The Council has made its decision. Congratulations! We&apos;ll be in touch
+                    with next steps.
+                  </p>
+                )}
+                {status === 'rejected' && (
+                  <p className="text-sm text-text-muted">
+                    The Council has made its decision. Thank you for applying. We weren&apos;t
+                    able to accept your application this time.
+                  </p>
+                )}
+                {isUnfinishedCandidate(app) && (
+                  <p className="text-xs text-text-muted">
+                    An Explorer admin has already started this application for you.
+                  </p>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+        <p className="text-sm text-text-muted">
+          The Explorer Series Council reviews applications in batches. You can change an application until the Council publishes its decision. If you have
+          questions, join the{' '}
+          <a
+            href={EXPLORER_DISCORD_INVITE}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:underline"
+          >
+            Explorer Series Discord server
+          </a>{' '}
+          and ask for help in our #questions channel.
+        </p>
+        <Link to="/explorer" className="inline-block text-sm text-primary hover:underline">
+          Back to the Community Series
+        </Link>
       </div>
     )
   }
@@ -284,6 +438,19 @@ export default function ExplorerApply() {
           <p className="text-xs text-text-muted">
             You can change your answers below until the Council publishes its decision.
           </p>
+        </div>
+      )}
+
+      {applications.length > 0 && (
+        <div className="mb-6 flex flex-wrap items-center gap-4">
+          <button onClick={showList} className="text-sm text-primary hover:underline">
+            ← Back to your applications
+          </button>
+          {editing && (
+            <button onClick={startNew} className="text-sm text-primary hover:underline">
+              Submit another application
+            </button>
+          )}
         </div>
       )}
 

@@ -78,10 +78,11 @@ def create_explorer_application_tables(db_path=None):
         ON explorer_applications (status)
     """)
 
-    # One application per Discord account; admin-added candidates have a NULL
-    # discord_user_id and SQLite treats NULLs as distinct, so they don't collide.
+    # One person may submit several applications (e.g. for different stores),
+    # so this index is no longer unique. Drop the old unique one if present.
+    cursor.execute("DROP INDEX IF EXISTS idx_explorer_applications_user")
     cursor.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_explorer_applications_user
+        CREATE INDEX IF NOT EXISTS idx_explorer_applications_user_id
         ON explorer_applications (discord_user_id)
         WHERE discord_user_id IS NOT NULL
     """)

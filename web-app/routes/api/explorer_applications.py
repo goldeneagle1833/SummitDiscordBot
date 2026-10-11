@@ -1,7 +1,7 @@
 """Explorer Series host application API routes.
 
-Public side: a logged-in Discord user submits one application to host an
-Explorer Series event. Admin side: Explorer admins review applications on a
+Public side: a logged-in Discord user submits applications to host Explorer
+Series events (one person may apply more than once, e.g. for several stores). Admin side: Explorer admins review applications on a
 map, score them on three criteria, leave notes and approve or reject.
 """
 
@@ -116,6 +116,18 @@ def _claim_candidate(repo: ExplorerApplicationRepository, user_id: str) -> dict 
     return repo.claim_candidate(user_id, session.get("username"))
 
 
+def _unfinished_candidate(repo: ExplorerApplicationRepository, user_id: str) -> dict | None:
+    """An admin-added row this user already claimed but never filled in themselves."""
+    for application in repo.list_by_discord_user(user_id):
+        if (
+            application.get("source") == "admin_added"
+            and not application.get("read_navigator_role")
+            and _is_editable(application)
+        ):
+            return application
+    return None
+
+
 @explorer_applications_bp.route("", methods=["POST"])
 @require_auth
 def submit_application():
@@ -145,19 +157,13 @@ def submit_application():
         }), 400
 
     repo = ExplorerApplicationRepository()
-    if repo.get_by_discord_user(user_id):
-        return jsonify({
-            "success": False,
-            "error": "You have already submitted an application. Contact an Explorer"
-                     " admin if you need to change it.",
-        }), 409
 
     if session.get("auth_provider") == "discord":
         fields.setdefault("discord_handle", username or "")
 
     # An admin may have pencilled this person in by handle already. Fill in
     # that row rather than creating a second one for the same person.
-    candidate = _claim_candidate(repo, user_id)
+    candidate = _unfinished_candidate(repo, user_id) or _claim_candidate(repo, user_id)
     if candidate:
         application_id = candidate["id"]
         repo.update_application(application_id, fields)
@@ -176,14 +182,25 @@ def submit_application():
 @explorer_applications_bp.route("/mine", methods=["GET"])
 @require_auth
 def my_application():
-    """Return the logged-in user's own application, if they have one."""
+    """Return the logged-in user's own applications, newest first.
+
+    "application" is the newest one, kept for older clients.
+    """
     user_id, _ = _current_user()
     if not user_id:
-        return jsonify({"success": True, "application": None}), 200
+        return jsonify({"success": True, "application": None, "applications": []}), 200
 
     repo = ExplorerApplicationRepository()
-    application = repo.get_by_discord_user(user_id) or _claim_candidate(repo, user_id)
-    return jsonify({"success": True, "application": _applicant_view(application)}), 200
+    applications = repo.list_by_discord_user(user_id)
+    if not applications:
+        candidate = _claim_candidate(repo, user_id)
+        applications = [candidate] if candidate else []
+    views = [_applicant_view(a) for a in applications]
+    return jsonify({
+        "success": True,
+        "application": views[0] if views else None,
+        "applications": views,
+    }), 200
 
 
 # Applicants can keep editing until a decision is published: the Council may
@@ -209,17 +226,26 @@ def _applicant_view(application: dict | None) -> dict | None:
 
 
 @explorer_applications_bp.route("/mine", methods=["PUT"])
+@explorer_applications_bp.route("/mine/<int:application_id>", methods=["PUT"])
 @require_auth
-def update_my_application():
-    """Let an applicant correct their own application until a decision is published."""
+def update_my_application(application_id=None):
+    """Let an applicant correct one of their applications until a decision is published.
+
+    Without an id this edits their newest application.
+    """
     user_id, _ = _current_user()
     if not user_id:
         return jsonify({"success": False, "error": "You must be logged in"}), 401
 
     repo = ExplorerApplicationRepository()
-    existing = repo.get_by_discord_user(user_id)
+    if application_id is None:
+        existing = repo.get_by_discord_user(user_id)
+    else:
+        existing = repo.get_application(application_id)
+        if existing and str(existing.get("discord_user_id") or "") != user_id:
+            existing = None
     if not existing:
-        return jsonify({"success": False, "error": "You have not applied yet"}), 404
+        return jsonify({"success": False, "error": "Application not found"}), 404
 
     if not _is_editable(existing):
         return jsonify({

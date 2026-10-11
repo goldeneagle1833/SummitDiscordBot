@@ -125,14 +125,43 @@ class TestSubmitApplication:
         assert res.status_code == 400
         assert "Navigator" in res.get_json()["error"]
 
-    def test_one_application_per_user(self, applicant_session):
-        assert applicant_session.post(
-            "/api/explorer/applications", json=valid_application()
-        ).status_code == 201
-        res = applicant_session.post(
-            "/api/explorer/applications", json=valid_application()
+    def test_same_user_can_submit_several_applications(self, applicant_session):
+        first = applicant_session.post("/api/explorer/applications", json=valid_application())
+        assert first.status_code == 201
+        second = applicant_session.post(
+            "/api/explorer/applications",
+            json=valid_application(lgs_name="Second Store", city="Richmond"),
         )
-        assert res.status_code == 409
+        assert second.status_code == 201
+        assert second.get_json()["application_id"] != first.get_json()["application_id"]
+
+        mine = applicant_session.get("/api/explorer/applications/mine").get_json()
+        assert [a["lgs_name"] for a in mine["applications"]] == ["Second Store", "Waterloo Games"]
+        assert mine["application"]["lgs_name"] == "Second Store"
+
+    def test_editing_one_application_leaves_the_other_alone(self, applicant_session):
+        first_id = applicant_session.post(
+            "/api/explorer/applications", json=valid_application()
+        ).get_json()["application_id"]
+        applicant_session.post(
+            "/api/explorer/applications", json=valid_application(lgs_name="Second Store")
+        )
+        res = applicant_session.put(
+            f"/api/explorer/applications/mine/{first_id}", json={"city": "Norfolk"}
+        )
+        assert res.status_code == 200
+        repo = ExplorerApplicationRepository()
+        cities = {a["lgs_name"]: a["city"] for a in repo.list_applications()}
+        assert cities == {"Waterloo Games": "Norfolk", "Second Store": "Mechanicsville"}
+
+    def test_cannot_edit_someone_elses_application(self, applicant_session):
+        other_id = ExplorerApplicationRepository().create_application(
+            "999", {"first_name": "Other"}, source="application"
+        )
+        res = applicant_session.put(
+            f"/api/explorer/applications/mine/{other_id}", json={"city": "Norfolk"}
+        )
+        assert res.status_code == 404
 
     def test_geocoding_is_kicked_off(self, applicant_session, no_background_geocoding):
         applicant_session.post("/api/explorer/applications", json=valid_application())
@@ -382,13 +411,22 @@ class TestCandidates:
 
         # Now that it's theirs, submitting fills it in rather than duplicating.
         res = applicant_session.post("/api/explorer/applications", json=valid_application())
-        assert res.status_code == 409
+        assert res.status_code == 201
+        assert res.get_json()["application_id"] == candidate_id
         res = applicant_session.put(
             "/api/explorer/applications/mine", json=valid_application(city="Richmond")
         )
         assert res.status_code == 200
         assert res.get_json()["application"]["city"] == "Richmond"
         assert len(ExplorerApplicationRepository().list_applications()) == 1
+
+        # Once it's filled in, a further submission is a separate application.
+        res = applicant_session.post(
+            "/api/explorer/applications", json=valid_application(lgs_name="Second Store")
+        )
+        assert res.status_code == 201
+        assert res.get_json()["application_id"] != candidate_id
+        assert len(ExplorerApplicationRepository().list_applications()) == 2
 
     def test_submitting_fills_in_a_matching_candidate_instead_of_duplicating(
         self, applicant_session

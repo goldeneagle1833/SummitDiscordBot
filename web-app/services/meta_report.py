@@ -49,7 +49,7 @@ EASTERN = ZoneInfo("America/New_York")
 MIN_ARCHETYPE_GAMES = 20   # deck-games before an Avatar + element pair is listed...
 MIN_ARCHETYPE_SHARE = 0.01  # ...and at least 1% of the period's decks
 MIN_MATCHUP_GAMES = 10     # games before a matchup cell shows a number
-MIN_SLEEPER_GAMES = 30     # player-games before a card can be the sleeper pick
+MIN_SLEEPER_GAMES = 20    # PSO hides played win rates under 20 games, so this is its own floor
 SLEEPER_MAX_SHARE = 0.10   # sleeper cards are in fewer than 10% of decks
 MATCHUP_SIZE = 6           # most-played archetypes in the matchup grid
 MOVERS = 5                 # risers and fallers shown
@@ -357,12 +357,14 @@ def card_section(body: dict | None, prev_body: dict | None, history: list[dict],
         def plain(key):
             row = now[key]
             return {"name": row["name"], "share": _pct(row["share"]), "change": None,
-                    "winRate": _pct(row["playedWinRate"]), "trend": trend(key)}
+                    "winRate": _pct(row["playedWinRate"]), "games": row["playedGames"], "trend": trend(key)}
 
         by_share = sorted((k for k, r in now.items() if r["share"]), key=lambda k: -now[k]["share"])
+        # Only winning cards, so a 47% card never shows up under "best".
         by_wins = sorted(
             (k for k, r in now.items()
-             if r["playedWinRate"] is not None and (r["playedGames"] or 0) >= MIN_SLEEPER_GAMES),
+             if r["playedWinRate"] is not None and r["playedWinRate"] > 0.5
+             and (r["playedGames"] or 0) >= MIN_SLEEPER_GAMES),
             key=lambda k: -now[k]["playedWinRate"],
         )
         rising = [plain(k) for k in by_share[:MOVERS]]
@@ -371,6 +373,7 @@ def card_section(body: dict | None, prev_body: dict | None, history: list[dict],
         (row["playedWinRate"], key) for key, row in now.items()
         if row["share"] is not None and row["share"] < SLEEPER_MAX_SHARE
         and (row["playedGames"] or 0) >= MIN_SLEEPER_GAMES and row["playedWinRate"] is not None
+        and row["playedWinRate"] > 0.5
     ]
     sleeper = None
     if sleepers:
@@ -387,6 +390,8 @@ def card_section(body: dict | None, prev_body: dict | None, history: list[dict],
         "rising": rising,
         "falling": falling,
         "sleeper": sleeper,
+        "minGames": MIN_SLEEPER_GAMES,
+        "maxSleeperShare": _pct(SLEEPER_MAX_SHARE),
         "index": index,
     }
 

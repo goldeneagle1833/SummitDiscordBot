@@ -361,3 +361,10 @@ def test_tiers_group_by_avatar_only():
             [{"winner": ("Imposter", "Air / Earth"), "loser": ("Druid", "Water")}] * 15
     rows = meta_report.archetype_stats(games)["archetypes"]
     assert [(a["avatar"], a["elements"], a["games"]) for a in rows] == [("Imposter", "", 30), ("Druid", "", 30)]
+
+
+def test_best_win_rate_and_sleeper_skip_losing_cards():
+    now = cards_body([("toolbox", 0.71, 40, 0.469), ("grapple", 0.56, 25, 0.56), ("odd", 0.04, 22, 0.45)])
+    section = meta_report.card_section(now, None, [], "2026-09-15")
+    assert [c["name"] for c in section["falling"]] == ["Grapple"]
+    assert section["sleeper"] is None

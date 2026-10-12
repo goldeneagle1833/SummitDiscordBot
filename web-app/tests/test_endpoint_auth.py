@@ -150,6 +150,15 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.deck_archetypes.list_archetypes",
     "api.deck_archetypes.get_archetype",
 
+    # -- Meta Report (public read-only, plus email sign-up) --
+    # Sign-up is throttled per client and only emails a confirmation link;
+    # confirm and unsubscribe need the subscriber's secret token.
+    "api.meta_reports.list_reports",
+    "api.meta_reports.get_report",
+    "api.meta_reports.subscribe",
+    "api.meta_reports.confirm_email",
+    "api.meta_reports.unsubscribe_email",
+
     # -- Ranked analytics (public read-only proxy to Play Sorcery Online) --
     # The shared partner key stays server-side; only the four read routes are
     # forwarded and each client is throttled in services/ranked_analytics.py.
@@ -239,6 +248,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "og_preview.og_avatars_list",
     "og_preview.og_avatar_detail",
     "og_preview.og_card_detail",
+    "og_preview.og_meta_report",
 
     # -- Feedback (public submission) --
     "api.feedback.submit_feedback",

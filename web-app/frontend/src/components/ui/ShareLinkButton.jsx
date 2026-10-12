@@ -7,8 +7,20 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  * on this origin so the pasted link works anywhere. If the clipboard is
  * blocked (insecure context, denied permission) the link is shown in a prompt
  * so the visitor can still copy it by hand.
+ *
+ * With `nativeShare`, devices that have a share sheet (phones, most tablets)
+ * open it instead, with `shareTitle` and `shareText` filled in; everything
+ * else falls back to copying the link.
  */
-export default function ShareLinkButton({ path, label = 'Share', className = '' }) {
+export default function ShareLinkButton({
+  path,
+  label = 'Share',
+  className = '',
+  hint = 'Copy a link to this event',
+  nativeShare = false,
+  shareTitle,
+  shareText,
+}) {
   const [copied, setCopied] = useState(false)
   const timer = useRef(null)
 
@@ -18,6 +30,15 @@ export default function ShareLinkButton({ path, label = 'Share', className = '' 
     e.preventDefault()
     e.stopPropagation()
     const url = new URL(path, window.location.origin).toString()
+    if (nativeShare && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: shareTitle, text: shareText, url })
+        return
+      } catch (err) {
+        // Closing the share sheet isn't an error; anything else falls back to copying.
+        if (err?.name === 'AbortError') return
+      }
+    }
     try {
       await navigator.clipboard.writeText(url)
       setCopied(true)
@@ -26,14 +47,14 @@ export default function ShareLinkButton({ path, label = 'Share', className = '' 
     } catch {
       window.prompt('Copy this link:', url)
     }
-  }, [path])
+  }, [path, nativeShare, shareTitle, shareText])
 
   return (
     <button
       type="button"
       onClick={copy}
       className={`inline-flex items-center gap-1.5 rounded transition-colors whitespace-nowrap ${className}`}
-      title="Copy a link to this event"
+      title={hint}
     >
       {copied ? (
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden="true">

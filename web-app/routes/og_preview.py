@@ -408,6 +408,46 @@ def og_elo():
     )
 
 
+def _meta_report_og(slug: str | None):
+    from repositories.meta_reports import MetaReportRepository
+    from services.meta_report import Period
+
+    repo = MetaReportRepository()
+    if slug is None:
+        latest = repo.list_reports(published_only=True)
+        slug = latest[0]["slug"] if latest else None
+    report = repo.get(slug) if slug else None
+    if not report or report["status"] != "published":
+        return None
+    story = report.get("story") or []
+    label = Period.from_slug(report["slug"]).label()
+    description = " ".join(s.get("headline", "") for s in story[:2]) or \
+        "What the Summit is playing and winning with."
+    return _og_html(
+        title=f"Meta Report: {label} — Sorcerers Summit",
+        description=description,
+        url=f"{SITE_URL}/meta-report/{report['slug']}",
+    )
+
+
+@og_preview_bp.route("/meta-report")
+@og_preview_bp.route("/meta-report/<slug>")
+def og_meta_report(slug: str | None = None):
+    """OG preview for a Meta Report, so shared links show its headline takeaways."""
+    if not _is_bot() or (slug is not None and not re.match(r"^\d{4}-\d{2}-[ab]$", slug)):
+        return _serve_spa()
+    try:
+        html = _meta_report_og(slug)
+    except Exception:
+        logger.exception("Meta report OG preview failed")
+        html = None
+    return html or _og_html(
+        title="Meta Report — Sorcerers Summit",
+        description="What the Summit is playing and winning with, twice a month.",
+        url=f"{SITE_URL}/meta-report",
+    )
+
+
 @og_preview_bp.route("/avatars")
 def og_avatars_list():
     """OG preview for the avatars listing page."""

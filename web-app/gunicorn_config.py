@@ -79,6 +79,12 @@ def post_worker_init(worker):
         warm_timeline_cache()
     except Exception as e:
         worker.log.warning("Could not warm Elements timeline cache: %s", e)
+    try:
+        from services.meta_report import start_scheduler
+
+        start_scheduler()
+    except Exception as e:
+        worker.log.warning("Could not start the Meta Report scheduler: %s", e)
 
 
 def worker_exit(server, worker):

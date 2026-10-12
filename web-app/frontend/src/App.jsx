@@ -101,6 +101,9 @@ const Monitoring = lazyPage(() => import('@/pages/admin/Monitoring'))
 const BracketsAdmin = lazyPage(() => import('@/pages/admin/BracketsAdmin'))
 const UserProfiles = lazyPage(() => import('@/pages/admin/UserProfiles'))
 const ExplorerApplications = lazyPage(() => import('@/pages/admin/ExplorerApplications'))
+const MetaReportsAdmin = lazyPage(() => import('@/pages/admin/MetaReports'))
+const MetaReport = lazyPage(() => import('@/pages/MetaReport'))
+const MetaReportEmail = lazyPage(() => import('@/pages/MetaReportEmail'))
 const ExplorerApply = lazyPage(() => import('@/pages/ExplorerApply'))
 const SeasonFeedback = lazyPage(() => import('@/pages/SeasonFeedback'))
 
@@ -210,6 +213,9 @@ const router = createBrowserRouter([
       { path: '/stats/:folder', element: <StatsEvent /> },
       { path: '/deck-rec', element: <DeckRecommendations /> },
       { path: '/deck-archetypes', element: <DeckArchetypes /> },
+      { path: '/meta-report', element: <MetaReport /> },
+      { path: '/meta-report/email', element: <MetaReportEmail /> },
+      { path: '/meta-report/:slug', element: <MetaReport /> },
       { path: '/deck-rec/:deckId', element: <DeckDetail /> },
       // Phase 5: Cards & Avatars
       { path: '/avatars', element: <Avatars /> },
@@ -259,6 +265,7 @@ const router = createBrowserRouter([
       { path: '/admin/monitoring', element: <AdminGuard><Monitoring /></AdminGuard> },
       { path: '/admin/brackets', element: <AdminGuard><BracketsAdmin /></AdminGuard> },
       { path: '/admin/users', element: <AdminGuard><UserProfiles /></AdminGuard> },
+      { path: '/admin/meta-reports', element: <AdminGuard><MetaReportsAdmin /></AdminGuard> },
       { path: '/admin/explorer-applications', element: <ExplorerAdminGuard><LazyPage><ExplorerApplications /></LazyPage></ExplorerAdminGuard> },
       // Error & 404
       { path: '/error', element: <ErrorPage /> },

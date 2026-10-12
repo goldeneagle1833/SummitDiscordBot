@@ -16,6 +16,7 @@ const ALL_NAV_OPTIONS = [
   { to: '/avatars', label: 'Avatar Winrates' },
   { to: '/avatars/top-players', label: 'Avatar Top 16' },
   { to: '/cards/played-winrates', label: 'Card Win Rates' },
+  { to: '/meta-report', label: 'Meta Report' },
   { to: '/deck-rec', label: 'Sorcery Deck Rec' },
   { to: '/deck-builder', label: 'Deck Visualizer' },
   { to: '/elements', label: 'Element Winrates' },
@@ -778,6 +779,13 @@ export default function Nav() {
                 Users
               </Link>
               <Link
+                to="/admin/meta-reports"
+                className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
+                onClick={close}
+              >
+                Meta Reports
+              </Link>
+              <Link
                 to="/admin/explorer-applications"
                 className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
                 onClick={close}
@@ -789,6 +797,7 @@ export default function Nav() {
 
           {/* Stats */}
           <SidebarHeading label="Stats" />
+          <SidebarLink to="/meta-report" label="Meta Report" location={location} onClick={close} />
           <SidebarLink to="/avatars" label="Avatar Winrates" location={location} onClick={close} />
           <SidebarLink to="/avatars/top-players" label="Avatar Top 16" location={location} onClick={close} />
           <SidebarLink to="/cards/played-winrates" label="Card Win Rates" location={location} onClick={close} />

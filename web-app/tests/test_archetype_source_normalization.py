@@ -16,39 +16,36 @@ def normalize(events, sources):
     return normalized_tournaments(events, lambda folder: sources[folder])[0]
 
 
-def test_unordered_top8_does_not_invent_winner():
+def test_top8_list_order_is_finishing_order():
     folder = 'New Grand Contest 2026'
-    rows = [deck('third'), deck('first'), deck('other')]
-    tournaments = normalize([event(folder)], {folder: {'top8': rows, 'all': []}})
+    rows = [deck('first'), deck('second'), deck('third')]
+    full = rows + [deck('field')]
+    tournaments = normalize([event(folder)], {folder: {'top8': rows, 'all': full}})
     assert len(tournaments) == 1
-    assert [r['placement'] for r in tournaments[0]['records']] == [None] * 3
-    assert all(r['top8'] for r in tournaments[0]['records'])
+    ranks = {r['deck']['id']: (r['placement'], r['top8']) for r in tournaments[0]['records']}
+    assert ranks == {'first': (1, True), 'second': (2, True), 'third': (3, True), 'field': (None, False)}
 
 
-def test_sorcerycon_sources_merge_and_use_verified_placements():
+def test_sorcerycon_sources_merge_and_use_top8_order():
     top = 'Sorcery Con Constructed 2026'
     everyone = 'Every one at Sorcery Con Constructed 2026'
-    champion_id = 'cmlnbvekh01ci04lbaq8zhlyw'
-    third_id = 'cmlvftca200ti04jwfqkhgkks'
     tournaments = normalize([event(top), event(everyone)], {
-        top: {'top8': [deck(third_id), deck(champion_id)], 'all': []},
-        everyone: {'top8': [], 'all': [deck(champion_id), deck('other')]},
+        top: {'top8': [deck('champion'), deck('runner-up')], 'all': []},
+        everyone: {'top8': [], 'all': [deck('runner-up'), deck('other')]},
     })
     assert len(tournaments) == 1
     ranks = {r['deck']['id']: r['placement'] for r in tournaments[0]['records']}
-    assert ranks == {third_id: 3, champion_id: 1, 'other': None}
+    assert ranks == {'champion': 1, 'runner-up': 2, 'other': None}
     assert tournaments[0]['sourceFolders'] == [top, everyone]
 
 
-def test_sorceryfest_only_verified_first_and_second():
+def test_sorceryfest_counts_as_three_star_with_top8_order():
     folder = 'SorceryFest July 4th 2026'
-    champion = 'cmr0zmkay001f04jrwy07jb6r'
-    second = 'cmqdp9xxv002m04l2yilo1zpd'
-    rows = [deck(champion), deck(second)] + [deck(f'other{i}') for i in range(6)]
+    rows = [deck(f'd{i}') for i in range(8)]
     tournaments = normalize([event(folder, stars=1)], {folder: {'top8': rows, 'all': rows}})
     assert len(tournaments) == 1
     values = [(r['placement'], r['top8']) for r in tournaments[0]['records']]
-    assert values == [(1, True), (2, True)] + [(None, True)] * 6
+    assert values == [(i, True) for i in range(1, 9)]
 
 
 def test_gothic_one_finalists_are_top_cut_not_verified_top8():
@@ -60,13 +57,13 @@ def test_gothic_one_finalists_are_top_cut_not_verified_top8():
     assert result['cmlbrpok600j604lat67an03o']['placement'] == 1
 
 
-def test_gothic_three_ignores_duplicates_and_extras():
+def test_gothic_three_repeated_decks_count_once_in_list_order():
     folder = 'Summit Gothic Season 3 2026'
-    ids = ['cmn87gsij002b04l25ka4lbi2', 'b', 'c', 'cmn87gsij002b04l25ka4lbi2', 'b', 'c', 'd', 'e', 'unverified']
+    ids = ['a', 'b', 'c', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']
     tournaments = normalize([event(folder, stars=1)], {folder: {'top8': [deck(k) for k in ids], 'all': []}})
-    assert {r['deck']['id'] for r in tournaments[0]['records']} == set(ids[:8])
-    assert sum(r['placement'] == 1 for r in tournaments[0]['records']) == 1
-    assert sum(r['top8'] for r in tournaments[0]['records']) == 1
+    ranks = {r['deck']['id']: r['placement'] for r in tournaments[0]['records']}
+    assert ranks == {'a': 1, 'b': 2, 'c': 3, 'd': 4, 'e': 5, 'f': 6, 'g': 7, 'h': 8, 'i': None}
+    assert all(r['topCut'] for r in tournaments[0]['records'])
 
 
 def test_constructed_only_and_eligible_three_star():

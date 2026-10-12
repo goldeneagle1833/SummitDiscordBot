@@ -133,7 +133,7 @@ def test_placements_count_wins_and_top8(repo):
     group = groups_by_member(built(repo, "tournament"))["f0"]
 
     assert group["size"] == 10
-    assert group["wins"] == 0
+    assert group["wins"] == 1
     assert group["top8"] == 8
     assert group["topCut"] == 10
     assert group["events"] == 1
@@ -155,7 +155,7 @@ def test_ranked_record_merges_into_tournament_deck_and_casual_is_ignored(repo):
 
     assert detail["decks"]["f1"]["ranked"]["wins"] == 2
     assert detail["decks"]["f1"]["ranked"]["losses"] == 1
-    assert detail["decks"]["f1"]["entries"][0]["placement"] is None
+    assert detail["decks"]["f1"]["entries"][0]["placement"] == 1
     assert everything["meta"]["rankedGames"] == 3
 
 
@@ -290,7 +290,7 @@ def test_date_range_counts_only_results_inside_it(repo):
     group = groups_by_member(result)["l0"]
 
     assert "e0" in groups_by_member(result)  # still in the group for its ranked game
-    assert group["wins"] == 0  # no verified finishing placement
+    assert group["wins"] == 1  # only the fall winner
     assert group["events"] == 1
     assert group["rankedWins"] == 0 and group["rankedLosses"] == 1
     assert result["meta"]["rankedGames"] == 1

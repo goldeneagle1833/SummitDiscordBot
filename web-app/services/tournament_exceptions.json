@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "notes": "Historical tournament exceptions for Gothic-era constructed archetypes. Folder aliases refer to Summit's local event repository, not external deck downloads. Placement IDs are explicitly curated; never infer a winner solely from row order unless orderedTop8 is true. verifiedSeedEvents is a closed allow-list of historic 2026 3-star Constructed results, not an automatic rating inference.",
+  "notes": "Historical tournament exceptions for Gothic-era constructed archetypes. Folder aliases refer to Summit's local event repository. A Top 8 list is in finishing order and sets places 1-8; curated placements by Curiosa deck ID only apply to events without a Top 8 list. verifiedSeedEvents is a closed allow-list of historic 2026 3-star Constructed results.",
   "tournaments": {
     "sorcery-con-constructed-2026": {
       "name": "SorceryCon Constructed Championship",
@@ -11,15 +11,7 @@
         "Top 64 Sorcery Con Constructed 2026",
         "Top 32 Sorcery Con Constructed 2026"
       ],
-      "top8Source": "Sorcery Con Constructed 2026",
-      "top8VerifiedByList": true,
-      "orderedTop8": false,
-      "placementEvidence": "Curated from published deck titles; check against official results before treating as independently confirmed",
-      "placements": {
-        "cmlnbvekh01ci04lbaq8zhlyw": 1,
-        "cmlvftca200ti04jwfqkhgkks": 3,
-        "cmlvrv2i201ji04l1o5sdrrfs": 4
-      }
+      "top8Source": "Sorcery Con Constructed 2026"
     },
     "gothic-season-1": {
       "name": "Gothic Season 1",
@@ -28,7 +20,6 @@
         "Summit Gothic Season 1 2026"
       ],
       "allTopCut": true,
-      "top8VerifiedByList": false,
       "placements": {
         "cmlbrpok600j604lat67an03o": 1
       }
@@ -40,7 +31,6 @@
         "Sorcerers Summit Gothic Season 2 3-18-2026"
       ],
       "allTopCut": true,
-      "top8VerifiedByList": false,
       "placements": {
         "cmkdbuc0g00al04ieq562cwzv": 1
       },
@@ -52,12 +42,6 @@
         "Summit Gothic Season 3 2026"
       ],
       "allTopCut": true,
-      "takeFirstRows": 8,
-      "top8VerifiedByList": false,
-      "placements": {
-        "cmn87gsij002b04l25ka4lbi2": 1
-      },
-      "notes": "Historical analysis used the first eight rows (five distinct IDs); three rows repeat decks and subsequent source rows were not part of the validated subset.",
       "confirmedRating": 3
     },
     "gothic-season-4": {
@@ -65,18 +49,14 @@
       "folders": [
         "Summit Gothic Season 4"
       ],
-      "allTopCut": true,
-      "orderedTop8": true,
-      "top8VerifiedByList": true
+      "allTopCut": true
     },
     "gothic-season-5": {
       "name": "Gothic Season 5",
       "folders": [
         "Summit Season 5 Top Cut"
       ],
-      "allTopCut": true,
-      "orderedTop8": true,
-      "top8VerifiedByList": true
+      "allTopCut": true
     },
     "sorceryfest-2026": {
       "name": "SorceryFest 2026",
@@ -84,15 +64,7 @@
       "folders": [
         "SorceryFest July 4th 2026"
       ],
-      "confirmedRating": 3,
-      "top8VerifiedByList": true,
-      "orderedTop8": false,
-      "notes": "Confirmed three-star event; Top 8 membership comes from the dedicated top8 file. Do not infer exact positions from row order.",
-      "placements": {
-        "cmr0zmkay001f04jrwy07jb6r": 1,
-        "cmqdp9xxv002m04l2yilo1zpd": 2
-      },
-      "placementEvidence": "Source deck titles identify the champion and runner-up; do not infer the other six ranks."
+      "confirmedRating": 3
     }
   },
   "verifiedSeedEvents": [

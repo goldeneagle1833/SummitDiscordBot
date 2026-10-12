@@ -3,9 +3,9 @@
 Historical exceptions are data, not code: edit tournament_exceptions.json to add
 aliases, verified ranking policies, or a confirmed placement by Curiosa deck ID.
 
-Safety policy: Top-8 membership and exact finishing place are different facts.
-A raw list's order is NOT evidence of finishing rank unless explicitly marked
-as verified for that tournament. Likewise, Top Cut is not automatically Top 8.
+Placement policy: a Top 8 list is in finishing order, so its first eight
+unique decks are places 1-8. Events without a Top 8 list only get the
+placements curated in tournament_exceptions.json. Top Cut is not Top 8.
 """
 from collections import defaultdict
 from datetime import date
@@ -115,7 +115,7 @@ def normalized_tournaments(events, loader, *, exceptions_path=EXCEPTIONS_PATH):
             grouped[key].append(event)
 
     report = {'sourceCollections': 0, 'mergedCollections': 0,
-              'duplicateSourceRows': 0, 'skippedUnverifiedRows': 0,
+              'duplicateSourceRows': 0,
               'unusableRecords': 0, 'ignoredLowRatingGroups': 0,
               'correctedRatingGroups': 0, 'correctedRatingEvents': []}
     output = []
@@ -153,13 +153,6 @@ def normalized_tournaments(events, loader, *, exceptions_path=EXCEPTIONS_PATH):
             # A Top 8-only event still has actual decklists to analyse.
             # Include both sources because the broad-field file may omit a finalist.
             raw = listed_top8 + (data.get('all') or [])
-            if spec.get('takeFirstRows') is not None:
-                # Gothic 3 had 19 source rows; only the first eight were
-                # validated by the historical research.
-                limit = int(spec['takeFirstRows'])
-                report['skippedUnverifiedRows'] += max(0, len(raw) - limit)
-                raw = raw[:limit]
-                listed_top8 = listed_top8[:limit]
             if not isinstance(raw, list):
                 continue
             is_top8_source = (not spec.get('top8Source') or
@@ -189,15 +182,15 @@ def normalized_tournaments(events, loader, *, exceptions_path=EXCEPTIONS_PATH):
                     report['duplicateSourceRows'] += 1
                     continue
                 by_id[did] = (row, folder)
-        # Some sources have a full-field list and a missing/incomplete Top 8
-        # section; never invent an ordered placement in that case.
-        ranked_top8 = (spec.get('orderedTop8') is True and len(top8_order) >= 8)
-        placements = {str(did): int(pos) for did, pos in spec.get('placements', {}).items()}
+        # The Top 8 list is kept in finishing order (the event admin can
+        # reorder it), so its first unique decks are places 1-8. Curated
+        # placements only fill in events that have no Top 8 list.
+        ranked_top8 = bool(top8_order)
         if ranked_top8:
-            for position, did in enumerate(top8_order[:8], 1):
-                placements.setdefault(did, position)
-        # For Gothic 1-3, the source is a finalists list, not a Top 8 list.
-        known_top8 = top8_ids if spec.get('top8VerifiedByList', True) else set()
+            placements = {did: position for position, did in enumerate(top8_order, 1)}
+        else:
+            placements = {str(did): int(pos) for did, pos in spec.get('placements', {}).items()}
+        known_top8 = top8_ids
         records = []
         for did, (row, folder) in by_id.items():
             place = placements.get(did)
@@ -214,7 +207,7 @@ def normalized_tournaments(events, loader, *, exceptions_path=EXCEPTIONS_PATH):
             'date': spec.get('date') or sources[0].get('event_date'),
             'sourceFolders': [source['folder'] for source in sources],
             'records': records,
-            'placementPolicy': ('verified ordered Top 8' if ranked_top8 else
-                                'curated placements only; unordered Top 8 membership'),
+            'placementPolicy': ('Top 8 list order' if ranked_top8 else
+                                'curated placements only'),
         })
     return output, report

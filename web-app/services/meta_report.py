@@ -46,7 +46,8 @@ from repositories.meta_reports import MetaReportRepository
 logger = logging.getLogger(__name__)
 
 EASTERN = ZoneInfo("America/New_York")
-MIN_ARCHETYPE_GAMES = 10   # deck-games before an Avatar + element pair is listed
+MIN_ARCHETYPE_GAMES = 20   # deck-games before an Avatar + element pair is listed...
+MIN_ARCHETYPE_SHARE = 0.01  # ...and at least 1% of the period's decks
 MIN_MATCHUP_GAMES = 20     # games before a matchup cell shows a number
 MIN_SLEEPER_GAMES = 50     # player-games before a card can be the sleeper pick
 SLEEPER_MAX_SHARE = 0.10   # sleeper cards are in fewer than 10% of decks
@@ -186,7 +187,7 @@ def ranked_games(period_from: str, period_through: str, db_path=None) -> list[di
 
 def _tier_score(wins: int, games: int, share: float) -> float:
     """Win rate pulled toward 50% on small samples, plus a little credit for popularity."""
-    adjusted = (wins + 10) / (games + 20)
+    adjusted = (wins + 15) / (games + 30)
     return (adjusted - 0.5) * 100 + math.log2(share * 100 + 1) * 1.5
 
 
@@ -202,8 +203,9 @@ def archetype_stats(games: list[dict]) -> dict:
             c[1] += 1 if won else 0
     deck_games = sum(c[0] for c in counts.values())
     rows = []
+    minimum = max(MIN_ARCHETYPE_GAMES, math.ceil(deck_games * MIN_ARCHETYPE_SHARE))
     for (avatar, elements), (n, wins) in counts.items():
-        if n < MIN_ARCHETYPE_GAMES:
+        if n < minimum:
             continue
         share = n / deck_games if deck_games else 0.0
         rows.append({
@@ -217,10 +219,15 @@ def archetype_stats(games: list[dict]) -> dict:
         })
     rows.sort(key=lambda r: -r["score"])
     total = len(rows)
-    cuts = (max(1, round(total * 0.12)), round(total * 0.37), round(total * 0.70))
+    # Proportional tiers, capped so a fragmented meta doesn't flood the top.
+    s_cut = min(4, max(1, round(total * 0.10)))
+    a_cut = s_cut + min(8, round(total * 0.20))
+    b_cut = a_cut + min(12, round(total * 0.30))
+    cuts = (s_cut, a_cut, b_cut)
     for i, row in enumerate(rows):
         row["tier"] = TIERS[0] if i < cuts[0] else TIERS[1] if i < cuts[1] else TIERS[2] if i < cuts[2] else TIERS[3]
-    return {"rankedGames": len(games), "deckGames": deck_games, "archetypes": rows}
+    return {"rankedGames": len(games), "deckGames": deck_games, "minArchetypeGames": minimum,
+            "archetypes": rows}
 
 
 def matchup_grid(games: list[dict], archetypes: list[dict]) -> dict:

@@ -146,7 +146,7 @@ def test_card_section_waits_for_release():
 # ---------------------------------------------------------------- build + publish
 
 def test_build_never_includes_ranked_player_names(match_db, repo, no_events):
-    for _ in range(12):
+    for _ in range(25):
         add_game(match_db, "2026-09-05", ("Sparkmage", "Air"), ("Geomancer", "Earth"))
     report = meta_report.build(Period(2026, 9, "a"), repo, db_path=match_db, pso=lambda f, t: None)
     assert report["status"] == "draft"
@@ -326,3 +326,19 @@ def test_og_preview_shows_headline_to_link_bots(client, api_repo):
     assert "Meta Report: Sep 1–15, 2026" in html and "Sparkmage is the deck to beat." in html
     latest = client.get("/meta-report", headers={"User-Agent": "Discordbot/2.0"}).get_data(as_text=True)
     assert "/meta-report/2026-09-a" in latest
+
+
+def test_fragmented_meta_keeps_tiers_small():
+    games = []
+    for i in range(30):
+        games += [{"winner": (f"Av{i}", "Fire"), "loser": (f"Av{(i + 1) % 30}", "Fire")}] * (20 + i)
+    stats = meta_report.archetype_stats(games)
+    tiers = [a["tier"] for a in stats["archetypes"]]
+    assert tiers.count("S") <= 4 and tiers.count("A") <= 8
+
+
+def test_tiny_archetypes_are_left_out():
+    games = [{"winner": ("Big", "Fire"), "loser": ("Big2", "Water")}] * 200 + \
+            [{"winner": ("Tiny", "Air"), "loser": None}] * 15
+    names = [a["avatar"] for a in meta_report.archetype_stats(games)["archetypes"]]
+    assert "Tiny" not in names and "Big" in names

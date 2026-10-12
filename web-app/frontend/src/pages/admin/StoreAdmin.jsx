@@ -867,7 +867,20 @@ function TeamPanel({ storefront }) {
 
 // ---------------------------------------------------------------- Storefronts
 
-function StorefrontEditor({ storefront, onSaved }) {
+function storefrontPaymentsText(storefront) {
+  if (storefront.uses_summit_stripe) return "Payments go to Summit's Stripe account."
+  if (storefront.uses_api_key) {
+    return storefront.api_key_present
+      ? `Payments go to its own Stripe account, using the ${storefront.stripe_key_env} key on the server.`
+      : `${storefront.stripe_key_env} isn't set on the server. Not taking orders.`
+  }
+  if (storefront.accepts_payments) return `Payments go to its own Stripe account (${storefront.stripe_account_id}).`
+  return storefront.stripe_account_id
+    ? 'Stripe setup started but not finished. Not taking orders yet.'
+    : 'No Stripe account connected. Not taking orders yet.'
+}
+
+function StorefrontEditor({ storefront, keyEnvs = [], onSaved }) {
   const [form, setForm] = useState({
     name: storefront.name || '',
     description: storefront.description || '',
@@ -922,15 +935,29 @@ function StorefrontEditor({ storefront, onSaved }) {
           </label>
         )}
       </div>
-      <p className="text-xs text-text-muted">
-        {storefront.uses_summit_stripe
-          ? "Payments go to Summit's Stripe account."
-          : storefront.accepts_payments
-            ? `Payments go to its own Stripe account (${storefront.stripe_account_id}).`
-            : storefront.stripe_account_id
-              ? 'Stripe setup started but not finished. Not taking orders yet.'
-              : 'No Stripe account connected. Not taking orders yet.'}
-      </p>
+      <p className="text-xs text-text-muted">{storefrontPaymentsText(storefront)}</p>
+      {storefront.uses_api_key && (
+        <p className={`text-xs ${storefront.webhook_secret_present ? 'text-text-muted' : 'text-accent-red'}`}>
+          {storefront.webhook_secret_present
+            ? `Stripe webhook: ${storefront.webhook_url}`
+            : `Orders won't be marked paid until ${storefront.webhook_secret_env} is set on the server. Add a webhook in their Stripe account to ${storefront.webhook_url} for checkout.session.completed and checkout.session.expired.`}
+        </p>
+      )}
+      {!storefront.uses_summit_stripe && !storefront.uses_api_key && !storefront.stripe_account_id && keyEnvs.length > 0 && (
+        <label className="text-xs text-text-muted flex flex-wrap items-center gap-2">
+          Or use a Stripe key on the server:
+          <select
+            className={`${inputCls} w-auto`}
+            aria-label={`${storefront.name} Stripe key`}
+            defaultValue=""
+            disabled={busy}
+            onChange={(e) => e.target.value && save({ stripe_key_env: e.target.value })}
+          >
+            <option value="">Choose a key</option>
+            {keyEnvs.map((k) => <option key={k} value={k}>{k}</option>)}
+          </select>
+        </label>
+      )}
       {error && <p className="text-accent-red text-sm">{error}</p>}
       <div className="flex gap-4 text-sm">
         <button type="button" disabled={busy} onClick={() => save()} className="text-primary hover:underline disabled:opacity-50">
@@ -965,7 +992,7 @@ function StorefrontEditor({ storefront, onSaved }) {
             Delete storefront
           </button>
         )}
-        {storefront.stripe_account_id && (
+        {(storefront.stripe_account_id || storefront.uses_api_key) && (
           <button
             type="button"
             disabled={busy}
@@ -1053,7 +1080,7 @@ function ApplicationRow({ app, onDone }) {
   )
 }
 
-function StorefrontsPanel({ storefronts, onChanged }) {
+function StorefrontsPanel({ storefronts, keyEnvs, onChanged }) {
   const [apps, setApps] = useState([])
   const [newName, setNewName] = useState('')
   const [error, setError] = useState(null)
@@ -1095,7 +1122,7 @@ function StorefrontsPanel({ storefronts, onChanged }) {
         <h2 className="font-semibold text-lg mb-3">Storefronts</h2>
         <ul className="bg-bg-surface border border-border rounded-lg divide-y divide-border mb-4">
           {storefronts.map((sf) => (
-            <StorefrontEditor key={`${sf.id}-${sf.updated_at}`} storefront={sf} onSaved={onChanged} />
+            <StorefrontEditor key={`${sf.id}-${sf.updated_at}`} storefront={sf} keyEnvs={keyEnvs} onSaved={onChanged} />
           ))}
         </ul>
         <div className="flex flex-wrap gap-2">
@@ -1140,6 +1167,14 @@ function PaymentsCard({ storefront, canConnect, canLink, checkStripe, stripeErro
       <p className="text-xs text-text-muted mb-2">
         {storefront.name} takes payments on its own Stripe account.
       </p>
+    )
+  }
+
+  if (storefront.uses_api_key) {
+    return (
+      <div className="bg-secondary/10 border border-secondary/30 rounded-lg px-4 py-3 my-3 text-sm">
+        {storefront.name} can't take orders until {storefront.stripe_key_env} is set on the server.
+      </div>
     )
   }
 
@@ -1340,7 +1375,7 @@ export default function StoreAdmin() {
           ? <TeamPanel key={selected.id} storefront={selected} />
           : <p className="text-sm text-text-muted">Pick a storefront above to see and change its admins.</p>
       )}
-      {current === 'storefronts' && <StorefrontsPanel storefronts={storefronts} onChanged={loadMe} />}
+      {current === 'storefronts' && <StorefrontsPanel storefronts={storefronts} keyEnvs={me.stripe_key_envs || []} onChanged={loadMe} />}
     </div>
   )
 }

@@ -40,6 +40,31 @@ APPLICATION_STATUSES = ("pending", "approved", "declined")
 
 SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
 
+# A storefront can take payments with its own Stripe secret (or restricted)
+# key from the server environment instead of through Stripe Connect. The
+# storefront stores only the variable's NAME; the key never touches the
+# database. Its webhook signing secret lives in the matching
+# ..._STRIPE_WEBHOOK_SECRET variable.
+STRIPE_KEY_ENV_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*_STRIPE_SECRET_KEY$")
+
+# Storefronts created on startup the first time their key shows up in the
+# environment: (key variable, slug, name). Created hidden, so the tab only
+# goes live once a full admin shows it.
+KEY_STOREFRONTS = (
+    ("EXPLORER_STRIPE_SECRET_KEY", "explorer-series", "Explorer Series Store"),
+)
+
+
+def webhook_secret_env(key_env: str) -> str:
+    """EXPLORER_STRIPE_SECRET_KEY -> EXPLORER_STRIPE_WEBHOOK_SECRET."""
+    return key_env[: -len("SECRET_KEY")] + "WEBHOOK_SECRET"
+
+
+def available_stripe_key_envs() -> list[str]:
+    """Names of storefront Stripe key variables set on this server."""
+    return sorted(k for k, v in os.environ.items()
+                  if v and STRIPE_KEY_ENV_PATTERN.match(k))
+
 
 def slugify(name: str) -> str:
     """'Explorer Store!' -> 'explorer-store'."""
@@ -233,7 +258,8 @@ class StoreRepository:
             # own Stripe account, connected to Summit's platform account.
             for column in ("stripe_account_id TEXT",
                            "stripe_charges_enabled INTEGER NOT NULL DEFAULT 0",
-                           "shipping_cents INTEGER"):
+                           "shipping_cents INTEGER",
+                           "stripe_key_env TEXT"):
                 try:
                     conn.execute(f"ALTER TABLE storefronts ADD COLUMN {column}")
                 except sqlite3.OperationalError:
@@ -258,6 +284,36 @@ class StoreRepository:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_orders_storefront ON orders(storefront_id)"
+            )
+            self._seed_key_storefronts(conn, now)
+
+    def _seed_key_storefronts(self, conn, now: str) -> None:
+        """Create each KEY_STOREFRONTS entry once, when its key is configured.
+
+        The audit log remembers the seeding, so a storefront an admin later
+        deletes or unlinks stays that way.
+        """
+        for key_env, slug, name in KEY_STOREFRONTS:
+            if not os.environ.get(key_env):
+                continue
+            seeded = conn.execute(
+                "SELECT 1 FROM store_audit WHERE action = 'seed_storefront' "
+                "AND details LIKE ?", (f"env={key_env} %",),
+            ).fetchone()
+            if seeded or conn.execute(
+                "SELECT 1 FROM storefronts WHERE slug = ? OR stripe_key_env = ?",
+                (slug, key_env),
+            ).fetchone():
+                continue
+            storefront_id = self._create_storefront(conn, slug, name, "", None, now)
+            conn.execute(
+                "UPDATE storefronts SET stripe_key_env = ?, is_active = 0 WHERE id = ?",
+                (key_env, storefront_id),
+            )
+            conn.execute(
+                """INSERT INTO store_audit (actor_id, actor_name, action, details, created_at)
+                   VALUES ('system', 'system', 'seed_storefront', ?, ?)""",
+                (f"env={key_env} id={storefront_id} slug={slug}", now),
             )
 
     @staticmethod
@@ -993,7 +1049,7 @@ class StoreRepository:
 
     def update_storefront(self, storefront_id: int, **fields) -> bool:
         allowed = {"name", "description", "contact_email", "sort_order", "is_active",
-                   "shipping_cents"}
+                   "shipping_cents", "stripe_key_env"}
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return False
@@ -1073,12 +1129,26 @@ class StoreRepository:
             return cur.rowcount > 0
 
     @staticmethod
+    def stripe_key_env_for(storefront: dict | None) -> str | None:
+        """Name of the env variable holding this storefront's own Stripe key.
+
+        Set only for storefronts that use a server-side key instead of
+        Stripe Connect. Never set for Summit Store.
+        """
+        if not storefront or storefront.get("slug") == DEFAULT_STOREFRONT_SLUG:
+            return None
+        return storefront.get("stripe_key_env") or None
+
+    @staticmethod
     def stripe_account_for(storefront: dict | None) -> str | None:
         """The connected Stripe account that takes this storefront's payments.
 
-        None means Summit's own (platform) account.
+        None means Summit's own (platform) account, or a storefront that
+        uses its own API key (see stripe_key_env_for).
         """
         if not storefront or storefront.get("slug") == DEFAULT_STOREFRONT_SLUG:
+            return None
+        if storefront.get("stripe_key_env"):
             return None
         return storefront.get("stripe_account_id") or None
 
@@ -1088,6 +1158,9 @@ class StoreRepository:
             return False
         if storefront.get("slug") == DEFAULT_STOREFRONT_SLUG:
             return True
+        key_env = storefront.get("stripe_key_env")
+        if key_env:
+            return bool(os.environ.get(key_env))
         return bool(storefront.get("stripe_account_id")
                     and storefront.get("stripe_charges_enabled"))
 

@@ -173,6 +173,7 @@ class TestExemptions:
         assert EXEMPT_ENDPOINTS == {
             "api.site_token",
             "api.store.stripe_webhook",
+            "api.store.storefront_stripe_webhook",
             "api.monitoring.health",
         }
 

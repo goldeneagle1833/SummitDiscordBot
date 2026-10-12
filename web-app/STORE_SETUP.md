@@ -129,6 +129,29 @@ Settings > Connect > Onboarding options > OAuth into
 `https://yourdomain.com/api/store/stripe/oauth/callback` as a redirect URI
 on the same page. The button stays hidden until the client ID is set.
 
+### Storefronts with their own Stripe key (no Connect)
+
+A storefront can instead take payments with a Stripe secret or restricted
+key that its owner gives Summit, set on the server. Only the variable's
+name is stored on the storefront; the key never goes in the database.
+
+1. Put the key in the server `.env` as `<NAME>_STRIPE_SECRET_KEY`
+   (e.g. `EXPLORER_STRIPE_SECRET_KEY`). A restricted key (`rk_live_...`)
+   needs **Checkout Sessions: Write**. Products and Prices: Write are worth
+   granting too, since checkout sends inline prices.
+2. In the storefront's own Stripe account, add a webhook endpoint to
+   `https://yourdomain.com/api/store/webhooks/stripe/<storefront slug>`
+   listening for `checkout.session.completed` and `checkout.session.expired`.
+   Put its signing secret in `<NAME>_STRIPE_WEBHOOK_SECRET`
+   (e.g. `EXPLORER_STRIPE_WEBHOOK_SECRET`). Orders are never marked paid
+   without it.
+3. Restart the web app. On a full store admin's Storefronts tab, pick the
+   key for the storefront under "Or use a Stripe key on the server".
+
+`EXPLORER_STRIPE_SECRET_KEY` is special: the first time it's set, startup
+creates a hidden **Explorer Series Store** (`explorer-series`) already
+using it. Click **Show storefront** once its products are in.
+
 Summit's Stripe shipping rates and the free-shipping perk only apply to
 Summit Store. A webhook event from one Stripe account can never settle an
 order that belongs to another.

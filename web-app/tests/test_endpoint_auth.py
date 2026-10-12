@@ -227,6 +227,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.store.list_products",
     "api.store.list_storefronts",
     "api.store.stripe_webhook",
+    "api.store.storefront_stripe_webhook",
 
     # -- OG previews (bot crawlers only, public read-only) --
     "og_preview.og_events_list",

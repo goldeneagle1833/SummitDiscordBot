@@ -8,6 +8,7 @@ Registered via routes/api/__init__.py alongside the other sub-blueprints.
 """
 
 import logging
+import os
 import sqlite3
 import tempfile
 from datetime import datetime, timezone
@@ -18,7 +19,8 @@ from flask import Blueprint, jsonify, redirect, request, send_file, session
 
 from repositories.store import (
     StoreRepository, ORDER_STATUSES, STORE_DB_PATH, STOREFRONT_ROLES, slugify,
-    DEFAULT_STOREFRONT_SLUG,
+    DEFAULT_STOREFRONT_SLUG, STRIPE_KEY_ENV_PATTERN, available_stripe_key_envs,
+    webhook_secret_env,
 )
 from utils.store_auth import is_store_admin, require_store_admin
 
@@ -701,6 +703,40 @@ def stripe_webhook():
     return jsonify(result), 200
 
 
+@store_bp.route("/store/webhooks/stripe/<slug>", methods=["POST"])
+def storefront_stripe_webhook(slug: str):
+    """Events from a storefront that uses its own Stripe key.
+
+    The storefront's Stripe account sends here, signed with its own
+    ..._STRIPE_WEBHOOK_SECRET, so its events can only settle its orders.
+    """
+    repo = _repo()
+    storefront = repo.get_storefront_by_slug(slug)
+    key_env = repo.stripe_key_env_for(storefront)
+    if not key_env:
+        return jsonify({"error": "not found"}), 404
+    payload = request.get_data()
+    sig_header = request.headers.get("Stripe-Signature", "")
+    service = StoreCheckoutService(repo)
+    try:
+        event = service.construct_storefront_event(storefront, payload, sig_header)
+    except LookupError:
+        logger.error(f"Stripe webhook for {slug} but {webhook_secret_env(key_env)} isn't set")
+        return jsonify({"error": "not configured"}), 503
+    except Exception:
+        logger.warning(
+            f"Stripe webhook signature verification failed for {slug} from {request.remote_addr}"
+        )
+        return jsonify({"error": "invalid signature"}), 400
+
+    try:
+        result = service.handle_event(event, payee=f"key:{key_env}")
+    except Exception:
+        logger.exception(f"Unhandled error processing Stripe event {event['type']} for {slug}")
+        return jsonify({"error": "internal error processing event"}), 500
+    return jsonify(result), 200
+
+
 @store_bp.route("/store/checkout/prefill", methods=["GET"])
 @require_auth
 def checkout_prefill():
@@ -828,12 +864,31 @@ def admin_me():
                 "role": "owner" if full else roles[s["id"]],
                 "accepts_payments": repo.accepts_payments(s),
                 "uses_summit_stripe": s["slug"] == DEFAULT_STOREFRONT_SLUG,
+                **_key_status(s),
             })
     return jsonify({
         "is_full_admin": full,
         "storefronts": storefronts,
         "can_link_stripe": StoreCheckoutService.can_link_existing_account(),
+        # Variable names only, never values: full admins pick one to give a
+        # storefront its own Stripe key
+        "stripe_key_envs": available_stripe_key_envs() if full else [],
     })
+
+
+def _key_status(storefront: dict) -> dict:
+    """What the admin page shows about a storefront's own-key payments."""
+    key_env = StoreRepository.stripe_key_env_for(storefront)
+    if not key_env:
+        return {"uses_api_key": False}
+    return {
+        "uses_api_key": True,
+        "stripe_key_env": key_env,
+        "api_key_present": bool(os.environ.get(key_env)),
+        "webhook_secret_env": webhook_secret_env(key_env),
+        "webhook_secret_present": bool(os.environ.get(webhook_secret_env(key_env))),
+        "webhook_url": _site_url(f"/api/store/webhooks/stripe/{storefront['slug']}"),
+    }
 
 
 def _clean_text(data: dict, key: str, max_len: int) -> str:
@@ -890,8 +945,22 @@ def admin_update_storefront(storefront_id: int):
             if fields["shipping_cents"] < 0:
                 return jsonify({"error": "shipping_cents can't be negative"}), 400
     repo = _repo()
-    if not repo.get_storefront(storefront_id):
+    storefront = repo.get_storefront(storefront_id)
+    if not storefront:
         return _not_found("Storefront")
+    if "stripe_key_env" in data:
+        key_env = _clean_text(data, "stripe_key_env", 100) or None
+        if key_env:
+            if storefront["slug"] == DEFAULT_STOREFRONT_SLUG:
+                return jsonify({"error": "Summit Store uses Summit's own Stripe account"}), 400
+            if storefront.get("stripe_account_id"):
+                return jsonify({"error": "Disconnect its Stripe Connect account first"}), 409
+            if not STRIPE_KEY_ENV_PATTERN.match(key_env):
+                return jsonify({"error": "Key variable must be named like "
+                                         "EXPLORER_STRIPE_SECRET_KEY"}), 400
+            if not os.environ.get(key_env):
+                return jsonify({"error": f"{key_env} isn't set on the server"}), 400
+        fields["stripe_key_env"] = key_env
     try:
         if not repo.update_storefront(storefront_id, **fields):
             return jsonify({"error": "No valid fields to update"}), 400
@@ -934,6 +1003,7 @@ def _payments_status(storefront: dict) -> dict:
         "stripe_account_id": storefront.get("stripe_account_id"),
         "charges_enabled": bool(storefront.get("stripe_charges_enabled")),
         "accepts_payments": StoreRepository.accepts_payments(storefront),
+        **_key_status(storefront),
     }
 
 
@@ -944,7 +1014,8 @@ def admin_storefront_payments(storefront_id: int):
     storefront = repo.get_storefront(storefront_id)
     if not storefront or not _can(storefront_id, "orders"):
         return _not_found("Storefront")
-    if storefront.get("stripe_account_id") and request.args.get("refresh"):
+    if (storefront.get("stripe_account_id") and not storefront.get("stripe_key_env")
+            and request.args.get("refresh")):
         try:
             StoreCheckoutService(repo).refresh_account_status(storefront)
         except Exception:
@@ -965,6 +1036,8 @@ def admin_storefront_stripe_onboard(storefront_id: int):
         return _not_found("Storefront")
     if storefront["slug"] == DEFAULT_STOREFRONT_SLUG:
         return jsonify({"error": "Summit Store uses Summit's own Stripe account"}), 400
+    if storefront.get("stripe_key_env"):
+        return jsonify({"error": f"{storefront['name']} uses its own Stripe key"}), 409
     service = StoreCheckoutService(repo)
     if not service.is_configured():
         return jsonify({"error": "Payments are not configured"}), 503
@@ -1000,7 +1073,7 @@ def admin_storefront_stripe_link(storefront_id: int):
         return _not_found("Storefront")
     if storefront["slug"] == DEFAULT_STOREFRONT_SLUG:
         return jsonify({"error": "Summit Store uses Summit's own Stripe account"}), 400
-    if storefront.get("stripe_account_id"):
+    if storefront.get("stripe_account_id") or storefront.get("stripe_key_env"):
         return jsonify({"error": "This storefront already has a Stripe account. "
                                  "A full store admin can disconnect it first."}), 409
     if not StoreCheckoutService.can_link_existing_account():
@@ -1034,7 +1107,7 @@ def stripe_oauth_callback():
     storefront = repo.get_storefront(storefront_id)
     if not storefront or not _can(storefront_id, "products"):
         return fail("Storefront not found.")
-    if storefront.get("stripe_account_id"):
+    if storefront.get("stripe_account_id") or storefront.get("stripe_key_env"):
         return fail("This storefront already has a Stripe account.")
     code = request.args.get("code") or ""
     if not code:
@@ -1059,9 +1132,12 @@ def admin_storefront_stripe_disconnect(storefront_id: int):
     if not storefront:
         return _not_found("Storefront")
     repo.set_storefront_stripe(storefront_id, None, False)
+    if storefront.get("stripe_key_env"):
+        repo.update_storefront(storefront_id, stripe_key_env=None)
     actor_id, actor_name = _actor()
     repo.log_action(actor_id, actor_name, "stripe_disconnect",
-                    f"storefront={storefront_id} account={storefront.get('stripe_account_id')}")
+                    f"storefront={storefront_id} account={storefront.get('stripe_account_id')} "
+                    f"key_env={storefront.get('stripe_key_env')}")
     return jsonify({"success": True})
 
 

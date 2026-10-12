@@ -1,5 +1,6 @@
 """Tests for storefronts: per-storefront products, orders, admins and applications."""
 
+import json
 import sqlite3
 from unittest.mock import patch
 
@@ -753,3 +754,151 @@ class TestLinkExistingStripeAccount:
             res = client.post(f"/api/store/admin/storefronts/{s['explorer']}/stripe/link")
             assert res.status_code == 503
             assert client.get("/api/store/admin/me").get_json()["can_link_stripe"] is False
+
+
+# ── Payments: a storefront with its own Stripe key on the server ──────
+
+
+KEY_ENV = "EXPLORER_STRIPE_SECRET_KEY"
+
+
+@pytest.fixture()
+def key_env(monkeypatch):
+    monkeypatch.setenv(KEY_ENV, "rk_test_explorer")
+    monkeypatch.setenv("EXPLORER_STRIPE_WEBHOOK_SECRET", "whsec_explorer")
+
+
+class TestOwnKeyStorefronts:
+    def test_seeded_once_hidden_when_key_is_set(self, tmp_path, key_env):
+        StoreRepository(db_path=tmp_path / "store.db")
+        repo = StoreRepository(db_path=tmp_path / "store.db")
+        sf = repo.get_storefront_by_slug("explorer-series")
+        assert sf["name"] == "Explorer Series Store"
+        assert sf["stripe_key_env"] == KEY_ENV
+        assert sf["is_active"] == 0
+        assert repo.accepts_payments(sf)
+        assert repo.stripe_account_for(sf) is None
+        assert len(repo.list_storefronts(include_inactive=True)) == 2
+
+    def test_not_seeded_without_key(self, repo):
+        assert repo.get_storefront_by_slug("explorer-series") is None
+
+    def test_deleted_seed_stays_deleted(self, tmp_path, key_env):
+        repo = StoreRepository(db_path=tmp_path / "store.db")
+        repo.delete_storefront(repo.get_storefront_by_slug("explorer-series")["id"])
+        repo = StoreRepository(db_path=tmp_path / "store.db")
+        assert repo.get_storefront_by_slug("explorer-series") is None
+
+    def test_missing_key_stops_orders(self, repo, shop, monkeypatch):
+        repo.update_storefront(shop["explorer"], stripe_key_env=KEY_ENV)
+        monkeypatch.delenv(KEY_ENV, raising=False)
+        assert not repo.accepts_payments(repo.get_storefront(shop["explorer"]))
+
+    @patch("services.store_checkout.stripe")
+    @patch("services.store_checkout.FREE_SHIPPING_ROLE_IDS", {"patreon"})
+    @patch("services.store_checkout.STRIPE_SHIPPING_RATE_DOMESTIC", "shr_dom")
+    @patch("services.store_checkout.STRIPE_SHIPPING_RATE_INTERNATIONAL", "shr_int")
+    def test_checkout_uses_the_storefront_key(self, mock_stripe, repo, shop, key_env):
+        _mock_session(mock_stripe)
+        repo.update_storefront(shop["explorer"], stripe_key_env=KEY_ENV, shipping_cents=350)
+        StoreCheckoutService(repo).create_checkout(
+            user_id="u", username="U",
+            items=[{"product_id": shop["explorer_product"], "quantity": 1}],
+            discord_roles=["patreon"],
+        )
+        kwargs = mock_stripe.checkout.Session.create.call_args.kwargs
+        assert kwargs["api_key"] == "rk_test_explorer"
+        assert "stripe_account" not in kwargs
+        assert "shipping_options" not in kwargs
+        assert kwargs["line_items"][-1]["price_data"]["unit_amount"] == 350
+
+    @patch("services.store_checkout.stripe")
+    def test_cancel_expires_with_the_storefront_key(self, mock_stripe, repo, shop, key_env):
+        mock_stripe.StripeError = Exception
+        repo.update_storefront(shop["explorer"], stripe_key_env=KEY_ENV)
+        repo.attach_payment(shop["explorer_order"], "stripe", "cs_open")
+        StoreCheckoutService(repo).cancel_order(repo.get_order(shop["explorer_order"]))
+        mock_stripe.checkout.Session.expire.assert_called_once_with(
+            "cs_open", api_key="rk_test_explorer")
+
+    def test_own_endpoint_event_pays_only_its_orders(self, repo, shop):
+        repo.update_storefront(shop["explorer"], stripe_key_env=KEY_ENV)
+        service = StoreCheckoutService(repo)
+        summit_order = repo.get_order(shop["summit_order"])
+        assert service.handle_event(_paid_event(summit_order, "cs_s"),
+                                    payee=f"key:{KEY_ENV}")["handled"] is False
+        # Summit's endpoint can't settle the key storefront's order either
+        explorer_order = repo.get_order(shop["explorer_order"])
+        assert service.handle_event(_paid_event(explorer_order, "cs_e"))["handled"] is False
+        with patch("services.store_notifications.StoreNotificationService"):
+            result = service.handle_event(_paid_event(explorer_order, "cs_e"),
+                                          payee=f"key:{KEY_ENV}")
+        assert result["handled"] is True
+        assert repo.get_order(explorer_order["id"])["status"] == "paid"
+        assert repo.get_order(summit_order["id"])["status"] == "pending_payment"
+
+
+class TestOwnKeyRoutes:
+    def _signed(self, client, slug, payload, secret="whsec_explorer"):
+        import stripe as real_stripe
+        import time
+        ts = int(time.time())
+        sig = real_stripe.WebhookSignature._compute_signature(f"{ts}.{payload}", secret)
+        return client.post(f"/api/store/webhooks/stripe/{slug}", data=payload,
+                           headers={"Stripe-Signature": f"t={ts},v1={sig}"},
+                           content_type="application/json")
+
+    def test_webhook_marks_order_paid(self, client, store_repo, key_env):
+        s = _make_shop(store_repo)
+        store_repo.update_storefront(s["explorer"], stripe_key_env=KEY_ENV)
+        order = store_repo.get_order(s["explorer_order"])
+        payload = json.dumps({"id": "evt_1", "object": "event", **_paid_event(order, "cs_e")})
+        with patch("services.store_notifications.StoreNotificationService"):
+            res = self._signed(client, "explorer", payload)
+        assert res.status_code == 200, res.get_json()
+        assert store_repo.get_order(order["id"])["status"] == "paid"
+
+    def test_webhook_rejects_wrong_signature(self, client, store_repo, key_env):
+        s = _make_shop(store_repo)
+        store_repo.update_storefront(s["explorer"], stripe_key_env=KEY_ENV)
+        order = store_repo.get_order(s["explorer_order"])
+        payload = json.dumps({"id": "evt_1", "object": "event", **_paid_event(order, "cs_e")})
+        assert self._signed(client, "explorer", payload, secret="whsec_other").status_code == 400
+        assert store_repo.get_order(order["id"])["status"] == "pending_payment"
+
+    def test_webhook_404_for_storefront_without_key(self, client, store_repo):
+        _make_shop(store_repo)
+        assert client.post("/api/store/webhooks/stripe/explorer", data="{}").status_code == 404
+        assert client.post("/api/store/webhooks/stripe/summit", data="{}").status_code == 404
+
+    def test_full_admin_sets_and_clears_key(self, full_admin, store_repo, key_env):
+        s = _make_shop(store_repo)
+        url = f"/api/store/admin/storefronts/{s['explorer']}"
+        assert full_admin.patch(url, json={"stripe_key_env": "STRIPE_SECRET_KEY"}).status_code == 400
+        assert full_admin.patch(url, json={"stripe_key_env": "OTHER_STRIPE_SECRET_KEY"}).status_code == 400
+        assert full_admin.patch(f"/api/store/admin/storefronts/{s['summit']}",
+                                json={"stripe_key_env": KEY_ENV}).status_code == 400
+        assert full_admin.patch(url, json={"stripe_key_env": KEY_ENV}).status_code == 200
+        me = full_admin.get("/api/store/admin/me").get_json()
+        assert KEY_ENV in me["stripe_key_envs"]
+        sf = next(x for x in me["storefronts"] if x["id"] == s["explorer"])
+        assert sf["uses_api_key"] and sf["accepts_payments"] and sf["webhook_secret_present"]
+        assert sf["webhook_url"].endswith("/api/store/webhooks/stripe/explorer")
+        assert "rk_test_explorer" not in json.dumps(me)
+        # Connect is refused while the key is in use
+        assert full_admin.post(f"{url}/stripe/onboard").status_code in (409, 503)
+        assert full_admin.delete(f"{url}/stripe").status_code == 200
+        assert store_repo.get_storefront(s["explorer"])["stripe_key_env"] is None
+
+    def test_key_refused_while_connect_account_linked(self, full_admin, store_repo, key_env):
+        s = _make_shop(store_repo)
+        store_repo.set_storefront_stripe(s["explorer"], "acct_exp", True)
+        res = full_admin.patch(f"/api/store/admin/storefronts/{s['explorer']}",
+                               json={"stripe_key_env": KEY_ENV})
+        assert res.status_code == 409
+
+    def test_manager_cannot_set_key(self, explorer_manager, key_env):
+        client, s = explorer_manager
+        res = client.patch(f"/api/store/admin/storefronts/{s['explorer']}",
+                           json={"stripe_key_env": KEY_ENV})
+        assert res.status_code == 403

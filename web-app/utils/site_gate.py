@@ -55,6 +55,7 @@ EXEMPT_ENDPOINTS = frozenset(
     {
         "api.site_token",  # issues the site token (same-site checked inside)
         "api.store.stripe_webhook",  # Stripe signs every webhook payload
+        "api.store.storefront_stripe_webhook",  # signed with the storefront's secret
         "api.monitoring.health",  # uptime monitors; pass/fail only, no data
     }
 )

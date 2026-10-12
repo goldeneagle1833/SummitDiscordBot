@@ -285,3 +285,29 @@ describe('StoreAdmin deleting storefronts', () => {
     expect(await screen.findByText(/Hide it instead/)).toBeInTheDocument()
   })
 })
+
+describe('StoreAdmin storefront with its own Stripe key', () => {
+  const SUMMIT_SF = { id: 1, slug: 'summit', name: 'Summit Store', role: 'owner', is_active: 1, uses_summit_stripe: true }
+  const SERIES = {
+    id: 4, slug: 'explorer-series', name: 'Explorer Series Store', role: 'owner', is_active: 0,
+    uses_summit_stripe: false, uses_api_key: true, accepts_payments: true, api_key_present: true,
+    stripe_key_env: 'EXPLORER_STRIPE_SECRET_KEY', webhook_secret_env: 'EXPLORER_STRIPE_WEBHOOK_SECRET',
+    webhook_secret_present: false, webhook_url: 'https://example.com/api/store/webhooks/stripe/explorer-series',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    adminGetMe.mockResolvedValue({ is_full_admin: true, stripe_key_envs: ['EXPLORER_STRIPE_SECRET_KEY'], storefronts: [SUMMIT_SF, SERIES] })
+    adminGetProducts.mockResolvedValue({ products: [] })
+    adminGetOrders.mockResolvedValue({ orders: [] })
+    adminGetStorefrontApplications.mockResolvedValue({ applications: [] })
+  })
+
+  it('shows the key in use and the missing webhook secret', async () => {
+    renderWithRouter(<StoreAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Storefronts' }))
+    expect(await screen.findByText(/using the EXPLORER_STRIPE_SECRET_KEY key on the server/)).toBeInTheDocument()
+    expect(screen.getByText(/until EXPLORER_STRIPE_WEBHOOK_SECRET is set/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Disconnect Stripe' })).toBeInTheDocument()
+  })
+})

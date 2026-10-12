@@ -15,6 +15,12 @@ Storefronts:
   Connect webhook endpoint with ``event.account`` set. A storefront can't
   check out until its account can take charges.
 
+  A storefront can instead use its own Stripe secret or restricted key set
+  on the server (``stripe_key_env`` names the variable, e.g.
+  EXPLORER_STRIPE_SECRET_KEY). Its sessions are created with that key, and
+  its events arrive on its own endpoint, /api/store/webhooks/stripe/<slug>,
+  signed with the matching ..._STRIPE_WEBHOOK_SECRET.
+
 Security invariants:
   - Prices always come from the database, never the client.
   - The webhook is the ONLY thing that marks an order paid. The success
@@ -28,7 +34,7 @@ import os
 
 import stripe
 
-from repositories.store import StoreRepository
+from repositories.store import StoreRepository, webhook_secret_env
 from webapp_config import FRONTEND_URL, FREE_SHIPPING_ROLE_IDS
 
 logger = logging.getLogger(__name__)
@@ -122,12 +128,14 @@ class StoreCheckoutService:
         storefront = self._storefront_for_items(items)
         if storefront and not self.repo.accepts_payments(storefront):
             raise ValueError(f"{storefront['name']} isn't taking orders yet")
-        stripe_account = self.repo.stripe_account_for(storefront)
+        # Connected storefronts and ones with their own API key take payments
+        # on their own Stripe account rather than Summit's
+        own_account = self._payee(storefront) is not None
 
         # Free shipping for Patreon / Summit ticket holders, on Summit's
         # own products only
         has_free_shipping = bool(
-            not stripe_account
+            not own_account
             and discord_roles and FREE_SHIPPING_ROLE_IDS.intersection(discord_roles)
         )
 
@@ -135,12 +143,12 @@ class StoreCheckoutService:
         # live on Summit's account, so connected storefronts use their own
         # flat rate instead.
         use_shipping_rates = bool(
-            not stripe_account
+            not own_account
             and STRIPE_SHIPPING_RATE_DOMESTIC
             and STRIPE_SHIPPING_RATE_INTERNATIONAL
         )
 
-        if stripe_account:
+        if own_account:
             shipping_options = None
             shipping_cents = (
                 storefront["shipping_cents"]
@@ -204,7 +212,6 @@ class StoreCheckoutService:
 
         # The success/cancel pages clear or keep this storefront's cart only
         storefront = self.repo.get_storefront(full_order["storefront_id"]) or {}
-        stripe_account = self.repo.stripe_account_for(storefront)
         sf = f"&storefront={storefront.get('slug', '')}" if storefront else ""
 
         session_params = {
@@ -236,7 +243,7 @@ class StoreCheckoutService:
 
         try:
             checkout_session = stripe.checkout.Session.create(
-                **session_params, **self._account_kwargs(stripe_account)
+                **session_params, **self._stripe_kwargs(storefront)
             )
         except stripe.StripeError:
             # Stripe rejected the session: release the reserved stock.
@@ -266,14 +273,34 @@ class StoreCheckoutService:
                 return self.repo.get_storefront(product.get("storefront_id"))
         return None
 
-    @staticmethod
-    def _account_kwargs(stripe_account: str | None) -> dict:
-        return {"stripe_account": stripe_account} if stripe_account else {}
+    def _payee(self, storefront: dict | None) -> str | None:
+        """Which Stripe account takes this storefront's payments.
+
+        None for Summit's own account, the connected account id for a
+        Connect storefront, or "key:<ENV NAME>" for one using its own key.
+        Webhook events must come from the same payee as the order.
+        """
+        key_env = self.repo.stripe_key_env_for(storefront)
+        if key_env:
+            return f"key:{key_env}"
+        return self.repo.stripe_account_for(storefront)
+
+    def _stripe_kwargs(self, storefront: dict | None) -> dict:
+        """Extra Stripe API arguments to act on the storefront's account."""
+        key_env = self.repo.stripe_key_env_for(storefront)
+        if key_env:
+            key = os.environ.get(key_env, "")
+            if not key:
+                raise ValueError(f"{storefront['name']} isn't taking orders yet")
+            return {"api_key": key}
+        account = self.repo.stripe_account_for(storefront)
+        return {"stripe_account": account} if account else {}
+
+    def _order_storefront(self, order: dict) -> dict | None:
+        return self.repo.get_storefront(order.get("storefront_id"))
 
     def _order_account(self, order: dict) -> str | None:
-        return self.repo.stripe_account_for(
-            self.repo.get_storefront(order.get("storefront_id"))
-        )
+        return self._payee(self._order_storefront(order))
 
     # ------------------------------------------------------------------
     # Stripe Connect onboarding (one Standard account per storefront)
@@ -353,7 +380,7 @@ class StoreCheckoutService:
     def _expire_checkout_session(self, order: dict) -> None:
         if order.get("payment_provider") != "stripe" or not order.get("payment_ref"):
             return  # Session was never created, nothing to close
-        account = self._account_kwargs(self._order_account(order))
+        account = self._stripe_kwargs(self._order_storefront(order))
         try:
             stripe.checkout.Session.expire(order["payment_ref"], **account)
         except stripe.StripeError:
@@ -387,14 +414,33 @@ class StoreCheckoutService:
                 continue
         return stripe.Webhook.construct_event(payload, sig_header, secrets[-1])
 
-    def handle_event(self, event) -> dict:
-        """Process a verified Stripe event. Returns a status summary dict."""
+    @staticmethod
+    def construct_storefront_event(storefront: dict, payload: bytes, sig_header: str):
+        """Verify an event sent from a storefront's own (API key) Stripe account.
+
+        Raises LookupError if the storefront has no webhook secret set up.
+        """
+        key_env = StoreRepository.stripe_key_env_for(storefront)
+        secret = os.environ.get(webhook_secret_env(key_env), "") if key_env else ""
+        if not secret:
+            raise LookupError("storefront webhook not configured")
+        return stripe.Webhook.construct_event(payload, sig_header, secret)
+
+    def handle_event(self, event, payee: str | None = None) -> dict:
+        """Process a verified Stripe event. Returns a status summary dict.
+
+        payee is "key:<ENV NAME>" for events from a storefront's own
+        endpoint; otherwise it comes from the event (connected account id,
+        or None for Summit's own).
+        """
         etype = event["type"]
         # Set on events from a storefront's connected account; None for Summit's
         try:
             account = event["account"] or None
         except (KeyError, TypeError):
             account = None
+        if payee:
+            account = payee
         # Stripe Event objects don't support .get(); convert to plain dict
         # so our handlers can use dict.get() safely.
         raw = event["data"]["object"]
@@ -408,7 +454,7 @@ class StoreCheckoutService:
             return self._handle_completed(obj, account)
         if etype == "checkout.session.expired":
             return self._handle_expired(obj, account)
-        if etype == "account.updated":
+        if etype == "account.updated" and not payee:
             if self.repo.set_stripe_charges_enabled(
                 obj.get("id"), bool(obj.get("charges_enabled"))
             ):

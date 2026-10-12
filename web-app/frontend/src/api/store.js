@@ -99,3 +99,12 @@ export const formatMoney = (cents, currency = 'USD') =>
   currency === 'USD'
     ? `$${(cents / 100).toFixed(2)}`
     : `${(cents / 100).toFixed(2)} ${currency}`
+
+// Sales dashboard (managers and full store admins)
+export const adminGetDashboard = (storefrontId, days) => {
+  const params = new URLSearchParams({ days: String(days) })
+  if (storefrontId != null) params.set('storefront_id', storefrontId)
+  return get(`/api/store/admin/dashboard?${params}`)
+}
+export const salesSummaryCsvUrl = (storefrontId) =>
+  `/api/store/admin/sales-summary.csv${storefrontId != null ? `?storefront_id=${storefrontId}` : ''}`

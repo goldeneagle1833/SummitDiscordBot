@@ -11,6 +11,7 @@ import {
   adminGetStorefrontPayments, adminStartStripeOnboarding, adminDisconnectStripe, adminLinkStripe,
 } from '@/api/store'
 import Spinner from '@/components/ui/Spinner'
+import SalesDashboard from '@/components/store/SalesDashboard'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const inputCls =
@@ -1340,6 +1341,12 @@ export default function StoreAdmin() {
           checkStripe={backFromStripe}
           stripeError={params.get('stripe_error')}
           onChanged={loadMe}
+        />
+      )}
+      {current !== 'storefronts' && canEditProducts && (
+        <SalesDashboard
+          storefrontId={storefrontId}
+          title={selected ? selected.name : 'All storefronts'}
         />
       )}
       {!full && (

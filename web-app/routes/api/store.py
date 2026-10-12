@@ -295,10 +295,10 @@ def admin_deactivate_product(product_id: int):
 # Store admin: order queue
 # ----------------------------------------------------------------------
 
-def _order_scope_from_args() -> list[int] | None:
+def _order_scope_from_args(need: str = "orders") -> list[int] | None:
     """Storefront ids for an order list: the user's scope, optionally narrowed
     by ?storefront_id=."""
-    ids = _scope_ids("orders")
+    ids = _scope_ids(need)
     wanted = request.args.get("storefront_id", type=int)
     if wanted is None:
         return ids
@@ -462,6 +462,63 @@ def admin_export_orders():
         buf.getvalue(),
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename=orders-{stamp}.csv"},
+    )
+
+
+DASHBOARD_RANGES = (7, 30, 90, 365)
+
+
+@store_bp.route("/store/admin/dashboard", methods=["GET"])
+@require_store_staff
+def admin_dashboard():
+    """Sales summary for ?storefront_id= (or every storefront in scope), ?days=."""
+    from services.store_dashboard import StoreDashboard
+    days = request.args.get("days", 30, type=int)
+    if days not in DASHBOARD_RANGES:
+        return jsonify({"error": f"days must be one of {', '.join(map(str, DASHBOARD_RANGES))}"}), 400
+    if _scope_ids("products") == []:
+        return jsonify({"error": "Sales are for managers"}), 403
+    return jsonify(StoreDashboard(_repo()).summary(_order_scope_from_args("products"), days))
+
+
+@store_bp.route("/store/admin/sales-summary.csv", methods=["GET"])
+@require_store_staff
+def admin_sales_summary_csv():
+    """Monthly sales per storefront, for bookkeeping.
+
+    The order, item and money columns cover orders that stayed paid
+    (net_sales). Refunded orders are counted separately; gross_sales adds
+    them back.
+    """
+    import csv
+    import io
+    from flask import Response
+    from services.store_dashboard import StoreDashboard
+
+    if _scope_ids("products") == []:
+        return jsonify({"error": "Sales are for managers"}), 403
+    repo = _repo()
+    rows = StoreDashboard(repo).monthly_rows(_order_scope_from_args("products"))
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "month", "storefront", "orders", "items", "product_sales", "shipping",
+        "tax", "net_sales", "refunded_orders", "refunded", "gross_sales",
+    ])
+    money = lambda c: f"{(c or 0) / 100:.2f}"  # noqa: E731
+    for r in rows:
+        writer.writerow([
+            r["month"], r["storefront"], r["orders"], r["units"] or 0,
+            money(r["products"]), money(r["shipping"]), money(r["tax"]),
+            money(r["sales"]), r["refunds"], money(r["refunded"]),
+            money((r["sales"] or 0) + (r["refunded"] or 0)),
+        ])
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "export_sales_summary", f"months={len(rows)}")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        buf.getvalue(), mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=sales-summary-{stamp}.csv"},
     )
 
 

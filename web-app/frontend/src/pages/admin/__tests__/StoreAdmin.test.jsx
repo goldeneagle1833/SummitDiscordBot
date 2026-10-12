@@ -17,6 +17,7 @@ vi.mock('@/api/store', async () => {
     adminLinkStripe: vi.fn(),
     adminGetStorefrontApplications: vi.fn(),
     adminGetStorefrontAdmins: vi.fn(),
+    adminGetDashboard: vi.fn(() => new Promise(() => {})),
   }
 })
 

@@ -96,16 +96,16 @@ def test_archetype_stats_tiers_and_minimums():
     assert stats["rankedGames"] == 45
 
 
-def test_matchups_need_enough_games():
-    games = [{"winner": ("A", "Fire"), "loser": ("B", "Water")}] * 15 + \
-            [{"winner": ("B", "Water"), "loser": ("A", "Fire")}] * 10
-    arch = meta_report.archetype_stats(games)["archetypes"]
-    grid = meta_report.matchup_grid(games, arch)
+def test_matchups_are_avatar_against_avatar():
+    games = [{"winner": ("A", "Fire"), "loser": ("B", "Water")}] * 6 + \
+            [{"winner": ("A", "Air"), "loser": ("B", "Earth")}] * 3 + \
+            [{"winner": ("B", "Water"), "loser": ("A", "Fire")}] * 6
+    grid = meta_report.matchup_grid(games)
     a = [x["avatar"] for x in grid["archetypes"]].index("A")
     b = 1 - a
     assert grid["cells"][a][a] is None
-    assert grid["cells"][a][b] == {"games": 25, "winRate": 60.0}
-    few = meta_report.matchup_grid(games[:12], arch)
+    assert grid["cells"][a][b] == {"games": 15, "winRate": 60.0}
+    few = meta_report.matchup_grid(games[:6])
     assert few["cells"][a][b]["winRate"] is None
 
 
@@ -135,6 +135,18 @@ def test_card_section_movers_and_sleeper():
     assert section["rising"][0]["name"] == "Bolt" and section["rising"][0]["change"] == 10.0
     assert section["falling"][0]["name"] == "Trolls"
     assert section["sleeper"]["name"] == "Pixies"
+
+
+def test_card_section_without_earlier_period_shows_top_cards():
+    now = cards_body([("bolt", 0.40, 300, 0.55), ("pixies", 0.05, 80, 0.62), ("rare", 0.01, 5, 0.9)])
+    section = meta_report.card_section(now, None, [], "2026-09-15")
+    assert section["mode"] == "top"
+    assert [c["name"] for c in section["rising"]][:2] == ["Bolt", "Pixies"]
+    assert [c["name"] for c in section["falling"]] == ["Pixies", "Bolt"]
+
+
+def test_card_section_with_no_rows_is_unavailable():
+    assert meta_report.card_section(cards_body([]), None, [], "2026-09-15")["available"] is False
 
 
 def test_card_section_waits_for_release():

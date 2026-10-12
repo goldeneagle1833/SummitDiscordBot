@@ -48,8 +48,8 @@ logger = logging.getLogger(__name__)
 EASTERN = ZoneInfo("America/New_York")
 MIN_ARCHETYPE_GAMES = 20   # deck-games before an Avatar + element pair is listed...
 MIN_ARCHETYPE_SHARE = 0.01  # ...and at least 1% of the period's decks
-MIN_MATCHUP_GAMES = 20     # games before a matchup cell shows a number
-MIN_SLEEPER_GAMES = 50     # player-games before a card can be the sleeper pick
+MIN_MATCHUP_GAMES = 10     # games before a matchup cell shows a number
+MIN_SLEEPER_GAMES = 30     # player-games before a card can be the sleeper pick
 SLEEPER_MAX_SHARE = 0.10   # sleeper cards are in fewer than 10% of decks
 MATCHUP_SIZE = 6           # most-played archetypes in the matchup grid
 MOVERS = 5                 # risers and fallers shown
@@ -230,27 +230,34 @@ def archetype_stats(games: list[dict]) -> dict:
             "archetypes": rows}
 
 
-def matchup_grid(games: list[dict], archetypes: list[dict]) -> dict:
-    top = sorted(archetypes, key=lambda r: -r["games"])[:MATCHUP_SIZE]
-    keys = [(r["avatar"], r["elements"]) for r in top]
+def matchup_grid(games: list[dict], archetypes: list[dict] | None = None) -> dict:
+    """Avatar against Avatar. Element pairs split the games too thin for matchups."""
+    totals: dict[str, int] = {}
+    for g in games:
+        for side in ("winner", "loser"):
+            if g[side]:
+                totals[g[side][0]] = totals.get(g[side][0], 0) + 1
+    keys = [a for a, _n in sorted(totals.items(), key=lambda kv: -kv[1])][:MATCHUP_SIZE]
     index = {k: i for i, k in enumerate(keys)}
     wins = [[0] * len(keys) for _ in keys]
     for g in games:
         w, l = g["winner"], g["loser"]
-        if w in index and l in index and w != l:
-            wins[index[w]][index[l]] += 1
+        if w and l and w[0] in index and l[0] in index and w[0] != l[0]:
+            wins[index[w[0]]][index[l[0]]] += 1
     cells = []
     for i in range(len(keys)):
         row = []
         for j in range(len(keys)):
             n = wins[i][j] + wins[j][i]
-            if i == j or n < MIN_MATCHUP_GAMES:
-                row.append(None if i == j else {"games": n, "winRate": None})
+            if i == j:
+                row.append(None)
+            elif n < MIN_MATCHUP_GAMES:
+                row.append({"games": n, "winRate": None})
             else:
                 row.append({"games": n, "winRate": round(wins[i][j] / n * 100, 1)})
         cells.append(row)
-    return {"archetypes": [{"avatar": a, "elements": e} for a, e in keys], "cells": cells,
-            "minGames": MIN_MATCHUP_GAMES}
+    return {"archetypes": [{"avatar": a, "elements": ""} for a in keys], "cells": cells,
+            "minGames": MIN_MATCHUP_GAMES, "by": "avatar"}
 
 
 def _with_moves(current: list[dict], previous: list[dict]) -> None:
@@ -317,6 +324,8 @@ def card_section(body: dict | None, prev_body: dict | None, history: list[dict],
     if released and released < period_through:
         return {"available": False, "releasedThrough": released}
     now, before = _card_rows(body), _card_rows(prev_body)
+    if not any(r["share"] for r in now.values()):
+        return {"available": False, "empty": True, "releasedThrough": released}
     # Each earlier report keeps a compact index so trend lines need no extra PSO calls.
     older = [((h.get("payload") or {}).get("cards") or {}).get("index") or {} for h in reversed(history)]
 
@@ -339,6 +348,24 @@ def card_section(body: dict | None, prev_body: dict | None, history: list[dict],
 
     rising = [mover(d, k) for d, k in reversed(deltas) if d > 0][:MOVERS]
     falling = [mover(d, k) for d, k in deltas if d < 0][:MOVERS]
+    mode = "movers"
+    if not rising and not falling:
+        # No earlier period to compare with: show what's played most and what wins most.
+        mode = "top"
+
+        def plain(key):
+            row = now[key]
+            return {"name": row["name"], "share": _pct(row["share"]), "change": None,
+                    "winRate": _pct(row["playedWinRate"]), "trend": trend(key)}
+
+        by_share = sorted((k for k, r in now.items() if r["share"]), key=lambda k: -now[k]["share"])
+        by_wins = sorted(
+            (k for k, r in now.items()
+             if r["playedWinRate"] is not None and (r["playedGames"] or 0) >= MIN_SLEEPER_GAMES),
+            key=lambda k: -now[k]["playedWinRate"],
+        )
+        rising = [plain(k) for k in by_share[:MOVERS]]
+        falling = [plain(k) for k in by_wins[:MOVERS]]
     sleepers = [
         (row["playedWinRate"], key) for key, row in now.items()
         if row["share"] is not None and row["share"] < SLEEPER_MAX_SHARE
@@ -353,6 +380,7 @@ def card_section(body: dict | None, prev_body: dict | None, history: list[dict],
     index = {k: [_pct(r["share"]), _pct(r["playedWinRate"])] for k, r in now.items()}
     return {
         "available": True,
+        "mode": mode,
         "totalGames": body.get("totalGames"),
         "releasedThrough": released,
         "rising": rising,

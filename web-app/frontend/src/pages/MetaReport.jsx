@@ -217,9 +217,11 @@ function CardList({ title, cards }) {
               </div>
               <div className="flex gap-2.5 items-center">
                 <Spark points={c.trend} />
-                <span className="font-mono text-sm tabular-nums" style={{ color: c.change > 0 ? UP : DOWN }}>
-                  {c.change > 0 ? '+' : ''}{c.change}
-                </span>
+                {c.change != null && (
+                  <span className="font-mono text-sm tabular-nums" style={{ color: c.change > 0 ? UP : DOWN }}>
+                    {c.change > 0 ? '+' : ''}{c.change}
+                  </span>
+                )}
               </div>
             </li>
           ))}
@@ -233,15 +235,18 @@ function Cards({ cards }) {
   if (!cards?.available) {
     return (
       <div className={`${panel} text-sm text-text-muted`}>
-        Play Sorcery Online hadn&apos;t released card data for this period when the report was built.
+        {cards?.empty
+          ? 'Play Sorcery Online has no ranked card data for this period.'
+          : "Play Sorcery Online hadn't released card data for this period when the report was built."}
       </div>
     )
   }
   const s = cards.sleeper
+  const top = cards.mode === 'top'
   return (
     <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))]">
-      <CardList title="Rising" cards={cards.rising} />
-      <CardList title="Falling" cards={cards.falling} />
+      <CardList title={top ? 'Most played' : 'Rising'} cards={cards.rising} />
+      <CardList title={top ? 'Best when played' : 'Falling'} cards={cards.falling} />
       <div className={`${panel} border-secondary/40`}>
         <p className="text-xs uppercase tracking-wider text-text-muted mb-2.5">Sleeper pick</p>
         {s ? (
@@ -284,8 +289,9 @@ function Matchups({ matchups }) {
     ]
   }, [names, cells])
 
-  if (names.length < 2) {
-    return <div className={`${panel} text-sm text-text-muted`}>Not enough ranked games for matchups this period.</div>
+  const hasNumbers = cells.some((row) => row.some((c) => c && c.winRate != null))
+  if (names.length < 2 || !hasNumbers) {
+    return <div className={`${panel} text-sm text-text-muted`}>Not enough ranked games between the top Avatars for matchups this period.</div>
   }
   return (
     <>
@@ -557,11 +563,13 @@ export default function MetaReport() {
             </Section>
           </div>
 
-          <Section title="Cards on the move" sub="Biggest changes in how often a card is played since the last report, from Play Sorcery Online's ranked data. The line shows its win rate across recent reports.">
+          <Section title="Cards on the move" sub={report.cards?.mode === 'top'
+            ? "The most-played cards and the cards that win most when played, from Play Sorcery Online's ranked data. Rising and falling cards start once there's an earlier period to compare."
+            : "Biggest changes in how often a card is played since the last report, from Play Sorcery Online's ranked data. The line shows its win rate across recent reports."}>
             <Cards cards={report.cards} />
           </Section>
 
-          <Section title="What beats what" sub={`Row deck's win rate against the column deck in Summit ranked games. Totals only; cells under ${report.ranked?.matchups?.minGames || 20} games stay blank.`}>
+          <Section title="What beats what" sub={`The six most-played Avatars, row against column, in Summit ranked games. Totals only; cells under ${report.ranked?.matchups?.minGames || 10} games stay blank.`}>
             <Matchups matchups={report.ranked?.matchups} />
           </Section>
 

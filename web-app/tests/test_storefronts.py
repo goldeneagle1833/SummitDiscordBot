@@ -545,6 +545,20 @@ class TestStorefrontPayments:
         assert kwargs["line_items"][-1]["price_data"]["unit_amount"] == 350
 
     @patch("services.store_checkout.stripe")
+    @patch("services.store_checkout.STRIPE_SHIPPING_RATE_DOMESTIC", "shr_dom")
+    @patch("services.store_checkout.STRIPE_SHIPPING_RATE_INTERNATIONAL", "shr_int")
+    def test_every_storefront_ships_to_the_us_only(self, mock_stripe, repo, shop):
+        _mock_session(mock_stripe)
+        repo.set_storefront_stripe(shop["explorer"], "acct_exp", True)
+        service = StoreCheckoutService(repo)
+        for product in (shop["summit_product"], shop["explorer_product"]):
+            service.create_checkout(user_id="u", username="U",
+                                    items=[{"product_id": product, "quantity": 1}])
+            kwargs = mock_stripe.checkout.Session.create.call_args.kwargs
+            assert kwargs["shipping_address_collection"] == {"allowed_countries": ["US"]}
+            assert {"shipping_rate": "shr_int"} not in kwargs.get("shipping_options", [])
+
+    @patch("services.store_checkout.stripe")
     def test_summit_checkout_stays_on_platform(self, mock_stripe, repo, shop):
         _mock_session(mock_stripe)
         StoreCheckoutService(repo).create_checkout(

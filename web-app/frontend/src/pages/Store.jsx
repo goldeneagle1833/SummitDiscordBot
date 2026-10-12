@@ -212,8 +212,9 @@ export default function Store() {
       </div>
 
       {active.description && (
-        <p className="text-sm text-text-muted mb-5 max-w-3xl">{active.description}</p>
+        <p className="text-sm text-text-muted mb-2 max-w-3xl">{active.description}</p>
       )}
+      <p className="text-xs text-text-muted mb-5">Ships within the United States only.</p>
 
       {notTakingOrders && (
         <p className="text-sm bg-secondary/10 border border-secondary/30 rounded-lg px-4 py-3 mb-5 max-w-3xl">

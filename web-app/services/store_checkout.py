@@ -50,6 +50,10 @@ OAUTH_CALLBACK_PATH = "/api/store/stripe/oauth/callback"
 FLAT_SHIPPING_CENTS = int(os.environ.get("STORE_FLAT_SHIPPING_CENTS", "599"))
 CHECKOUT_EXPIRES_MINUTES = 60  # Stripe minimum is 30
 
+# Every storefront ships within the US only; Stripe Checkout refuses any
+# other shipping address.
+SHIP_COUNTRIES = ["US"]
+
 # Stripe Shipping Rate IDs (create via Stripe Dashboard or API)
 STRIPE_SHIPPING_RATE_DOMESTIC = os.environ.get("STRIPE_SHIPPING_RATE_DOMESTIC", "")
 STRIPE_SHIPPING_RATE_INTERNATIONAL = os.environ.get("STRIPE_SHIPPING_RATE_INTERNATIONAL", "")
@@ -145,7 +149,6 @@ class StoreCheckoutService:
         use_shipping_rates = bool(
             not own_account
             and STRIPE_SHIPPING_RATE_DOMESTIC
-            and STRIPE_SHIPPING_RATE_INTERNATIONAL
         )
 
         if own_account:
@@ -161,9 +164,9 @@ class StoreCheckoutService:
             ]
             shipping_cents = 0
         elif use_shipping_rates:
+            # US only, so the international rate is never offered
             shipping_options = [
                 {"shipping_rate": STRIPE_SHIPPING_RATE_DOMESTIC},
-                {"shipping_rate": STRIPE_SHIPPING_RATE_INTERNATIONAL},
             ]
             # Actual shipping cost determined by Stripe at checkout;
             # store 0 now, update from webhook when payment completes.
@@ -232,10 +235,9 @@ class StoreCheckoutService:
             "expires_at": int(time.time()) + CHECKOUT_EXPIRES_MINUTES * 60,
         }
 
-        # Always collect a shipping address
+        # Always collect a shipping address, US only
         session_params["shipping_address_collection"] = {
-            "allowed_countries": ["US", "CA", "GB", "AU", "DE", "FR",
-                                  "NL", "IT", "ES", "AT", "BE", "JP"],
+            "allowed_countries": SHIP_COUNTRIES,
         }
 
         if shipping_options:

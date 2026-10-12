@@ -1288,7 +1288,7 @@ export default function StoreAdmin() {
   const tabs = [
     { key: 'orders', label: 'Order queue' },
     canEditProducts && { key: 'products', label: 'Products' },
-    full && { key: 'team', label: 'Admins' },
+    (full || selected?.role === 'manager') && { key: 'team', label: 'Admins' },
     full && { key: 'storefronts', label: 'Storefronts' },
   ].filter(Boolean)
   const current = tabs.some((t) => t.key === tab) ? tab : 'orders'
@@ -1333,7 +1333,7 @@ export default function StoreAdmin() {
       )}
       {selected && !selected.uses_summit_stripe && current !== 'storefronts' && (
         <PaymentsCard
-          key={selected.id}
+          key={`payments-${selected.id}`}
           storefront={selected}
           canConnect={full || selected.role === 'manager'}
           canLink={Boolean(me.can_link_stripe)}
@@ -1365,14 +1365,14 @@ export default function StoreAdmin() {
       </div>
 
       {current === 'orders' && (
-        <OrdersPanel key={storefrontId ?? 'all'} storefrontId={storefrontId} showStorefront={storefrontId == null} />
+        <OrdersPanel key={`orders-${storefrontId ?? 'all'}`} storefrontId={storefrontId} showStorefront={storefrontId == null} />
       )}
       {current === 'products' && (
-        <ProductsPanel key={storefrontId ?? 'all'} storefrontId={storefrontId} storefronts={productStorefronts} />
+        <ProductsPanel key={`products-${storefrontId ?? 'all'}`} storefrontId={storefrontId} storefronts={productStorefronts} />
       )}
       {current === 'team' && (
         selected
-          ? <TeamPanel key={selected.id} storefront={selected} />
+          ? <TeamPanel key={`team-${selected.id}`} storefront={selected} />
           : <p className="text-sm text-text-muted">Pick a storefront above to see and change its admins.</p>
       )}
       {current === 'storefronts' && <StorefrontsPanel storefronts={storefronts} keyEnvs={me.stripe_key_envs || []} onChanged={loadMe} />}

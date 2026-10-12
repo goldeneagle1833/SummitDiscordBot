@@ -1155,9 +1155,14 @@ def admin_list_storefront_admins(storefront_id: int):
 
 
 @store_bp.route("/store/admin/storefronts/<int:storefront_id>/admins", methods=["POST"])
-@require_store_admin
+@require_store_staff
 def admin_add_storefront_admin(storefront_id: int):
-    """Body: {user_id, username?, role}. Re-adding someone changes their role."""
+    """Body: {user_id, username?, role}. Re-adding someone changes their role.
+
+    Full store admins, and managers of this storefront for their own team.
+    """
+    if not _can(storefront_id, "products"):
+        return _not_found("Storefront")
     data = request.get_json(silent=True) or {}
     user_id = _clean_text(data, "user_id", 40)
     role = data.get("role") or "manager"
@@ -1188,8 +1193,13 @@ def admin_add_storefront_admin(storefront_id: int):
 
 @store_bp.route("/store/admin/storefronts/<int:storefront_id>/admins/<user_id>",
                 methods=["DELETE"])
-@require_store_admin
+@require_store_staff
 def admin_remove_storefront_admin(storefront_id: int, user_id: str):
+    if not _can(storefront_id, "products"):
+        return _not_found("Storefront")
+    if not is_store_admin() and user_id == str(session.get("user_id")):
+        return jsonify({"error": "You can't remove yourself. Ask another manager "
+                                 "or a store admin."}), 400
     repo = _repo()
     if not repo.remove_storefront_admin(storefront_id, user_id):
         return _not_found("Admin")
@@ -1200,7 +1210,7 @@ def admin_remove_storefront_admin(storefront_id: int, user_id: str):
 
 
 @store_bp.route("/store/admin/user-search", methods=["GET"])
-@require_store_admin
+@require_store_staff
 def admin_user_search():
     """Find people to add as storefront admins (people who've logged in or played)."""
     return _user_search()

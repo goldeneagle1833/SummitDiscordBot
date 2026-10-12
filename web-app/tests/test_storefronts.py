@@ -340,11 +340,23 @@ class TestStorefrontAdminManagement:
         assert full_admin.post(url, json={"user_id": "abc"}).status_code == 400
         assert full_admin.post(url, json={"user_id": "1", "role": "owner"}).status_code == 400
 
-    def test_manager_cannot_assign_admins(self, explorer_manager):
+    def test_manager_manages_own_team_only(self, explorer_manager, store_repo):
         client, s = explorer_manager
+        url = f"/api/store/admin/storefronts/{s['explorer']}/admins"
+        assert client.post(url, json={"user_id": "999", "username": "Packer",
+                                      "role": "fulfillment"}).status_code == 201
+        assert store_repo.storefront_roles_for_user("999") == {s["explorer"]: "fulfillment"}
+        assert client.delete(f"{url}/999").status_code == 200
+        assert client.delete(f"{url}/mgr_1").status_code == 400  # not themselves
+        other = f"/api/store/admin/storefronts/{s['summit']}/admins"
+        assert client.post(other, json={"user_id": "999", "role": "manager"}).status_code == 404
+        assert client.get("/api/store/admin/user-search?q=ab").status_code == 200
+
+    def test_fulfillment_cannot_assign_admins(self, explorer_fulfillment):
+        client, s = explorer_fulfillment
         resp = client.post(f"/api/store/admin/storefronts/{s['explorer']}/admins",
                            json={"user_id": "999", "role": "manager"})
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
     def test_manager_can_see_own_team_only(self, explorer_manager):
         client, s = explorer_manager

@@ -16,12 +16,14 @@ vi.mock('@/api/store', async () => {
     adminDeleteStorefront: vi.fn(),
     adminLinkStripe: vi.fn(),
     adminGetStorefrontApplications: vi.fn(),
+    adminGetStorefrontAdmins: vi.fn(),
   }
 })
 
 import {
   adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminUploadProductImages, adminGetOrders,
   adminStartStripeOnboarding, adminDeleteStorefront, adminGetStorefrontApplications, adminLinkStripe,
+  adminGetStorefrontAdmins,
 } from '@/api/store'
 import StoreAdmin from '../StoreAdmin'
 
@@ -189,11 +191,14 @@ describe('StoreAdmin for a storefront admin', () => {
     adminGetOrders.mockResolvedValue({ orders: [] })
   })
 
-  it('shows a manager only their storefront, without the full-admin tabs', async () => {
+  it('shows a manager only their storefront and its team, without the full-admin tabs', async () => {
     adminGetMe.mockResolvedValue({ is_full_admin: false, storefronts: [{ ...EXPLORER, role: 'manager' }] })
+    adminGetStorefrontAdmins.mockResolvedValue({ admins: [{ user_id: '5', username: 'jams', role: 'manager' }] })
     renderWithRouter(<StoreAdmin />)
     expect(await screen.findByRole('button', { name: 'Products' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Admins' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Admins' }))
+    expect(await screen.findByText('jams')).toBeInTheDocument()
+    expect(adminGetStorefrontAdmins).toHaveBeenCalledWith(2)
     expect(screen.queryByRole('button', { name: 'Storefronts' })).not.toBeInTheDocument()
     expect(screen.queryByText('Download backup')).not.toBeInTheDocument()
     await waitFor(() => expect(adminGetOrders).toHaveBeenCalledWith(expect.objectContaining({ storefront_id: 2 })))

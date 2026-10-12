@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { adminGetDashboard, salesSummaryCsvUrl } from '@/api/store'
+import OrdersMapModal from './OrdersMapModal'
+import { stateName } from './usStates'
 
 const RANGES = [
   { days: 7, label: '7 days' },
@@ -112,6 +114,40 @@ function Attention({ a }) {
   )
 }
 
+function WhereItShips({ states, onOpenMap }) {
+  const total = states.reduce((a, s) => a + s.orders, 0)
+  return (
+    <button
+      type="button"
+      onClick={onOpenMap}
+      className="text-left w-full bg-bg-base border border-border hover:border-primary rounded-lg px-4 py-3 min-w-0 transition-colors"
+      aria-label="Where it ships. Open the order map"
+    >
+      <div className="flex items-baseline justify-between gap-2 mb-2">
+        <h3 className="text-xs uppercase tracking-wider text-text-muted font-medium">Where it ships</h3>
+        <span className="text-xs text-primary">Open map</span>
+      </div>
+      {states.length === 0 ? (
+        <p className="text-sm text-text-muted">No orders in this range.</p>
+      ) : (
+        <ul className="max-h-48 overflow-y-auto pr-1 space-y-2">
+          {states.map((s) => (
+            <li key={s.state} className="text-sm">
+              <div className="flex justify-between gap-2 tabular-nums">
+                <span>{stateName(s.state)}</span>
+                <span className="text-text-muted">{s.orders} · {dollars(s.sales_cents)}</span>
+              </div>
+              <div className="h-1.5 rounded bg-bg-elevated overflow-hidden mt-1">
+                <div className="h-full bg-secondary" style={{ width: `${(s.orders / total) * 100}%` }} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </button>
+  )
+}
+
 function Rows({ rows, empty }) {
   if (!rows.length) return <p className="text-sm text-text-muted">{empty}</p>
   return (
@@ -134,6 +170,7 @@ export default function SalesDashboard({ storefrontId, title }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [hidden, setHidden] = useState(readHidden)
+  const [mapOpen, setMapOpen] = useState(false)
 
   useEffect(() => {
     if (hidden) return undefined
@@ -220,6 +257,7 @@ export default function SalesDashboard({ storefrontId, title }) {
             <Card title="Top products">
               <Rows empty="No sales in this range." rows={data.top_products.map((x) => [x.name, `${x.units} sold`, dollars(x.sales_cents)])} />
             </Card>
+            <WhereItShips states={data.states} onOpenMap={() => setMapOpen(true)} />
             <Card title="Money in">
               <Rows empty="" rows={[
                 ['Products', dollarsExact(m.products_cents)],
@@ -250,7 +288,7 @@ export default function SalesDashboard({ storefrontId, title }) {
               </p>
               <Rows empty="No buyers in this range." rows={rb.best.map((b) => [b.username, `${b.orders} ${b.orders === 1 ? 'order' : 'orders'}`, dollars(b.spent_cents)])} />
             </Card>
-            <Card title="Monthly limit hits" className="lg:col-span-2">
+            <Card title="Monthly limit hits">
               {data.limit_hits.length ? (
                 <>
                   <Rows empty="" rows={data.limit_hits.map((h) => [h.name, `limit ${h.cap} · ${h.buyers} ${h.buyers === 1 ? 'buyer' : 'buyers'}`, `${h.hits} ${h.hits === 1 ? 'hit' : 'hits'}`])} />
@@ -260,6 +298,15 @@ export default function SalesDashboard({ storefrontId, title }) {
             </Card>
           </div>
         </>
+      )}
+      {mapOpen && (
+        <OrdersMapModal
+          storefrontId={storefrontId}
+          days={days}
+          rangeLabel={rangeLabel}
+          title={title}
+          onClose={() => setMapOpen(false)}
+        />
       )}
     </section>
   )

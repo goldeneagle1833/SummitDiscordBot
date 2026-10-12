@@ -120,6 +120,43 @@ class TestDashboard:
         assert StoreDashboard(repo)._flagged(repo._connect(), [shop["explorer"]],
                                              datetime.now(timezone.utc)) == 0
 
+    def test_states(self, repo, shop):
+        states = _summary(repo, [shop["summit"]])["states"]
+        assert states == [{"state": "OH", "orders": 3, "sales_cents": 4900}]
+
+    def test_order_map_groups_by_city_and_uses_cache(self, repo, shop):
+        dash = StoreDashboard(repo)
+        m = dash.order_map([shop["summit"]], 30, now=NOW, geocode=False)
+        assert m["places"] == [] and m["locating"] == 1
+        with repo._connect() as conn:
+            dash._ensure_geo_cache(conn)
+            conn.execute("INSERT INTO geo_cache VALUES (?, 39.96, -83.0, ?)",
+                         (dash._geo_key(" Columbus ", "oh"), NOW.isoformat()))
+        m = dash.order_map([shop["summit"]], 30, now=NOW, geocode=False)
+        assert m["locating"] == 0
+        assert m["places"] == [{"city": "Columbus", "state": "OH", "orders": 3,
+                                "sales_cents": 4900, "latitude": 39.96, "longitude": -83.0}]
+        assert dash.order_map([shop["explorer"]], 7, now=NOW, geocode=False)["places"][0]["orders"] == 1
+
+    def test_order_map_geocodes_missing_cities_once(self, repo, shop):
+        import services.store_dashboard as sd
+        calls = []
+
+        class Inline:
+            def __init__(self, target, **kw):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        with patch.object(sd.threading, "Thread", Inline), \
+                patch("services.geocoding.geocode_location",
+                      side_effect=lambda c, st, co: calls.append((c, st)) or (40.0, -83.0)):
+            StoreDashboard(repo).order_map([shop["summit"]], 30, now=NOW)
+            m = StoreDashboard(repo).order_map([shop["summit"]], 30, now=NOW)
+        assert calls == [("Columbus", "OH")]
+        assert m["places"][0]["latitude"] == 40.0
+
     def test_monthly_rows(self, repo, shop):
         rows = StoreDashboard(repo).monthly_rows([shop["summit"]])
         october = next(r for r in rows if r["month"] == "2026-10")

@@ -3,10 +3,10 @@ import { screen, renderWithRouter, userEvent } from '@/test/test-utils'
 
 vi.mock('@/api/store', async () => {
   const actual = await vi.importActual('@/api/store')
-  return { ...actual, adminGetDashboard: vi.fn() }
+  return { ...actual, adminGetDashboard: vi.fn(), adminGetOrderMap: vi.fn() }
 })
 
-import { adminGetDashboard } from '@/api/store'
+import { adminGetDashboard, adminGetOrderMap } from '@/api/store'
 import SalesDashboard from '../SalesDashboard'
 
 const DATA = {
@@ -20,6 +20,7 @@ const DATA = {
   repeat_buyers: { buyers: 30, repeat: 6, best: [{ user_id: '1', username: 'beadylittleeyes', orders: 3, spent_cents: 4500 }] },
   ship_time: { shipped: 4, average_hours: 30, median_hours: 20, within_2_days: 3 },
   limit_hits: [{ product_id: 1, name: 'Fire token set', cap: 2, buyers: 9, hits: 4 }],
+  states: [{ state: 'OH', orders: 20, sales_cents: 250000 }, { state: 'TX', orders: 5, sales_cents: 60000 }, { state: '?', orders: 1, sales_cents: 500 }],
 }
 
 describe('SalesDashboard', () => {
@@ -49,5 +50,23 @@ describe('SalesDashboard', () => {
     expect(adminGetDashboard).toHaveBeenLastCalledWith(null, 90)
     await userEvent.click(screen.getByRole('button', { name: 'Hide' }))
     expect(screen.getByRole('button', { name: 'Show sales' })).toBeInTheDocument()
+  })
+
+  it('lists states and opens the order map', async () => {
+    vi.mock('@/components/explorer/SeriesMap', () => ({
+      default: ({ points }) => <div data-testid="map">{points.map((p) => p.title).join(' | ')}</div>,
+    }))
+    adminGetOrderMap.mockResolvedValue({
+      places: [{ city: 'Columbus', state: 'OH', orders: 3, sales_cents: 4900, latitude: 40, longitude: -83 }],
+      locating: 2, not_found: 0,
+    })
+    renderWithRouter(<SalesDashboard storefrontId={2} title="Explorer Series Store" />)
+    expect(await screen.findByText('Ohio')).toBeInTheDocument()
+    expect(screen.getByText('Texas')).toBeInTheDocument()
+    expect(screen.getByText('No state given')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Open the order map/ }))
+    expect(await screen.findByTestId('map')).toHaveTextContent('Columbus, Ohio')
+    expect(screen.getByText(/2 cities are still being placed/)).toBeInTheDocument()
+    expect(adminGetOrderMap).toHaveBeenCalledWith(2, 30)
   })
 })

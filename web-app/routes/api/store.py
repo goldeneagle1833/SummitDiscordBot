@@ -481,6 +481,19 @@ def admin_dashboard():
     return jsonify(StoreDashboard(_repo()).summary(_order_scope_from_args("products"), days))
 
 
+@store_bp.route("/store/admin/order-map", methods=["GET"])
+@require_store_staff
+def admin_order_map():
+    """Paid orders per city for the map, for ?storefront_id= and ?days=."""
+    from services.store_dashboard import StoreDashboard
+    days = request.args.get("days", 30, type=int)
+    if days not in DASHBOARD_RANGES:
+        return jsonify({"error": f"days must be one of {', '.join(map(str, DASHBOARD_RANGES))}"}), 400
+    if _scope_ids("products") == []:
+        return jsonify({"error": "Sales are for managers"}), 403
+    return jsonify(StoreDashboard(_repo()).order_map(_order_scope_from_args("products"), days))
+
+
 @store_bp.route("/store/admin/sales-summary.csv", methods=["GET"])
 @require_store_staff
 def admin_sales_summary_csv():

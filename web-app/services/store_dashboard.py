@@ -7,12 +7,18 @@ orders are reported separately. Every query is limited to the storefronts
 the viewer may see.
 """
 
+import logging
 import re
+import threading
 from datetime import datetime, timedelta, timezone
 
 from repositories.store import StoreRepository
 
+logger = logging.getLogger(__name__)
+
 SOLD_STATUSES = ("paid", "shipped", "delivered")
+# One background geocoding run at a time (Nominatim allows ~1 request/second)
+_geocode_lock = threading.Lock()
 LOW_STOCK = 3  # products at or below this many left show under Needs attention
 FLAG_ACTIONS = ("amount_mismatch", "paid_after_cancel", "account_mismatch")
 TOP_N = 5
@@ -62,7 +68,117 @@ class StoreDashboard:
                 "repeat_buyers": self._repeat_buyers(conn, scope, args, s, e),
                 "ship_time": self._ship_time(conn, scope, args, s, e),
                 "limit_hits": self._limit_hits(conn, storefront_ids, s, e),
+                "states": self._states(conn, scope, args, s, e),
             }
+
+    @staticmethod
+    def _window(days: int, now: datetime) -> tuple[str, str]:
+        start = (now - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0) \
+            + timedelta(days=1)
+        return start.isoformat(), now.isoformat()
+
+    def _states(self, conn, scope, args, start, end) -> list[dict]:
+        sold, sold_args = _in("o.status", SOLD_STATUSES)
+        return [
+            dict(r) for r in conn.execute(
+                f"""SELECT COALESCE(NULLIF(UPPER(TRIM(o.ship_state)), ''), '?') AS state,
+                           COUNT(*) AS orders, SUM(o.total_cents) AS sales_cents
+                    FROM orders o
+                    WHERE {sold} AND o.paid_at >= ? AND o.paid_at < ? AND {scope}
+                    GROUP BY state ORDER BY sales_cents DESC, orders DESC""",
+                (*sold_args, start, end, *args),
+            )
+        ]
+
+    # ------------------------------------------------------------------
+    # Order map: one pin per city, never a street address
+    # ------------------------------------------------------------------
+
+    def order_map(self, storefront_ids: list[int] | None, days: int,
+                  now: datetime | None = None, geocode: bool = True) -> dict:
+        """Paid orders grouped by city, with cached coordinates.
+
+        Cities not looked up yet are geocoded in the background (cached in
+        geo_cache); the response says how many are still being located.
+        """
+        now = now or datetime.now(timezone.utc)
+        start, end = self._window(days, now)
+        scope, args = self._scope(storefront_ids)
+        sold, sold_args = _in("o.status", SOLD_STATUSES)
+        with self.repo._connect() as conn:
+            self._ensure_geo_cache(conn)
+            places = [
+                dict(r) for r in conn.execute(
+                    f"""SELECT TRIM(o.ship_city) AS city,
+                               UPPER(TRIM(o.ship_state)) AS state,
+                               COUNT(*) AS orders, SUM(o.total_cents) AS sales_cents,
+                               g.latitude, g.longitude, g.looked_up_at
+                        FROM orders o
+                        LEFT JOIN geo_cache g
+                          ON g.query = LOWER(TRIM(o.ship_city)) || ', ' ||
+                                       LOWER(TRIM(o.ship_state)) || ', us'
+                        WHERE {sold} AND o.paid_at >= ? AND o.paid_at < ? AND {scope}
+                          AND COALESCE(TRIM(o.ship_city), '') != ''
+                        GROUP BY LOWER(TRIM(o.ship_city)), UPPER(TRIM(o.ship_state))
+                        ORDER BY orders DESC""",
+                    (*sold_args, start, end, *args),
+                )
+            ]
+        missing = [p for p in places if p["looked_up_at"] is None]
+        if missing and geocode:
+            self._geocode_in_background([(p["city"], p["state"]) for p in missing])
+        return {
+            "places": [
+                {k: p[k] for k in ("city", "state", "orders", "sales_cents",
+                                   "latitude", "longitude")}
+                for p in places if p["latitude"] is not None
+            ],
+            "locating": len(missing),
+            "not_found": sum(1 for p in places
+                             if p["looked_up_at"] is not None and p["latitude"] is None),
+        }
+
+    @staticmethod
+    def _geo_key(city: str, state: str) -> str:
+        return f"{(city or '').strip().lower()}, {(state or '').strip().lower()}, us"
+
+    @staticmethod
+    def _ensure_geo_cache(conn) -> None:
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS geo_cache (
+                   query TEXT PRIMARY KEY,
+                   latitude REAL,
+                   longitude REAL,
+                   looked_up_at TEXT NOT NULL
+               )"""
+        )
+
+    def _geocode_in_background(self, places: list[tuple[str, str]]) -> None:
+        if not _geocode_lock.acquire(blocking=False):
+            return  # a run is already going; the next page load picks up the rest
+
+        def run():
+            from services.geocoding import geocode_location
+            try:
+                for city, state in places:
+                    coords = geocode_location(city, state, "US")
+                    with self.repo._connect() as conn:
+                        self._ensure_geo_cache(conn)
+                        conn.execute(
+                            """INSERT OR REPLACE INTO geo_cache
+                               (query, latitude, longitude, looked_up_at)
+                               VALUES (?, ?, ?, ?)""",
+                            (self._geo_key(city, state),
+                             coords[0] if coords else None,
+                             coords[1] if coords else None,
+                             datetime.now(timezone.utc).isoformat()),
+                        )
+            except Exception:
+                logger.exception("Order map geocoding failed")
+            finally:
+                _geocode_lock.release()
+
+        threading.Thread(target=run, daemon=True, name="order-map-geocode").start()
 
     def _totals(self, conn, scope, args, start, end) -> dict:
         sold, sold_args = _in("o.status", SOLD_STATUSES)

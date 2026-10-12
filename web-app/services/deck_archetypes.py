@@ -275,9 +275,9 @@ def summarize(cluster_: Cluster, views: list[DeckView]) -> dict:
         "elementsLabel": cluster_.elements,
         "size": len(views),
         "tournamentDecks": sum(1 for v in views if v.entries),
-        "wins": sum(1 for v in views if v.best_placement == 1),
-        "top8": sum(1 for v in views if any(e.top8 for e in v.entries)),
-        "topCut": sum(1 for v in views if any(e.top_cut for e in v.entries)),
+        "wins": sum(len({e.event for e in v.entries if e.placement == 1}) for v in views),
+        "top8": sum(len({e.event for e in v.entries if e.top8}) for v in views),
+        "topCut": sum(len({e.event for e in v.entries if e.top_cut}) for v in views),
         "events": len(events),
         "rankedGames": ranked_games,
         "rankedWins": ranked_wins,
@@ -414,7 +414,21 @@ def build_snapshots(repo: ArchetypeDeckRepository | None = None) -> dict[str, di
     merged: dict[str, ArchetypeDeck] = dict(tournament)
     for key, deck in seeds.items():
         if key in merged:
-            merged[key].entries.extend(deck.entries)
+            current = merged[key]
+            by_event = {entry.event: entry for entry in current.entries}
+            for incoming in deck.entries:
+                prior = by_event.get(incoming.event)
+                if prior is None:
+                    current.entries.append(incoming)
+                    by_event[incoming.event] = incoming
+                else:
+                    # Preserve a verified placement if the live folder only
+                    # established Top Cut/Top 8 membership. Count the event once.
+                    if prior.placement is None:
+                        prior.placement = incoming.placement
+                    prior.top8 = prior.top8 or incoming.top8
+                    prior.top_cut = prior.top_cut or incoming.top_cut
+                    prior.event_size = max(prior.event_size, incoming.event_size)
         else:
             merged[key] = deck
     tournament_keys = set(merged)

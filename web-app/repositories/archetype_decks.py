@@ -206,73 +206,71 @@ class ArchetypeDeckRepository:
             return {}
 
     def load_tournament_decks(self) -> tuple[dict[str, ArchetypeDeck], int]:
-        """Every deck in the Top 8 page's event folders, plus the event count."""
+        """Read eligible Constructed tournaments with verified placement metadata.
+
+        Each real event contributes one entry per unique deck. An unordered Top 8
+        list proves membership, not its row-by-row finishing positions.
+        """
+        from repositories.events import EventRepository
+        from services.tournament_normalization import normalized_tournaments
+
+        event_repo = EventRepository(self._top8_dir)
+        events = event_repo.get_all_events()
+
+        def read_list(path):
+            if not path:
+                return []
+            try:
+                with open(path, encoding="utf-8") as stream:
+                    rows = json.load(stream)
+                return rows if isinstance(rows, list) else []
+            except (OSError, ValueError) as exc:
+                logger.warning("Cannot load tournament file %s: %s", path, exc)
+                return []
+
+        def load_folder(folder):
+            paths = event_repo._find_json_files(folder) or {}
+            return {
+                "top8": read_list(paths.get("top8")),
+                "all": read_list(paths.get("full")),
+            }
+
+        tournaments, report = normalized_tournaments(events, load_folder)
+        logger.info("Deck archetype tournaments normalized: %s", report)
         decks: dict[str, ArchetypeDeck] = {}
-        events = 0
-        if not self._top8_dir.exists():
-            logger.warning("TOP_8_DIR not found: %s", self._top8_dir)
-            return decks, events
-
-        names = self._event_names()
-        for folder in sorted(self._top8_dir.iterdir()):
-            if not folder.is_dir() or folder.name.startswith("_"):
-                continue
-            top8_file = full_file = None
-            for f in folder.glob("*.json"):
-                lower = f.name.lower()
-                if "top8" in lower or "top 8" in lower:
-                    top8_file = f
-                elif lower.startswith(folder.name.lower()):
-                    full_file = f
-            if not top8_file and not full_file:
-                continue
-
-            event_name, event_date = names.get(folder.name, (folder.name, None))
-            in_event: dict[str, tuple[ArchetypeDeck, TournamentEntry]] = {}
-            for path, ranked_file in ((top8_file, True), (full_file, False)):
-                if not path:
+        for tournament in tournaments:
+            event_name = tournament["name"]
+            event_date = tournament.get("date")
+            year = (int(event_date[:4]) if event_date and event_date[:4].isdigit()
+                    else extract_year_from_name(tournament["sourceFolders"][0]) or None)
+            event_size = len(tournament["records"])
+            for record in tournament["records"]:
+                raw = record["deck"]
+                deck_id = str(raw.get("id") or "").strip()
+                if not deck_id:
                     continue
-                try:
-                    with open(path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                except Exception as e:
-                    logger.warning("Failed to read %s: %s", path, e)
+                deck = deck_from_json(raw, deck_id, f"{CURIOSA_DECK_URL}{deck_id}")
+                if deck is None:
                     continue
-                if not isinstance(data, list):
-                    continue
-                for index, raw in enumerate(data):
-                    if not isinstance(raw, dict):
-                        continue
-                    deck_id = str(raw.get("id") or "").strip()
-                    if not deck_id or deck_id in in_event:
-                        continue
-                    deck = deck_from_json(raw, deck_id, f"{CURIOSA_DECK_URL}{deck_id}")
-                    if deck is None:
-                        continue
+                entry = TournamentEntry(
+                    event=event_name,
+                    date=event_date,
+                    player=raw.get("username") or "Unknown",
+                    placement=record["placement"],
+                    top8=record["top8"],
+                    top_cut=bool(record["topCut"]),
+                    event_size=event_size,
+                    year=year,
+                )
+                current = decks.get(deck_id)
+                if current is None:
                     deck.on_top8_page = True
-                    placement = index + 1 if ranked_file and index < TOP8_SIZE else None
-                    entry = TournamentEntry(
-                        event=event_name,
-                        date=event_date,
-                        player=(raw.get("username") or "Unknown"),
-                        placement=placement,
-                        top8=placement is not None,
-                        top_cut=ranked_file,
-                        year=extract_year_from_name(folder.name) or None,
-                    )
-                    in_event[deck_id] = (deck, entry)
-
-            if in_event:
-                events += 1
-            for deck_id, (deck, entry) in in_event.items():
-                entry.event_size = len(in_event)
-                existing = decks.get(deck_id)
-                if existing is None:
                     deck.entries.append(entry)
                     decks[deck_id] = deck
                 else:
-                    existing.entries.append(entry)
-        return decks, events
+                    # A deck may enter multiple independent tournaments.
+                    current.entries.append(entry)
+        return decks, len(tournaments)
 
     # ------------------------------------------------------------------ #
     # Seed events from the original snapshot                               #
@@ -316,6 +314,8 @@ class ArchetypeDeckRepository:
 
     def load_seed_decks(self) -> tuple[dict[str, ArchetypeDeck], set[str], list[str], int]:
         """(decks with card lists, event names, deck ids still to fetch, unavailable count)."""
+        from services.tournament_normalization import verified_seed_events, eligible_seed_entry
+        approved_events = verified_seed_events()
         cache = self.load_seed_cache()
         seed_file = self._load_seed_file()
         # Decks each event published, including ones already on the Top 8 page.
@@ -325,10 +325,22 @@ class ArchetypeDeckRepository:
         pending: list[str] = []
         unavailable = 0
         for seed in seed_file.get("decks") or []:
+            # Validate each seed tournament before queuing any deck download.
+            accepted_entries = [e for e in (seed.get("entries") or [])
+                                if eligible_seed_entry(e, known_events=approved_events)]
+            if not accepted_entries:
+                continue
             deck_id = str(seed.get("id") or "").strip()
             if not deck_id:
                 continue
             cached = cache.get(deck_id)
+            # Explicit Draft or Sealed on a cached list always overrides event
+            # eligibility, even if its event was historically Constructed.
+            if cached is not None and not cached.get("unavailable"):
+                accepted_entries = [e for e in accepted_entries if eligible_seed_entry(
+                    e, known_events=approved_events, deck_format=cached.get("format"))]
+                if not accepted_entries:
+                    continue
             if cached is None:
                 pending.append(deck_id)
                 continue
@@ -341,7 +353,7 @@ class ArchetypeDeckRepository:
             # The snapshot's name and avatar are what the deck was at the event.
             deck.name = seed.get("name") or deck.name
             deck.avatar = seed.get("avatar") or deck.avatar
-            for e in seed.get("entries") or []:
+            for e in accepted_entries:
                 placement = e.get("placement") if isinstance(e.get("placement"), int) else None
                 event = e.get("event") or "Unknown event"
                 deck.entries.append(TournamentEntry(

@@ -41,6 +41,15 @@ def water_deck(deck_id, **kw):
 def write_event(top8_dir, folder, top8=None, full=None):
     path = top8_dir / folder
     path.mkdir(parents=True)
+    # Test fixtures must explicitly qualify as 3-star Constructed events.
+    from utils.formatting import extract_date_from_name
+    metadata_file = top8_dir / "_event_metadata.json"
+    overrides = json.loads(metadata_file.read_text()) if metadata_file.exists() else {}
+    overrides[folder] = {"rating": 3, "event_date": extract_date_from_name(folder) or "2026-06-01"}
+    metadata_file.write_text(json.dumps(overrides))
+    for rows in (top8, full):
+        for record in rows or []:
+            record.setdefault("format", "Constructed")
     if top8 is not None:
         (path / f"{folder}top8.json").write_text(json.dumps(top8))
     if full is not None:
@@ -124,7 +133,7 @@ def test_placements_count_wins_and_top8(repo):
     group = groups_by_member(built(repo, "tournament"))["f0"]
 
     assert group["size"] == 10
-    assert group["wins"] == 1
+    assert group["wins"] == 0
     assert group["top8"] == 8
     assert group["topCut"] == 10
     assert group["events"] == 1
@@ -146,7 +155,7 @@ def test_ranked_record_merges_into_tournament_deck_and_casual_is_ignored(repo):
 
     assert detail["decks"]["f1"]["ranked"]["wins"] == 2
     assert detail["decks"]["f1"]["ranked"]["losses"] == 1
-    assert detail["decks"]["f1"]["entries"][0]["placement"] == 1
+    assert detail["decks"]["f1"]["entries"][0]["placement"] is None
     assert everything["meta"]["rankedGames"] == 3
 
 
@@ -171,9 +180,9 @@ def test_one_off_ranked_decks_are_dropped_from_all(repo):
 def test_seed_decks_wait_for_their_card_lists(repo):
     repo._seed_events_path.write_text(json.dumps({"decks": [
         {"id": "s1", "name": "Seed", "avatar": "Sorcerer",
-         "entries": [{"event": "Grand Contest", "date": "2026-01-01", "player": "p", "placement": 1, "top8": True, "topCut": True}]},
-        {"id": "s2", "name": "Gone", "avatar": "Sorcerer", "entries": []},
-        {"id": "s3", "name": "Later", "avatar": "Sorcerer", "entries": []},
+         "entries": [{"event": "SCG CON Washington DC", "date": "2026-01-01", "player": "p", "placement": 1, "top8": True, "topCut": True}]},
+        {"id": "s2", "name": "Gone", "avatar": "Sorcerer", "entries": [{"event": "SCG CON Washington DC", "date": "2026-05-30", "player": "p", "placement": None, "top8": False, "topCut": False}]},
+        {"id": "s3", "name": "Later", "avatar": "Sorcerer", "entries": [{"event": "SCG CON Washington DC", "date": "2026-05-30", "player": "p", "placement": None, "top8": False, "topCut": False}]},
     ]}))
     repo.save_seed_cache_entry("s1", fire_deck("s1"))
     repo.save_seed_cache_entry("s2", {"unavailable": True})
@@ -264,7 +273,7 @@ def test_date_range_counts_only_results_inside_it(repo):
     group = groups_by_member(result)["l0"]
 
     assert "e0" in groups_by_member(result)  # still in the group for its ranked game
-    assert group["wins"] == 1  # only the fall winner
+    assert group["wins"] == 0  # no verified finishing placement
     assert group["events"] == 1
     assert group["rankedWins"] == 0 and group["rankedLosses"] == 1
     assert result["meta"]["rankedGames"] == 1
@@ -297,7 +306,7 @@ def test_recommendations_only_use_top8_page_decks(repo):
     write_event(repo._top8_dir, "Cup", top8=[f1])
     repo._seed_events_path.write_text(json.dumps({"decks": [
         {"id": "s1", "name": "Seed", "avatar": "Sorcerer",
-         "entries": [{"event": "Grand Contest", "date": "2026-01-01", "player": "p", "placement": 1, "top8": True, "topCut": True}]},
+         "entries": [{"event": "SCG CON Washington DC", "date": "2026-01-01", "player": "p", "placement": 1, "top8": True, "topCut": True}]},
     ]}))
     repo.save_seed_cache_entry("s1", fire_deck("s1"))
     # A ranked-only deck that wins a lot and sits at the center of the group.

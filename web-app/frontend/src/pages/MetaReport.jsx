@@ -165,7 +165,7 @@ function MetaMap({ archetypes }) {
           <circle key={`${a.avatar}|${a.elements}`} cx={a.x} cy={a.y} r="5.5" fill={TIER_COLORS[a.tier]}
                   stroke={picked?.avatar === a.avatar && picked?.elements === a.elements ? '#f0f6fc' : '#0d1117'} strokeWidth="1.5" className="cursor-pointer"
                   onClick={() => setPicked(archetypes.find((x) => x.avatar === a.avatar && x.elements === a.elements))}>
-            <title>{`${a.avatar} ${a.elements}: ${a.share}% of decks, ${a.winRate}% win rate, ${a.games} games`}</title>
+            <title>{`${a.avatar}: ${a.share}% of decks, ${a.winRate}% win rate, ${a.games} games`}</title>
           </circle>
         ))}
         {labels.map((a) => (
@@ -555,7 +555,7 @@ export default function MetaReport() {
           </Section>
 
           <div className="grid gap-5 grid-cols-[repeat(auto-fit,minmax(min(100%,460px),1fr))]">
-            <Section title="Tiers" sub="Each Avatar + element pair, placed by win rate and how much it's played in ranked. Arrows show the move since the last report.">
+            <Section title="Tiers" sub="Each Avatar, placed by win rate and how much it's played in ranked. Arrows show the move since the last report.">
               {archetypes.length ? <Tiers archetypes={archetypes} /> : <div className={`${panel} text-sm text-text-muted`}>Not enough ranked games this period.</div>}
             </Section>
             <Section title="Meta map" sub="Play rate across, win rate up. Top right is the deck to beat; top left is the sleeper nobody's on yet.">

@@ -163,7 +163,7 @@ def test_build_never_includes_ranked_player_names(match_db, repo, no_events):
     report = meta_report.build(Period(2026, 9, "a"), repo, db_path=match_db, pso=lambda f, t: None)
     assert report["status"] == "draft"
     assert "secret" not in json.dumps(report)
-    assert report["story"][0]["headline"].startswith("Sparkmage in Air")
+    assert report["story"][0]["headline"].startswith("Sparkmage is the deck to beat")
 
 
 def test_rebuild_keeps_edited_story(match_db, repo, no_events):
@@ -354,3 +354,10 @@ def test_tiny_archetypes_are_left_out():
             [{"winner": ("Tiny", "Air"), "loser": None}] * 15
     names = [a["avatar"] for a in meta_report.archetype_stats(games)["archetypes"]]
     assert "Tiny" not in names and "Big" in names
+
+
+def test_tiers_group_by_avatar_only():
+    games = [{"winner": ("Imposter", "Air / Water"), "loser": ("Druid", "Air / Water")}] * 15 + \
+            [{"winner": ("Imposter", "Air / Earth"), "loser": ("Druid", "Water")}] * 15
+    rows = meta_report.archetype_stats(games)["archetypes"]
+    assert [(a["avatar"], a["elements"], a["games"]) for a in rows] == [("Imposter", "", 30), ("Druid", "", 30)]

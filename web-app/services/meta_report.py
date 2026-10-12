@@ -192,13 +192,14 @@ def _tier_score(wins: int, games: int, share: float) -> float:
 
 
 def archetype_stats(games: list[dict]) -> dict:
+    # Grouped by Avatar only (Bruce's call): element pairs split the tiers too thin.
     counts: dict[tuple, list[int]] = {}
     for g in games:
         for side, won in (("winner", True), ("loser", False)):
             arch = g[side]
             if arch is None:
                 continue
-            c = counts.setdefault(arch, [0, 0])
+            c = counts.setdefault((arch[0], ""), [0, 0])
             c[0] += 1
             c[1] += 1 if won else 0
     deck_games = sum(c[0] for c in counts.values())
@@ -429,12 +430,12 @@ def tournament_section(period_from: str, period_through: str, archetypes: list[d
     events.sort(key=lambda e: e["date"], reverse=True)
 
     # Deck to try: a public Top 8 list from the archetype that climbed most.
-    rank = {(a["avatar"], a["elements"]): (a["move"] if isinstance(a.get("move"), int) else 1, -TIERS.index(a["tier"]))
+    rank = {a["avatar"]: (a["move"] if isinstance(a.get("move"), int) else 1, -TIERS.index(a["tier"]))
             for a in archetypes}
     pick = None
     best = None
     for place, day, ev, deck in candidates:
-        key = (deck.get("avatar"), _pair(deck.get("elements")))
+        key = deck.get("avatar")
         score = (rank.get(key, (-99, -99)), -place, day)
         if best is None or score > best:
             best, pick = score, (place, ev, deck, key in rank)
@@ -465,7 +466,7 @@ def draft_story(payload: dict) -> list[dict]:
     if archetypes:
         top = archetypes[0]
         story.append({
-            "headline": f"{top['avatar']} in {top['elements']} is the deck to beat.",
+            "headline": f"{top['avatar']} is the deck to beat.",
             "detail": f"{top['winRate']}% win rate on {top['share']}% of decks.",
         })
         quiet = [a for a in archetypes[1:] if a["share"] < 6 and a["games"] >= 20]
@@ -473,14 +474,14 @@ def draft_story(payload: dict) -> list[dict]:
             q = max(quiet, key=lambda a: a["winRate"])
             if q["winRate"] > 50:
                 story.append({
-                    "headline": f"{q['avatar']} in {q['elements']} is the best deck few people play.",
+                    "headline": f"{q['avatar']} is the best deck few people play.",
                     "detail": f"{q['winRate']}% win rate on only {q['share']}% of decks.",
                 })
         climbers = [a for a in archetypes if isinstance(a.get("move"), int) and a["move"] > 0]
         if climbers and len(story) < 2:
             c = max(climbers, key=lambda a: a["move"])
             story.append({
-                "headline": f"{c['avatar']} in {c['elements']} climbs to {c['tier']} tier.",
+                "headline": f"{c['avatar']} climbs to {c['tier']} tier.",
                 "detail": f"Up {c['move']} tier{'s' if c['move'] > 1 else ''} since the last report.",
             })
     cards = payload.get("cards") or {}
@@ -572,7 +573,7 @@ def post_to_discord(report: dict) -> bool:
         "title": f"Meta Report: {payload.get('period', {}).get('label', report['slug'])}",
         "url": report_url(report["slug"]),
         "story": report.get("story") or [],
-        "topTier": [f"{a['avatar']} ({a['elements']})" for a in archetypes if a.get("tier") == "S"][:4],
+        "topTier": [a["avatar"] for a in archetypes if a.get("tier") == "S"][:4],
         "rankedGames": (payload.get("ranked") or {}).get("rankedGames"),
         "events": len((payload.get("tournaments") or {}).get("events") or []),
     }

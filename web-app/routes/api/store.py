@@ -926,6 +926,7 @@ def admin_me():
     repo = _repo()
     full = is_store_admin()
     roles = {} if full else _storefront_roles()
+    alerts = repo.sale_alerts_for_user(str(session.get("user_id", "")))
     storefronts = []
     for s in repo.list_storefronts(include_inactive=True):
         if full or s["id"] in roles:
@@ -934,6 +935,8 @@ def admin_me():
                 "role": "owner" if full else roles[s["id"]],
                 "accepts_payments": repo.accepts_payments(s),
                 "uses_summit_stripe": s["slug"] == DEFAULT_STOREFRONT_SLUG,
+                # None when this user isn't on the storefront's team
+                "sale_alerts": alerts.get(s["id"]),
                 **_key_status(s),
             })
     return jsonify({
@@ -1259,6 +1262,21 @@ def admin_add_storefront_admin(storefront_id: int):
     repo.log_action(actor_id, actor_name, "add_storefront_admin",
                     f"storefront={storefront_id} user={user_id} role={role}")
     return jsonify({"success": True}), 201
+
+
+@store_bp.route("/store/admin/storefronts/<int:storefront_id>/sale-alerts", methods=["PUT"])
+@require_store_staff
+def admin_set_sale_alerts(storefront_id: int):
+    """Body: {on}. Turns the current user's sale DMs for this storefront on or off."""
+    data = request.get_json(silent=True) or {}
+    on = data.get("on") in (True, 1, "1", "true")
+    repo = _repo()
+    if not repo.set_sale_alerts(storefront_id, str(session.get("user_id", "")), on):
+        return jsonify({"error": "You're not on this storefront's team"}), 404
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "sale_alerts",
+                    f"storefront={storefront_id} on={on}")
+    return jsonify({"success": True, "sale_alerts": on})
 
 
 @store_bp.route("/store/admin/storefronts/<int:storefront_id>/admins/<user_id>",

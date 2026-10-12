@@ -928,3 +928,50 @@ class TestOwnKeyRoutes:
         res = client.patch(f"/api/store/admin/storefronts/{s['explorer']}",
                            json={"stripe_key_env": KEY_ENV})
         assert res.status_code == 403
+
+
+# ── Sale alerts: Discord DMs to the storefront's team ─────────────────
+
+
+class TestSaleAlerts:
+    def _pay(self, repo, order_id):
+        from services.store_notifications import StoreNotificationService
+        repo.mark_paid(order_id)
+        with patch("services.store_notifications.StoreNotificationService._try_send_email"):
+            StoreNotificationService(repo).notify_order_paid(repo.get_order(order_id))
+
+    def _dms(self, repo, order_id):
+        with repo._connect() as conn:
+            return sorted(
+                (r["recipient"], r["subject"]) for r in conn.execute(
+                    "SELECT recipient, subject FROM notifications "
+                    "WHERE order_id = ? AND channel = 'discord_dm'", (order_id,))
+            )
+
+    def test_team_gets_a_dm_unless_turned_off(self, repo, shop):
+        repo.add_storefront_admin(shop["explorer"], "111", "Mgr", "manager")
+        repo.add_storefront_admin(shop["explorer"], "222", "Packer", "fulfillment")
+        repo.add_storefront_admin(shop["explorer"], "333", "Quiet", "manager")
+        repo.set_sale_alerts(shop["explorer"], "333", False)
+        self._pay(repo, shop["explorer_order"])
+        dms = self._dms(repo, shop["explorer_order"])
+        recipients = [r for r, _ in dms]
+        assert "111" in recipients and "222" in recipients and "333" not in recipients
+        assert any(s.startswith("New sale in Explorer Store") for _, s in dms)
+
+    def test_other_storefronts_team_not_told(self, repo, shop):
+        repo.add_storefront_admin(shop["explorer"], "111", "Mgr", "manager")
+        self._pay(repo, shop["summit_order"])
+        assert "111" not in [r for r, _ in self._dms(repo, shop["summit_order"])]
+
+    def test_toggle_route(self, explorer_manager, store_repo):
+        client, s = explorer_manager
+        sf = lambda: next(x for x in client.get("/api/store/admin/me").get_json()["storefronts"]
+                          if x["id"] == s["explorer"])  # noqa: E731
+        assert sf()["sale_alerts"] is True
+        res = client.put(f"/api/store/admin/storefronts/{s['explorer']}/sale-alerts", json={"on": False})
+        assert res.status_code == 200
+        assert sf()["sale_alerts"] is False
+        assert store_repo.sale_alert_recipients(s["explorer"]) == []
+        res = client.put(f"/api/store/admin/storefronts/{s['summit']}/sale-alerts", json={"on": True})
+        assert res.status_code == 404

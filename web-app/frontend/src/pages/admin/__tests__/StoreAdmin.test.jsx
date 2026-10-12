@@ -18,13 +18,14 @@ vi.mock('@/api/store', async () => {
     adminGetStorefrontApplications: vi.fn(),
     adminGetStorefrontAdmins: vi.fn(),
     adminGetDashboard: vi.fn(() => new Promise(() => {})),
+    adminSetSaleAlerts: vi.fn(() => Promise.resolve({ success: true })),
   }
 })
 
 import {
   adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminUploadProductImages, adminGetOrders,
   adminStartStripeOnboarding, adminDeleteStorefront, adminGetStorefrontApplications, adminLinkStripe,
-  adminGetStorefrontAdmins,
+  adminGetStorefrontAdmins, adminSetSaleAlerts,
 } from '@/api/store'
 import StoreAdmin from '../StoreAdmin'
 
@@ -315,5 +316,20 @@ describe('StoreAdmin storefront with its own Stripe key', () => {
     expect(await screen.findByText(/using the EXPLORER_STRIPE_SECRET_KEY key on the server/)).toBeInTheDocument()
     expect(screen.getByText(/until EXPLORER_STRIPE_WEBHOOK_SECRET is set/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Disconnect Stripe' })).toBeInTheDocument()
+  })
+})
+
+describe('StoreAdmin sale messages', () => {
+  it('lets a storefront team member turn their own sale messages off', async () => {
+    vi.clearAllMocks()
+    adminGetProducts.mockResolvedValue({ products: [] })
+    adminGetOrders.mockResolvedValue({ orders: [] })
+    adminGetMe.mockResolvedValue({ is_full_admin: false, storefronts: [{ id: 2, slug: 'explorer', name: 'Explorer Store', is_active: 1, role: 'fulfillment', sale_alerts: true }] })
+    renderWithRouter(<StoreAdmin />)
+    const toggle = await screen.findByRole('switch', { name: 'Discord message me about Explorer Store sales' })
+    expect(toggle).toHaveAttribute('aria-checked', 'true')
+    await userEvent.click(toggle)
+    expect(adminSetSaleAlerts).toHaveBeenCalledWith(2, false)
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
   })
 })

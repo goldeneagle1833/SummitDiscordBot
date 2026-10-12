@@ -3,6 +3,8 @@
 Routing rules:
   - Admin channel ping: always, via the notifications outbox
     (the Discord bot's StoreNotificationsCog polls and delivers).
+  - Storefront team: a bot DM to each manager and shipper of the order's
+    storefront who has sale alerts on (their toggle in Store Admin).
   - Buyer, logged in with Discord: bot DM via the outbox.
   - Email receipt: ALWAYS sent when the buyer has an email address.
     The order confirmation email is a full HTML receipt.
@@ -58,6 +60,8 @@ class StoreNotificationService:
             f"Ship to: {order.get('ship_city', '')}, {order.get('ship_state', '')}",
         )
 
+        self._notify_storefront_team(order, total, item_lines)
+
         # In-app web notification
         self.repo.create_web_notification(
             order["user_id"], "order_paid",
@@ -96,6 +100,25 @@ class StoreNotificationService:
             )
             logger.warning(
                 f"No email for receipt on {order['order_number']}: provider={provider}"
+            )
+
+    def _notify_storefront_team(self, order: dict, total: str, item_lines: str) -> None:
+        storefront_id = order.get("storefront_id")
+        if not storefront_id:
+            return
+        storefront = self.repo.get_storefront(storefront_id) or {}
+        name = storefront.get("name") or STORE_NAME
+        link = (f"{PUBLIC_SITE_URL.rstrip('/')}/admin/store"
+                f"?storefront={storefront_id}")
+        for user_id in self.repo.sale_alert_recipients(storefront_id):
+            self.repo.enqueue_notification(
+                order["id"], "discord_dm", user_id,
+                f"New sale in {name}: {total}",
+                f"Order {order['order_number']} from **{order['username']}**\n"
+                f"{item_lines}\n"
+                f"Ship to: {order.get('ship_city') or '?'}, {order.get('ship_state') or '?'}\n\n"
+                f"Open the order queue: {link}\n"
+                f"Turn these messages off in Store Admin.",
             )
 
     def notify_order_shipped(self, order: dict) -> None:

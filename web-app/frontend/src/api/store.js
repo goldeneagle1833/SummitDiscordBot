@@ -1,4 +1,4 @@
-import { get, post, patch, del } from './client'
+import { get, post, put, patch, del } from './client'
 
 // Buyer
 export const getProducts = () => get('/api/store/products')
@@ -113,3 +113,6 @@ export const adminGetOrderMap = (storefrontId, days) => {
   if (storefrontId != null) params.set('storefront_id', storefrontId)
   return get(`/api/store/admin/order-map?${params}`)
 }
+// Discord DM to the current user when a storefront they help run makes a sale
+export const adminSetSaleAlerts = (storefrontId, on) =>
+  put(`/api/store/admin/storefronts/${storefrontId}/sale-alerts`, { on })

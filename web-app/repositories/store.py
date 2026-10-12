@@ -248,6 +248,14 @@ class StoreRepository:
                     pass  # column already exists
 
             try:
+                # Discord DM when the storefront makes a sale; each person
+                # turns their own on or off
+                conn.execute("ALTER TABLE storefront_admins ADD COLUMN "
+                             "sale_alerts INTEGER NOT NULL DEFAULT 1")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+
+            try:
                 # JSON list of {user_id, username, role}: the managers and
                 # shippers the applicant picked, added when it's approved
                 conn.execute("ALTER TABLE storefront_applications ADD COLUMN team TEXT")
@@ -1167,6 +1175,37 @@ class StoreRepository:
     # ------------------------------------------------------------------
     # Storefront admins
     # ------------------------------------------------------------------
+
+    def sale_alert_recipients(self, storefront_id: int) -> list[str]:
+        """Discord ids of this storefront's team who want sale DMs."""
+        with self._connect() as conn:
+            return [
+                r["user_id"] for r in conn.execute(
+                    """SELECT user_id FROM storefront_admins
+                       WHERE storefront_id = ? AND sale_alerts = 1""",
+                    (storefront_id,),
+                ).fetchall()
+            ]
+
+    def sale_alerts_for_user(self, user_id: str) -> dict[int, bool]:
+        """{storefront_id: wants sale DMs} for every storefront this user is on."""
+        with self._connect() as conn:
+            return {
+                r["storefront_id"]: bool(r["sale_alerts"])
+                for r in conn.execute(
+                    "SELECT storefront_id, sale_alerts FROM storefront_admins WHERE user_id = ?",
+                    (str(user_id),),
+                ).fetchall()
+            }
+
+    def set_sale_alerts(self, storefront_id: int, user_id: str, on: bool) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute(
+                """UPDATE storefront_admins SET sale_alerts = ?
+                   WHERE storefront_id = ? AND user_id = ?""",
+                (1 if on else 0, storefront_id, str(user_id)),
+            )
+            return cur.rowcount > 0
 
     def list_storefront_admins(self, storefront_id: int) -> list[dict]:
         with self._connect() as conn:

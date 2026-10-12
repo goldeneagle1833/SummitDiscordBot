@@ -12,6 +12,7 @@ import {
 } from '@/api/store'
 import Spinner from '@/components/ui/Spinner'
 import SalesDashboard from '@/components/store/SalesDashboard'
+import SaleAlertsToggle from '@/components/store/SaleAlertsToggle'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const inputCls =
@@ -789,6 +790,7 @@ function TeamPanel({ storefront }) {
                   <div className="text-xs text-text-muted">
                     {ROLE_LABELS[a.role] || a.role}
                     {a.added_by ? ` · added by ${a.added_by}` : ''}
+                    {a.sale_alerts === 0 ? ' · sale messages off' : ''}
                   </div>
                 </div>
                 <button
@@ -1349,6 +1351,9 @@ export default function StoreAdmin() {
           title={selected ? selected.name : 'All storefronts'}
         />
       )}
+      {current !== 'storefronts' && (selected ? [selected] : storefronts)
+        .filter((sf) => sf.sale_alerts != null)
+        .map((sf) => <SaleAlertsToggle key={`alerts-${sf.id}`} storefront={sf} onChanged={loadMe} />)}
       {!full && (
         <p className="text-xs text-text-muted mb-2">
           You can manage {storefronts.map((sf) => sf.name).join(', ')} only.

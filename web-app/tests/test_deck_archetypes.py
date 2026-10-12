@@ -159,6 +159,23 @@ def test_ranked_record_merges_into_tournament_deck_and_casual_is_ignored(repo):
     assert everything["meta"]["rankedGames"] == 3
 
 
+def test_ranked_games_before_gothic_era_are_ignored(repo):
+    f1, w1, w2 = fire_deck("f1"), water_deck("w1"), water_deck("w2")
+    write_event(repo._top8_dir, "Cup", top8=[f1])
+    make_match_db(repo._db_path, [
+        (f1, w1, "ranked", "2025-12-04 23:00:00"),
+        (f1, w1, "ranked", "2025-12-05 10:00:00"),
+        (w2, w1, "ranked", "2025-06-01 12:00:00"),
+    ])
+
+    everything = built(repo, "all")
+    detail = everything["details"][groups_by_member(everything)["f1"]["id"]]
+
+    assert detail["decks"]["f1"]["ranked"]["wins"] == 1
+    assert "w2" not in groups_by_member(everything)
+    assert everything["meta"]["rankedGames"] == 1
+
+
 def test_tournament_source_leaves_out_ranked_only_decks(repo):
     write_event(repo._top8_dir, "Cup", top8=[fire_deck("f1")])
     make_match_db(repo._db_path, [(water_deck("w1"), water_deck("w2"), "ranked")])

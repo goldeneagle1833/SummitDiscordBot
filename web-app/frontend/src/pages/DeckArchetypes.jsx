@@ -19,6 +19,8 @@ const BUILDING_POLL_MS = 4000
 // "Event size" options: tournaments that published at least this many decks.
 const EVENT_SIZE_OPTIONS = [0, 8, 16, 32, 64, 100]
 const NO_FILTERS = { from: '', to: '', minEventDecks: 0 }
+// Only the Gothic era is counted (matches GOTHIC_START on the server).
+const GOTHIC_START = '2025-12-05'
 // Card art shown beside the detail panel (Sorcery cards are 5:7).
 const PREVIEW_WIDTH = 260
 const PREVIEW_HEIGHT = Math.round(PREVIEW_WIDTH * 7 / 5)
@@ -391,7 +393,8 @@ function AboutDataPanel({ meta, onClose }) {
           </header>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">Where the decks come from</h3>
-            <p><strong className="text-text-primary">Tournaments</strong>: every decklist on the Top 8 page, plus tournament lists from the original archetype snapshot whose events aren't on the Top 8 page yet. <strong className="text-text-primary">Ranked</strong>: every deck reported in a ranked match on Sorcerers Summit, with its ranked win/loss record.</p>
+            <p>Only the Gothic era counts: events and ranked games from December 5, 2025 on.</p>
+            <p className="mt-2"><strong className="text-text-primary">Tournaments</strong>: Constructed decklists from three-star events on the Top 8 page, plus three-star tournament lists from the original archetype snapshot whose events aren't on the Top 8 page yet. Draft and Sealed decks are left out, and an event published in several lists (Top 8, Top 32, full field) counts once. <strong className="text-text-primary">Ranked</strong>: every deck reported in a ranked match on Sorcerers Summit, with its ranked win/loss record.</p>
             <p className="mt-2">Choose <strong className="text-text-primary">Tournaments only</strong> to group just the tournament lists. A deck that was played in a tournament and on ranked counts once, with both records.</p>
           </section>
           <section>
@@ -425,7 +428,7 @@ function AboutDataPanel({ meta, onClose }) {
           </section>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">How to interpret the figures</h3>
-            <p><strong className="text-text-primary">Decks</strong> counts lists grouped into an archetype. <strong className="text-text-primary">Top 8</strong> counts decks with a Top 8 finish. <strong className="text-text-primary">Wins</strong> counts tournament victories. These are not match win rates.</p>
+            <p><strong className="text-text-primary">Decks</strong> counts lists grouped into an archetype. <strong className="text-text-primary">Top 8</strong> counts decks with a Top 8 finish. <strong className="text-text-primary">Wins</strong> counts tournament victories where the winner is known; a Top 8 list that isn't in finishing order doesn't name a winner. These are not match win rates.</p>
             <p className="mt-2"><strong className="text-text-primary">Dates</strong> limit tournaments and ranked games to that range. Events with only a year in their name count for that whole year. <strong className="text-text-primary">Event size</strong> keeps only tournaments that published at least that many decklists; it doesn't affect ranked games. Filters change which decks and results count; they don't regroup decks.</p>
             <p className="mt-2"><strong className="text-text-primary">Ranked win rate</strong> is every ranked game played with a deck in the archetype. Sorting by win rate only ranks archetypes with at least {MIN_GAMES_FOR_WIN_RATE} ranked games.</p>
             <p className="mt-2">Missing placements are not counted as losses. Finalist-only events can overrepresent successful builds, so tournament figures describe the collected records rather than the entire competitive player population.</p>
@@ -536,7 +539,7 @@ export default function DeckArchetypes() {
       <header className="text-center mb-6">
         <h1 className="text-2xl font-display text-secondary mb-2">Deck Archetypes</h1>
         <p className="text-sm text-text-muted max-w-2xl mx-auto">
-          Discover recurring Sorcery deck builds using similarity analysis of tournament decklists and ranked match decks.
+          Discover recurring Gothic-era Sorcery deck builds using similarity analysis of three-star tournament decklists and ranked match decks.
         </p>
         <button
           type="button"
@@ -592,6 +595,7 @@ export default function DeckArchetypes() {
             <input
               type="date"
               value={filters.from}
+              min={GOTHIC_START}
               max={filters.to || undefined}
               onChange={(event) => setFilter('from', event.target.value)}
               className="bg-bg-raised border border-border rounded px-3 py-2 text-sm text-text-primary"
@@ -602,7 +606,7 @@ export default function DeckArchetypes() {
             <input
               type="date"
               value={filters.to}
-              min={filters.from || undefined}
+              min={filters.from || GOTHIC_START}
               onChange={(event) => setFilter('to', event.target.value)}
               className="bg-bg-raised border border-border rounded px-3 py-2 text-sm text-text-primary"
             />

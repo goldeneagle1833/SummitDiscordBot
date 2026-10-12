@@ -43,6 +43,7 @@ import numpy as np
 from services.curiosa import get_curiosa_deck_id
 from utils.card_images import resolve_card_image
 from repositories.archetype_decks import ZONES, ArchetypeDeck, ArchetypeDeckRepository, TournamentEntry
+from services.tournament_normalization import GOTHIC_START
 
 logger = logging.getLogger(__name__)
 
@@ -432,7 +433,12 @@ def build_snapshots(repo: ArchetypeDeckRepository | None = None) -> dict[str, di
         else:
             merged[key] = deck
     tournament_keys = set(merged)
+    # Only Gothic-era ranked games count, matching the tournament cutoff.
+    game_days = [day for day in game_days if day and day >= GOTHIC_START]
     for key, deck in ranked.items():
+        deck.games = [g for g in deck.games if g.day and g.day >= GOTHIC_START]
+        if not deck.games:
+            continue
         if key in merged:
             merged[key].games.extend(deck.games)
         else:

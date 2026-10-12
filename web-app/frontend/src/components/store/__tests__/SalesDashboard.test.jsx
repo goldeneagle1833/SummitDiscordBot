@@ -43,13 +43,18 @@ describe('SalesDashboard', () => {
     expect(adminGetDashboard).toHaveBeenCalledWith(1, 30)
   })
 
-  it('changes range and can be hidden', async () => {
+  it('changes range and collapses to one line', async () => {
     renderWithRouter(<SalesDashboard storefrontId={null} title="All storefronts" />)
     await screen.findByText('$4,900')
     await userEvent.click(screen.getByRole('button', { name: '90 days' }))
     expect(adminGetDashboard).toHaveBeenLastCalledWith(null, 90)
-    await userEvent.click(screen.getByRole('button', { name: 'Hide' }))
-    expect(screen.getByRole('button', { name: 'Show sales' })).toBeInTheDocument()
+    const header = screen.getByRole('button', { name: /All storefronts sales/ })
+    await userEvent.click(header)
+    expect(header).toHaveAttribute('aria-expanded', 'false')
+    expect(header).toHaveTextContent('$4,900 from 40 orders')
+    expect(screen.queryByText('Needs attention')).not.toBeInTheDocument()
+    await userEvent.click(header)
+    expect(screen.getByText('Needs attention')).toBeInTheDocument()
   })
 
   it('lists states and opens the order map', async () => {
@@ -66,7 +71,7 @@ describe('SalesDashboard', () => {
     expect(screen.getByText('No state given')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Open the order map/ }))
     expect(await screen.findByTestId('map')).toHaveTextContent('Columbus, Ohio')
-    expect(screen.getByText(/2 cities are still being placed/)).toBeInTheDocument()
+    expect(screen.getByText(/2 cities are still being looked up/)).toBeInTheDocument()
     expect(adminGetOrderMap).toHaveBeenCalledWith(2, 30)
   })
 })

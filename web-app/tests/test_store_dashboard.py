@@ -127,7 +127,10 @@ class TestDashboard:
     def test_order_map_groups_by_city_and_uses_cache(self, repo, shop):
         dash = StoreDashboard(repo)
         m = dash.order_map([shop["summit"]], 30, now=NOW, geocode=False)
-        assert m["places"] == [] and m["locating"] == 1
+        assert m["locating"] == 1
+        # Pinned at the middle of Ohio until the city is found
+        assert m["places"][0]["approximate"] is True
+        assert m["places"][0]["latitude"] == 40.3
         with repo._connect() as conn:
             dash._ensure_geo_cache(conn)
             conn.execute("INSERT INTO geo_cache VALUES (?, 39.96, -83.0, ?)",
@@ -135,7 +138,8 @@ class TestDashboard:
         m = dash.order_map([shop["summit"]], 30, now=NOW, geocode=False)
         assert m["locating"] == 0
         assert m["places"] == [{"city": "Columbus", "state": "OH", "orders": 3,
-                                "sales_cents": 4900, "latitude": 39.96, "longitude": -83.0}]
+                                "sales_cents": 4900, "latitude": 39.96, "longitude": -83.0,
+                                "approximate": False}]
         assert dash.order_map([shop["explorer"]], 7, now=NOW, geocode=False)["places"][0]["orders"] == 1
 
     def test_order_map_geocodes_missing_cities_once(self, repo, shop):

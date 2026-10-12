@@ -9,14 +9,14 @@ const RANGES = [
   { days: 90, label: '90 days' },
   { days: 365, label: '12 months' },
 ]
-const HIDE_KEY = 'storeAdmin.salesHidden'
+const COLLAPSE_KEY = 'storeAdmin.salesCollapsed'
 
 const dollars = (cents) =>
   `$${((cents || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 const dollarsExact = (cents) => `$${((cents || 0) / 100).toFixed(2)}`
 
-function readHidden() {
-  try { return localStorage.getItem(HIDE_KEY) === '1' } catch { return false }
+function readCollapsed() {
+  try { return localStorage.getItem(COLLAPSE_KEY) === '1' } catch { return false }
 }
 
 function hoursLabel(h) {
@@ -169,31 +169,22 @@ export default function SalesDashboard({ storefrontId, title }) {
   const [days, setDays] = useState(30)
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
-  const [hidden, setHidden] = useState(readHidden)
+  const [collapsed, setCollapsed] = useState(readCollapsed)
   const [mapOpen, setMapOpen] = useState(false)
 
   useEffect(() => {
-    if (hidden) return undefined
     let live = true
     setError(null)
     adminGetDashboard(storefrontId, days)
       .then((d) => { if (live) setData(d) })
       .catch((e) => { if (live) setError(e.message) })
     return () => { live = false }
-  }, [storefrontId, days, hidden])
+  }, [storefrontId, days])
 
   const toggle = () => {
-    const next = !hidden
-    setHidden(next)
-    try { localStorage.setItem(HIDE_KEY, next ? '1' : '0') } catch { /* private window */ }
-  }
-
-  if (hidden) {
-    return (
-      <div className="my-3 text-sm">
-        <button type="button" onClick={toggle} className="text-primary hover:underline">Show sales</button>
-      </div>
-    )
+    const next = !collapsed
+    setCollapsed(next)
+    try { localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0') } catch { /* private window */ }
   }
 
   const t = data?.totals
@@ -207,8 +198,21 @@ export default function SalesDashboard({ storefrontId, title }) {
     <section aria-label="Sales" className="bg-bg-surface border border-border rounded-lg p-4 my-3 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">
-          {title} sales <span className="text-text-muted font-normal text-sm">· last {rangeLabel}</span>
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={!collapsed}
+            className="flex items-center gap-2 hover:text-secondary"
+          >
+            <span aria-hidden="true" className={`inline-block text-text-muted transition-transform ${collapsed ? '' : 'rotate-90'}`}>▸</span>
+            {title} sales
+            <span className="text-text-muted font-normal text-sm">
+              · last {rangeLabel}
+              {collapsed && t && ` · ${dollars(t.sales_cents)} from ${t.orders} ${t.orders === 1 ? 'order' : 'orders'}`}
+            </span>
+          </button>
         </h2>
+        {!collapsed && (
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex border border-border rounded overflow-hidden" role="group" aria-label="Date range">
             {RANGES.map((r) => (
@@ -226,14 +230,14 @@ export default function SalesDashboard({ storefrontId, title }) {
           <a href={salesSummaryCsvUrl(storefrontId)} className="text-sm text-primary hover:underline" download>
             Monthly sales CSV
           </a>
-          <button type="button" onClick={toggle} className="text-sm text-text-muted hover:text-text">Hide</button>
         </div>
+        )}
       </div>
 
-      {error && <p className="text-accent-red text-sm">{error}</p>}
-      {!data && !error && <p className="text-sm text-text-muted">Loading sales…</p>}
+      {!collapsed && error && <p className="text-accent-red text-sm">{error}</p>}
+      {!collapsed && !data && !error && <p className="text-sm text-text-muted">Loading sales…</p>}
 
-      {data && (
+      {!collapsed && data && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <Kpi label="Sales" money value={dollars(t.sales_cents)} delta={<Delta now={t.sales_cents} before={p.sales_cents} days={days} />} />

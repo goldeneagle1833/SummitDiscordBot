@@ -118,24 +118,40 @@ class StoreDashboard:
                           ON g.query = LOWER(TRIM(o.ship_city)) || ', ' ||
                                        LOWER(TRIM(o.ship_state)) || ', us'
                         WHERE {sold} AND o.paid_at >= ? AND o.paid_at < ? AND {scope}
-                          AND COALESCE(TRIM(o.ship_city), '') != ''
                         GROUP BY LOWER(TRIM(o.ship_city)), UPPER(TRIM(o.ship_state))
                         ORDER BY orders DESC""",
                     (*sold_args, start, end, *args),
                 )
             ]
-        missing = [p for p in places if p["looked_up_at"] is None]
+        # Look up new cities, and retry misses a day later in case the
+        # lookup service was down rather than the city unknown
+        retry_before = (now - timedelta(days=1)).isoformat()
+        missing = [p for p in places if p["city"] and (
+            p["looked_up_at"] is None
+            or (p["latitude"] is None and p["looked_up_at"] < retry_before))]
         if missing and geocode:
             self._geocode_in_background([(p["city"], p["state"]) for p in missing])
+
+        from services.us_state_centers import STATE_CENTERS
+        out = []
+        for p in places:
+            place = {k: p[k] for k in ("city", "state", "orders", "sales_cents")}
+            place["city"] = place["city"] or ""
+            if p["latitude"] is not None:
+                place.update(latitude=p["latitude"], longitude=p["longitude"], approximate=False)
+            elif (p["state"] or "") in STATE_CENTERS:
+                # Not located yet (or not found): pin the middle of the state
+                lat, lon = STATE_CENTERS[p["state"]]
+                place.update(latitude=lat, longitude=lon, approximate=True)
+            else:
+                continue
+            out.append(place)
         return {
-            "places": [
-                {k: p[k] for k in ("city", "state", "orders", "sales_cents",
-                                   "latitude", "longitude")}
-                for p in places if p["latitude"] is not None
-            ],
+            "places": out,
             "locating": len(missing),
             "not_found": sum(1 for p in places
                              if p["looked_up_at"] is not None and p["latitude"] is None),
+            "unplaced": len(places) - len(out),
         }
 
     @staticmethod

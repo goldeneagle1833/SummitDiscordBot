@@ -368,3 +368,16 @@ def test_best_win_rate_and_sleeper_skip_losing_cards():
     section = meta_report.card_section(now, None, [], "2026-09-15")
     assert [c["name"] for c in section["falling"]] == ["Grapple"]
     assert section["sleeper"] is None
+
+
+def test_movers_use_saved_previous_report_when_pso_has_no_earlier_data(match_db, repo, no_events):
+    before = cards_body([("bolt", 0.30, 100, 0.55), ("trolls", 0.20, 80, 0.50)])
+    meta_report.build(Period(2026, 8, "b"), repo, db_path=match_db, pso=lambda f, t: before)
+    now = cards_body([("bolt", 0.40, 100, 0.56), ("trolls", 0.10, 80, 0.48)])
+    report = meta_report.build(Period(2026, 9, "a"), repo, db_path=match_db,
+                               pso=lambda f, t: now if f == "2026-09-01" else None)
+    cards = report["payload"]["cards"]
+    assert cards["mode"] == "movers"
+    assert [c["name"] for c in cards["rising"]] == ["Bolt"]
+    assert [c["name"] for c in cards["falling"]] == ["Trolls"]
+    assert cards["rising"][0]["trend"] == [55.0, 56.0]

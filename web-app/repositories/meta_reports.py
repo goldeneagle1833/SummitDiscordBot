@@ -141,11 +141,11 @@ class MetaReportRepository:
             rows = conn.execute(sql).fetchall()
         return [self._report(r, with_payload=False) for r in rows]
 
-    def published_before(self, period_from: str, limit: int = 6) -> list[dict]:
-        """Published reports for earlier periods, newest first, with payloads."""
+    def reports_before(self, period_from: str, limit: int = 6) -> list[dict]:
+        """Built reports (published or draft) for earlier periods, newest first, with payloads."""
         with self._connect() as conn:
             rows = conn.execute(
-                """SELECT * FROM meta_reports WHERE status = 'published' AND period_from < ?
+                """SELECT * FROM meta_reports WHERE period_from < ?
                    ORDER BY period_from DESC LIMIT ?""",
                 (period_from, limit),
             ).fetchall()

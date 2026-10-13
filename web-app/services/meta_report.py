@@ -314,6 +314,22 @@ def _card_rows(body: dict | None) -> dict[str, dict]:
     return rows
 
 
+def _body_from_report(history: list[dict], period_from: str) -> dict | None:
+    """The previous period's card shares from its saved report, when PSO can't give them again."""
+    for report in history:
+        if report.get("from") != period_from:
+            continue
+        index = ((report.get("payload") or {}).get("cards") or {}).get("index") or {}
+        if not index:
+            return None
+        return {"cards": [
+            {"cardKey": k, "deckShare": None if v[0] is None else v[0] / 100,
+             "played": {"winRate": None if v[1] is None else v[1] / 100}}
+            for k, v in index.items()
+        ]}
+    return None
+
+
 def _pct(x):
     return None if x is None else round(x * 100, 1)
 
@@ -525,8 +541,11 @@ def build_payload(period: Period, repo: MetaReportRepository | None = None,
     _with_moves(ranked["archetypes"], previous["archetypes"])
     ranked["matchups"] = matchup_grid(games, ranked["archetypes"])
 
-    history = repo.published_before(f, limit=4)
-    cards = card_section(pso(f, t), pso(pf, pt), history, t)
+    history = repo.reports_before(f, limit=4)
+    prev_cards = pso(pf, pt)
+    if not _card_rows(prev_cards) or not any(r["share"] for r in _card_rows(prev_cards).values()):
+        prev_cards = _body_from_report(history, pf)
+    cards = card_section(pso(f, t), prev_cards, history, t)
     tournaments = tournament_section(f, t, ranked["archetypes"])
     return {
         "period": {"slug": period.slug, "from": f, "through": t, "label": period.label(),

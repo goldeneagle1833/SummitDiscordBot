@@ -15,6 +15,7 @@ from repositories.avatar_elo_repo import (
     adjust_avatar_event_elo,
     delete_player_avatar_standings,
     get_avatar_event_elo,
+    get_avatar_event_games,
     get_avatar_standings,
     record_avatar_results,
 )
@@ -70,7 +71,11 @@ def calculate_player_event_k(games_played: int) -> int:
 
 
 def match_event_k(winner_games: int, loser_games: int) -> int:
-    """The K-factor a season match is played at: the lower of the two players'."""
+    """The K-factor a season match is played at: the lower of the two sides'.
+
+    Player ladder: each player's season games. Avatar ladder: each player's
+    games on the avatar they played, so every new avatar ramps from 16 again.
+    """
     return min(calculate_player_event_k(winner_games), calculate_player_event_k(loser_games))
 
 
@@ -1154,6 +1159,7 @@ async def record_match(
     avatar_event_id = None
     winner_avatar_change = loser_avatar_change = None
     winner_avatar_after = loser_avatar_after = None
+    avatar_k = None  # the avatar ladder's K for this match (per avatar entry)
 
     # ── Step 1: calculate ELO changes ──
     if match_type in NON_ELO_MATCH_TYPES:
@@ -1225,8 +1231,13 @@ async def record_match(
                     avatar_event_id = active_event["event_id"]
                     winner_avatar_elo = get_avatar_event_elo(avatar_event_id, winner_id, winner_avatar)
                     loser_avatar_elo = get_avatar_event_elo(avatar_event_id, loser_id, loser_avatar)
+                    # Avatar entries ramp their own K: a new avatar starts at 16
+                    avatar_k = match_event_k(
+                        get_avatar_event_games(avatar_event_id, winner_id, winner_avatar),
+                        get_avatar_event_games(avatar_event_id, loser_id, loser_avatar),
+                    )
                     winner_avatar_change, loser_avatar_change = _calculate_event_changes(
-                        winner_avatar_elo, loser_avatar_elo, event_k,
+                        winner_avatar_elo, loser_avatar_elo, avatar_k,
                         elo_multiplier_winner, elo_multiplier_loser,
                     )
                     winner_avatar_after = winner_avatar_elo + winner_avatar_change
@@ -1313,9 +1324,9 @@ async def record_match(
             "winner_went_first, loser_went_first, match_type, "
             "winner_lifetime_elo_after, loser_lifetime_elo_after, pairing_id, voice, "
             "winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, "
-            "winner_avatar_elo_after, loser_avatar_elo_after, event_k) "
+            "winner_avatar_elo_after, loser_avatar_elo_after, event_k, avatar_k) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "?, ?, ?, ?, ?, ?, ?)",
+            "?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 reporter_id,
                 winner_id, winner_global,
@@ -1349,6 +1360,7 @@ async def record_match(
                 winner_avatar_after,
                 loser_avatar_after,
                 event_k,
+                avatar_k,
             ),
         )
         table_name = "match_records"
@@ -1532,9 +1544,9 @@ def end_current_event():
                 winner_lifetime_elo_after, loser_lifetime_elo_after,
                 match_type, voice, archived_at,
                 winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change,
-                winner_avatar_elo_after, loser_avatar_elo_after, event_k)
+                winner_avatar_elo_after, loser_avatar_elo_after, event_k, avatar_k)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                       ?, ?, ?, ?, ?, ?, ?)""",
+                       ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 event_id,
                 match_dict.get("match_id"),
@@ -1567,6 +1579,7 @@ def end_current_event():
                 archived_at,
                 *(match_dict.get(col) for col in AVATAR_MATCH_COLUMN_NAMES),
                 match_dict.get("event_k"),
+                match_dict.get("avatar_k"),
             ),
         )
 
@@ -1695,8 +1708,10 @@ def recalculate_event_elo() -> dict:
 def _recalculate_avatar_event_elo(active_event) -> list:
     """Rebuild an Avatar-mode event's avatar entries by replaying its matches.
 
-    Replays in order at each match's stored K (recalculate_event_elo has just
-    rewritten it), rewriting every match's avatar change/after columns.
+    Replays in order, rewriting every match's avatar change/after columns.
+    Matches rated with a per-avatar K (avatar_k set) get it recomputed from
+    the replayed avatar game counts; older ones keep the season K they were
+    played at (recalculate_event_elo has just rewritten event_k).
     Returns the top 5 entries as (label, elo).
     """
     event_id = active_event["event_id"]
@@ -1705,8 +1720,8 @@ def _recalculate_avatar_event_elo(active_event) -> list:
     match_conn.row_factory = sqlite3.Row
     try:
         matches = match_conn.execute(
-            f"""SELECT rowid, winner_id, losser_id, winner_display_name, losser_display_name,
-                       timestamp, winner_avatar, loser_avatar, event_k
+            f"""SELECT rowid AS row_id, winner_id, losser_id, winner_display_name, losser_display_name,
+                       timestamp, winner_avatar, loser_avatar, event_k, avatar_k
                 FROM match_records
                 WHERE timestamp >= ? AND winner_avatar IS NOT NULL AND loser_avatar IS NOT NULL
                   AND {ELO_COUNTING_MATCH_FILTER}
@@ -1718,9 +1733,12 @@ def _recalculate_avatar_event_elo(active_event) -> list:
         games: dict[tuple[int, str], int] = {}
         names: dict[int, str] = {}
         for m in matches:
-            k_value = m["event_k"] or EVENT_K_MAX
             w_key = (m["winner_id"], m["winner_avatar"])
             l_key = (m["losser_id"], m["loser_avatar"])
+            if m["avatar_k"] is not None:
+                k_value = match_event_k(games.get(w_key, 0), games.get(l_key, 0))
+            else:
+                k_value = m["event_k"] or EVENT_K_MAX
             w_before, l_before = elos.get(w_key, 1500), elos.get(l_key, 1500)
             w_change, l_change = _calculate_event_changes(w_before, l_before, k_value)
             elos[w_key], elos[l_key] = w_before + w_change, l_before + l_change
@@ -1730,8 +1748,9 @@ def _recalculate_avatar_event_elo(active_event) -> list:
             names[m["losser_id"]] = m["losser_display_name"]
             match_conn.execute(
                 "UPDATE match_records SET winner_avatar_elo_change = ?, loser_avatar_elo_change = ?, "
-                "winner_avatar_elo_after = ?, loser_avatar_elo_after = ? WHERE rowid = ?",
-                (w_change, l_change, elos[w_key], elos[l_key], m["rowid"]),
+                "winner_avatar_elo_after = ?, loser_avatar_elo_after = ?, avatar_k = ? WHERE rowid = ?",
+                (w_change, l_change, elos[w_key], elos[l_key],
+                 k_value if m["avatar_k"] is not None else None, m["row_id"]),
             )
         match_conn.commit()
     finally:
@@ -1787,7 +1806,7 @@ _ADMIN_MATCH_COLUMNS = """rowid AS row_id, winner_id, losser_id, winner_display_
        timestamp, match_type, winner_elo_change, loser_elo_change,
        winner_lifetime_elo_change, loser_lifetime_elo_change,
        winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, event_k,
-       source"""
+       avatar_k, source"""
 
 
 def _load_admin_match_rows(match_cur, where: str, params) -> list[dict]:
@@ -1869,7 +1888,12 @@ def _replay_match_elo(elo_cur, match_cur, row: dict, active_event, avatar_event_
     if avatar_event_id and w_avatar and l_avatar:
         w_av = _current_avatar_elo(elo_cur, avatar_event_id, winner_id, w_avatar)
         l_av = _current_avatar_elo(elo_cur, avatar_event_id, loser_id, l_avatar)
-        w_av_change, l_av_change = _calculate_event_changes(w_av, l_av, event_k)
+        # The avatar ladder keeps its own stored K (per avatar entry); rows from
+        # before that used the season K
+        avatar_k = row.get("avatar_k")
+        w_av_change, l_av_change = _calculate_event_changes(
+            w_av, l_av, avatar_k if avatar_k is not None else event_k,
+        )
         w_av_after, l_av_after = w_av + w_av_change, l_av + l_av_change
         for user_id, avatar, after, name in (
             (winner_id, w_avatar, w_av_after, row["winner_display_name"]),

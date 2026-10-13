@@ -2971,8 +2971,12 @@ class LFGCog(commands.Cog):
                 value=(
                     f"**Event ID:** {result['event_id']}\n"
                     f"**Started:** {result['start_date'].strftime('%Y-%m-%d %H:%M')}\n"
-                    f"**K-Value:** each player starts at 16 and gains 2 per game, up to 32\n"
-                    f"**All event ELO reset to:** 1500"
+                    + (
+                        "**K-Value:** each avatar entry starts at 16 and gains 2 per game on it, up to 32\n"
+                        if elo_mode == "avatar"
+                        else "**K-Value:** each player starts at 16 and gains 2 per game, up to 32\n"
+                    )
+                    + "**All event ELO reset to:** 1500"
                 ),
                 inline=False,
             )
@@ -3290,6 +3294,21 @@ class LFGCog(commands.Cog):
             ),
             inline=False,
         )
+
+        if active_event.get("elo_mode") == "avatar":
+            # Avatar mode: every avatar entry ramps its own K
+            embed.add_field(
+                name="K-Value Info",
+                value=(
+                    "**Each avatar you play has its own K-value.**\n"
+                    "**Range:** 16 \u2192 32, +2 after each ranked game on that avatar this season\n"
+                    "**In a match:** the lower of the two avatars' K-values is used\n"
+                    "Use `!rank` to see the K-value of each of your avatars."
+                ),
+                inline=False,
+            )
+            await ctx.send(embed=embed)
+            return
 
         embed.add_field(
             name="K-Value Info",

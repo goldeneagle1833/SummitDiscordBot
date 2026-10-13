@@ -78,6 +78,20 @@ def get_avatar_event_elo(event_id: int, user_id: int, avatar: str) -> int:
     return row["event_elo"] if row else START_ELO
 
 
+def get_avatar_event_games(event_id: int, user_id: int, avatar: str) -> int:
+    """Rated games a player has played on one avatar this event (0 before the first)."""
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT games_played FROM event_avatar_standings "
+            "WHERE event_id = ? AND user_id = ? AND avatar = ?",
+            (event_id, user_id, avatar),
+        ).fetchone()
+    finally:
+        conn.close()
+    return (row["games_played"] or 0) if row else 0
+
+
 def record_avatar_results(event_id: int, results) -> None:
     """Write both players' new avatar ELOs for one match in a single transaction.
 

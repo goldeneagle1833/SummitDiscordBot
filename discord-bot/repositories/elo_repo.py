@@ -178,8 +178,10 @@ def create_db():
         pass  # Column already exists
 
     # Avatar-mode events: each side's avatar and its per-avatar event ELO.
-    # event_k is the K-factor the season ladder used for this match.
-    for col in (*AVATAR_MATCH_COLUMNS, "event_k INTEGER"):
+    # event_k is the K-factor the season ladder used for this match; avatar_k
+    # the one the avatar ladder used (NULL before K went per avatar, when the
+    # avatar ladder used event_k).
+    for col in (*AVATAR_MATCH_COLUMNS, "event_k INTEGER", "avatar_k INTEGER"):
         try:
             cur.execute(f"ALTER TABLE match_records ADD COLUMN {col}")
         except sqlite3.OperationalError:
@@ -360,7 +362,7 @@ def create_match_records_archive():
         cur.execute("ALTER TABLE match_records_archive ADD COLUMN voice INTEGER NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass  # Column already exists
-    for col in (*AVATAR_MATCH_COLUMNS, "event_k INTEGER"):
+    for col in (*AVATAR_MATCH_COLUMNS, "event_k INTEGER", "avatar_k INTEGER"):
         try:
             cur.execute(f"ALTER TABLE match_records_archive ADD COLUMN {col}")
         except sqlite3.OperationalError:

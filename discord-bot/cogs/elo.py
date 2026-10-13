@@ -189,7 +189,8 @@ class EloCog(commands.Cog):
             if check_is_admin(ctx):
                 msg += f"**Lifetime ELO:** {lifetime_elo} (Rank #{lifetime_rank})\n"
 
-            if active_event:
+            # Avatar mode shows each avatar's own K in its line instead
+            if active_event and active_event.get("elo_mode") != "avatar":
                 from utils.database import calculate_player_event_k, get_user_event_games
 
                 season_games = get_user_event_games(target_user.id)
@@ -391,6 +392,7 @@ def _avatar_label(side: dict) -> str:
 def _avatar_rank_lines(active_event, user_id) -> str:
     """!rank in Avatar mode: every avatar entry the player has, with its rank."""
     from repositories.avatar_elo_repo import get_player_avatar_standings
+    from utils.database import calculate_player_event_k
 
     entries = get_player_avatar_standings(active_event["event_id"], user_id)
     header = f"**Event ELO ({active_event['event_name']}) — rated per avatar:**"
@@ -398,7 +400,8 @@ def _avatar_rank_lines(active_event, user_id) -> str:
         return f"{header}\nNo matches yet."
     lines = [
         f"- **{entry['avatar']}:** {entry['event_elo']} (Rank #{entry['rank']}, "
-        f"{entry['games_played']} game{'s' if entry['games_played'] != 1 else ''})"
+        f"{entry['games_played']} game{'s' if entry['games_played'] != 1 else ''}, "
+        f"K {calculate_player_event_k(entry['games_played'])})"
         for entry in entries
     ]
     return header + "\n" + "\n".join(lines)

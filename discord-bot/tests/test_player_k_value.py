@@ -91,15 +91,70 @@ async def test_lifetime_elo_still_uses_k_32():
 
 
 @pytest.mark.asyncio
-async def test_avatar_entries_use_the_players_k_not_the_avatars():
+async def test_avatar_entries_ramp_their_own_k():
     start_new_event("Season 7", elo_mode="avatar")
     for _ in range(8):
         await _play(A, B, winner_avatar="Imposter", loser_avatar="Witch")
 
-    # Both players are past the ramp, so a brand-new avatar entry still plays at K 32
+    # The players are past the ramp, but brand-new avatar entries start at K 16
     row = _match(await _play(A, B, winner_avatar="Seer", loser_avatar="Druid"))
     assert row["event_k"] == 32
-    assert row["winner_avatar_elo_change"] == 16
+    assert row["avatar_k"] == 16
+    assert row["winner_avatar_elo_change"] == 8
+
+    # The veteran entries are still at 32
+    row = _match(await _play(A, B, winner_avatar="Imposter", loser_avatar="Witch"))
+    assert row["avatar_k"] == 32
+
+    # A veteran avatar against a new one plays at the new one's K
+    row = _match(await _play(A, C, winner_avatar="Imposter", loser_avatar="Witch"))
+    assert row["avatar_k"] == 16
+    row = _match(await _play(A, C, winner_avatar="Seer", loser_avatar="Seer"))
+    assert row["avatar_k"] == 16  # C's Seer is new
+    row = _match(await _play(A, B, winner_avatar="Seer", loser_avatar="Imposter"))
+    assert row["avatar_k"] == 16  # B's Imposter is new; A's Seer (2 games) is at 20
+
+
+@pytest.mark.asyncio
+async def test_recalculate_keeps_old_matches_at_their_k_and_ramps_new_ones_per_avatar():
+    start_new_event("Season 7", elo_mode="avatar")
+    for _ in range(8):
+        await _play(A, B, winner_avatar="Imposter", loser_avatar="Witch")
+    old_id = await _play(A, B, winner_avatar="Seer", loser_avatar="Druid")
+    new_ids = [
+        await _play(A, B, winner_avatar="Seer", loser_avatar="Druid"),
+        await _play(B, A, winner_avatar="Druid", loser_avatar="Seer"),
+    ]
+    expected_new = [_match(mid)["avatar_k"] for mid in new_ids]
+    assert expected_new == [18, 20]
+
+    # Pretend the first Seer/Druid match was played before K went per avatar
+    conn = sqlite3.connect("match_records.db")
+    conn.execute("UPDATE match_records SET avatar_k = NULL WHERE match_id = ?", (old_id,))
+    conn.execute("UPDATE match_records SET avatar_k = 99 WHERE match_id IN (?, ?)", tuple(new_ids))
+    conn.commit()
+    conn.close()
+
+    recalculate_event_elo()
+
+    old = _match(old_id)
+    assert old["avatar_k"] is None
+    assert old["winner_avatar_elo_change"] == 16   # replayed at its season K of 32
+    assert [_match(mid)["avatar_k"] for mid in new_ids] == expected_new
+
+
+@pytest.mark.asyncio
+async def test_correcting_an_avatar_match_keeps_its_avatar_k():
+    start_new_event("Season 7", elo_mode="avatar")
+    for _ in range(8):
+        await _play(A, B, winner_avatar="Imposter", loser_avatar="Witch")
+    match_id = await _play(A, B, winner_avatar="Seer", loser_avatar="Druid")
+
+    correct_match_record(match_id)
+
+    row = _match(match_id)
+    assert row["winner_id"] == B and row["avatar_k"] == 16
+    assert row["winner_avatar_elo_change"] == 8
 
 
 @pytest.mark.asyncio

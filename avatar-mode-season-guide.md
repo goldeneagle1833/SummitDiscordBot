@@ -87,11 +87,14 @@ confirming and an admin will sort it out.
 It's the same Elo formula as always, applied to the two avatar entries in the match:
 
 - A new avatar entry starts at **1500**, even for an experienced player.
-- **Your K-value is your own.** Your first ranked game of the season is played at K = 16,
-  and your K rises by 2 after each ranked game, up to 32 (from your 9th game on). It counts
-  your ranked games across all your avatars, and restarts each season.
-- When two players have different K-values, **the lower one is used** for that match, for
-  both players. A veteran facing someone on their first game also plays at K = 16.
+- **Each avatar entry has its own K-value.** Your first ranked game on an avatar is played
+  at K = 16, and that avatar's K rises by 2 after each ranked game on it, up to 32 (from its
+  9th game on). Picking up a new avatar starts it back at 16; your other avatars keep theirs.
+  It restarts each season.
+- When the two avatar entries have different K-values, **the lower one is used** for that
+  match, for both players. A veteran avatar facing someone's brand new one also plays at K = 16.
+- (Before Oct 2026 K counted your ranked games across all avatars. Games already played keep
+  the K they were rated at.)
 - Each ranked game moves three numbers for each player:
   1. **Lifetime Elo** (one per player), as always.
   2. **The avatar entry** you played. This is the season ladder.

@@ -968,6 +968,32 @@ class TestStoreAdminRoutes:
         products = client.get("/api/store/products").get_json()["products"]
         assert products[0]["images"] == ["/one.png", "/two.png"]
 
+    def test_image_framing_saved_and_cleaned(self, store_admin_session, client, store_repo):
+        pid = _seed_product(store_repo, images=["/one.png", "/two.png"])
+        resp = store_admin_session.patch(f"/api/store/admin/products/{pid}", json={
+            "image_framing": {
+                "/one.png": {"x": 30, "y": 140, "zoom": 1.5},  # y clamps to 100
+                "/two.png": {"x": 50, "y": 50, "zoom": 1},     # default, dropped
+                "/gone.png": {"x": 10, "y": 10, "zoom": 2},    # not an image, dropped
+            },
+        })
+        assert resp.status_code == 200
+        products = client.get("/api/store/products").get_json()["products"]
+        assert products[0]["image_framing"] == {"/one.png": {"x": 30.0, "y": 100.0, "zoom": 1.5}}
+
+    def test_image_framing_dropped_with_its_image(self, store_admin_session, store_repo):
+        pid = _seed_product(store_repo, images=["/one.png", "/two.png"],
+                            image_framing={"/one.png": {"x": 0, "y": 0, "zoom": 2}})
+        store_admin_session.patch(f"/api/store/admin/products/{pid}", json={"images": ["/two.png"]})
+        assert store_repo.get_product(pid)["image_framing"] == {}
+
+    def test_image_framing_rejects_bad_values(self, store_admin_session, store_repo):
+        pid = _seed_product(store_repo, images=["/one.png"])
+        resp = store_admin_session.patch(f"/api/store/admin/products/{pid}", json={
+            "image_framing": {"/one.png": {"x": "left"}},
+        })
+        assert resp.status_code == 400
+
     def test_upload_several_images(self, store_admin_session, store_repo, tmp_path):
         from io import BytesIO
         uploads = tmp_path / "uploads"

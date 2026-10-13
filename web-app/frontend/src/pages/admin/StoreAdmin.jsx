@@ -13,6 +13,7 @@ import {
 import Spinner from '@/components/ui/Spinner'
 import SalesDashboard from '@/components/store/SalesDashboard'
 import SaleAlertsToggle from '@/components/store/SaleAlertsToggle'
+import ImageFramer from '@/components/store/ImageFramer'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const inputCls =
@@ -21,7 +22,7 @@ const inputCls =
 // ---------------------------------------------------------------- Products
 
 const EMPTY_PRODUCT = {
-  sku: '', name: '', description: '', price: '', stock_quantity: '', max_per_user_monthly: '', images: [],
+  sku: '', name: '', description: '', price: '', stock_quantity: '', max_per_user_monthly: '', images: [], framing: {},
 }
 
 function productToForm(p) {
@@ -33,6 +34,7 @@ function productToForm(p) {
     stock_quantity: String(p.stock_quantity ?? ''),
     max_per_user_monthly: p.max_per_user_monthly == null ? '' : String(p.max_per_user_monthly),
     images: p.images?.length ? [...p.images] : p.image_url ? [p.image_url] : [],
+    framing: { ...(p.image_framing || {}) },
   }
 }
 
@@ -89,6 +91,11 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
 
   const set = (f) => (e) => setForm((x) => ({ ...x, [f]: e.target.value }))
   const setImages = (fn) => setForm((x) => ({ ...x, images: fn(x.images) }))
+  // Which image the framing preview is adjusting
+  const [framingUrl, setFramingUrl] = useState(null)
+  const framedUrl = form.images.includes(framingUrl) ? framingUrl : form.images[0]
+  const setFraming = (url, framing) =>
+    setForm((x) => ({ ...x, framing: { ...x.framing, [url]: framing } }))
 
   const uploadImages = async (e) => {
     const picked = Array.from(e.target.files || [])
@@ -108,6 +115,7 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
       for (const batch of uploadBatches(files)) {
         const { urls } = await adminUploadProductImages(batch)
         setImages((imgs) => [...imgs, ...urls.filter((u) => !imgs.includes(u))])
+        setFramingUrl(urls[0])
       }
     } catch (err) {
       setError([...problems, `Upload failed: ${err.message}`].join(' '))
@@ -122,6 +130,7 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
     if (!url) return
     setImages((imgs) => (imgs.includes(url) ? imgs : [...imgs, url]))
     setUrlDraft('')
+    setFramingUrl(url)
   }
 
   const removeImage = (i) => setImages((imgs) => imgs.filter((_, idx) => idx !== i))
@@ -160,6 +169,7 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
       stock_quantity,
       max_per_user_monthly: maxMonthly,
       images: form.images,
+      image_framing: form.framing,
     }
     setSaving(true)
     try {
@@ -268,11 +278,19 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
             <ul className="flex flex-wrap gap-3" aria-label="Product images">
               {form.images.map((url, i) => (
                 <li key={url} className="relative w-24">
-                  <img
-                    src={url}
-                    alt={i === 0 ? 'Primary image' : `Image ${i + 1}`}
-                    className={`h-24 w-24 object-cover rounded border ${i === 0 ? 'border-secondary' : 'border-border'}`}
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setFramingUrl(url)}
+                    aria-label={`Adjust image ${i + 1}`}
+                    aria-pressed={url === framedUrl}
+                    className={`block rounded ${url === framedUrl ? 'ring-2 ring-primary ring-offset-2 ring-offset-bg-surface' : ''}`}
+                  >
+                    <img
+                      src={url}
+                      alt={i === 0 ? 'Primary image' : `Image ${i + 1}`}
+                      className={`h-24 w-24 object-cover rounded border ${i === 0 ? 'border-secondary' : 'border-border'}`}
+                    />
+                  </button>
                   {i === 0 && (
                     <span className="absolute top-1 left-1 text-[10px] font-medium bg-secondary text-black px-1.5 py-0.5 rounded">
                       Primary
@@ -299,6 +317,13 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
             </ul>
           ) : (
             <p className="text-xs text-text-muted">No images yet. The first image is the one shown in listings.</p>
+          )}
+          {framedUrl && (
+            <ImageFramer
+              url={framedUrl}
+              framing={form.framing[framedUrl]}
+              onChange={(framing) => setFraming(framedUrl, framing)}
+            />
           )}
           <p className="text-xs text-text-muted">
             JPG, PNG, WEBP or GIF, up to {MAX_IMAGE_MB} MB each. Best size is 1200 × 600 (wide). Listings crop images to fit, so keep the product centered.

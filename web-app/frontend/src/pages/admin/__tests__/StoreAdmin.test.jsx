@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, renderWithRouter, userEvent, waitFor, within } from '@/test/test-utils'
+import { fireEvent } from '@testing-library/react'
 
 vi.mock('@/api/store', async () => {
   const actual = await vi.importActual('@/api/store')
@@ -113,6 +114,7 @@ describe('StoreAdmin products', () => {
       stock_quantity: 4,
       max_per_user_monthly: null,
       images: ['/two.png'],
+      image_framing: {},
     })
     // Editor closes and the list reloads
     const callsBefore = adminGetProducts.mock.calls.length
@@ -168,6 +170,28 @@ describe('StoreAdmin products', () => {
     expect(await screen.findByText(/"huge\.png" is 6\.0 MB\. Images must be 5 MB or smaller\./)).toBeInTheDocument()
   })
 
+  it('previews the selected image at card size and saves its framing', async () => {
+    await openProductsTab()
+    await userEvent.click(screen.getByRole('button', { name: 'Edit Fire Token' }))
+
+    // The first image is selected for adjusting by default
+    expect(screen.getByAltText('Store card preview')).toHaveAttribute('src', '/one.png')
+    await userEvent.click(screen.getByRole('button', { name: 'Adjust image 2' }))
+    const preview = screen.getByAltText('Store card preview')
+    expect(preview).toHaveAttribute('src', '/two.png')
+
+    fireEvent.change(screen.getByLabelText('Up / down'), { target: { value: '20' } })
+    fireEvent.change(screen.getByLabelText('Zoom'), { target: { value: '1.5' } })
+    expect(preview.style.objectPosition).toBe('50% 20%')
+    expect(preview.style.transform).toBe('scale(1.5)')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(adminUpdateProduct).toHaveBeenCalled())
+    expect(adminUpdateProduct.mock.calls[0][1].image_framing).toEqual({
+      '/two.png': { x: 50, y: 20, zoom: 1.5 },
+    })
+  })
+
   it('adds a product with a pasted image URL', async () => {
     await openProductsTab()
     await userEvent.type(screen.getByLabelText('SKU'), 'TOK-ICE')
@@ -186,6 +210,7 @@ describe('StoreAdmin products', () => {
       stock_quantity: 3,
       max_per_user_monthly: undefined,
       images: ['https://img.example/ice.png'],
+      image_framing: {},
       storefront_id: 1,
     })
   })

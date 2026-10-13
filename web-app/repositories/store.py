@@ -238,6 +238,12 @@ class StoreRepository:
                 conn.execute("ALTER TABLE products ADD COLUMN images TEXT")
             except sqlite3.OperationalError:
                 pass  # column already exists
+            try:
+                # JSON {url: {"x", "y", "zoom"}}: how each image sits in the
+                # store card's crop. Missing entries mean centered, no zoom.
+                conn.execute("ALTER TABLE products ADD COLUMN image_framing TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
             for table in ("products", "orders"):
                 try:
                     conn.execute(
@@ -352,6 +358,14 @@ class StoreRepository:
         if not images and product.get("image_url"):
             images = [product["image_url"]]
         product["images"] = images
+        framing: dict = {}
+        raw = product.get("image_framing")
+        if raw:
+            try:
+                framing = StoreRepository._clean_framing(json.loads(raw), images)
+            except (TypeError, ValueError):
+                framing = {}
+        product["image_framing"] = framing
         return product
 
     @staticmethod
@@ -368,6 +382,30 @@ class StoreRepository:
             url = url.strip()
             if url and url not in cleaned:
                 cleaned.append(url)
+        return cleaned
+
+    @staticmethod
+    def _clean_framing(framing, images: list[str]) -> dict:
+        """Keep framing only for images the product has, with values clamped.
+
+        x and y are object-position percents (0-100); zoom is 1-3.
+        """
+        if framing is None:
+            return {}
+        if not isinstance(framing, dict):
+            raise ValueError("image_framing must be an object keyed by image URL")
+        cleaned: dict = {}
+        for url, f in framing.items():
+            if url not in images or not isinstance(f, dict):
+                continue
+            try:
+                x = min(100.0, max(0.0, float(f.get("x", 50))))
+                y = min(100.0, max(0.0, float(f.get("y", 50))))
+                zoom = min(3.0, max(1.0, float(f.get("zoom", 1))))
+            except (TypeError, ValueError):
+                raise ValueError("image_framing values must be numbers")
+            if (x, y, zoom) != (50.0, 50.0, 1.0):
+                cleaned[url] = {"x": round(x, 1), "y": round(y, 1), "zoom": round(zoom, 2)}
         return cleaned
 
     def list_products(self, include_inactive: bool = False,
@@ -415,10 +453,12 @@ class StoreRepository:
         max_per_user_monthly: int | None = None,
         images: list[str] | None = None,
         storefront_id: int | None = None,
+        image_framing: dict | None = None,
     ) -> int:
         images = self._clean_images(images)
         if not images and image_url:
             images = [image_url]
+        framing = self._clean_framing(image_framing, images)
         if storefront_id is None:
             storefront_id = self.default_storefront_id()
         elif not self.get_storefront(storefront_id):
@@ -428,19 +468,20 @@ class StoreRepository:
             cur = conn.execute(
                 """INSERT INTO products
                    (sku, name, description, price_cents, image_url, images,
-                    stock_quantity, max_per_user_monthly, storefront_id,
-                    created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    image_framing, stock_quantity, max_per_user_monthly,
+                    storefront_id, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (sku, name, description, price_cents,
                  images[0] if images else None, json.dumps(images),
-                 stock_quantity, max_per_user_monthly, storefront_id, now, now),
+                 json.dumps(framing), stock_quantity, max_per_user_monthly,
+                 storefront_id, now, now),
             )
             return cur.lastrowid
 
     def update_product(self, product_id: int, **fields) -> bool:
         allowed = {"sku", "name", "description", "price_cents", "image_url",
                    "stock_quantity", "is_active", "max_per_user_monthly", "images",
-                   "storefront_id"}
+                   "storefront_id", "image_framing"}
         if "storefront_id" in fields and not self.get_storefront(fields["storefront_id"]):
             raise ValueError("Unknown storefront")
         updates = {k: v for k, v in fields.items() if k in allowed}
@@ -452,7 +493,16 @@ class StoreRepository:
             updates["image_url"] = images[0] if images else None
         elif "image_url" in updates:
             # Legacy single-image writers keep the gallery consistent
-            updates["images"] = json.dumps([updates["image_url"]] if updates["image_url"] else [])
+            images = [updates["image_url"]] if updates["image_url"] else []
+            updates["images"] = json.dumps(images)
+        else:
+            images = None
+        if "image_framing" in updates:
+            if images is None:
+                current = self.get_product(product_id)
+                images = current["images"] if current else []
+            updates["image_framing"] = json.dumps(
+                self._clean_framing(updates["image_framing"], images))
         updates["updated_at"] = self._now()
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         with self._connect() as conn:

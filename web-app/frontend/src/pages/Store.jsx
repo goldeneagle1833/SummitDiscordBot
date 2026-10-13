@@ -6,6 +6,7 @@ import useStoreCart, {
   DEFAULT_STOREFRONT, cartCount, maxQuantity, reconcileCart,
 } from '@/hooks/useStoreCart'
 import Spinner from '@/components/ui/Spinner'
+import FramedImage from '@/components/store/FramedImage'
 import usePageTitle from '@/hooks/usePageTitle'
 
 function LoginPromptModal({ onClose }) {
@@ -76,7 +77,7 @@ function ProductGallery({ product }) {
 
   return (
     <div>
-      <img src={current} alt={product.name} className="w-full h-48 object-cover" />
+      <FramedImage src={current} alt={product.name} framing={product.image_framing?.[current]} className="w-full h-48" />
       {images.length > 1 && (
         <div className="flex gap-1.5 p-2 overflow-x-auto bg-bg-elevated/60" role="list" aria-label={`${product.name} images`}>
           {images.map((url, i) => (

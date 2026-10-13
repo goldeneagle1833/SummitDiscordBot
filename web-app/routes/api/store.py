@@ -185,6 +185,7 @@ def admin_create_product():
             max_per_user_monthly=max_monthly,
             images=data.get("images"),
             storefront_id=storefront_id,
+            image_framing=data.get("image_framing"),
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -240,6 +241,8 @@ def _validate_product_patch(data: dict) -> tuple[dict, str | None]:
         fields["images"] = data["images"]
     elif "image_url" in data:
         fields["image_url"] = (data["image_url"] or "").strip() or None
+    if "image_framing" in data:
+        fields["image_framing"] = data["image_framing"]
     return fields, None
 
 

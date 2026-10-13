@@ -5,7 +5,7 @@ import {
   adminUploadProductImages,
   adminGetOrders, adminGetOrder, adminShipOrder, adminSetOrderStatus, formatMoney,
   adminCreateStorefront, adminUpdateStorefront, adminDeleteStorefront,
-  adminGetStorefrontAdmins, adminAddStorefrontAdmin, adminRemoveStorefrontAdmin, adminSearchUsers,
+  adminGetStorefrontAdmins, adminAddStorefrontAdmin, adminSetStorefrontDescription, adminRemoveStorefrontAdmin, adminSearchUsers,
   adminGetStorefrontApplications, adminApproveStorefrontApplication,
   adminDeclineStorefrontApplication,
   adminGetStorefrontPayments, adminStartStripeOnboarding, adminDisconnectStripe, adminLinkStripe,
@@ -14,6 +14,7 @@ import Spinner from '@/components/ui/Spinner'
 import SalesDashboard from '@/components/store/SalesDashboard'
 import SaleAlertsToggle from '@/components/store/SaleAlertsToggle'
 import ImageFramer from '@/components/store/ImageFramer'
+import LinkifiedText from '@/components/ui/LinkifiedText'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const inputCls =
@@ -784,7 +785,73 @@ const ROLE_LABELS = {
   fulfillment: 'Shipper: orders only',
 }
 
-function TeamPanel({ storefront }) {
+// The text shown above this storefront's products on the store page
+function DescriptionEditor({ storefront, onSaved }) {
+  const [text, setText] = useState(storefront.description || '')
+  const [saved, setSaved] = useState(storefront.description || '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)
+
+  const save = async () => {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const d = await adminSetStorefrontDescription(storefront.id, text)
+      setText(d.description)
+      setSaved(d.description)
+      setNotice('Saved')
+      onSaved?.()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="w-full bg-bg-surface border border-border rounded-lg p-4 space-y-2">
+      <label htmlFor={`storefront-description-${storefront.id}`} className="block font-semibold">
+        Store description
+      </label>
+      <p className="text-xs text-text-muted">
+        Shown at the top of the {storefront.name} tab on the store page. Links like https://example.com become clickable.
+      </p>
+      <textarea
+        id={`storefront-description-${storefront.id}`}
+        className={`${inputCls} w-full min-h-24`}
+        maxLength={1000}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value)
+          setNotice(null)
+        }}
+      />
+      {text.trim() && (
+        <div className="text-sm text-text-muted whitespace-pre-line">
+          <span className="text-[11px] uppercase tracking-wide block mb-1">Preview</span>
+          <LinkifiedText text={text.trim()} />
+        </div>
+      )}
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={save}
+          disabled={busy || text.trim() === saved}
+          className="bg-primary hover:bg-primary-dark text-white text-sm font-medium px-4 py-2 rounded transition-colors disabled:opacity-50"
+        >
+          {busy ? 'Saving…' : 'Save description'}
+        </button>
+        <span className="text-xs text-text-muted">{text.length}/1000</span>
+        {notice && <span className="text-xs text-secondary">{notice}</span>}
+        {error && <span className="text-xs text-accent-red">{error}</span>}
+      </div>
+    </section>
+  )
+}
+
+function TeamPanel({ storefront, onDescriptionSaved }) {
   const [admins, setAdmins] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -846,6 +913,7 @@ function TeamPanel({ storefront }) {
 
   return (
     <div className="flex flex-wrap gap-6 items-start">
+      <DescriptionEditor storefront={storefront} onSaved={onDescriptionSaved} />
       <div className="flex-[999_1_480px] min-w-0">
         <h2 className="font-semibold text-lg">{storefront.name} admins</h2>
         <p className="text-sm text-text-muted mb-4">
@@ -1461,7 +1529,7 @@ export default function StoreAdmin() {
       )}
       {current === 'team' && (
         selected
-          ? <TeamPanel key={`team-${selected.id}`} storefront={selected} />
+          ? <TeamPanel key={`team-${selected.id}`} storefront={selected} onDescriptionSaved={loadMe} />
           : <p className="text-sm text-text-muted">Pick a storefront above to see and change its admins.</p>
       )}
       {current === 'storefronts' && <StorefrontsPanel storefronts={storefronts} keyEnvs={me.stripe_key_envs || []} onChanged={loadMe} />}

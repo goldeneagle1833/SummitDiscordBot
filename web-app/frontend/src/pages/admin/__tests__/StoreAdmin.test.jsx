@@ -18,6 +18,7 @@ vi.mock('@/api/store', async () => {
     adminLinkStripe: vi.fn(),
     adminGetStorefrontApplications: vi.fn(),
     adminGetStorefrontAdmins: vi.fn(),
+    adminSetStorefrontDescription: vi.fn(),
     adminGetDashboard: vi.fn(() => new Promise(() => {})),
     adminSetSaleAlerts: vi.fn(() => Promise.resolve({ success: true })),
   }
@@ -26,7 +27,7 @@ vi.mock('@/api/store', async () => {
 import {
   adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminUploadProductImages, adminGetOrders,
   adminStartStripeOnboarding, adminDeleteStorefront, adminGetStorefrontApplications, adminLinkStripe,
-  adminGetStorefrontAdmins, adminSetSaleAlerts,
+  adminGetStorefrontAdmins, adminSetSaleAlerts, adminSetStorefrontDescription,
 } from '@/api/store'
 import StoreAdmin from '../StoreAdmin'
 
@@ -244,6 +245,22 @@ describe('StoreAdmin for a storefront admin', () => {
     expect(screen.queryByRole('button', { name: 'Storefronts' })).not.toBeInTheDocument()
     expect(screen.queryByText('Download backup')).not.toBeInTheDocument()
     await waitFor(() => expect(adminGetOrders).toHaveBeenCalledWith(expect.objectContaining({ storefront_id: 2 })))
+  })
+
+  it('lets a manager edit the store description on the Admins tab', async () => {
+    adminGetMe.mockResolvedValue({ is_full_admin: false, storefronts: [{ ...EXPLORER, role: 'manager', description: '' }] })
+    adminGetStorefrontAdmins.mockResolvedValue({ admins: [] })
+    adminSetStorefrontDescription.mockImplementation((id, description) => Promise.resolve({ success: true, description }))
+    renderWithRouter(<StoreAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Admins' }))
+
+    const box = await screen.findByLabelText('Store description')
+    await userEvent.type(box, 'Prints at https://example.com/prints.')
+    const link = screen.getByRole('link', { name: 'https://example.com/prints' })
+    expect(link).toHaveAttribute('target', '_blank')
+    await userEvent.click(screen.getByRole('button', { name: 'Save description' }))
+    await waitFor(() => expect(adminSetStorefrontDescription).toHaveBeenCalledWith(2, 'Prints at https://example.com/prints.'))
+    expect(await screen.findByText('Saved')).toBeInTheDocument()
   })
 
   it('hides products from fulfillment staff', async () => {

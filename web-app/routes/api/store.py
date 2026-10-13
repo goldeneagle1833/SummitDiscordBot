@@ -1236,6 +1236,27 @@ def admin_list_storefront_admins(storefront_id: int):
     return jsonify({"admins": repo.list_storefront_admins(storefront_id)})
 
 
+@store_bp.route("/store/admin/storefronts/<int:storefront_id>/description", methods=["PUT"])
+@require_store_staff
+def admin_set_storefront_description(storefront_id: int):
+    """Body: {description}. Shown above the storefront's tab on the store page.
+
+    Full store admins, and managers of this storefront.
+    """
+    repo = _repo()
+    if not repo.get_storefront(storefront_id) or not _can(storefront_id, "products"):
+        return _not_found("Storefront")
+    data = request.get_json(silent=True) or {}
+    description = str(data.get("description") or "").strip()
+    if len(description) > 1000:
+        return jsonify({"error": "Keep the description to 1000 characters or fewer"}), 400
+    repo.update_storefront(storefront_id, description=description)
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "update_storefront_description",
+                    f"id={storefront_id}")
+    return jsonify({"success": True, "description": description})
+
+
 @store_bp.route("/store/admin/storefronts/<int:storefront_id>/admins", methods=["POST"])
 @require_store_staff
 def admin_add_storefront_admin(storefront_id: int):

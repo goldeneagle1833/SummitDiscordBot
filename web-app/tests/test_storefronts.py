@@ -380,6 +380,36 @@ class TestStorefrontAdminManagement:
         assert resp.status_code == 403
 
 
+class TestStorefrontDescription:
+    def _put(self, client, sid, text):
+        return client.put(f"/api/store/admin/storefronts/{sid}/description",
+                          json={"description": text})
+
+    def test_manager_sets_own_description(self, explorer_manager, store_repo):
+        client, s = explorer_manager
+        text = "Prints from the Explorer Series. More at https://example.com/explorer"
+        assert self._put(client, s["explorer"], text).status_code == 200
+        storefronts = client.get("/api/store/storefronts").get_json()["storefronts"]
+        assert {sf["slug"]: sf["description"] for sf in storefronts}["explorer"] == text
+
+    def test_manager_cannot_set_other_storefront(self, explorer_manager):
+        client, s = explorer_manager
+        assert self._put(client, s["summit"], "hi").status_code == 404
+
+    def test_shipper_cannot_set_description(self, explorer_fulfillment):
+        client, s = explorer_fulfillment
+        assert self._put(client, s["explorer"], "hi").status_code == 404
+
+    def test_full_admin_sets_any_description(self, full_admin, store_repo):
+        s = _make_shop(store_repo)
+        assert self._put(full_admin, s["summit"], "Summit gear").status_code == 200
+        assert store_repo.get_storefront(s["summit"])["description"] == "Summit gear"
+
+    def test_too_long_is_refused(self, full_admin, store_repo):
+        s = _make_shop(store_repo)
+        assert self._put(full_admin, s["summit"], "x" * 1001).status_code == 400
+
+
 class TestStorefrontApplicationRoutes:
     BODY = {"name": "VIP", "contact_email": "vip@example.com",
             "description": "Supporter gear", "shipping": "Ohio", "agreed": True}

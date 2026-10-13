@@ -7,6 +7,7 @@ import useStoreCart, {
 } from '@/hooks/useStoreCart'
 import Spinner from '@/components/ui/Spinner'
 import FramedImage from '@/components/store/FramedImage'
+import LinkifiedText from '@/components/ui/LinkifiedText'
 import usePageTitle from '@/hooks/usePageTitle'
 
 function LoginPromptModal({ onClose }) {
@@ -213,7 +214,9 @@ export default function Store() {
       </div>
 
       {active.description && (
-        <p className="text-sm text-text-muted mb-2 max-w-3xl">{active.description}</p>
+        <p className="text-sm text-text-muted mb-2 max-w-3xl whitespace-pre-line">
+          <LinkifiedText text={active.description} />
+        </p>
       )}
       <p className="text-xs text-text-muted mb-5">Ships within the United States only.</p>
 

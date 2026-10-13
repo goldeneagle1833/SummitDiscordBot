@@ -1,62 +1,61 @@
 """Voice-chat preferences for every LFG queue.
 
 Voice is a preference on a queue entry, not a separate queue: every player
-in Ranked stays on one ladder. A player picks ``voice``, ``no_voice`` or
-``either``. Voice and no-voice players only pair with the same choice or with
-``either`` players, who pair with anyone. Voice is the default when a join
-path gives no preference. Ranked voice matches count toward top-cut
+in Ranked stays on one ladder. A player picks ``voice`` or ``no_voice``, and
+players only pair with the same choice. There is no "either" option; an old
+``either`` value (e.g. from an outdated client) is read as voice. Voice is the
+default when a join path gives no preference. Ranked voice matches count toward top-cut
 eligibility.
 """
 
 VOICE = "voice"
 NO_VOICE = "no_voice"
-EITHER = "either"
-VOICE_PREFERENCES = (VOICE, NO_VOICE, EITHER)
+LEGACY_EITHER = "either"  # retired choice, read as voice
+VOICE_PREFERENCES = (VOICE, NO_VOICE)
 DEFAULT_VOICE = VOICE
 
 VOICE_LABELS = {
     VOICE: "🔊 Voice",
     NO_VOICE: "🔇 No voice",
-    EITHER: "🔊🔇 Voice or no voice",
 }
 
 VOICE_ICONS = {
     VOICE: "🔊",
     NO_VOICE: "🔇",
-    EITHER: "🔊🔇",
 }
 
 SUMMIT_VOICE_URL = "https://discord.com/channels/1319120227643949211/1319121204480577586"
 
 
 def normalize_voice_preference(value):
-    """Return a valid preference, ``voice`` when missing, or None when invalid."""
+    """Return a valid preference, ``voice`` when missing or ``either``, or None when invalid."""
     if value is None or value == "":
         return DEFAULT_VOICE
     value = str(value).strip().lower().replace("-", "_")
+    if value == LEGACY_EITHER:
+        return VOICE
     return value if value in VOICE_PREFERENCES else None
 
 
 def voice_preferences_compatible(pref_a, pref_b):
-    """Players pair with the same voice choice; ``either`` pairs with anyone."""
-    pref_a, pref_b = pref_a or DEFAULT_VOICE, pref_b or DEFAULT_VOICE
-    return EITHER in (pref_a, pref_b) or pref_a == pref_b
+    """Players pair only with the same voice choice."""
+    return (normalize_voice_preference(pref_a) or DEFAULT_VOICE) == (
+        normalize_voice_preference(pref_b) or DEFAULT_VOICE
+    )
 
 
 def resolve_match_voice(pref_a, pref_b):
-    """A match is on voice unless a player asked for no voice.
-
-    Two ``either`` players play on voice.
-    """
+    """A match is on voice unless a player asked for no voice."""
     return NO_VOICE not in (pref_a or DEFAULT_VOICE, pref_b or DEFAULT_VOICE)
 
 
 def voice_from_checkboxes(values):
-    """Preference from the join modal's checkboxes: none ticked means voice."""
+    """Preference from the join modal's checkboxes: only "no voice" ticked means no voice.
+
+    The modal allows one tick; none ticked (or, from an old modal, both) means voice.
+    """
     ticked = set(values or ())
-    if VOICE in ticked and NO_VOICE in ticked:
-        return EITHER
-    if NO_VOICE in ticked:
+    if NO_VOICE in ticked and VOICE not in ticked:
         return NO_VOICE
     return VOICE
 

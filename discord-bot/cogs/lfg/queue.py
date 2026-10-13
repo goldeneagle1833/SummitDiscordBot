@@ -168,13 +168,13 @@ VOICE_CHECKBOX_DESCRIPTIONS = {
 def build_voice_select():
     """Voice-preference checkboxes for every queue's join modal.
 
-    Ticking both means either is fine; ticking none joins as voice, so joining
-    still takes no extra clicks.
+    Players pick one; ticking none joins as voice, so joining still takes no
+    extra clicks.
     """
     return discord.ui.CheckboxGroup(
         required=False,
         min_values=0,
-        max_values=2,
+        max_values=1,
         options=[
             discord.CheckboxGroupOption(
                 label=VOICE_LABELS[value],
@@ -192,7 +192,7 @@ def add_voice_select(modal):
     modal.remove_item(modal.timeframe)
     modal.add_item(discord.ui.Label(
         text="Voice chat",
-        description="Tick both if either is fine. None ticked joins as voice.",
+        description="Pick voice or no voice. None ticked joins as voice.",
         component=select,
     ))
     modal.add_item(modal.timeframe)

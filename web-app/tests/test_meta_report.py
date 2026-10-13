@@ -381,3 +381,25 @@ def test_movers_use_saved_previous_report_when_pso_has_no_earlier_data(match_db,
     assert [c["name"] for c in cards["rising"]] == ["Bolt"]
     assert [c["name"] for c in cards["falling"]] == ["Trolls"]
     assert cards["rising"][0]["trend"] == [55.0, 56.0]
+
+
+def _full_card(key, share, played, unplayed, opening):
+    return {"cardKey": key, "cardName": key.title(), "deckShare": share,
+            "played": rate(*played), "inDeckUnplayed": rate(*unplayed), "openingHand": rate(*opening)}
+
+
+def test_spotlights_pick_changer_trap_and_opener():
+    body = {"dataAvailable": True, "releasedThrough": "2026-09-15", "cards": [
+        _full_card("bolt", 0.40, (100, 0.60), (50, 0.45), (40, 0.52)),
+        _full_card("toolbox", 0.70, (100, 0.46), (60, 0.55), (50, 0.50)),
+        _full_card("pixies", 0.05, (30, 0.58), (25, 0.55), (22, 0.66)),
+        _full_card("wolves", 0.08, (30, 0.57), (25, 0.50), (10, 0.70)),
+    ]}
+    section = meta_report.card_section(body, None, [], "2026-09-15")
+    tiles = {t["kind"]: t["name"] for t in section["spotlights"]}
+    assert tiles == {"changer": "Bolt", "trap": "Toolbox", "opener": "Pixies"}
+    assert [c["name"] for c in section["staples"]] == ["Toolbox", "Bolt", "Wolves", "Pixies"]
+
+    last = [{"payload": {"cards": section}}]
+    again = meta_report.card_section(body, None, last, "2026-09-15")
+    assert {t["kind"]: t["name"] for t in again["spotlights"]} == {"changer": "Wolves"}

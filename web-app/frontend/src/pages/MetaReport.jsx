@@ -248,23 +248,45 @@ function Cards({ cards }) {
   const s = cards.sleeper
   const top = cards.mode === 'top'
   const minGames = cards.minGames || 20
+  const tile = `${panel} min-w-0`
   return (
-    <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))]">
-      <CardList title={top ? 'Most played' : 'Rising'} cards={cards.rising} show={top ? 'share' : undefined} />
-      {(!top || cards.falling?.length > 0) && (
-        <CardList title={top ? 'Best win rate' : 'Falling'} cards={cards.falling} show={top ? 'wins' : undefined} />
+    <div className="grid gap-4">
+      {cards.staples?.length > 0 && (
+        <p className="text-sm">
+          <span className="text-xs uppercase tracking-wider text-text-muted mr-2">Staples</span>
+          {cards.staples.map((c, i) => (
+            <span key={c.name}>
+              {i > 0 && <span className="text-text-muted"> · </span>}
+              <Link to={`/card/${encodeURIComponent(c.name)}`} className="hover:text-secondary">{c.name}</Link>
+              <span className="text-text-muted"> {c.share}%</span>
+            </span>
+          ))}
+        </p>
       )}
-      {s && (
-        <div className={`${panel} border-secondary/40`}>
-          <p className="text-xs uppercase tracking-wider text-text-muted mb-2.5">Sleeper pick</p>
-          <Link to={`/card/${encodeURIComponent(s.name)}`} className="font-display text-2xl text-secondary hover:underline">{s.name}</Link>
-          <p className="mt-1 text-sm">
-            Wins {s.winRate}% of games it&apos;s played in{' '}
-            <span className="text-text-muted">but is in only {s.share}% of decks ({s.games} games)</span>
-          </p>
-          <p className="text-xs text-text-muted mt-2">A winning card few people run: under {cards.maxSleeperShare || 10}% of decks, {minGames}+ games.</p>
-        </div>
-      )}
+      <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))]">
+        {!top && <CardList title="Rising" cards={cards.rising} />}
+        {(!top || cards.falling?.length > 0) && (
+          <CardList title={top ? 'Best win rate' : 'Falling'} cards={cards.falling} show={top ? 'wins' : undefined} />
+        )}
+        {(cards.spotlights || []).map((t) => (
+          <div key={t.kind} className={tile}>
+            <p className="text-xs uppercase tracking-wider text-text-muted mb-2.5">{t.label}</p>
+            <Link to={`/card/${encodeURIComponent(t.name)}`} className="font-display text-xl hover:text-secondary">{t.name}</Link>
+            <p className="mt-1 text-sm text-text-muted">{t.detail}</p>
+          </div>
+        ))}
+        {s && (
+          <div className={`${tile} border-secondary/40`}>
+            <p className="text-xs uppercase tracking-wider text-text-muted mb-2.5">Sleeper pick</p>
+            <Link to={`/card/${encodeURIComponent(s.name)}`} className="font-display text-2xl text-secondary hover:underline">{s.name}</Link>
+            <p className="mt-1 text-sm">
+              Wins {s.winRate}% of games it&apos;s played in{' '}
+              <span className="text-text-muted">but is in only {s.share}% of decks ({s.games} games)</span>
+            </p>
+            <p className="text-xs text-text-muted mt-2">A winning card few people run: under {cards.maxSleeperShare || 10}% of decks, {minGames}+ games.</p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -569,8 +591,8 @@ export default function MetaReport() {
           </div>
 
           <Section title={report.cards?.mode === 'top' ? 'Top cards' : 'Cards on the move'} sub={report.cards?.mode === 'top'
-            ? `From Play Sorcery Online's ranked games this period. Win rates only count cards played in ${report.cards?.minGames || 20}+ games.`
-            : "Biggest changes in how often a card is played since the last report, from Play Sorcery Online's ranked data. The line shows its win rate across recent reports."}>
+            ? `From Play Sorcery Online's ranked games this period. Spotlights change every report; win rates need ${report.cards?.minGames || 20}+ games.`
+            : "Biggest changes in how often a card is played since the last report, plus this report's spotlights, from Play Sorcery Online's ranked data. The line shows its win rate across recent reports."}>
             <Cards cards={report.cards} />
           </Section>
 

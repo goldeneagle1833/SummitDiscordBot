@@ -305,11 +305,17 @@ def _card_rows(body: dict | None) -> dict[str, dict]:
         if not key:
             continue
         played = card.get("played") or {}
+        unplayed = card.get("inDeckUnplayed") or {}
+        opening = card.get("openingHand") or {}
         rows[key] = {
             "name": card.get("cardName") or key,
             "share": card.get("deckShare"),
             "playedGames": played.get("playerGames"),
             "playedWinRate": played.get("winRate"),
+            "unplayedGames": unplayed.get("playerGames"),
+            "unplayedWinRate": unplayed.get("winRate"),
+            "openingGames": opening.get("playerGames"),
+            "openingWinRate": opening.get("winRate"),
         }
     return rows
 
@@ -332,6 +338,49 @@ def _body_from_report(history: list[dict], period_from: str) -> dict | None:
 
 def _pct(x):
     return None if x is None else round(x * 100, 1)
+
+
+def _enough(games) -> bool:
+    return (games or 0) >= MIN_SLEEPER_GAMES
+
+
+def spotlights(now: dict[str, dict], skip: set[str]) -> list[dict]:
+    """Three angles on the card data that change from report to report.
+
+    A card featured in the last report's spotlights sits out, so each report
+    puts new names forward.
+    """
+    def pick(candidates, key, kind, label, detail):
+        options = [k for k in candidates if k not in skip]
+        if not options:
+            return None
+        k = max(options, key=key)
+        row = now[k]
+        return {"kind": kind, "label": label, "key": k, "name": row["name"], "detail": detail(row)}
+
+    def swing(row):
+        return row["playedWinRate"] - row["unplayedWinRate"]
+
+    both = [k for k, r in now.items()
+            if r["playedWinRate"] is not None and r["unplayedWinRate"] is not None
+            and _enough(r["playedGames"]) and _enough(r["unplayedGames"])]
+    changers = [k for k in both if swing(now[k]) > 0]
+    traps = [k for k in both if swing(now[k]) < 0 and (now[k]["share"] or 0) >= SLEEPER_MAX_SHARE]
+    openers = [k for k, r in now.items()
+               if r["openingWinRate"] is not None and r["openingWinRate"] > 0.5 and _enough(r["openingGames"])]
+
+    def pp(row):
+        return round(abs(swing(row)) * 100, 1)
+
+    tiles = [
+        pick(changers, lambda k: swing(now[k]), "changer", "Game changer",
+             lambda r: f"Wins {_pct(r['playedWinRate'])}% when played, {_pct(r['unplayedWinRate'])}% when it stays in hand (+{pp(r)} pts)."),
+        pick(traps, lambda k: -swing(now[k]), "trap", "Trap card",
+             lambda r: f"In {_pct(r['share'])}% of decks, but wins {_pct(r['playedWinRate'])}% when played vs {_pct(r['unplayedWinRate'])}% when held (-{pp(r)} pts)."),
+        pick(openers, lambda k: now[k]["openingWinRate"], "opener", "Opening hand star",
+             lambda r: f"Wins {_pct(r['openingWinRate'])}% of games when it's in the opening hand ({r['openingGames']} games)."),
+    ]
+    return [t for t in tiles if t]
 
 
 def card_section(body: dict | None, prev_body: dict | None, history: list[dict], period_through: str) -> dict:
@@ -398,6 +447,10 @@ def card_section(body: dict | None, prev_body: dict | None, history: list[dict],
         sleeper = {"name": row["name"], "winRate": _pct(row["playedWinRate"]),
                    "share": _pct(row["share"]), "games": row["playedGames"]}
     index = {k: [_pct(r["share"]), _pct(r["playedWinRate"])] for k, r in now.items()}
+    last = ((history[0].get("payload") or {}).get("cards") or {}) if history else {}
+    skip = {t.get("key") for t in last.get("spotlights") or []}
+    staples = [{"name": now[k]["name"], "share": _pct(now[k]["share"])}
+               for k in sorted((k for k, r in now.items() if r["share"]), key=lambda k: -now[k]["share"])[:MOVERS]]
     return {
         "available": True,
         "mode": mode,
@@ -406,6 +459,8 @@ def card_section(body: dict | None, prev_body: dict | None, history: list[dict],
         "rising": rising,
         "falling": falling,
         "sleeper": sleeper,
+        "staples": staples,
+        "spotlights": spotlights(now, skip),
         "minGames": MIN_SLEEPER_GAMES,
         "maxSleeperShare": _pct(SLEEPER_MAX_SHARE),
         "index": index,

@@ -249,6 +249,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "og_preview.og_avatar_detail",
     "og_preview.og_card_detail",
     "og_preview.og_meta_report",
+    "og_preview.spa_subpage",
 
     # -- Feedback (public submission) --
     "api.feedback.submit_feedback",

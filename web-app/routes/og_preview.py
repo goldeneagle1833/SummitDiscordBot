@@ -448,6 +448,22 @@ def og_meta_report(slug: str | None = None):
     )
 
 
+# Nginx sends every path under these prefixes to Flask (see
+# nginx/summit-web-cloudflare.conf), but only some of them have an OG route.
+# Deeper SPA pages such as /avatars/top-players or /elo/limited would 404 on a
+# hard load or shared link, so serve them the SPA. Single-segment paths like
+# /player/<id> still go to their own OG routes, which outrank a <path:> rule.
+@og_preview_bp.route("/avatars/<path:_subpath>")
+@og_preview_bp.route("/elo/<path:_subpath>")
+@og_preview_bp.route("/player/<path:_subpath>")
+@og_preview_bp.route("/top-8/<path:_subpath>")
+@og_preview_bp.route("/deck-rec/<path:_subpath>")
+@og_preview_bp.route("/meta-report/<path:_subpath>")
+def spa_subpage(_subpath: str):
+    """Serve the React SPA for nested pages that have no OG preview."""
+    return _serve_spa()
+
+
 @og_preview_bp.route("/avatars")
 def og_avatars_list():
     """OG preview for the avatars listing page."""

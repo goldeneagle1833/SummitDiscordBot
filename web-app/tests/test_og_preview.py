@@ -291,3 +291,27 @@ class TestOGPreviewRoutes:
         html = resp.data.decode()
         assert "<img" not in html
         assert "&lt;" in html
+
+
+class TestSpaSubpages:
+    """Nested SPA pages under OG-proxied prefixes load directly from a link."""
+
+    @pytest.mark.parametrize("path", [
+        "/avatars/top-players?avatar=Imposter&event=current",
+        "/avatars/elo-matches?avatar=Witch&bracket=all&source=discord",
+        "/elo/limited",
+        "/elo/global",
+        "/elo/server/123",
+        "/player/123/avatar/Witch",
+    ])
+    @pytest.mark.parametrize("ua", [BROWSER_UA, BOT_UA])
+    def test_nested_page_serves_spa(self, client, path, ua):
+        resp = client.get(path, headers={"User-Agent": ua})
+        assert resp.status_code == 200
+        assert '<div id="root">' in resp.data.decode()
+
+    def test_single_segment_pages_keep_og_routes(self, client):
+        """/player/<id> and /top-8/<folder> still reach their OG preview routes."""
+        adapter = client.application.url_map.bind("localhost")
+        assert adapter.match("/player/123")[0] == "og_preview.og_player"
+        assert adapter.match("/top-8/some-event")[0] != "og_preview.spa_subpage"

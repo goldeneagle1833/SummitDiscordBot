@@ -903,12 +903,10 @@ def report_url(slug: str) -> str:
     return f"{site_url()}/meta-report/{slug}"
 
 
-def post_to_discord(report: dict) -> bool:
-    from routes.api.matchmaking import relay_to_bot
-
+def _announcement(report: dict) -> dict:
     payload = report.get("payload") or {}
     archetypes = (payload.get("ranked") or {}).get("archetypes") or []
-    body = {
+    return {
         "title": f"Meta Report: {payload.get('period', {}).get('label', report['slug'])}",
         "url": report_url(report["slug"]),
         "story": report.get("story") or [],
@@ -916,9 +914,27 @@ def post_to_discord(report: dict) -> bool:
         "rankedGames": (payload.get("ranked") or {}).get("rankedGames"),
         "events": len((payload.get("tournaments") or {}).get("events") or []),
     }
-    result, status = relay_to_bot("POST", "/meta-report-notify", body, {"status": "unavailable"}, timeout=10)
+
+
+def post_to_discord(report: dict) -> bool:
+    from routes.api.matchmaking import relay_to_bot
+
+    result, status = relay_to_bot("POST", "/meta-report-notify", _announcement(report),
+                                  {"status": "unavailable"}, timeout=10)
     if status >= 300:
         logger.warning("Meta report Discord post failed (%s): %s", status, result)
+        return False
+    return True
+
+
+def send_dms(report: dict, discord_ids: list[str]) -> bool:
+    """Hand the subscriber list to the bot, which DMs them in the background."""
+    from routes.api.matchmaking import relay_to_bot
+
+    result, status = relay_to_bot("POST", "/meta-report-dm", {**_announcement(report), "user_ids": discord_ids},
+                                  {"status": "unavailable"}, timeout=10)
+    if status >= 300:
+        logger.warning("Meta report DMs failed (%s): %s", status, result)
         return False
     return True
 
@@ -1077,6 +1093,11 @@ def deliver(report: dict, repo: MetaReportRepository | None = None) -> dict:
         if post_to_discord(report):
             repo.mark_delivery(report["slug"], "discord_posted_at")
             done["discord"] = True
+    if not report.get("dmsSentAt"):
+        ids = repo.dm_subscriber_ids()
+        if not ids or send_dms(report, ids):
+            repo.mark_delivery(report["slug"], "dms_sent_at")
+            done["dms"] = len(ids)
     return done
 
 

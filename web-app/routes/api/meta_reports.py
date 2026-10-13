@@ -13,6 +13,8 @@ Admin:
   POST   /api/meta-reports/admin/build             {period: "2026-09-b"} build or refresh
   PUT    /api/meta-reports/admin/<slug>/story      {story: [{headline, detail}]}
   PUT    /api/meta-reports/admin/<slug>/notes      {counters: {avatar: why}}
+  GET    /api/meta-reports/dm                      logged-in user's Discord DM toggle
+  PUT    /api/meta-reports/dm                      {on: bool}
   POST   /api/meta-reports/admin/<slug>/publish    {announce: bool}
   POST   /api/meta-reports/admin/<slug>/unpublish
   DELETE /api/meta-reports/admin/<slug>            drafts only
@@ -29,7 +31,7 @@ from flask import Blueprint, jsonify, request, session
 from repositories.audit import AuditRepository
 from repositories.meta_reports import MetaReportRepository
 from services import meta_report
-from utils.auth import require_admin
+from utils.auth import require_admin, require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +151,31 @@ def _admin_row(repo: MetaReportRepository, r: dict) -> dict:
             "emails": repo.email_counts(r["id"])}
 
 
+def _discord_id() -> str | None:
+    """The logged-in user's Discord id, or None for Google logins (they can't be DMed)."""
+    user_id = str(session.get("user_id") or "")
+    return user_id if user_id.isdigit() else None
+
+
+@meta_reports_bp.route("/meta-reports/dm")
+@require_auth
+def dm_status():
+    discord_id = _discord_id()
+    subscribed = bool(discord_id) and MetaReportRepository().dm_subscribed(discord_id)
+    return jsonify({"canDm": bool(discord_id), "subscribed": subscribed})
+
+
+@meta_reports_bp.route("/meta-reports/dm", methods=["PUT"])
+@require_auth
+def dm_toggle():
+    discord_id = _discord_id()
+    if not discord_id:
+        return jsonify({"error": "Log in with Discord to get report DMs."}), 400
+    on = bool((request.get_json(silent=True) or {}).get("on"))
+    subscribed = MetaReportRepository().set_dm(discord_id, on)
+    return jsonify({"canDm": True, "subscribed": subscribed})
+
+
 @meta_reports_bp.route("/meta-reports/admin")
 @require_admin
 def admin_list():
@@ -168,6 +195,7 @@ def admin_list():
         "periods": periods,
         "next": {"slug": nxt.slug, "label": nxt.label(), "publishLabel": nxt.publish_label()},
         "subscribers": repo.subscriber_counts(),
+        "dmSubscribers": len(repo.dm_subscriber_ids()),
         "emailConfigured": meta_report.email_configured(),
     })
 

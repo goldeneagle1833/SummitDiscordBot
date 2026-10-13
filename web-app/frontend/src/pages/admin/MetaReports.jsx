@@ -35,15 +35,18 @@ function StatusPill({ report }) {
   )
 }
 
-function Delivery({ report }) {
+function Delivery({ report, emailConfigured }) {
   if (report.status !== 'published') return null
   if (!report.announce) return <span className="text-xs text-text-muted">Published quietly</span>
   const e = report.emails || {}
   const parts = [
     report.discordPostedAt ? 'Discord ✓' : 'Discord pending',
     report.bannerCreatedAt ? 'Banner ✓' : 'Banner pending',
-    `Emails ${e.sent || 0} sent${e.pending ? `, ${e.pending} queued` : ''}${e.failed ? `, ${e.failed} failed` : ''}`,
+    report.dmsSentAt ? 'DMs ✓' : 'DMs pending',
   ]
+  if (emailConfigured || e.sent) {
+    parts.push(`Emails ${e.sent || 0} sent${e.pending ? `, ${e.pending} queued` : ''}${e.failed ? `, ${e.failed} failed` : ''}`)
+  }
   return <span className="text-xs text-text-muted">{parts.join(' · ')}</span>
 }
 
@@ -188,15 +191,18 @@ export default function MetaReportsAdmin() {
         <h1 className="font-display text-secondary text-3xl">Meta Reports</h1>
         <p className="text-sm text-text-muted mt-1">
           Reports publish themselves on the 1st and 16th. Next up: <b className="text-text-primary">{data.next?.label}</b>, due {data.next?.publishLabel}.
-          Publishing posts to the content channel, puts a banner on the home page and emails subscribers.
+          Publishing posts to the content channel, puts a banner on the home page and DMs players who turned report DMs on.
         </p>
       </header>
 
       <div className={`${panel} flex flex-wrap gap-6 text-sm`}>
-        <span><b className="text-lg">{subs.active || 0}</b> email subscribers</span>
-        <span className="text-text-muted">{subs.unconfirmed || 0} waiting to confirm</span>
-        <span className="text-text-muted">{subs.unsubscribed || 0} unsubscribed</span>
-        {!data.emailConfigured && <span className="text-accent-red">Email isn&apos;t set up (SMTP settings are missing), so no emails will send.</span>}
+        <span><b className="text-lg">{data.dmSubscribers || 0}</b> players get report DMs on Discord</span>
+        {data.emailConfigured && (
+          <>
+            <span><b className="text-lg">{subs.active || 0}</b> email subscribers</span>
+            <span className="text-text-muted">{subs.unconfirmed || 0} waiting to confirm</span>
+          </>
+        )}
       </div>
 
       <div className={`${panel} flex flex-wrap gap-3 items-end`}>
@@ -228,7 +234,7 @@ export default function MetaReportsAdmin() {
                 <div className="text-xs text-text-muted mt-0.5">
                   Due {r.publishLabel} · built {r.builtAt} UTC{r.publishedAt ? ` · published ${r.publishedAt} UTC by ${r.publishedBy}` : ''}
                 </div>
-                <Delivery report={r} />
+                <Delivery report={r} emailConfigured={data.emailConfigured} />
               </div>
               <div className="flex flex-wrap gap-2">
                 {r.status === 'published' && <Link to={`/meta-report/${r.slug}`} className={btn}>View</Link>}

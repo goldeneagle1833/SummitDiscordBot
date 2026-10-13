@@ -465,3 +465,32 @@ def test_tournament_vs_ladder():
     assert [x["avatar"] for x in result["tournament"]] == ["Elf"]
     assert [x["avatar"] for x in result["ladder"]] == ["Necromancer"]
     assert meta_report.tournament_vs_ladder(games, top8[:5]) == {"available": False}
+
+
+def test_publish_dms_opted_in_players_once(match_db, repo, no_events, monkeypatch):
+    sent = []
+    monkeypatch.setattr(meta_report, "post_to_discord", lambda r: True)
+    monkeypatch.setattr(meta_report, "create_banner", lambda r: None)
+    monkeypatch.setattr(meta_report, "send_dms", lambda r, ids: sent.append(list(ids)) or True)
+    repo.set_dm("111", True)
+    repo.set_dm("222", True)
+    repo.set_dm("222", False)
+    period = Period(2026, 9, "a")
+    meta_report.build(period, repo, db_path=match_db, pso=lambda f, t: None)
+    report = meta_report.publish(period.slug, "admin", repo=repo)
+    assert sent == [["111"]] and report["dmsSentAt"]
+    meta_report.deliver(repo.get(period.slug), repo)
+    assert sent == [["111"]]
+
+
+def test_dm_toggle_needs_a_discord_login(client, api_repo):
+    assert client.get("/api/meta-reports/dm").status_code == 401
+    with client.session_transaction() as sess:
+        sess["user_id"] = "google_123"
+    assert client.get("/api/meta-reports/dm").get_json() == {"canDm": False, "subscribed": False}
+    assert client.put("/api/meta-reports/dm", json={"on": True}).status_code == 400
+    with client.session_transaction() as sess:
+        sess["user_id"] = 123456789
+    assert client.put("/api/meta-reports/dm", json={"on": True}).get_json() == {"canDm": True, "subscribed": True}
+    assert client.get("/api/meta-reports/dm").get_json()["subscribed"] is True
+    assert client.put("/api/meta-reports/dm", json={"on": False}).get_json()["subscribed"] is False

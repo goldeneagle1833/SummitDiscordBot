@@ -4,6 +4,7 @@ The web app calls the bot's loopback API (/meta-report-notify) when a report
 is published; this builds the embed and sends it.
 """
 
+import asyncio
 import logging
 
 import discord
@@ -62,3 +63,26 @@ async def post_meta_report(bot, payload: dict) -> bool:
     await channel.send(embed=build_embed(payload))
     logger.info("Meta report notify: posted %s", payload.get("url"))
     return True
+
+
+DM_PAUSE_SECONDS = 1.0  # stay well under Discord's DM rate limits
+
+
+async def dm_meta_report(bot, payload: dict, user_ids: list) -> dict:
+    """DM each subscriber the report embed. Closed DMs and unknown users are skipped."""
+    embed = build_embed(payload)
+    sent = failed = 0
+    for raw_id in user_ids:
+        try:
+            user = await bot.fetch_user(int(raw_id))
+            await user.send(
+                content="A new Summit Meta Report is out. Turn these DMs off on the report page.",
+                embed=embed,
+            )
+            sent += 1
+        except (ValueError, TypeError, discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+            failed += 1
+            logger.info("Meta report DM to %s skipped: %s", raw_id, exc)
+        await asyncio.sleep(DM_PAUSE_SECONDS)
+    logger.info("Meta report DMs: %s sent, %s skipped for %s", sent, failed, payload.get("url"))
+    return {"sent": sent, "failed": failed}

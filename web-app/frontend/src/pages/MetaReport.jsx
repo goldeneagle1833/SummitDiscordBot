@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { getMetaReport, listMetaReports, subscribeMetaReport } from '@/api/metaReports'
+import { getMetaReport, getMetaReportDm, listMetaReports, setMetaReportDm } from '@/api/metaReports'
+import { useAuth } from '@/context/AuthContext'
 import Spinner from '@/components/ui/Spinner'
 import ShareLinkButton from '@/components/ui/ShareLinkButton'
 import TryDeckButton from '@/components/deck/TryDeckButton'
@@ -559,51 +560,61 @@ function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
-function EmailSignup() {
-  const [email, setEmail] = useState('')
-  const [state, setState] = useState({ status: 'idle', message: '' })
-  const submit = async (e) => {
-    e.preventDefault()
-    setState({ status: 'busy', message: '' })
+function DiscordDmToggle() {
+  const { user } = useAuth()
+  const [dm, setDm] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (user) getMetaReportDm().then(setDm).catch(() => setDm({ canDm: false, subscribed: false }))
+  }, [user])
+
+  const toggle = async () => {
+    setBusy(true)
+    setError('')
     try {
-      const res = await subscribeMetaReport(email.trim())
-      setState({
-        status: 'done',
-        message: res.status === 'subscribed'
-          ? "You're already on the list."
-          : 'Check your inbox and click the link to confirm.',
-      })
+      setDm(await setMetaReportDm(!dm.subscribed))
     } catch (err) {
-      setState({ status: 'error', message: err.message || 'Something went wrong. Try again.' })
+      setError(err.message || 'Something went wrong. Try again.')
+    } finally {
+      setBusy(false)
     }
   }
+
+  const next = encodeURIComponent(window.location.pathname)
+  let control
+  if (user === false) {
+    control = (
+      <a href={`/auth/discord?next=${next}`}
+         className="bg-[#5865F2] hover:bg-[#4752C4] text-white font-medium text-sm px-4 py-2 rounded">
+        Log in with Discord
+      </a>
+    )
+  } else if (!dm) {
+    control = <Spinner />
+  } else if (!dm.canDm) {
+    control = <p className="text-sm text-text-muted">You&apos;re logged in with Google. Log in with Discord to get DMs.</p>
+  } else {
+    control = (
+      <button type="button" role="switch" aria-checked={dm.subscribed} onClick={toggle} disabled={busy}
+              className="flex items-center gap-2.5 text-sm disabled:opacity-60">
+        <span className={`relative w-10 h-6 rounded-full transition-colors ${dm.subscribed ? 'bg-secondary' : 'bg-border'}`}>
+          <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${dm.subscribed ? 'left-5' : 'left-1'}`} />
+        </span>
+        {dm.subscribed ? 'DMs on' : 'DMs off'}
+      </button>
+    )
+  }
+
   return (
-    <div className={`${panel} flex flex-wrap gap-3 items-end justify-between`}>
+    <div className={`${panel} flex flex-wrap gap-3 items-center justify-between`}>
       <div className="min-w-0">
-        <p className="font-semibold">Get each report by email</p>
-        <p className="text-sm text-text-muted">Twice a month. Unsubscribe from any email in one click.</p>
+        <p className="font-semibold">Get each report as a Discord DM</p>
+        <p className="text-sm text-text-muted">The Summit bot messages you when a new report comes out, twice a month.</p>
+        {error && <p className="text-sm text-accent-red mt-1" role="alert">{error}</p>}
       </div>
-      {state.status === 'done' ? (
-        <p className="text-sm text-secondary" role="status">{state.message}</p>
-      ) : (
-        <form onSubmit={submit} className="flex flex-wrap gap-2 items-center">
-          <label htmlFor="meta-email" className="sr-only">Email address</label>
-          <input
-            id="meta-email"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            className="bg-bg-dark border border-border rounded px-3 py-2 text-sm min-w-0 w-64 max-w-full"
-          />
-          <button type="submit" disabled={state.status === 'busy'}
-                  className="bg-secondary hover:bg-secondary/80 text-black font-medium text-sm px-4 py-2 rounded disabled:opacity-60">
-            {state.status === 'busy' ? 'Sending…' : 'Sign up'}
-          </button>
-          {state.status === 'error' && <p className="text-sm text-accent-red w-full" role="alert">{state.message}</p>}
-        </form>
-      )}
+      {control}
     </div>
   )
 }
@@ -755,7 +766,7 @@ export default function MetaReport() {
 
           <TournamentVsLadder data={report.tournaments?.vsLadder} />
 
-          <EmailSignup />
+          <DiscordDmToggle />
 
           <Section title="How this report is made">
             <ul className={`${panel} text-sm text-text-muted grid gap-1.5 list-disc pl-8`}>

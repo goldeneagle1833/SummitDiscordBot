@@ -73,7 +73,16 @@ class MetaReportRepository:
                 CREATE INDEX IF NOT EXISTS idx_meta_report_emails_status
                     ON meta_report_emails (status);
             """)
+            conn.execute("""CREATE TABLE IF NOT EXISTS meta_report_dm_subscribers (
+                discord_id TEXT PRIMARY KEY,      -- Discord user to DM when a report is published
+                created_at TEXT NOT NULL,
+                unsubscribed_at TEXT
+            )""")
             cols = {r[1] for r in conn.execute("PRAGMA table_info(meta_reports)")}
+            if "dms_sent_at" not in cols:
+                conn.execute("ALTER TABLE meta_reports ADD COLUMN dms_sent_at TEXT")
+                # Reports published before DMs existed never get DMed later.
+                conn.execute("UPDATE meta_reports SET dms_sent_at = ? WHERE status = 'published'", (_now(),))
             if "notes" not in cols:
                 # Admin rewrites of auto text (counter pick "why" lines), kept across rebuilds.
                 conn.execute("ALTER TABLE meta_reports ADD COLUMN notes TEXT NOT NULL DEFAULT '{}'")
@@ -101,6 +110,7 @@ class MetaReportRepository:
             "discordPostedAt": row["discord_posted_at"],
             "bannerCreatedAt": row["banner_created_at"],
             "emailsQueuedAt": row["emails_queued_at"],
+            "dmsSentAt": row["dms_sent_at"] if "dms_sent_at" in row.keys() else None,
         }
         if with_payload:
             report["payload"] = json.loads(row["payload"] or "{}")
@@ -156,6 +166,40 @@ class MetaReportRepository:
             ).fetchall()
         return [self._report(r) for r in rows]
 
+    # ------------------------------------------------------------------ #
+    # Discord DM subscribers                                               #
+    # ------------------------------------------------------------------ #
+
+    def set_dm(self, discord_id: str, on: bool) -> bool:
+        with self._connect() as conn:
+            if on:
+                conn.execute(
+                    """INSERT INTO meta_report_dm_subscribers (discord_id, created_at) VALUES (?, ?)
+                       ON CONFLICT (discord_id) DO UPDATE SET unsubscribed_at = NULL""",
+                    (str(discord_id), _now()),
+                )
+            else:
+                conn.execute(
+                    "UPDATE meta_report_dm_subscribers SET unsubscribed_at = ? WHERE discord_id = ?",
+                    (_now(), str(discord_id)),
+                )
+        return self.dm_subscribed(discord_id)
+
+    def dm_subscribed(self, discord_id: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM meta_report_dm_subscribers WHERE discord_id = ? AND unsubscribed_at IS NULL",
+                (str(discord_id),),
+            ).fetchone()
+        return row is not None
+
+    def dm_subscriber_ids(self) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT discord_id FROM meta_report_dm_subscribers WHERE unsubscribed_at IS NULL ORDER BY created_at"
+            ).fetchall()
+        return [r["discord_id"] for r in rows]
+
     def update_notes(self, slug: str, notes: dict) -> dict | None:
         with self._connect() as conn:
             conn.execute("UPDATE meta_reports SET notes = ? WHERE slug = ?", (json.dumps(notes), slug))
@@ -188,7 +232,7 @@ class MetaReportRepository:
         return cur.rowcount > 0
 
     def mark_delivery(self, slug: str, column: str) -> None:
-        if column not in ("discord_posted_at", "banner_created_at", "emails_queued_at"):
+        if column not in ("discord_posted_at", "banner_created_at", "emails_queued_at", "dms_sent_at"):
             raise ValueError(column)
         with self._connect() as conn:
             conn.execute(f"UPDATE meta_reports SET {column} = ? WHERE slug = ?", (_now(), slug))
@@ -200,7 +244,7 @@ class MetaReportRepository:
                 """SELECT * FROM meta_reports
                    WHERE status = 'published' AND announce = 1
                      AND (discord_posted_at IS NULL OR banner_created_at IS NULL
-                          OR emails_queued_at IS NULL)
+                          OR emails_queued_at IS NULL OR dms_sent_at IS NULL)
                    ORDER BY period_from""",
             ).fetchall()
         return [self._report(r) for r in rows]

@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Route, Routes } from 'react-router-dom'
-import { renderWithRouter, screen, waitFor, userEvent } from '@/test/test-utils'
+import { renderWithProviders as renderWithRouter, screen, waitFor, userEvent } from '@/test/test-utils'
 import MetaReport from '@/pages/MetaReport'
-import { getMetaReport, listMetaReports, subscribeMetaReport } from '@/api/metaReports'
+import { getMetaReport, getMetaReportDm, listMetaReports, setMetaReportDm } from '@/api/metaReports'
+import { getMe } from '@/api/auth'
 
 vi.mock('@/api/metaReports', () => ({
   listMetaReports: vi.fn(),
   getMetaReport: vi.fn(),
-  subscribeMetaReport: vi.fn(),
+  getMetaReportDm: vi.fn(),
+  setMetaReportDm: vi.fn(),
 }))
+vi.mock('@/api/auth', () => ({ getMe: vi.fn() }))
 vi.mock('@/api/decks', () => ({ createPsoTable: vi.fn() }))
 
 const REPORT = {
@@ -72,6 +75,7 @@ describe('MetaReport', () => {
       { slug: '2026-09-a', label: 'Sep 1–15, 2026', publishLabel: 'Oct 1, 2026' },
     ] })
     getMetaReport.mockResolvedValue(REPORT)
+    getMe.mockRejectedValue(new Error('not logged in'))
   })
 
   it('opens the newest report and shows each section', async () => {
@@ -115,14 +119,21 @@ describe('MetaReport', () => {
     delete navigator.share
   })
 
-  it('signs up for email', async () => {
-    subscribeMetaReport.mockResolvedValue({ status: 'confirm_sent' })
+  it('asks logged-out visitors to log in with Discord for DMs', async () => {
     renderPage()
-    await screen.findByText('Pathfinder is the best deck nobody plays.')
-    await userEvent.type(screen.getByLabelText('Email address'), 'fan@example.com')
-    await userEvent.click(screen.getByRole('button', { name: 'Sign up' }))
-    expect(subscribeMetaReport).toHaveBeenCalledWith('fan@example.com')
-    expect(await screen.findByText(/check your inbox/i)).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Log in with Discord' })).toHaveAttribute('href', expect.stringContaining('/auth/discord'))
+  })
+
+  it('turns report DMs on for a Discord login', async () => {
+    getMe.mockResolvedValue({ id: '123', username: 'Fan' })
+    getMetaReportDm.mockResolvedValue({ canDm: true, subscribed: false })
+    setMetaReportDm.mockResolvedValue({ canDm: true, subscribed: true })
+    renderPage()
+    const toggle = await screen.findByRole('switch')
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+    await userEvent.click(toggle)
+    expect(setMetaReportDm).toHaveBeenCalledWith(true)
+    await waitFor(() => expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true'))
   })
 
   it('explains when nothing is published yet', async () => {

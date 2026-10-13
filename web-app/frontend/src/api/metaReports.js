@@ -4,6 +4,8 @@ import { del, get, post, put } from './client'
 export const listMetaReports = () => get('/api/meta-reports')
 export const getMetaReport = (slug) => get(`/api/meta-reports/${encodeURIComponent(slug)}`)
 export const subscribeMetaReport = (email) => post('/api/meta-reports/subscribe', { email })
+export const getMetaReportDm = () => get('/api/meta-reports/dm')
+export const setMetaReportDm = (on) => put('/api/meta-reports/dm', { on })
 export const confirmMetaReportEmail = (token) => post('/api/meta-reports/email/confirm', { token })
 export const unsubscribeMetaReportEmail = (token) => post('/api/meta-reports/email/unsubscribe', { token })
 

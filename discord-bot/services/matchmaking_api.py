@@ -480,6 +480,22 @@ async def start_matchmaking_api(bot):
         # 409 rather than 5xx so the web app logs it and retries on its next pass.
         return web.json_response({"posted": posted}, status=200 if posted else 409)
 
+    async def meta_report_dm(request):
+        """DM opted-in players about a newly published Meta Report, in the background."""
+        from services.meta_report_notify import dm_meta_report
+
+        try:
+            payload = await request.json()
+        except ValueError:
+            raise web.HTTPBadRequest(text="Request body must be JSON")
+        if not isinstance(payload, dict) or not payload.get("url") or not isinstance(payload.get("user_ids"), list):
+            raise web.HTTPBadRequest(text="url and user_ids are required")
+        user_ids = payload["user_ids"]
+        task = asyncio.create_task(dm_meta_report(bot, payload, user_ids[:5000]))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+        return web.json_response({"accepted": len(user_ids)}, status=202)
+
     async def explorer_application_notify(request):
         """DM Explorer admins that a new host application has come in."""
         try:
@@ -561,6 +577,7 @@ async def start_matchmaking_api(bot):
     app.router.add_post("/pso-match-notify", pso_match_notify)
     app.router.add_post("/bracket-match-notify", bracket_match_notify)
     app.router.add_post("/meta-report-notify", meta_report_notify)
+    app.router.add_post("/meta-report-dm", meta_report_dm)
     app.router.add_post(
         "/explorer-application-notify", explorer_application_notify
     )

@@ -153,6 +153,21 @@ describe('StoreAdmin products', () => {
     await waitFor(() => expect(within(gallery).getAllByRole('img')).toHaveLength(4))
   })
 
+  it('names and skips a file that is too big, uploading the rest', async () => {
+    adminUploadProductImages.mockResolvedValue({ url: '/u1.png', urls: ['/u1.png'] })
+    await openProductsTab()
+    await userEvent.click(screen.getByRole('button', { name: 'Edit Fire Token' }))
+
+    const input = document.getElementById('product-image-file-7')
+    const big = new File(['x'], 'huge.png', { type: 'image/png' })
+    Object.defineProperty(big, 'size', { value: 6 * 1024 * 1024 })
+    await userEvent.upload(input, [new File(['a'], 'a.png', { type: 'image/png' }), big])
+
+    await waitFor(() => expect(adminUploadProductImages).toHaveBeenCalledTimes(1))
+    expect(adminUploadProductImages.mock.calls[0][0].map((f) => f.name)).toEqual(['a.png'])
+    expect(await screen.findByText(/"huge\.png" is 6\.0 MB\. Images must be 5 MB or smaller\./)).toBeInTheDocument()
+  })
+
   it('adds a product with a pasted image URL', async () => {
     await openProductsTab()
     await userEvent.type(screen.getByLabelText('SKU'), 'TOK-ICE')

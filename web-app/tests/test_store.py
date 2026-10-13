@@ -998,6 +998,21 @@ class TestStoreAdminRoutes:
         assert resp.status_code == 400
         assert list(uploads.glob("*")) == []  # nothing saved from the batch
 
+    def test_upload_error_names_the_file(self, store_admin_session, store_repo, tmp_path):
+        from io import BytesIO
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+        with patch("routes.api.store.STORE_UPLOADS_DIR", uploads):
+            resp = store_admin_session.post(
+                "/api/store/admin/products/upload-image",
+                data={"image": [(BytesIO(b"x"), "card.bmp")]},
+                content_type="multipart/form-data",
+            )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == (
+            '"card.bmp" isn\'t a supported image type. Use JPG, PNG, WEBP or GIF.'
+        )
+
     def test_admin_list_orders(self, store_admin_session, store_repo):
         pid = _seed_product(store_repo, stock_quantity=10)
         _seed_order(store_repo, product_id=pid)

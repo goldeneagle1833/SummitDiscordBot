@@ -865,28 +865,34 @@ def upload_product_image():
     the batch rejects the whole request.
     """
     if _scope_ids("products") == []:
-        return jsonify({"success": False, "error": "Only storefront managers can upload images"}), 403
+        return jsonify({"success": False, "error": "Only storefront managers can upload images."}), 403
     files = [f for f in request.files.getlist("image") if f and f.filename]
     if not files:
-        return jsonify({"success": False, "error": "No image file provided"}), 400
+        return jsonify({"success": False, "error": "Choose an image to upload."}), 400
     if len(files) > MAX_IMAGES_PER_UPLOAD:
         return jsonify({
             "success": False,
-            "error": f"Too many files. Maximum {MAX_IMAGES_PER_UPLOAD} per upload",
+            "error": f"You picked {len(files)} images. Upload up to {MAX_IMAGES_PER_UPLOAD} at a time.",
         }), 400
 
     staged = []
-    allowed = ", ".join(sorted(ALLOWED_IMAGE_EXTENSIONS))
+    max_mb = MAX_IMAGE_SIZE // (1024 * 1024)
     for file in files:
         ext = _os.path.splitext(file.filename)[1].lower()
         if ext not in ALLOWED_IMAGE_EXTENSIONS:
-            return jsonify({"success": False, "error": f"Invalid format. Allowed: {allowed}"}), 400
+            return jsonify({
+                "success": False,
+                "error": f'"{file.filename}" isn\'t a supported image type. Use JPG, PNG, WEBP or GIF.',
+            }), 400
 
         file.seek(0, _os.SEEK_END)
         size = file.tell()
         file.seek(0)
         if size > MAX_IMAGE_SIZE:
-            return jsonify({"success": False, "error": "Image too large. Maximum 5MB"}), 400
+            return jsonify({
+                "success": False,
+                "error": f'"{file.filename}" is {size / (1024 * 1024):.1f} MB. Images must be {max_mb} MB or smaller.',
+            }), 400
         staged.append((file, f"{_uuid.uuid4()}{ext}"))
 
     actor_id, actor_name = _actor()

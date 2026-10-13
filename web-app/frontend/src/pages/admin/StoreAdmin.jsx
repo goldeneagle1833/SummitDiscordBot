@@ -36,6 +36,44 @@ function productToForm(p) {
   }
 }
 
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif']
+const MAX_IMAGE_MB = 5
+const MAX_IMAGES_PER_UPLOAD = 10
+// The server takes about 10 MB per request, so bigger picks go up in parts
+const MAX_UPLOAD_BATCH_BYTES = 9 * 1024 * 1024
+
+// Why a picked file can't be uploaded, or null when it's fine
+function imageFileProblem(file) {
+  const dot = file.name.lastIndexOf('.')
+  const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : ''
+  if (!IMAGE_EXTENSIONS.includes(ext)) {
+    return `"${file.name}" isn't a supported image type. Use JPG, PNG, WEBP or GIF.`
+  }
+  if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
+    const mb = (file.size / (1024 * 1024)).toFixed(1)
+    return `"${file.name}" is ${mb} MB. Images must be ${MAX_IMAGE_MB} MB or smaller.`
+  }
+  return null
+}
+
+// Split files into requests the server will accept
+function uploadBatches(files) {
+  const batches = []
+  let batch = []
+  let bytes = 0
+  for (const file of files) {
+    if (batch.length && (batch.length >= MAX_IMAGES_PER_UPLOAD || bytes + file.size > MAX_UPLOAD_BATCH_BYTES)) {
+      batches.push(batch)
+      batch = []
+      bytes = 0
+    }
+    batch.push(file)
+    bytes += file.size
+  }
+  if (batch.length) batches.push(batch)
+  return batches
+}
+
 // Shared by "Add product" and the inline editor. `initial` is a product row
 // when editing, null when adding.
 function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStorefrontId = null }) {
@@ -53,15 +91,26 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
   const setImages = (fn) => setForm((x) => ({ ...x, images: fn(x.images) }))
 
   const uploadImages = async (e) => {
-    const files = Array.from(e.target.files || [])
-    if (files.length === 0) return
+    const picked = Array.from(e.target.files || [])
+    if (picked.length === 0) return
+    // Check files here so a bad one is named and skipped instead of
+    // failing the whole batch on the server
+    const problems = []
+    const files = []
+    for (const file of picked) {
+      const problem = imageFileProblem(file)
+      if (problem) problems.push(problem)
+      else files.push(file)
+    }
     setUploading(true)
-    setError(null)
+    setError(problems.length ? problems.join(' ') : null)
     try {
-      const { urls } = await adminUploadProductImages(files)
-      setImages((imgs) => [...imgs, ...urls.filter((u) => !imgs.includes(u))])
+      for (const batch of uploadBatches(files)) {
+        const { urls } = await adminUploadProductImages(batch)
+        setImages((imgs) => [...imgs, ...urls.filter((u) => !imgs.includes(u))])
+      }
     } catch (err) {
-      setError(`Upload failed: ${err.message}`)
+      setError([...problems, `Upload failed: ${err.message}`].join(' '))
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -251,6 +300,9 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
           ) : (
             <p className="text-xs text-text-muted">No images yet. The first image is the one shown in listings.</p>
           )}
+          <p className="text-xs text-text-muted">
+            JPG, PNG, WEBP or GIF, up to {MAX_IMAGE_MB} MB each. Best size is 1200 × 600 (wide). Listings crop images to fit, so keep the product centered.
+          </p>
         </div>
       </div>
 

@@ -49,6 +49,9 @@ export const adminUploadProductImages = (files) => {
     credentials: 'include',
   }).then(async (res) => {
     const d = await res.json().catch(() => ({}))
+    if (res.status === 413) {
+      throw new Error('Those images are too big to send together. Try fewer at a time or smaller files.')
+    }
     if (!res.ok || !d.success) throw new Error(d.error || res.statusText)
     return d
   })

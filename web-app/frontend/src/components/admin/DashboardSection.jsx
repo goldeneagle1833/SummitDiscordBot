@@ -298,8 +298,6 @@ const VOICE_FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'ranked', label: 'Ranked' },
   { key: 'testing', label: 'Casual' },
-  { key: 'points', label: 'Rumble (Omens)' },
-  { key: 'rumble', label: 'Rumble' },
   { key: 'limited', label: 'Limited' },
 ]
 const VOICE_QUEUES = VOICE_FILTERS.filter(f => f.key !== 'all')

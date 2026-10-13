@@ -490,7 +490,7 @@ class MatchRepository:
         finally:
             conn.close()
 
-    VOICE_QUEUE_TYPES = ("points", "ranked", "testing", "limited", "rumble")
+    VOICE_QUEUE_TYPES = ("ranked", "testing", "limited")
 
     def get_voice_match_stats(self) -> dict:
         """Voice vs no-voice queue games, per queue type, in the current season.

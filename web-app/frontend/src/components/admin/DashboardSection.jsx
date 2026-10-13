@@ -513,8 +513,22 @@ function SiteTab({ days, activeUsers }) {
   )
 }
 
+/** Average ELO gap over [date, games, total gap] rows in the last `days` days. */
+export function avgEloGap(rows, days, now = new Date()) {
+  const cutoff = days != null ? rangeCutoff(days, now).toISOString().slice(0, 10) : null
+  let games = 0
+  let total = 0
+  for (const [date, g, sum] of rows || []) {
+    if (cutoff && date <= cutoff) continue
+    games += g
+    total += sum
+  }
+  return { games, avg: games ? Math.round(total / games) : null }
+}
+
 function MatchesTab({ days, stats }) {
-  const { summary, games_over_time, heatmap, activity_hours } = stats
+  const { summary, games_over_time, heatmap, activity_hours, elo_gaps } = stats
+  const eloGap = useMemo(() => avgEloGap(elo_gaps, days), [elo_gaps, days])
   const activity = useMemo(
     () => (activity_hours ? activityGrid(activity_hours, days) : heatmap),
     [activity_hours, heatmap, days],
@@ -532,6 +546,14 @@ function MatchesTab({ days, stats }) {
         <StatTile label="Omens Matches" value={(summary.total_points_matches || 0).toLocaleString()} link="/admin/omens-matches" />
         <StatTile label="External Matches" value={(summary.total_external_matches || 0).toLocaleString()} link="/admin/external-matches" />
         <StatTile label="Avg Games/Week (12wk)" value={summary.avg_weekly_games} />
+      </TileGroup>
+
+      <TileGroup title={`Pairings (${rangeLabel(days)})`}>
+        <StatTile
+          label={`Avg ELO Gap per Game (${eloGap.games.toLocaleString()} online games)`}
+          value={eloGap.avg?.toLocaleString()}
+          color="text-orange-400"
+        />
       </TileGroup>
 
       <ChartCard title={`Games Over Time — ${gamesInRange.toLocaleString()} in ${rangeLabel(days)}`} to="/admin/chart/games-over-time">

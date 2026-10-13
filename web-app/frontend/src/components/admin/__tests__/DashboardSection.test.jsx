@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, fireEvent } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
-import DashboardSection, { weeksInRange, activityGrid } from '../DashboardSection'
+import DashboardSection, { weeksInRange, activityGrid, avgEloGap } from '../DashboardSection'
 
 vi.mock('@/api/client', () => ({ get: vi.fn() }))
 
@@ -138,5 +138,26 @@ describe('activityGrid', () => {
     expect(grid[0][20]).toBe(0)
     expect(grid[1][21]).toBe(5)
     expect(grid.flat().reduce((n, c) => n + c, 0)).toBe(9)
+  })
+})
+
+describe('avgEloGap', () => {
+  const now = new Date('2026-10-13T12:00:00Z')
+  const rows = [
+    ['2026-09-01', 4, 400],
+    ['2026-10-10', 2, 50],
+    ['2026-10-12', 1, 130],
+  ]
+
+  it('averages the gap over the games in range', () => {
+    expect(avgEloGap(rows, 7, now)).toEqual({ games: 3, avg: 60 })
+  })
+
+  it('covers every game for all time', () => {
+    expect(avgEloGap(rows, null, now)).toEqual({ games: 7, avg: 83 })
+  })
+
+  it('has no average without games', () => {
+    expect(avgEloGap([], 30, now)).toEqual({ games: 0, avg: null })
   })
 })

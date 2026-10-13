@@ -10,6 +10,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request, session
 
 from services.activity_hours import activity_by_hour
+from services.elo_gap import elo_gap_by_day
 from services.admin import AdminService
 from repositories.audit import AuditRepository
 from repositories.avatar_image_settings import AvatarImageSettingsRepository
@@ -479,6 +480,9 @@ def dashboard_stats():
         """)
         activity_hours, heatmap = activity_by_hour(cur.fetchall())
 
+        # --- Average ELO gap between the two players (online games, per day) ---
+        elo_gaps = elo_gap_by_day(cur, online_tables)
+
         # --- Top player dominance (W-L records, win rate, streaks) ---
         # Get per-player wins
         cur.execute(f"""
@@ -725,6 +729,7 @@ def dashboard_stats():
             "new_players_per_week": new_players_per_week,
             "heatmap": heatmap,
             "activity_hours": activity_hours,
+            "elo_gaps": elo_gaps,
             "dominance": dominance,
             "avg_games_per_player": avg_games_per_player,
             "summary": {

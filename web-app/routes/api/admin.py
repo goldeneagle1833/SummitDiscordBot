@@ -9,6 +9,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request, session
 
+from services.activity_hours import activity_by_hour
 from services.admin import AdminService
 from repositories.audit import AuditRepository
 from repositories.avatar_image_settings import AvatarImageSettingsRepository
@@ -462,30 +463,21 @@ def dashboard_stats():
             recent_web = cur.fetchone()[0]
         avg_weekly_games = round((recent_bot + recent_web) / 12, 1)
 
-        # --- Peak activity hours (day_of_week x hour heatmap) ---
-        # strftime %w = 0(Sun)..6(Sat), %H = 00..23
-        # Timestamps are stored in UTC; convert to EST (UTC-5) for display
+        # --- Peak activity hours (day_of_week x hour heatmap, Eastern time) ---
+        # Count per server-local hour slot; the service converts each slot to Eastern.
         cur.execute(f"""
-            SELECT day_of_week, hour, SUM(cnt) as total FROM (
+            SELECT slot, SUM(cnt) FROM (
                 {_online_union(
-                    "SELECT CAST(strftime('%w', timestamp, '-5 hours') AS INTEGER) as day_of_week, "
-                    "CAST(strftime('%H', timestamp, '-5 hours') AS INTEGER) as hour, "
-                    "COUNT(*) as cnt FROM {t} WHERE timestamp IS NOT NULL "
-                    "GROUP BY day_of_week, hour"
+                    "SELECT strftime('%Y-%m-%d %H', timestamp) as slot, COUNT(*) as cnt "
+                    "FROM {t} WHERE timestamp IS NOT NULL GROUP BY slot"
                 )}
                 {"UNION ALL "
-                 "SELECT CAST(strftime('%w', timestamp, '-5 hours') AS INTEGER) as day_of_week, "
-                 "CAST(strftime('%H', timestamp, '-5 hours') AS INTEGER) as hour, "
-                 "COUNT(*) as cnt FROM match_reports_web WHERE timestamp IS NOT NULL "
-                 "GROUP BY day_of_week, hour"
+                 "SELECT strftime('%Y-%m-%d %H', timestamp) as slot, COUNT(*) as cnt "
+                 "FROM match_reports_web WHERE timestamp IS NOT NULL GROUP BY slot"
                  if has_web else ""}
-            ) GROUP BY day_of_week, hour
+            ) GROUP BY slot
         """)
-        # Build 7x24 grid initialized to 0
-        heatmap = [[0] * 24 for _ in range(7)]
-        for row in cur.fetchall():
-            dow, hour, cnt = int(row[0]), int(row[1]), int(row[2])
-            heatmap[dow][hour] = cnt
+        activity_hours, heatmap = activity_by_hour(cur.fetchall())
 
         # --- Top player dominance (W-L records, win rate, streaks) ---
         # Get per-player wins
@@ -732,6 +724,7 @@ def dashboard_stats():
             "players_over_time": players_over_time,
             "new_players_per_week": new_players_per_week,
             "heatmap": heatmap,
+            "activity_hours": activity_hours,
             "dominance": dominance,
             "avg_games_per_player": avg_games_per_player,
             "summary": {

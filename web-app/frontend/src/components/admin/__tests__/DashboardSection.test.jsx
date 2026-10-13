@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, fireEvent } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
-import DashboardSection, { weeksInRange } from '../DashboardSection'
+import DashboardSection, { weeksInRange, activityGrid } from '../DashboardSection'
 
 vi.mock('@/api/client', () => ({ get: vi.fn() }))
 
@@ -115,5 +115,28 @@ describe('weeksInRange', () => {
     const out = weeksInRange(rows, null, now)
     expect(out).toHaveLength(3)
     expect(out[0].label).toBeTruthy()
+  })
+})
+
+describe('activityGrid', () => {
+  const rows = [
+    ['2026-08-02', 20, 7], // Sunday, long ago
+    ['2026-10-12', 21, 5], // Monday
+    ['2026-10-13', 11, 4], // Tuesday
+  ]
+  const now = new Date('2026-10-13T16:00:00Z')
+
+  it('counts every match for all time', () => {
+    const grid = activityGrid(rows, null, now)
+    expect(grid[0][20]).toBe(7)
+    expect(grid[1][21]).toBe(5)
+    expect(grid[2][11]).toBe(4)
+  })
+
+  it('only counts matches inside the selected range', () => {
+    const grid = activityGrid(rows, 7, now)
+    expect(grid[0][20]).toBe(0)
+    expect(grid[1][21]).toBe(5)
+    expect(grid.flat().reduce((n, c) => n + c, 0)).toBe(9)
   })
 })

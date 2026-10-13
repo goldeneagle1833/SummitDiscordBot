@@ -95,7 +95,35 @@ function heatColor(intensity) {
   return `rgb(${Math.round(220 - t * 170)}, ${Math.round(220 - t * 30)}, ${Math.round(60 + t * 30)})`
 }
 
-function Heatmap({ data }) {
+/** Eastern date ("YYYY-MM-DD"), day of week (0 = Sun) and hour for a moment. */
+function easternNow(now = new Date()) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+      weekday: 'short', hour: 'numeric', hourCycle: 'h23',
+    }).formatToParts(now).map(p => [p.type, p.value])
+  )
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    dow: DAYS.indexOf(parts.weekday),
+    hour: Number(parts.hour) % 24,
+  }
+}
+
+/** 7x24 grid of matches from Eastern [date, hour, count] rows in the last `days` days. */
+export function activityGrid(rows, days, now = new Date()) {
+  const grid = Array.from({ length: 7 }, () => Array(24).fill(0))
+  const cutoff = rangeCutoff(days, now)
+  const cutoffDate = cutoff ? easternNow(cutoff).date : null
+  for (const [date, hour, count] of rows || []) {
+    if (cutoffDate && date < cutoffDate) continue
+    const [y, m, d] = date.split('-').map(Number)
+    grid[new Date(Date.UTC(y, m - 1, d)).getUTCDay()][hour] += count
+  }
+  return grid
+}
+
+function Heatmap({ data, now = null }) {
   if (!data?.length) return <p className="text-text-muted text-sm">No data.</p>
   const maxVal = Math.max(...data.flat(), 1)
   return (
@@ -114,12 +142,17 @@ function Heatmap({ data }) {
             {Array.from({ length: 24 }, (_, h) => {
               const val = data[d][h]
               const bg = val === 0 ? 'rgba(255,255,255,0.04)' : heatColor(val / maxVal)
+              const isNow = now && now.dow === d && now.hour === h
               return (
                 <div
                   key={h}
-                  title={`${day} ${h}:00 — ${val} games`}
+                  title={`${day} ${h}:00 — ${val} games${isNow ? ' (now)' : ''}`}
+                  data-now={isNow ? 'true' : undefined}
                   className="rounded flex items-center justify-center"
-                  style={{ height: 22, background: bg, fontSize: 8, color: val > 0 ? 'rgba(0,0,0,0.65)' : 'transparent' }}
+                  style={{
+                    height: 22, background: bg, fontSize: 8, color: val > 0 ? 'rgba(0,0,0,0.65)' : 'transparent',
+                    outline: isNow ? '2px solid rgba(255,255,255,0.85)' : undefined, outlineOffset: -1,
+                  }}
                 >
                   {val || ''}
                 </div>
@@ -481,7 +514,12 @@ function SiteTab({ days, activeUsers }) {
 }
 
 function MatchesTab({ days, stats }) {
-  const { summary, games_over_time, heatmap } = stats
+  const { summary, games_over_time, heatmap, activity_hours } = stats
+  const activity = useMemo(
+    () => (activity_hours ? activityGrid(activity_hours, days) : heatmap),
+    [activity_hours, heatmap, days],
+  )
+  const activityTotal = (activity || []).flat().reduce((n, c) => n + c, 0)
   const gamesData = useMemo(() => weeksInRange(games_over_time, days), [games_over_time, days])
   const gamesInRange = gamesData.reduce((n, w) => n + (w.bot || 0) + (w.web || 0), 0)
 
@@ -514,8 +552,10 @@ function MatchesTab({ days, stats }) {
 
       <div className="bg-bg-raised border border-border rounded-lg p-4">
         <h3 className="text-sm font-semibold mb-1">Peak Activity Hours</h3>
-        <p className="text-xs text-text-muted mb-3">Matches by day of week and hour (all time, EST)</p>
-        <Heatmap data={heatmap} />
+        <p className="text-xs text-text-muted mb-3">
+          {activityTotal.toLocaleString()} matches by day of week and hour, {rangeLabel(days)} (Eastern time). The outlined square is now.
+        </p>
+        <Heatmap data={activity} now={easternNow()} />
       </div>
     </div>
   )

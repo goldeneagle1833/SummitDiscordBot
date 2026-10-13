@@ -73,6 +73,10 @@ class MetaReportRepository:
                 CREATE INDEX IF NOT EXISTS idx_meta_report_emails_status
                     ON meta_report_emails (status);
             """)
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(meta_reports)")}
+            if "notes" not in cols:
+                # Admin rewrites of auto text (counter pick "why" lines), kept across rebuilds.
+                conn.execute("ALTER TABLE meta_reports ADD COLUMN notes TEXT NOT NULL DEFAULT '{}'")
 
     # ------------------------------------------------------------------ #
     # Reports                                                              #
@@ -89,6 +93,7 @@ class MetaReportRepository:
             "through": row["period_through"],
             "status": row["status"],
             "story": json.loads(row["story"] or "[]"),
+            "notes": json.loads(row["notes"] or "{}") if "notes" in row.keys() else {},
             "builtAt": row["built_at"],
             "publishedAt": row["published_at"],
             "publishedBy": row["published_by"],
@@ -150,6 +155,11 @@ class MetaReportRepository:
                 (period_from, limit),
             ).fetchall()
         return [self._report(r) for r in rows]
+
+    def update_notes(self, slug: str, notes: dict) -> dict | None:
+        with self._connect() as conn:
+            conn.execute("UPDATE meta_reports SET notes = ? WHERE slug = ?", (json.dumps(notes), slug))
+        return self.get(slug)
 
     def update_story(self, slug: str, story: list) -> dict | None:
         with self._connect() as conn:

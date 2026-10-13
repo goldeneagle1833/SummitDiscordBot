@@ -6,6 +6,7 @@ import {
   adminGetMetaReport,
   adminListMetaReports,
   adminPublishMetaReport,
+  adminSaveMetaReportNotes,
   adminSaveMetaReportStory,
   adminUnpublishMetaReport,
 } from '@/api/metaReports'
@@ -91,6 +92,56 @@ function StoryEditor({ slug, onSaved }) {
           <button type="button" className={btn} onClick={() => setStory([...story, { headline: '', detail: '' }])}>Add takeaway</button>
         )}
         <button type="button" className={goldBtn} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save takeaways'}</button>
+        {msg && <span className="text-sm text-text-muted">{msg}</span>}
+      </div>
+    </div>
+  )
+}
+
+function CounterNotes({ slug }) {
+  const [picks, setPicks] = useState(null)
+  const [notes, setNotes] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    adminGetMetaReport(slug).then((r) => {
+      setPicks(r.payload?.ranked?.counters || [])
+      setNotes(r.notes?.counters || {})
+    })
+  }, [slug])
+
+  if (!picks) return <Spinner className="py-4" />
+  if (!picks.length) return <p className="text-sm text-text-muted mt-3">No counter picks in this report.</p>
+
+  const save = async () => {
+    setSaving(true)
+    setMsg('')
+    try {
+      const res = await adminSaveMetaReportNotes(slug, notes)
+      setNotes(res.counters)
+      setMsg('Saved')
+    } catch (err) {
+      setMsg(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="grid gap-3 mt-3">
+      <p className="text-xs text-text-muted">Leave a box empty to use the automatic explanation shown under it.</p>
+      {picks.map((p) => (
+        <div key={p.target} className="grid gap-1">
+          <label className="text-xs text-text-muted" htmlFor={`why-${slug}-${p.target}`}>Why play {p.counter} into {p.target}</label>
+          <input id={`why-${slug}-${p.target}`} value={notes[p.target] || ''} maxLength={300}
+                 onChange={(e) => setNotes({ ...notes, [p.target]: e.target.value })}
+                 className="bg-bg-dark border border-border rounded px-3 py-2 text-sm" placeholder={p.why || 'Your explanation'} />
+          {p.why && <span className="text-xs text-text-muted">Automatic: {p.why}</span>}
+        </div>
+      ))}
+      <div className="flex gap-2 items-center">
+        <button type="button" className={goldBtn} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save counter notes'}</button>
         {msg && <span className="text-sm text-text-muted">{msg}</span>}
       </div>
     </div>
@@ -184,6 +235,9 @@ export default function MetaReportsAdmin() {
                 <button type="button" className={btn} onClick={() => setEditing(editing === r.slug ? null : r.slug)}>
                   {editing === r.slug ? 'Close' : 'Edit takeaways'}
                 </button>
+                <button type="button" className={btn} onClick={() => setEditing(editing === `${r.slug}:why` ? null : `${r.slug}:why`)}>
+                  {editing === `${r.slug}:why` ? 'Close' : 'Edit counter notes'}
+                </button>
                 {r.status === 'draft' ? (
                   <>
                     <button type="button" className={goldBtn} disabled={!!busy}
@@ -200,6 +254,7 @@ export default function MetaReportsAdmin() {
               </div>
             </div>
             {editing === r.slug && <StoryEditor slug={r.slug} onSaved={load} />}
+            {editing === `${r.slug}:why` && <CounterNotes slug={r.slug} />}
           </div>
         ))}
       </div>

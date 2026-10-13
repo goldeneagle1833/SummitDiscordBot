@@ -10,6 +10,8 @@ export const unsubscribeMetaReportEmail = (token) => post('/api/meta-reports/ema
 export const adminListMetaReports = () => get('/api/meta-reports/admin')
 export const adminGetMetaReport = (slug) => get(`/api/meta-reports/admin/${encodeURIComponent(slug)}`)
 export const adminBuildMetaReport = (period) => post('/api/meta-reports/admin/build', { period })
+export const adminSaveMetaReportNotes = (slug, counters) =>
+  put(`/api/meta-reports/admin/${encodeURIComponent(slug)}/notes`, { counters })
 export const adminSaveMetaReportStory = (slug, story) =>
   put(`/api/meta-reports/admin/${encodeURIComponent(slug)}/story`, { story })
 export const adminPublishMetaReport = (slug, announce) =>

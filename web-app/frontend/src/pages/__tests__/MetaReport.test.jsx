@@ -26,6 +26,16 @@ const REPORT = {
       archetypes: [{ avatar: 'Sparkmage', elements: 'Air / Fire' }, { avatar: 'Pathfinder', elements: 'Air / Earth' }],
       cells: [[null, { games: 30, winRate: 40 }], [{ games: 30, winRate: 60 }, null]],
     },
+    counters: [{
+      target: 'Sparkmage', counter: 'Pathfinder', winRate: 60, games: 30, targetElsewhere: 58, targetVsCounter: 40,
+      signals: ['Lower curve: 2.6 average cost vs 3.4'], why: 'Pathfinder does it on a lower curve.',
+    }],
+    elementTrend: {
+      days: ['2026-09-16', '2026-09-17', '2026-09-18'],
+      series: { Air: [50, 55, null], Earth: [40, 35, 30], Fire: [45, 45, 50], Water: [40, 42, 44] },
+      share: { Air: 52, Earth: 36, Fire: 47, Water: 45 },
+      change: { Air: 3, Earth: -3 },
+    },
   },
   cards: {
     available: true,
@@ -35,6 +45,11 @@ const REPORT = {
   },
   tournaments: {
     events: [{ name: 'Explorer Columbus', folder: 'explorer-columbus', date: '2026-09-27', players: 18, winnerAvatar: 'Pathfinder', winnerElements: 'Air / Earth' }],
+    vsLadder: {
+      available: true,
+      tournament: [{ avatar: 'Geomancer', top8: 3, top8Total: 16, top8Share: 18.8, rankedShare: 2.8 }],
+      ladder: [{ avatar: 'Imposter', top8: 0, top8Total: 16, top8Share: 0, rankedShare: 14.2 }],
+    },
     deckToTry: { deckId: 'abc123xyz', avatar: 'Pathfinder', elements: 'Air / Earth', placement: 1, player: 'Ann', event: 'Explorer Columbus' },
   },
 }
@@ -69,6 +84,15 @@ describe('MetaReport', () => {
     expect(screen.getAllByText('60%').length).toBeGreaterThan(0)
     expect(screen.getByRole('link', { name: 'Top 8 lists' })).toHaveAttribute('href', '/top-8/explorer-columbus')
     expect(screen.getByRole('button', { name: /share/i })).toBeInTheDocument()
+  })
+
+  it('shows counter picks, the element trend and tournament vs ladder', async () => {
+    renderPage()
+    expect(await screen.findByText('Pathfinder does it on a lower curve.')).toBeInTheDocument()
+    expect(screen.getByText('Lower curve: 2.6 average cost vs 3.4')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Element share of ranked decks by day' })).toBeInTheDocument()
+    expect(screen.getByText('Wins Top 8s, rare on the ladder')).toBeInTheDocument()
+    expect(screen.getByText('Geomancer')).toBeInTheDocument()
   })
 
   it('loads an older report from the picker', async () => {

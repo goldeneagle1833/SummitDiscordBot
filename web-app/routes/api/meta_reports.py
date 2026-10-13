@@ -12,6 +12,7 @@ Admin:
   GET    /api/meta-reports/admin/<slug>            one report, drafts included
   POST   /api/meta-reports/admin/build             {period: "2026-09-b"} build or refresh
   PUT    /api/meta-reports/admin/<slug>/story      {story: [{headline, detail}]}
+  PUT    /api/meta-reports/admin/<slug>/notes      {counters: {avatar: why}}
   POST   /api/meta-reports/admin/<slug>/publish    {announce: bool}
   POST   /api/meta-reports/admin/<slug>/unpublish
   DELETE /api/meta-reports/admin/<slug>            drafts only
@@ -218,6 +219,22 @@ def admin_story(slug):
     repo.update_story(slug, clean)
     _audit("meta_report_story", slug, f"Edited meta report takeaways ({len(clean)})")
     return jsonify({"story": clean})
+
+
+@meta_reports_bp.route("/meta-reports/admin/<slug>/notes", methods=["PUT"])
+@require_admin
+def admin_notes(slug):
+    counters = (request.get_json(silent=True) or {}).get("counters")
+    if not isinstance(counters, dict) or len(counters) > 12:
+        return jsonify({"error": "Counter notes must be a map of Avatar to text."}), 400
+    clean = {str(k)[:80]: str(v or "").strip()[:300] for k, v in counters.items() if str(v or "").strip()}
+    repo = MetaReportRepository()
+    report = repo.get(slug)
+    if not report:
+        return jsonify({"error": "Report not found"}), 404
+    repo.update_notes(slug, {**(report.get("notes") or {}), "counters": clean})
+    _audit("meta_report_notes", slug, f"Edited meta report counter notes ({len(clean)})")
+    return jsonify({"counters": clean})
 
 
 @meta_reports_bp.route("/meta-reports/admin/<slug>/publish", methods=["POST"])

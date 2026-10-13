@@ -291,6 +291,147 @@ function Cards({ cards }) {
   )
 }
 
+function CounterPicks({ counters }) {
+  if (!counters?.length) return null
+  return (
+    <div className={`${panel} grid gap-3 mb-4`}>
+      <p className="text-xs uppercase tracking-wider text-text-muted">Counter picks for S tier</p>
+      {counters.map((c) => (
+        <div key={c.target} className="grid grid-cols-[1fr_auto] gap-3 items-start border-b border-border last:border-0 pb-3 last:pb-0">
+          <div className="min-w-0 text-sm">
+            <div>Into <b>{c.target}</b>, play <b className="text-secondary">{c.counter}</b></div>
+            {c.targetElsewhere != null && (
+              <p className="text-text-muted mt-1">
+                {c.target} wins {c.targetElsewhere}% against everything else but only {c.targetVsCounter}% into {c.counter}.
+              </p>
+            )}
+            {c.why && (
+              <p className="mt-1.5">
+                <span className="inline-block text-[11px] uppercase tracking-wider text-secondary border border-secondary/50 rounded px-1.5 mr-1.5">Why</span>
+                {c.why}
+              </p>
+            )}
+            {c.signals?.length > 0 && (
+              <ul className="mt-1.5 pl-5 list-disc text-xs text-text-muted grid gap-0.5">
+                {c.signals.map((sig) => <li key={sig}>{sig}</li>)}
+              </ul>
+            )}
+          </div>
+          <div className="text-right">
+            <span className="font-mono" style={{ color: UP }}>{c.winRate}%</span>
+            <div className="text-xs text-text-muted">{c.games} games</div>
+          </div>
+        </div>
+      ))}
+      <p className="text-xs text-text-muted">
+        The &quot;Why&quot; is worked out from these ranked games: game length, who went first, mana curve, element pair and the cards winning decks ran more often. Totals only, never a deck list.
+      </p>
+    </div>
+  )
+}
+
+const ELEMENT_ORDER = ['Air', 'Earth', 'Fire', 'Water']
+
+// Each day averaged with the day before and after, so quiet days don't spike the lines.
+function smooth(values) {
+  return values.map((_, i) => {
+    const near = values.slice(Math.max(0, i - 1), i + 2).filter((v) => v != null)
+    return near.length ? near.reduce((a, b) => a + b, 0) / near.length : null
+  })
+}
+
+function ElementTrend({ trend }) {
+  const days = trend?.days || []
+  const lines = Object.fromEntries(ELEMENT_ORDER.map((e) => [e, smooth(trend?.series?.[e] || [])]))
+  const all = ELEMENT_ORDER.flatMap((e) => lines[e]).filter((v) => v != null)
+  if (days.length < 2 || all.length < 2) {
+    return <div className={`${panel} text-sm text-text-muted`}>Not enough ranked games this period for a daily trend.</div>
+  }
+  const W = 640, H = 200, L = 34, R = 14, T = 12, B = 26
+  const lo = Math.floor(Math.min(...all) / 10) * 10
+  const hi = Math.max(lo + 10, Math.ceil(Math.max(...all) / 10) * 10)
+  const X = (i) => L + i * (W - L - R) / (days.length - 1)
+  const Y = (v) => T + (hi - v) / (hi - lo) * (H - T - B)
+  const ticks = []
+  for (let v = lo; v <= hi; v += 10) ticks.push(v)
+  const path = (vals) => {
+    let d = ''
+    let pen = false
+    vals.forEach((v, i) => {
+      if (v == null) { pen = false; return }
+      d += `${pen ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`
+      pen = true
+    })
+    return d
+  }
+  const dayLabel = (iso, i) => {
+    const [, m, d] = iso.split('-').map(Number)
+    return i === 0 ? `${new Date(2000, m - 1, 1).toLocaleString('en-US', { month: 'short' })} ${d}` : String(d)
+  }
+  return (
+    <div className={panel}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block" role="img" aria-label="Element share of ranked decks by day">
+        {ticks.map((v) => (
+          <g key={v}>
+            <line x1={L} x2={W - R} y1={Y(v)} y2={Y(v)} stroke="#30363d" />
+            <text x={L - 6} y={Y(v) + 4} textAnchor="end" fontSize="11" fill="#8b949e">{v}%</text>
+          </g>
+        ))}
+        {days.map((day, i) => (i % 2 ? null : (
+          <text key={day} x={X(i)} y={H - 6} fontSize="11" fill="#8b949e"
+                textAnchor={i === 0 ? 'start' : i === days.length - 1 ? 'end' : 'middle'}>{dayLabel(day, i)}</text>
+        )))}
+        {ELEMENT_ORDER.map((e) => <path key={e} d={path(lines[e])} fill="none" stroke={ELEMENT_COLORS[e]} strokeWidth="2" />)}
+      </svg>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm mt-2.5">
+        {ELEMENT_ORDER.filter((e) => trend.share?.[e] != null).map((e) => {
+          const change = trend.change?.[e]
+          return (
+            <span key={e}>
+              <span style={{ color: ELEMENT_COLORS[e] }}>●</span> {e} <b className="font-mono font-medium">{trend.share[e]}%</b>
+              {change != null && (
+                <span className="font-mono text-xs ml-1" style={{ color: change >= 0 ? UP : DOWN }}>{change >= 0 ? '+' : ''}{change}</span>
+              )}
+            </span>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function VsLadderList({ title, rows }) {
+  return (
+    <div className={panel}>
+      <p className="text-xs uppercase tracking-wider text-text-muted mb-2.5">{title}</p>
+      {rows?.length ? (
+        <ul className="grid gap-2">
+          {rows.map((x) => (
+            <li key={x.avatar} className="text-sm">
+              <div>{x.avatar}</div>
+              <div className="text-xs text-text-muted">
+                {x.top8} of {x.top8Total} Top 8 decks ({x.top8Share}%) · {x.rankedShare}% of ranked decks
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-sm text-text-muted">No big gap this period.</p>}
+    </div>
+  )
+}
+
+function TournamentVsLadder({ data }) {
+  if (!data?.available) return null
+  return (
+    <Section title="Tournament vs ladder" sub="Avatars whose share of Top 8 decks this period is far from their share of Summit ranked decks.">
+      <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))]">
+        <VsLadderList title="Wins Top 8s, rare on the ladder" rows={data.tournament} />
+        <VsLadderList title="Ladder favorite, missing from Top 8s" rows={data.ladder} />
+      </div>
+    </Section>
+  )
+}
+
 function cellStyle(v) {
   if (v == null) return { background: '#21262d', color: '#8b949e' }
   const t = Math.max(-1, Math.min(1, (v - 50) / 12))
@@ -594,7 +735,12 @@ export default function MetaReport() {
             <Cards cards={report.cards} />
           </Section>
 
+          <Section title="Element trend" sub="Share of Summit ranked decks using each element, day by day across this report's two weeks, smoothed over three days. Two-element decks count for both, so the lines add up to more than 100%. The number after each element is its share for the whole period and its change since the last report.">
+            <ElementTrend trend={report.ranked?.elementTrend} />
+          </Section>
+
           <Section title="What beats what" sub={`The six most-played Avatars, row against column, in Summit ranked games. Totals only; cells under ${report.ranked?.matchups?.minGames || 10} games stay blank.`}>
+            <CounterPicks counters={report.ranked?.counters} />
             <Matchups matchups={report.ranked?.matchups} />
           </Section>
 
@@ -607,6 +753,8 @@ export default function MetaReport() {
             </Section>
           </div>
 
+          <TournamentVsLadder data={report.tournaments?.vsLadder} />
+
           <EmailSignup />
 
           <Section title="How this report is made">
@@ -614,7 +762,8 @@ export default function MetaReport() {
               <li>Each report covers half a month and comes out one month later, the same delay as the ranked card data on Card Win Rates. The report on the 1st covers the previous month&apos;s 1st to 15th; the report on the 16th covers the 16th to month end.</li>
               <li>Ranked games count toward totals only. No ranked deck lists or player names appear in a report.</li>
               <li>Deck lists come only from public Top 8 events.</li>
-              <li>Small samples are hidden: archetypes need 10 games, matchups 20 and the sleeper pick 50.</li>
+              <li>Small samples are hidden: an Avatar needs 20 games (or 1% of decks) for the tiers, matchups and counter picks need 10, and card win rates need 20.</li>
+              <li>Counter pick explanations use game length, who went first, mana curve, element pairs and how often winning decks ran a card. A card is only named when 10 or more winning decks ran it.</li>
             </ul>
           </Section>
         </div>

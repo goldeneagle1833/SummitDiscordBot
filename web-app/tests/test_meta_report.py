@@ -79,7 +79,9 @@ def test_ranked_games_stay_in_period_and_ranked_only(match_db):
     add_game(match_db, "2026-09-20", ("Sparkmage", "Air"), ("Geomancer", "Earth"))
     add_game(match_db, "2026-09-03", ("Sparkmage", "Air"), ("Geomancer", "Earth"), match_type="casual")
     games = meta_report.ranked_games("2026-09-01", "2026-09-15", match_db)
-    assert games == [{"winner": ("Sparkmage", "Air"), "loser": ("Geomancer", "Earth")}]
+    assert [(g["winner"], g["loser"], g["day"]) for g in games] == [
+        (("Sparkmage", "Air"), ("Geomancer", "Earth"), "2026-09-02")]
+    assert games[0]["winnerCards"] == frozenset({"Air card"})
 
 
 def test_archetype_stats_tiers_and_minimums():
@@ -403,3 +405,63 @@ def test_spotlights_pick_changer_trap_and_opener():
     last = [{"payload": {"cards": section}}]
     again = meta_report.card_section(body, None, last, "2026-09-15")
     assert {t["kind"]: t["name"] for t in again["spotlights"]} == {"changer": "Wolves"}
+
+
+def _g(w, l, minutes=None, first=None, wcards=(), lcards=(), wcost=None, lcost=None, day="2026-09-02"):
+    return {"winner": w, "loser": l, "day": day, "minutes": minutes, "winnerFirst": first,
+            "winnerCards": frozenset(wcards), "loserCards": frozenset(lcards),
+            "winnerCost": wcost, "loserCost": lcost}
+
+
+NEC, DRU, ELF = ("Necromancer", "Fire"), ("Druid", "Earth / Water"), ("Elf", "Air")
+
+
+def test_counter_pick_explains_itself():
+    games = []
+    # Druid beats Necromancer 8-4, fast, on a lower curve, with Sinkhole in its winning decks.
+    games += [_g(DRU, NEC, 15, True, {"Sinkhole", "Bear"}, {"Skeleton"}, 2.5, 3.5) for _ in range(6)]
+    games += [_g(DRU, NEC, 16, False, {"Sinkhole", "Bear"}, {"Skeleton"}, 2.5, 3.5) for _ in range(6)]
+    games += [_g(NEC, DRU, 25, True, {"Skeleton"}, {"Bear"}, 3.5, 2.5) for _ in range(4)]
+    # Necromancer beats everyone else, in long games; other Druid decks rarely run Sinkhole.
+    games += [_g(NEC, ELF, 30, None) for _ in range(30)]
+    games += [_g(DRU, ELF, 20, None, {"Bear"}) for _ in range(20)]
+    archetypes = [{"avatar": "Necromancer", "tier": "S"}, {"avatar": "Druid", "tier": "A"}]
+    [pick] = meta_report.counter_picks(games, archetypes)
+    assert (pick["target"], pick["counter"], pick["games"], pick["winRate"]) == ("Necromancer", "Druid", 16, 75.0)
+    assert pick["targetElsewhere"] == 100.0
+    text = " | ".join(pick["signals"])
+    assert "Faster games: 16 min vs 30" in text
+    assert "Lower curve: 2.5 average cost vs 3.5" in text
+    assert "Mostly Earth / Water Druid" in text
+    assert "ran Sinkhole" in text
+    assert pick["why"].startswith("Druid wins it fast")
+
+
+def test_counter_pick_needs_enough_games():
+    games = [_g(DRU, NEC) for _ in range(5)] + [_g(NEC, ELF) for _ in range(30)]
+    assert meta_report.counter_picks(games, [{"avatar": "Necromancer", "tier": "S"}]) == []
+
+
+def test_admin_note_replaces_auto_why(repo):
+    report = {"slug": "2026-09-a", "from": "2026-09-01", "through": "2026-09-15", "publishedAt": None,
+              "story": [], "notes": {"counters": {"Necromancer": "Water removal answers the graveyard."}},
+              "payload": {"ranked": {"counters": [{"target": "Necromancer", "why": "auto"}]}}}
+    pick = meta_report.public_report(report)["ranked"]["counters"][0]
+    assert pick["why"] == "Water removal answers the graveyard." and pick["whyBy"] == "team"
+
+
+def test_element_trend_is_daily():
+    games = [_g(DRU, NEC, day="2026-09-01"), _g(ELF, NEC, day="2026-09-03")]
+    trend = meta_report.element_trend(games, [_g(NEC, NEC)], Period(2026, 9, "a"))
+    assert len(trend["days"]) == 15 and trend["days"][0] == "2026-09-01"
+    assert trend["series"]["Water"][:3] == [50.0, None, 0.0]
+    assert trend["share"]["Fire"] == 50.0 and trend["change"]["Fire"] == -50.0
+
+
+def test_tournament_vs_ladder():
+    games = [_g(NEC, DRU) for _ in range(50)]
+    top8 = ["Elf"] * 4 + ["Druid"] * 4
+    result = meta_report.tournament_vs_ladder(games, top8)
+    assert [x["avatar"] for x in result["tournament"]] == ["Elf"]
+    assert [x["avatar"] for x in result["ladder"]] == ["Necromancer"]
+    assert meta_report.tournament_vs_ladder(games, top8[:5]) == {"available": False}

@@ -150,6 +150,35 @@ def _archetype(raw_json: str | None) -> tuple[str, str] | None:
     return deck.avatar, deck.elements
 
 
+def _deck_info(raw_json: str | None) -> tuple[tuple[str, str] | None, frozenset, float | None]:
+    """(archetype, spellbook card names, average spell cost) for a stored ranked deck."""
+    arch = _archetype(raw_json)
+    if arch is None:
+        return None, frozenset(), None
+    try:
+        spellbook = json.loads(raw_json).get("spellbook") or []
+    except (TypeError, ValueError, AttributeError):
+        return arch, frozenset(), None
+    names, total, copies = set(), 0.0, 0
+    for card in spellbook:
+        if not isinstance(card, dict) or not card.get("name"):
+            continue
+        names.add(card["name"])
+        try:
+            cost = float(card.get("cost"))
+            qty = max(1, int(card.get("quantity") or 1))
+        except (TypeError, ValueError):
+            continue
+        total += cost * qty
+        copies += qty
+    return arch, frozenset(names), (total / copies if copies else None)
+
+
+def _went_first(value) -> bool | None:
+    v = str(value or "").strip().lower()
+    return True if v in ("y", "yes", "true", "1") else False if v in ("n", "no", "false", "0") else None
+
+
 def ranked_games(period_from: str, period_through: str, db_path=None) -> list[dict]:
     """Every ranked game in the period as {winner, loser}, each an archetype or None."""
     path = db_path or webapp_config.MATCH_RECORDS_DB_PATH
@@ -168,18 +197,31 @@ def ranked_games(period_from: str, period_through: str, db_path=None) -> list[di
                 continue
             ranked = " AND (match_type = 'ranked' OR match_type IS NULL)" if "match_type" in cols else ""
             ident = id_col if id_col in cols else "NULL"
+            minutes = "match_time" if "match_time" in cols else "NULL"
+            first = "winner_went_first" if "winner_went_first" in cols else "NULL"
             rows = conn.execute(
-                f"""SELECT {ident}, json_deck_data_winner, json_deck_data_loser
+                f"""SELECT {ident}, json_deck_data_winner, json_deck_data_loser,
+                           substr(timestamp, 1, 10), {minutes}, {first}
                     FROM {table}
                     WHERE substr(timestamp, 1, 10) BETWEEN ? AND ? {ranked}""",
                 (period_from, period_through),
             )
-            for match_id, winner_json, loser_json in rows:
+            for match_id, winner_json, loser_json, day, mins, went_first in rows:
                 if match_id is not None:
                     if match_id in seen_ids:
                         continue  # archived copy of a live row
                     seen_ids.add(match_id)
-                games.append({"winner": _archetype(winner_json), "loser": _archetype(loser_json)})
+                w, w_cards, w_cost = _deck_info(winner_json)
+                l, l_cards, l_cost = _deck_info(loser_json)
+                try:
+                    mins = int(mins) if mins is not None and 0 < int(mins) < 240 else None
+                except (TypeError, ValueError):
+                    mins = None
+                # Only totals ever leave this module: card names feed counts, never lists.
+                games.append({"winner": w, "loser": l, "day": day, "minutes": mins,
+                              "winnerFirst": _went_first(went_first),
+                              "winnerCards": w_cards, "loserCards": l_cards,
+                              "winnerCost": w_cost, "loserCost": l_cost})
     finally:
         conn.close()
     return games
@@ -259,6 +301,212 @@ def matchup_grid(games: list[dict], archetypes: list[dict] | None = None) -> dic
         cells.append(row)
     return {"archetypes": [{"avatar": a, "elements": ""} for a in keys], "cells": cells,
             "minGames": MIN_MATCHUP_GAMES, "by": "avatar"}
+
+
+ELEMENTS = ("Air", "Earth", "Fire", "Water")
+MIN_SIGNAL_GAMES = 5       # games each side of a comparison needs before a counter signal shows
+MIN_KEY_CARD_DECKS = 10    # winning decks that must run a card before it's named
+
+
+def element_shares(games: list[dict]) -> dict[str, float]:
+    sides = [g[s] for g in games for s in ("winner", "loser") if g[s]]
+    if not sides:
+        return {}
+    return {e: round(sum(1 for a in sides if e in a[1].split(" / ")) / len(sides) * 100, 1) for e in ELEMENTS}
+
+
+def element_trend(games: list[dict], previous_games: list[dict], period: "Period") -> dict:
+    """Each element's share of ranked decks, day by day across the period."""
+    by_day: dict[str, list[dict]] = {}
+    for g in games:
+        if g.get("day"):
+            by_day.setdefault(g["day"], []).append(g)
+    days = []
+    d = period.start
+    while d <= period.end:
+        days.append(d.isoformat())
+        d += timedelta(days=1)
+    series = {e: [] for e in ELEMENTS}
+    counts = []
+    for day in days:
+        shares = element_shares(by_day.get(day, []))
+        counts.append(sum(1 for g in by_day.get(day, []) for s in ("winner", "loser") if g[s]))
+        for e in ELEMENTS:
+            series[e].append(shares.get(e))
+    now, before = element_shares(games), element_shares(previous_games)
+    return {
+        "days": days,
+        "decks": counts,
+        "series": series,
+        "share": now,
+        "change": {e: round(now[e] - before[e], 1) for e in now if e in before},
+    }
+
+
+def _rate(wins: int, n: int) -> float:
+    return round(wins / n * 100, 1)
+
+
+def _avg(values: list) -> float | None:
+    values = [v for v in values if v is not None]
+    return sum(values) / len(values) if values else None
+
+
+def _counter_signals(target: str, counter: str, games: list[dict]) -> tuple[list[dict], str | None]:
+    """Why a counter works, worked out from game length, turn order, curve, elements and cards."""
+    head = [g for g in games if g["winner"] and g["loser"]
+            and {g["winner"][0], g["loser"][0]} == {target, counter}]
+    signals = []
+
+    # Speed: how long the counter's wins take, against the target's other games.
+    fast = [g["minutes"] for g in head if g["winner"][0] == counter]
+    other = [g["minutes"] for g in games if g["winner"] and g["loser"]
+             and target in (g["winner"][0], g["loser"][0])
+             and counter not in (g["winner"][0], g["loser"][0])]
+    fast, other = [m for m in fast if m], [m for m in other if m]
+    if len(fast) >= MIN_SIGNAL_GAMES and len(other) >= MIN_SIGNAL_GAMES:
+        a, b = round(_avg(fast)), round(_avg(other))
+        if abs(a - b) >= 3:
+            signals.append({"kind": "speed", "faster": a < b,
+                            "text": f"{'Faster' if a < b else 'Longer'} games: {a} min vs {b} for {target}'s other games"})
+
+    # Turn order: the counter's win rate on the play and on the draw.
+    play = [(g["winner"][0] == counter) for g in head
+            if g["winnerFirst"] is not None and ((g["winner"][0] == counter) == g["winnerFirst"])]
+    draw = [(g["winner"][0] == counter) for g in head
+            if g["winnerFirst"] is not None and ((g["winner"][0] == counter) != g["winnerFirst"])]
+    if len(play) >= MIN_SIGNAL_GAMES and len(draw) >= MIN_SIGNAL_GAMES:
+        p, d = _rate(sum(play), len(play)), _rate(sum(draw), len(draw))
+        if abs(p - d) >= 10:
+            signals.append({"kind": "turn", "first": p > d,
+                            "text": f"On the play: {round(p)}% · on the draw: {round(d)}%"})
+
+    # Curve: average spell cost of each side in these games.
+    def costs(name):
+        return [g["winnerCost"] if g["winner"][0] == name else g["loserCost"] for g in head]
+    c_cost, t_cost = [x for x in costs(counter) if x is not None], [x for x in costs(target) if x is not None]
+    if len(c_cost) >= MIN_SIGNAL_GAMES and len(t_cost) >= MIN_SIGNAL_GAMES:
+        a, b = _avg(c_cost), _avg(t_cost)
+        if abs(a - b) >= 0.4:
+            signals.append({"kind": "curve", "lower": a < b,
+                            "text": f"{'Lower' if a < b else 'Higher'} curve: {a:.1f} average cost vs {b:.1f}"})
+
+    # Element pair the counter brings to this matchup.
+    pairs: dict[str, int] = {}
+    for g in head:
+        side = g["winner"] if g["winner"][0] == counter else g["loser"]
+        pairs[side[1]] = pairs.get(side[1], 0) + 1
+    if pairs:
+        pair, n = max(pairs.items(), key=lambda kv: kv[1])
+        if n / len(head) >= 0.6:
+            signals.append({"kind": "elements", "text": f"Mostly {pair} {counter} ({round(n / len(head) * 100)}% of these games)"})
+
+    # Key card: run far more often by the counter's winning decks here than by its decks overall.
+    winning = [g["winnerCards"] for g in head if g["winner"][0] == counter and g["winnerCards"]]
+    all_decks = [g[f"{s}Cards"] for g in games for s in ("winner", "loser")
+                 if g[s] and g[s][0] == counter and g[f"{s}Cards"]]
+    best = None
+    if len(winning) >= MIN_KEY_CARD_DECKS and all_decks:
+        seen: dict[str, int] = {}
+        for cards in winning:
+            for c in cards:
+                seen[c] = seen.get(c, 0) + 1
+        for card, n in seen.items():
+            if n < MIN_KEY_CARD_DECKS:
+                continue
+            base = sum(1 for cards in all_decks if card in cards) / len(all_decks)
+            ratio = (n / len(winning)) / base if base else 0
+            if ratio >= 1.5 and (best is None or ratio > best[1]):
+                best = (card, ratio)
+    if best:
+        signals.append({"kind": "card", "card": best[0],
+                        "text": f"Winning {counter} decks ran {best[0]} {best[1]:.1f}× as often as {counter} decks overall"})
+
+    parts = []
+    for sig in signals:
+        if sig["kind"] == "speed" and sig["faster"]:
+            parts.append("wins it fast")
+        elif sig["kind"] == "speed":
+            parts.append("wins the long game")
+        elif sig["kind"] == "curve":
+            parts.append("does it on a lower curve" if sig["lower"] else "goes over the top with bigger spells")
+        elif sig["kind"] == "turn":
+            parts.append("wants to go first" if sig["first"] else "does fine on the draw")
+        elif sig["kind"] == "card":
+            parts.append(f"the winning lists lean on {sig['card']}")
+    if not parts:
+        return signals, None
+    text = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+    return signals, f"{counter} {text}."
+
+
+def counter_picks(games: list[dict], archetypes: list[dict]) -> list[dict]:
+    """For each S tier Avatar, the Avatar that beats it most often."""
+    picks = []
+    for target in [a["avatar"] for a in archetypes if a.get("tier") == "S"]:
+        vs: dict[str, list[int]] = {}
+        rest = [0, 0]
+        for g in games:
+            w, l = g["winner"], g["loser"]
+            if not (w and l) or w[0] == l[0] or target not in (w[0], l[0]):
+                continue
+            other = l[0] if w[0] == target else w[0]
+            rec = vs.setdefault(other, [0, 0])
+            rec[0] += 1
+            rec[1] += 1 if w[0] == other else 0
+        best = None
+        for other, (n, other_wins) in vs.items():
+            if n < MIN_MATCHUP_GAMES:
+                continue
+            rate = other_wins / n
+            if rate > 0.5 and (best is None or rate > best[1]):
+                best = (other, rate, n, other_wins)
+        if not best:
+            continue
+        counter, rate, n, _wins = best
+        for other, (m, other_wins) in vs.items():
+            if other != counter:
+                rest[0] += m
+                rest[1] += m - other_wins
+        signals, why = _counter_signals(target, counter, games)
+        picks.append({
+            "target": target,
+            "counter": counter,
+            "winRate": round(rate * 100, 1),
+            "games": n,
+            "targetElsewhere": _rate(rest[1], rest[0]) if rest[0] else None,
+            "targetVsCounter": round((1 - rate) * 100, 1),
+            "signals": [sig["text"] for sig in signals],
+            "why": why,
+        })
+    return picks
+
+
+def tournament_vs_ladder(games: list[dict], top8_avatars: list[str]) -> dict:
+    """Avatars whose Top 8 share is far from their ranked share."""
+    if len(top8_avatars) < 8:
+        return {"available": False}
+    sides = [g[s][0] for g in games for s in ("winner", "loser") if g[s]]
+    if not sides:
+        return {"available": False}
+    ranked: dict[str, int] = {}
+    for a in sides:
+        ranked[a] = ranked.get(a, 0) + 1
+    top8: dict[str, int] = {}
+    for a in top8_avatars:
+        top8[a] = top8.get(a, 0) + 1
+    rows = []
+    for a in set(ranked) | set(top8):
+        t, r = top8.get(a, 0), ranked.get(a, 0) / len(sides) * 100
+        rows.append({"avatar": a, "top8": t, "top8Total": len(top8_avatars),
+                     "top8Share": round(t / len(top8_avatars) * 100, 1), "rankedShare": round(r, 1),
+                     "gap": t / len(top8_avatars) * 100 - r})
+    tournament = sorted((x for x in rows if x["top8"] >= 2 and x["gap"] >= 5), key=lambda x: -x["gap"])[:3]
+    ladder = sorted((x for x in rows if x["rankedShare"] >= 3 and x["gap"] <= -5), key=lambda x: x["gap"])[:3]
+    for x in tournament + ladder:
+        x.pop("gap")
+    return {"available": bool(tournament or ladder), "tournament": tournament, "ladder": ladder,
+            "top8Decks": len(top8_avatars)}
 
 
 def _with_moves(current: list[dict], previous: list[dict]) -> None:
@@ -484,6 +732,7 @@ def tournament_section(period_from: str, period_through: str, archetypes: list[d
     repo = EventRepository()
     events = []
     candidates = []
+    top8_avatars = []
     for ev in repo.get_all_events():
         day = ev.get("event_date")
         if not day or not (period_from <= day <= period_through):
@@ -501,6 +750,8 @@ def tournament_section(period_from: str, period_through: str, archetypes: list[d
             "winnerElements": _pair(winner.get("elements")) if winner else None,
         })
         for place, deck in enumerate(decks, start=1):
+            if deck.get("avatar"):
+                top8_avatars.append(deck["avatar"])
             if deck.get("deck_id"):
                 candidates.append((place, day, ev, deck))
     events.sort(key=lambda e: e["date"], reverse=True)
@@ -528,7 +779,7 @@ def tournament_section(period_from: str, period_through: str, archetypes: list[d
             "event": ev.get("name"),
             "eventFolder": ev["folder"],
         }
-    return {"events": events, "deckToTry": deck_to_try}
+    return {"events": events, "deckToTry": deck_to_try, "top8Avatars": top8_avatars}
 
 
 # ---------------------------------------------------------------------- #
@@ -591,10 +842,13 @@ def build_payload(period: Period, repo: MetaReportRepository | None = None,
     pf, pt = prev.start.isoformat(), prev.end.isoformat()
 
     games = ranked_games(f, t, db_path)
+    previous_games = ranked_games(pf, pt, db_path)
     ranked = archetype_stats(games)
-    previous = archetype_stats(ranked_games(pf, pt, db_path))
+    previous = archetype_stats(previous_games)
     _with_moves(ranked["archetypes"], previous["archetypes"])
     ranked["matchups"] = matchup_grid(games, ranked["archetypes"])
+    ranked["counters"] = counter_picks(games, ranked["archetypes"])
+    ranked["elementTrend"] = element_trend(games, previous_games, period)
 
     history = repo.reports_before(f, limit=4)
     prev_cards = pso(pf, pt)
@@ -602,6 +856,7 @@ def build_payload(period: Period, repo: MetaReportRepository | None = None,
         prev_cards = _body_from_report(history, pf)
     cards = card_section(pso(f, t), prev_cards, history, t)
     tournaments = tournament_section(f, t, ranked["archetypes"])
+    tournaments["vsLadder"] = tournament_vs_ladder(games, tournaments.pop("top8Avatars", []))
     return {
         "period": {"slug": period.slug, "from": f, "through": t, "label": period.label(),
                    "publishDay": period.publish_day.isoformat(), "publishLabel": period.publish_label()},
@@ -625,6 +880,11 @@ def public_report(report: dict | None) -> dict | None:
         return None
     payload = json.loads(json.dumps(report.get("payload") or {}))
     (payload.get("cards") or {}).pop("index", None)
+    notes = (report.get("notes") or {}).get("counters") or {}
+    for pick in (payload.get("ranked") or {}).get("counters") or []:
+        if notes.get(pick["target"]):
+            pick["why"] = notes[pick["target"]]
+            pick["whyBy"] = "team"
     return {"slug": report["slug"], "from": report["from"], "through": report["through"],
             "publishedAt": report["publishedAt"], "story": report["story"], **payload}
 

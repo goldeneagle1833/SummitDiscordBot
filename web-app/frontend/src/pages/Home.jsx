@@ -510,7 +510,39 @@ function EloToggle({ source, onChange }) {
   )
 }
 
+const FILTER_STORAGE_KEY = 'home_leaderboard_best_only'
+
+/** Avatar mode only: show each player once, on their best avatar. */
+function FilterToggle({ active, onChange }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!active)}
+      aria-pressed={active}
+      title="Show each player once, on their best avatar"
+      className={`px-4 py-1.5 text-sm font-medium rounded-soft border transition-colors ${
+        active
+          ? 'bg-brand-blue border-brand-blue text-white'
+          : 'bg-bg-surface border-border text-text-muted hover:bg-bg-elevated hover:text-primary'
+      }`}
+    >
+      Filtered
+    </button>
+  )
+}
+
 // ── Leaderboard Table ─────────────────────────────────────────
+
+/** Each player's first (highest) row only; the ladder is already sorted best first. */
+export function bestEntryPerPlayer(rows) {
+  const seen = new Set()
+  return rows.filter(({ player }) => {
+    const id = String(player.id)
+    if (seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
+}
 
 /** Each row's position among the rows on the same avatar ({ place, of }), in ladder order. */
 function rankWithinAvatar(leaderboard) {
@@ -546,7 +578,7 @@ function RankCell({ rank, pinned }) {
   return <span className="text-text-muted">{rank}</span>
 }
 
-function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges = {}, avatarMode = false, avatarImageFiles = [], userId = null }) {
+function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges = {}, avatarMode = false, avatarImageFiles = [], userId = null, bestOnly = false }) {
   if (!leaderboard.length) {
     return <p className="text-center text-text-muted py-8">No matches played yet</p>
   }
@@ -557,13 +589,17 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
   const avatarRanks = avatarMode ? rankWithinAvatar(leaderboard) : null
   const badgesForRow = (player) => (avatarBadges || {})[String(player.id)] || []
   const isMine = (player) => userId != null && String(player.id) === String(userId)
+  // Filtered keeps each player's best avatar entry and renumbers ranks; the
+  // "#n of m" avatar place still counts every entry on that avatar.
+  const allRows = leaderboard.map((player, index) => ({ player, avatarRank: avatarRanks?.[index] }))
+  const rows = bestOnly ? bestEntryPerPlayer(allRows) : allRows
   // The viewer's own entries (one per avatar in avatar mode) repeat above #1
   // so they never have to scroll to find themselves.
-  const pinned = leaderboard
-    .map((player, index) => ({ player, index }))
+  const pinned = rows
+    .map((row, index) => ({ ...row, index }))
     .filter(({ player }) => isMine(player))
 
-  const renderRow = (player, index, isPinned) => {
+  const renderRow = ({ player, avatarRank }, index, isPinned) => {
     const rank = index + 1
     const mine = isMine(player)
     const rowClass = isPinned
@@ -598,7 +634,7 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
           <td className="py-2.5 px-4">
             <AvatarCell
               avatar={player.avatar}
-              rank={avatarRanks[index]}
+              rank={avatarRank}
               imgSrc={avatarImageSrc(player.avatar, avatarImageFiles)}
             />
           </td>
@@ -623,8 +659,8 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
             </tr>
           </thead>
           <tbody>
-            {pinned.map(({ player, index }) => renderRow(player, index, true))}
-            {leaderboard.map((player, index) => renderRow(player, index, false))}
+            {pinned.map((row) => renderRow(row, row.index, true))}
+            {rows.map((row, index) => renderRow(row, index, false))}
           </tbody>
         </table>
       </div>
@@ -688,6 +724,13 @@ export default function Home() {
       return 'online'
     }
   })
+  const [bestOnly, setBestOnly] = useState(() => {
+    try {
+      return localStorage.getItem(FILTER_STORAGE_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
   const [eventData, setEventData] = useState(null)
   const [loading, setLoading] = useState(true)
   const titleClickCount = useRef(0)
@@ -749,6 +792,15 @@ export default function Home() {
     localStorage.setItem(STORAGE_KEY, src)
   }
 
+  const handleBestOnlyChange = (on) => {
+    setBestOnly(on)
+    try {
+      localStorage.setItem(FILTER_STORAGE_KEY, on ? '1' : '0')
+    } catch {
+      // Preference just won't persist
+    }
+  }
+
   const handleTitleClick = () => {
     titleClickCount.current += 1
     if (titleClickCount.current === 3) {
@@ -766,6 +818,9 @@ export default function Home() {
   const leaderboard = eventData?.leaderboard || []
   const avatarMode = eventData?.event?.elo_mode === 'avatar'
   const endsText = eventEndsText(eventData?.event?.scheduled_end_at)
+  // Limited already lists each player once, so Filtered only applies to avatar seasons
+  const canFilter = !isLimited && avatarMode
+  const filtered = canFilter && bestOnly
 
   return (
     <div className="space-y-10">
@@ -838,7 +893,10 @@ export default function Home() {
                 )}
               </div>
             )}
-            <EloToggle source={source} onChange={handleSourceChange} />
+            <div className="flex flex-wrap items-center gap-2">
+              <EloToggle source={source} onChange={handleSourceChange} />
+              {canFilter && <FilterToggle active={bestOnly} onChange={handleBestOnlyChange} />}
+            </div>
           </div>
           {isLimited ? (
             <>
@@ -859,7 +917,9 @@ export default function Home() {
                 <StatBar leaderboard={leaderboard} />
                 {(avatarMode || endsText) && (
                   <p className="max-w-lg text-[13px] leading-relaxed text-text-muted md:text-right">
-                    {avatarMode && 'Each avatar is rated separately, so a player can appear once per avatar. Top cut still gives each player one invite. '}
+                    {avatarMode && (filtered
+                      ? 'Filtered: each player appears once, on their best avatar. Top cut still gives each player one invite. '
+                      : 'Each avatar is rated separately, so a player can appear once per avatar. Top cut still gives each player one invite. ')}
                     {endsText && <span className="text-text font-semibold">{endsText}</span>}
                   </p>
                 )}
@@ -870,6 +930,7 @@ export default function Home() {
                 avatarImageFiles={avatarImageFiles}
                 avatarMode={avatarMode}
                 userId={user ? user.user_id : null}
+                bestOnly={filtered}
               />
             </>
           )}

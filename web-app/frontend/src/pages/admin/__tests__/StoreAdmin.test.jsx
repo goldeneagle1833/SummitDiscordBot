@@ -163,12 +163,12 @@ describe('StoreAdmin products', () => {
 
     const input = document.getElementById('product-image-file-7')
     const big = new File(['x'], 'huge.png', { type: 'image/png' })
-    Object.defineProperty(big, 'size', { value: 6 * 1024 * 1024 })
+    Object.defineProperty(big, 'size', { value: 11 * 1024 * 1024 })
     await userEvent.upload(input, [new File(['a'], 'a.png', { type: 'image/png' }), big])
 
     await waitFor(() => expect(adminUploadProductImages).toHaveBeenCalledTimes(1))
     expect(adminUploadProductImages.mock.calls[0][0].map((f) => f.name)).toEqual(['a.png'])
-    expect(await screen.findByText(/"huge\.png" is 6\.0 MB\. Images must be 5 MB or smaller\./)).toBeInTheDocument()
+    expect(await screen.findByText(/"huge\.png" is 11\.0 MB\. Images must be 10 MB or smaller\./)).toBeInTheDocument()
   })
 
   it('previews the selected image at card size and saves its framing', async () => {

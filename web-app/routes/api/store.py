@@ -852,7 +852,7 @@ import uuid as _uuid  # noqa: E402
 from webapp_config import STORE_UPLOADS_DIR  # noqa: E402
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 MAX_IMAGES_PER_UPLOAD = 10

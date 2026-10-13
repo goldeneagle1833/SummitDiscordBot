@@ -40,10 +40,10 @@ function productToForm(p) {
 }
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif']
-const MAX_IMAGE_MB = 5
+const MAX_IMAGE_MB = 10
 const MAX_IMAGES_PER_UPLOAD = 10
-// The server takes about 10 MB per request, so bigger picks go up in parts
-const MAX_UPLOAD_BATCH_BYTES = 9 * 1024 * 1024
+// The server takes about 25 MB per request, so bigger picks go up in parts
+const MAX_UPLOAD_BATCH_BYTES = 22 * 1024 * 1024
 
 // Why a picked file can't be uploaded, or null when it's fine
 function imageFileProblem(file) {

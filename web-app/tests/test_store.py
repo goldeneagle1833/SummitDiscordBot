@@ -1039,6 +1039,26 @@ class TestStoreAdminRoutes:
             '"card.bmp" isn\'t a supported image type. Use JPG, PNG, WEBP or GIF.'
         )
 
+    def test_upload_allows_images_up_to_10mb(self, store_admin_session, store_repo, tmp_path):
+        from io import BytesIO
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+        mb = 1024 * 1024
+        with patch("routes.api.store.STORE_UPLOADS_DIR", uploads):
+            ok = store_admin_session.post(
+                "/api/store/admin/products/upload-image",
+                data={"image": [(BytesIO(b"x" * (10 * mb)), "big.png")]},
+                content_type="multipart/form-data",
+            )
+            too_big = store_admin_session.post(
+                "/api/store/admin/products/upload-image",
+                data={"image": [(BytesIO(b"x" * (10 * mb + 1)), "huge.png")]},
+                content_type="multipart/form-data",
+            )
+        assert ok.status_code == 200
+        assert too_big.status_code == 400
+        assert "Images must be 10 MB or smaller" in too_big.get_json()["error"]
+
     def test_admin_list_orders(self, store_admin_session, store_repo):
         pid = _seed_product(store_repo, stock_quantity=10)
         _seed_order(store_repo, product_id=pid)

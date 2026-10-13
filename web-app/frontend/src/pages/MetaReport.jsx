@@ -201,13 +201,11 @@ function Spark({ points }) {
   )
 }
 
-function cardDetail(c, show) {
-  if (show === 'share') return `in ${c.share}% of decks`
-  if (show === 'wins') return `wins ${c.winRate}% of games it's played in${c.games ? ` (${c.games} games)` : ''}`
+function cardDetail(c) {
   return `in ${c.share}% of decks${c.winRate != null ? ` · wins ${c.winRate}% when played` : ''}`
 }
 
-function CardList({ title, cards, show }) {
+function CardList({ title, cards }) {
   return (
     <div className={panel}>
       <p className="text-xs uppercase tracking-wider text-text-muted mb-2.5">{title}</p>
@@ -217,7 +215,7 @@ function CardList({ title, cards, show }) {
             <li key={c.name} className="grid grid-cols-[1fr_auto] gap-2 items-center text-sm">
               <div className="min-w-0">
                 <Link to={`/card/${encodeURIComponent(c.name)}`} className="hover:text-secondary">{c.name}</Link>
-                <div className="text-xs text-text-muted">{cardDetail(c, show)}</div>
+                <div className="text-xs text-text-muted">{cardDetail(c)}</div>
               </div>
               <div className="flex gap-2.5 items-center">
                 <Spark points={c.trend} />
@@ -264,10 +262,6 @@ function Cards({ cards }) {
         </p>
       )}
       <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))]">
-        {!top && <CardList title="Rising" cards={cards.rising} />}
-        {(!top || cards.falling?.length > 0) && (
-          <CardList title={top ? 'Best win rate' : 'Falling'} cards={cards.falling} show={top ? 'wins' : undefined} />
-        )}
         {(cards.spotlights || []).map((t) => (
           <div key={t.kind} className={tile}>
             <p className="text-xs uppercase tracking-wider text-text-muted mb-2.5">{t.label}</p>
@@ -287,6 +281,12 @@ function Cards({ cards }) {
           </div>
         )}
       </div>
+      {!top && (
+        <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))]">
+          <CardList title="Rising" cards={cards.rising} />
+          <CardList title="Falling" cards={cards.falling} />
+        </div>
+      )}
     </div>
   )
 }
@@ -590,9 +590,7 @@ export default function MetaReport() {
             </Section>
           </div>
 
-          <Section title={report.cards?.mode === 'top' ? 'Top cards' : 'Cards on the move'} sub={report.cards?.mode === 'top'
-            ? `From Play Sorcery Online's ranked games this period. Spotlights change every report; win rates need ${report.cards?.minGames || 20}+ games.`
-            : "Biggest changes in how often a card is played since the last report, plus this report's spotlights, from Play Sorcery Online's ranked data. The line shows its win rate across recent reports."}>
+          <Section title="Staples and spotlights" sub={`The cards everyone runs, plus three spotlights that change every report, from Play Sorcery Online's ranked games. Win rates need ${report.cards?.minGames || 20}+ games.${report.cards?.mode === 'top' ? '' : ' Rising and Falling compare with the last report.'}`}>
             <Cards cards={report.cards} />
           </Section>
 

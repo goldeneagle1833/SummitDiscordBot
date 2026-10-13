@@ -51,6 +51,7 @@ MASTERS_ROLE_IDS = {000000000000000000}  # Set of role IDs
 TICKET_HOLDER_ROLE_IDS = {000000000000000000}
 TOP_CUT_ROLE_ID = 000000000000000000  # Given to the season's top cut; opens the Top Cut channel
 TOP_CUT_CHANNEL_ID = 000000000000000000  # Where new bracket pairings are posted (else a channel named like "top-cut")
+CONTENT_CHANNEL_ID = 000000000000000000  # sorcery-content: shared links become home page banners; new Meta Reports post here
 MAGE_ROLE_ID = 000000000000000000
 BOT_ADMIN_ROLE_ID = 000000000000000000
 

@@ -17,6 +17,7 @@ os.environ["COMMUNITY_DB_PATH"] = str(Path(_tmp_dir) / "community.db")
 os.environ["ANALYTICS_DB_PATH"] = str(Path(_tmp_dir) / "analytics.db")
 os.environ["MONITORING_DB_PATH"] = str(Path(_tmp_dir) / "monitoring.db")
 os.environ["EXPLORER_DB_PATH"] = str(Path(_tmp_dir) / "explorer.db")
+os.environ["META_REPORTS_DB_PATH"] = str(Path(_tmp_dir) / "meta_reports.db")
 os.environ["SECRET_KEY"] = "test-secret-key-for-pytest"
 os.environ["API_KEYS"] = "test-api-key-123"
 os.environ["ADMIN_IDS"] = "admin_user_1"

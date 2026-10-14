@@ -388,7 +388,7 @@ class StoreRepository:
     def _clean_framing(framing, images: list[str]) -> dict:
         """Keep framing only for images the product has, with values clamped.
 
-        x and y are object-position percents (0-100); zoom is 1-3.
+        x and y are object-position percents (0-100); zoom is 0.25-3 (below 1 zooms out).
         """
         if framing is None:
             return {}
@@ -401,7 +401,7 @@ class StoreRepository:
             try:
                 x = min(100.0, max(0.0, float(f.get("x", 50))))
                 y = min(100.0, max(0.0, float(f.get("y", 50))))
-                zoom = min(3.0, max(1.0, float(f.get("zoom", 1))))
+                zoom = min(3.0, max(0.25, float(f.get("zoom", 1))))
             except (TypeError, ValueError):
                 raise ValueError("image_framing values must be numbers")
             if (x, y, zoom) != (50.0, 50.0, 1.0):

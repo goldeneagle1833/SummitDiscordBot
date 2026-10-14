@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import FramedImage, { DEFAULT_FRAMING } from './FramedImage'
+import FramedImage, { DEFAULT_FRAMING, MIN_ZOOM, MAX_ZOOM, framedLayout } from './FramedImage'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
@@ -13,38 +13,37 @@ export default function ImageFramer({ url, framing, onChange }) {
 
   const update = (patch) => onChange({ ...f, ...patch })
 
-  // How far the image can slide past the box edges, in pixels
-  const overflow = () => {
+  // Pixels of drag that move the image from one edge position to the
+  // other (negative when the image is bigger than the box)
+  const travel = () => {
     const box = boxRef.current?.getBoundingClientRect()
     const img = imgRef.current
-    if (!box || !img?.naturalWidth) return { x: 1, y: 1 }
-    const cover = Math.max(box.width / img.naturalWidth, box.height / img.naturalHeight)
-    return {
-      x: Math.max(img.naturalWidth * cover * f.zoom - box.width, 1),
-      y: Math.max(img.naturalHeight * cover * f.zoom - box.height, 1),
-    }
+    if (!box?.width || !img?.naturalWidth) return { x: -1, y: -1 }
+    const { w, h } = framedLayout(box.width, box.height, img.naturalWidth, img.naturalHeight, f)
+    const nonZero = (v) => (Math.abs(v) < 1 ? (v < 0 ? -1 : 1) : v)
+    return { x: nonZero(box.width - w), y: nonZero(box.height - h) }
   }
 
   const onPointerDown = (e) => {
     e.preventDefault()
     e.currentTarget.setPointerCapture?.(e.pointerId)
-    const room = overflow()
-    drag.current = { px: e.clientX, py: e.clientY, x: f.x, y: f.y, roomX: room.x, roomY: room.y }
+    const t = travel()
+    drag.current = { px: e.clientX, py: e.clientY, x: f.x, y: f.y, tx: t.x, ty: t.y }
   }
   const onPointerMove = (e) => {
     const d = drag.current
     if (!d) return
-    // Dragging the picture right shows more of its left side
+    // The picture follows the pointer
     update({
-      x: Math.round(clamp(d.x - ((e.clientX - d.px) / d.roomX) * 100, 0, 100)),
-      y: Math.round(clamp(d.y - ((e.clientY - d.py) / d.roomY) * 100, 0, 100)),
+      x: Math.round(clamp(d.x + ((e.clientX - d.px) / d.tx) * 100, 0, 100)),
+      y: Math.round(clamp(d.y + ((e.clientY - d.py) / d.ty) * 100, 0, 100)),
     })
   }
   const endDrag = () => {
     drag.current = null
   }
 
-  const slider = (label, key, min, max, step) => (
+  const slider = (label, key, min, max, step, shown) => (
     <label className="flex items-center gap-2 text-xs text-text-muted">
       <span className="w-20 shrink-0">{label}</span>
       <input
@@ -57,13 +56,14 @@ export default function ImageFramer({ url, framing, onChange }) {
         aria-label={label}
         className="flex-1 accent-secondary"
       />
+      {shown && <span className="w-10 text-right tabular-nums">{shown}</span>}
     </label>
   )
 
   return (
     <div className="rounded border border-border bg-bg-elevated/40 p-3 space-y-3">
       <p className="text-xs text-text-muted">
-        Drag the picture or use the sliders to choose what shows on the store card.
+        Drag the picture to move it. Use Zoom to go closer, or below 100% to show more of the picture.
       </p>
       <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-1 max-w-full">
@@ -85,18 +85,27 @@ export default function ImageFramer({ url, framing, onChange }) {
           <FramedImage src={url} alt="" framing={f} className="w-[340px] max-w-full h-48 rounded border border-border" />
         </div>
       </div>
-      <div className="grid gap-2 sm:grid-cols-3">
+      {slider('Zoom', 'zoom', MIN_ZOOM, MAX_ZOOM, 0.05, `${Math.round(f.zoom * 100)}%`)}
+      <div className="grid gap-2 sm:grid-cols-2">
         {slider('Left / right', 'x', 0, 100, 1)}
         {slider('Up / down', 'y', 0, 100, 1)}
-        {slider('Zoom', 'zoom', 1, 3, 0.05)}
       </div>
-      <button
-        type="button"
-        onClick={() => onChange({ ...DEFAULT_FRAMING })}
-        className="text-xs text-primary hover:underline"
-      >
-        Reset to centered
-      </button>
+      <div className="flex flex-wrap gap-4">
+        <button
+          type="button"
+          onClick={() => update({ zoom: MIN_ZOOM })}
+          className="text-xs text-primary hover:underline"
+        >
+          Fit whole image
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange({ ...DEFAULT_FRAMING })}
+          className="text-xs text-primary hover:underline"
+        >
+          Reset to fill the card
+        </button>
+      </div>
     </div>
   )
 }

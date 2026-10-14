@@ -972,14 +972,14 @@ class TestStoreAdminRoutes:
         pid = _seed_product(store_repo, images=["/one.png", "/two.png"])
         resp = store_admin_session.patch(f"/api/store/admin/products/{pid}", json={
             "image_framing": {
-                "/one.png": {"x": 30, "y": 140, "zoom": 1.5},  # y clamps to 100
+                "/one.png": {"x": 30, "y": 140, "zoom": 0.1},  # y, zoom clamp
                 "/two.png": {"x": 50, "y": 50, "zoom": 1},     # default, dropped
                 "/gone.png": {"x": 10, "y": 10, "zoom": 2},    # not an image, dropped
             },
         })
         assert resp.status_code == 200
         products = client.get("/api/store/products").get_json()["products"]
-        assert products[0]["image_framing"] == {"/one.png": {"x": 30.0, "y": 100.0, "zoom": 1.5}}
+        assert products[0]["image_framing"] == {"/one.png": {"x": 30.0, "y": 100.0, "zoom": 0.25}}
 
     def test_image_framing_dropped_with_its_image(self, store_admin_session, store_repo):
         pid = _seed_product(store_repo, images=["/one.png", "/two.png"],

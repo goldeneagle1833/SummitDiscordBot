@@ -10,6 +10,7 @@ import re
 
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, VALID_API_KEYS, SEASON_FILTERS, VOICE_TRACKING_STARTED
 from services.match import MatchService
+from services.replays import viewable_replays
 from repositories.external_matches import ExternalMatchRepository
 from repositories.user_profiles import UserProfileRepository
 from repositories.blocked_users_repo import BlockedUsersRepository
@@ -168,6 +169,31 @@ def _active_event_window():
     if not row or not row[0]:
         return None, None
     return str(row[0]), (str(row[1]) if row[1] else None)
+
+
+def _attach_replays(entries: list[dict], player_id: str) -> None:
+    """Add each match_records match's Sorcery Online replay link where the viewer may see it."""
+    ids = sorted({e["match_id"] for e in entries})
+    if not ids:
+        return
+    conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    try:
+        placeholders = ",".join("?" * len(ids))
+        found = conn.execute(
+            f"SELECT rowid, replay_url FROM match_records WHERE rowid IN ({placeholders})"
+            " AND replay_url IS NOT NULL AND replay_url != ''",
+            ids,
+        ).fetchall()
+    except sqlite3.OperationalError:
+        found = []  # No replay column yet
+    finally:
+        conn.close()
+    replays = dict(found)
+    with_replays = [e for e in entries if replays.get(e["match_id"])]
+    allowed = viewable_replays([(player_id, e["opponent_id"]) for e in with_replays])
+    for entry, ok in zip(with_replays, allowed):
+        if ok:
+            entry["replay_url"] = replays[entry["match_id"]]
 
 
 @players_bp.route("/deck-snapshot/<int:match_id>/<player_id>")
@@ -2286,7 +2312,7 @@ def player_api(player_id):
             if player_on_play is False
             else None,
             "match_time": row[3] if row[3] else None,
-            "replay_url": row[9] if row[9] else None,
+            "replay_url": None,  # filled in below for matches that have one
             "player_deck_url": player_deck_url,
             "opponent_deck_url": opponent_deck_url,
             "has_deck": has_deck,
@@ -2306,11 +2332,17 @@ def player_api(player_id):
             "voice": _match_voice(row),
         }
 
-    for row in paginated_rows:
-        match_history.append(_build_match_entry(row))
-
-    for row in paginated_casual_rows:
-        casual_match_history.append(_build_match_entry(row))
+    # Solo reports reuse low ids and archived ones are offset, so only rows
+    # that came from match_records can carry a replay
+    record_entries = []
+    for rows_in, out in ((paginated_rows, match_history), (paginated_casual_rows, casual_match_history)):
+        for row in rows_in:
+            entry = _build_match_entry(row)
+            out.append(entry)
+            if (source == "bot" and len(row) > 19 and isinstance(row[12], int)
+                    and row[12] < 1_000_000_000):
+                record_entries.append(entry)
+    _attach_replays(record_entries, player_id_normalized)
 
     # External match pagination (data already fetched above for avatar/deck stats)
     external_page = request.args.get("external_page", 1, type=int)

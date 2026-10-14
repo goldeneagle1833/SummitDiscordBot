@@ -49,7 +49,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
       <h3 className="text-lg font-semibold text-text-primary mb-1">{title}</h3>
       {subtitle && <p className="text-xs text-text-muted mb-3">{subtitle}</p>}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm" style={{ minWidth: isOwner ? 1030 : 730 }}>
+        <table className="w-full text-sm" style={{ minWidth: isOwner ? 1110 : 810 }}>
           <thead>
             <tr className="border-b border-border text-left">
               <th className="py-2 px-3 text-text-muted font-semibold">ID</th>
@@ -68,6 +68,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
               {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Notes</th>}
               {showDeckUrls && <th className="py-2 px-3 text-text-muted font-semibold">Deck Link</th>}
               {showSnapshots && <th className="py-2 px-3 text-text-muted font-semibold">Snapshot</th>}
+              <th className="py-2 px-3 text-text-muted font-semibold">Replay</th>
             </tr>
           </thead>
           <tbody>
@@ -233,6 +234,18 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                       ) : '-'}
                     </td>
                   )}
+                  <td className="py-2 px-3 text-text-muted">
+                    {m.replay_url ? (
+                      <a
+                        href={m.replay_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-secondary hover:underline text-xs"
+                      >
+                        Watch
+                      </a>
+                    ) : '-'}
+                  </td>
                 </tr>
               )
             })}

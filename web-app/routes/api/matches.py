@@ -4,9 +4,9 @@ import logging
 import re
 from flask import Blueprint, jsonify, request
 
-from repositories.user_profiles import UserProfileRepository
 from services.match import MatchService
-from utils.auth import get_current_user, is_admin, require_api_key
+from services.replays import viewable_replays
+from utils.auth import require_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -87,26 +87,12 @@ def matches_date_range():
 
 
 def _only_players_see_replays(matches: list[dict]) -> list[dict]:
-    """Keep each replay link for the two players in that match (and admins).
-
-    A replay shows both decks, and ranked deck lists stay private, so a link
-    is public only when both players turned on "Replays" in their profile
-    privacy settings.
-    """
-    if is_admin():
-        return matches
-    user = get_current_user()
-    viewer = str(user["id"]).removeprefix("google_") if user else None
+    """Blank replay links the viewer may not see (see services.replays)."""
     with_replays = [m for m in matches if m.get("replay_url")]
-    public = UserProfileRepository().users_with_public_section(
-        {pid for m in with_replays for pid in (m.get("winner_id"), m.get("loser_id"))},
-        "replays",
-    ) if with_replays else set()
-    for match in with_replays:
-        players = (match.get("winner_id"), match.get("loser_id"))
-        if viewer in players or all(p in public for p in players):
-            continue
-        match["replay_url"] = None
+    allowed = viewable_replays([(m.get("winner_id"), m.get("loser_id")) for m in with_replays])
+    for match, ok in zip(with_replays, allowed):
+        if not ok:
+            match["replay_url"] = None
     return matches
 
 

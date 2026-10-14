@@ -36,3 +36,20 @@ describe('MatchHistoryTable voice column', () => {
     expect(within(rows[2]).queryByText(/voice/i)).not.toBeInTheDocument()
   })
 })
+
+describe('MatchHistoryTable replay column', () => {
+  it('links to the replay when the match has one', () => {
+    const replay = 'https://playsorceryonline.com/replay/abc123'
+    renderWithRouter(
+      <MatchHistoryTable
+        title="Ranked Match History"
+        matches={[{ ...match(1, true), replay_url: replay }, match(2, true)]}
+        isOwner={false}
+      />
+    )
+    expect(screen.getByRole('columnheader', { name: 'Replay' })).toBeInTheDocument()
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(within(rows[0]).getByRole('link', { name: 'Watch' })).toHaveAttribute('href', replay)
+    expect(within(rows[1]).queryByRole('link', { name: 'Watch' })).not.toBeInTheDocument()
+  })
+})

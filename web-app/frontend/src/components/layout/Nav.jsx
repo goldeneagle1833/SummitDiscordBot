@@ -4,13 +4,12 @@ import { useAuth } from '@/context/AuthContext'
 import { getStreamerBanner } from '@/api/streamers'
 import { DECK_URL_PLACEHOLDER } from '@/utils/deckLinks'
 
-const PERMANENT_LINKS = ['Home', 'Discord', 'Reddit', 'About', 'Patreon', 'Feedback']
+const PERMANENT_LINKS = ['Home', 'Discord', 'About', 'Patreon', 'Feedback']
 
 const ALL_NAV_OPTIONS = [
   { to: '/', label: 'Home' },
   { to: '/community', label: 'Community' },
   { href: 'https://discord.gg/ZDqHSK9VGx', label: 'Discord' },
-  { href: 'https://www.reddit.com/r/SorcerersSummit/', label: 'Reddit' },
   { href: 'https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink', label: 'Patreon' },
   { to: '/about', label: 'About' },
   { to: '/avatars', label: 'Avatar Winrates' },
@@ -33,7 +32,7 @@ const ALL_NAV_OPTIONS = [
   { to: '/feedback', label: 'Feedback' },
 ]
 
-const DEFAULT_NAV_LABELS = ['Home', 'Community', 'Discord', 'Reddit', 'Patreon', 'About', 'Feedback']
+const DEFAULT_NAV_LABELS = ['Home', 'Community', 'Discord', 'Patreon', 'About', 'Feedback']
 const STORAGE_KEY = 'summit-nav-prefs'
 
 function getNavPrefs() {
@@ -678,7 +677,6 @@ export default function Nav() {
           <SidebarLink to="/community" label="Community" location={location} onClick={close} />
           {user?.is_store_admin && <SidebarLink to="/store" label="Store" location={location} onClick={close} />}
           <SidebarExternal href="https://discord.gg/ZDqHSK9VGx" label="Discord" />
-          <SidebarExternal href="https://www.reddit.com/r/SorcerersSummit/" label="Reddit" />
           <SidebarExternal href="https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink" label="Patreon" />
           <SidebarLink to="/about" label="About" location={location} onClick={close} />
         </div>
@@ -827,6 +825,7 @@ export default function Nav() {
           <SidebarLink to="/help" label="Help" location={location} onClick={close} />
           <SidebarLink to="/feedback" label="Feedback" location={location} onClick={close} />
           <SidebarLink to="/community" label="Community" location={location} onClick={close} />
+          <SidebarExternal href="https://www.reddit.com/r/SorcerersSummit/" label="Reddit" />
           {user?.is_store_admin && <SidebarLink to="/store" label="Store" location={location} onClick={close} />}
         </div>
       </aside>

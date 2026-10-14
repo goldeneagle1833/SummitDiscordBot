@@ -263,6 +263,7 @@ class TestFrostshartFartMessaging:
             "big_banana",
             "star",
             "mushroom",
+            "fartabundance",
             "bobomb",
             "fart_star",
             "evil_star",

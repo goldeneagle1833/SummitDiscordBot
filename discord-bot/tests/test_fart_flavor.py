@@ -19,6 +19,8 @@ sys.modules.setdefault(
 from cogs.fart_flavor import (  # noqa: E402
     FART_FLAVOR_LINES,
     FARTLORD_PROCLAMATIONS,
+    compose_abundance_fart_body,
+    compose_abundance_roll_line,
     compose_fart_body,
     fart_roll_blurb,
     pick_fart_flavor,
@@ -122,6 +124,25 @@ class TestPickAndBlurb:
         )
         assert body.startswith("Curio Shart!")
         assert "You earned 98 points." in body
+
+    def test_abundance_body_lists_both_rolls_and_the_sum(self):
+        line_one = compose_abundance_roll_line(1, "", "", "Ordinary Fart! 💨 plain", 40)
+        line_two = compose_abundance_roll_line(2, "", "", "Elite Fart! 💨💨💨 plain", 70)
+        body = compose_abundance_fart_body([line_one, line_two], 110)
+        assert "FART ABUNDANCE" in body
+        assert "Roll 1:" in body
+        assert "Roll 2:" in body
+        assert "(40)" in body
+        assert "(70)" in body
+        assert "Together you earned **110** points." in body
+
+    def test_abundance_roll_line_skips_default_blurb_for_uber_rare(self):
+        line = compose_abundance_roll_line(
+            1, "❄ ***UBER-RARE CURIO: FROSTSHART***\n", "", "", 99
+        )
+        assert "Curio Shart" not in line
+        assert "FROSTSHART" in line
+        assert "99 points" in line
 
 
 class TestFartlordProclamations:

@@ -32,6 +32,7 @@ from cogs.lfg.pairing_messages import (
 )
 from utils.constants import SORCERY_NICKNAMES
 from utils.database import save_pairing, get_pairing_ban, pairing_ban_message
+from repositories.elo_repo import set_pairing_replay
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
 from services.card_points_service import validate_deck_points
 from services.limited_service import auto_start_arena_run
@@ -56,8 +57,15 @@ def _clear_matching_web_users(*user_ids):
 
 async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, players, voice=False):
     """Provision seats and publish stable results for website-origin players."""
+    # Limited pairings have their own ids, so only queue pairings keep a replay
+    on_replay_url = None
+    if queue_type != "limited":
+        def on_replay_url(url):
+            set_pairing_replay(pairing_id, url)
+
     provisioned_links = await provision_sorcery_online_match(
-        guild_id, pairing_id, queue_type, players, voice=voice
+        guild_id, pairing_id, queue_type, players, voice=voice,
+        on_replay_url=on_replay_url,
     ) or {}
     result_id_base = f"{guild_id}:{pairing_id}"
     matched_at = int(time.time() * 1000)

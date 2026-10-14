@@ -108,6 +108,27 @@ class TestMatchRoutes:
         data = resp.get_json()
         assert isinstance(data, list)
 
+    def test_match_history_includes_replay_link(self, client, match_db):
+        import sqlite3
+        seed_matches(match_db, [
+            {"winner_id": "1", "loser_id": "2", "timestamp": "2025-03-10 10:00:00"},
+            {"winner_id": "3", "loser_id": "4", "timestamp": "2025-03-10 11:00:00"},
+        ])
+        replay = "https://playsorceryonline.com/replay/abc123"
+        conn = sqlite3.connect(str(match_db))
+        try:
+            conn.execute("ALTER TABLE match_records ADD COLUMN replay_url TEXT")
+        except sqlite3.OperationalError:
+            pass
+        conn.execute("UPDATE match_records SET replay_url = ? WHERE winner_id = '1'", (replay,))
+        conn.commit()
+        conn.close()
+        resp = client.get("/api/match-history?date=2025-03-10")
+        assert resp.status_code == 200
+        by_winner = {m["winner_id"]: m for m in resp.get_json()}
+        assert by_winner["1"]["replay_url"] == replay
+        assert by_winner["3"]["replay_url"] is None
+
     def test_match_history_recap(self, client, match_db):
         import json
         import sqlite3

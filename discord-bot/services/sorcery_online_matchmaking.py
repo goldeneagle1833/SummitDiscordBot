@@ -23,7 +23,15 @@ def summit_matchmaking_api_key():
     return str(file_key or os.getenv("DRAFT_SORCERY_API_KEY", "")).strip()
 
 
-async def provision_sorcery_online_match(guild_id, pairing_id, queue_type, players, voice=False):
+async def provision_sorcery_online_match(
+    guild_id, pairing_id, queue_type, players, voice=False, on_replay_url=None,
+):
+    """Open a Sorcery Online table and return {discord_user_id: seat_url}.
+
+    Sorcery Online also hands back a replay link with the table; it is passed
+    to ``on_replay_url`` when given. The link is stable but only plays once
+    the game has been saved.
+    """
     api_key = summit_matchmaking_api_key()
     endpoint = os.getenv(
         "SORCERY_ONLINE_MATCHMAKING_URL",
@@ -71,6 +79,15 @@ async def provision_sorcery_online_match(guild_id, pairing_id, queue_type, playe
                                     len(links),
                                 )
                                 return None
+                            replay_url = data.get("replayUrl") or data.get("replay_url")
+                            if replay_url and on_replay_url:
+                                try:
+                                    on_replay_url(replay_url)
+                                except Exception as exc:
+                                    logger.warning(
+                                        "Could not save Sorcery Online replay for pairing %s: %r",
+                                        pairing_id, exc,
+                                    )
                             return links
 
                         body = await response.text()

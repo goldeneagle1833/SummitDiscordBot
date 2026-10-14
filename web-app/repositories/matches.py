@@ -52,6 +52,10 @@ class MatchRepository:
             cur.execute("ALTER TABLE match_records ADD COLUMN voice INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass  # Column already exists
+        try:
+            cur.execute("ALTER TABLE match_records ADD COLUMN replay_url TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         # Ensure match_records_archive also has match_type column
         cur.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='match_records_archive'"
@@ -123,7 +127,8 @@ class MatchRepository:
                 match_time,
                 timestamp,
                 winner_id,
-                losser_id
+                losser_id,
+                replay_url
             FROM match_records
             WHERE date(timestamp) = ?
             ORDER BY rowid DESC
@@ -259,7 +264,8 @@ class MatchRepository:
                 match_time,
                 timestamp,
                 winner_id,
-                losser_id
+                losser_id,
+                replay_url
             FROM match_records
             WHERE timestamp >= datetime('now', ?)
             ORDER BY rowid DESC
@@ -283,6 +289,7 @@ class MatchRepository:
                 "timestamp": row[6],
                 "winner_id": str(row[7]),
                 "loser_id": str(row[8]),
+                "replay_url": row[9] if len(row) > 9 else None,
             }
             for row in rows
         ]

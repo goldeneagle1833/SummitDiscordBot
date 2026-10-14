@@ -25,6 +25,7 @@ from repositories.elo_repo import (
     migrate_to_dual_elo_system,
     get_active_event,
     get_pairing_avatars,
+    get_pairing_replay,
     get_pairing_voice,
     AVATAR_MATCH_COLUMN_NAMES,
     ELO_COUNTING_MATCH_FILTER,
@@ -1313,9 +1314,9 @@ async def record_match(
             "winner_went_first, loser_went_first, match_type, "
             "winner_lifetime_elo_after, loser_lifetime_elo_after, pairing_id, voice, "
             "winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, "
-            "winner_avatar_elo_after, loser_avatar_elo_after, event_k) "
+            "winner_avatar_elo_after, loser_avatar_elo_after, event_k, replay_url) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "?, ?, ?, ?, ?, ?, ?)",
+            "?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 reporter_id,
                 winner_id, winner_global,
@@ -1349,6 +1350,7 @@ async def record_match(
                 winner_avatar_after,
                 loser_avatar_after,
                 event_k,
+                get_pairing_replay(pairing_id) if match_type != "limited" else None,
             ),
         )
         table_name = "match_records"

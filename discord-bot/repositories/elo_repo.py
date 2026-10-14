@@ -4,6 +4,7 @@ import sqlite3
 import datetime
 import logging
 from contextlib import contextmanager
+from urllib.parse import urlparse
 
 from repositories.avatar_elo_repo import ensure_avatar_elo_schema
 
@@ -164,6 +165,11 @@ def create_db():
         pass  # Column already exists
     try:
         cur.execute("ALTER TABLE match_records ADD COLUMN pairing_id INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    # Sorcery Online replay link for games played at a Summit-opened table
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN replay_url TEXT")
     except sqlite3.OperationalError:
         pass  # Column already exists
 
@@ -430,6 +436,12 @@ def create_active_pairings_table():
             cur.execute(f"ALTER TABLE active_pairings ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
             pass  # Column already exists
+
+    # Migration: Sorcery Online replay link handed back with the table
+    try:
+        cur.execute("ALTER TABLE active_pairings ADD COLUMN replay_url TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     conn.commit()
     conn.close()
@@ -1216,6 +1228,66 @@ def get_pairing_voice(pairing_id: int) -> bool:
     finally:
         conn.close()
     return bool(row and row[0])
+
+
+REPLAY_HOSTS = ("playsorceryonline.com",)
+
+
+def clean_replay_url(url) -> str | None:
+    """A Sorcery Online replay link, or None for anything else."""
+    url = str(url or "").strip()
+    if not url:
+        return None
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    if parsed.scheme not in ("http", "https") or host not in REPLAY_HOSTS:
+        return None
+    return url[:500]
+
+
+def set_pairing_replay(pairing_id: int, replay_url) -> bool:
+    """Remember a queue pairing's Sorcery Online replay link.
+
+    Also fills it in on the match record when the result was recorded
+    first. Limited pairings live in their own table with their own ids, so
+    callers only pass queue (active_pairings) pairings here.
+    """
+    replay_url = clean_replay_url(replay_url)
+    if not pairing_id or not replay_url:
+        return False
+    create_active_pairings_table()
+    create_db()
+    conn = sqlite3.connect("match_records.db")
+    try:
+        conn.execute(
+            "UPDATE active_pairings SET replay_url = ? WHERE pairing_id = ?",
+            (replay_url, pairing_id),
+        )
+        conn.execute(
+            "UPDATE match_records SET replay_url = ? "
+            "WHERE pairing_id = ? AND replay_url IS NULL "
+            "AND COALESCE(match_type, 'ranked') != 'limited'",
+            (replay_url, pairing_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return True
+
+
+def get_pairing_replay(pairing_id: int) -> str | None:
+    """The Sorcery Online replay link saved for a queue pairing, if any."""
+    if not pairing_id:
+        return None
+    create_active_pairings_table()
+    conn = sqlite3.connect("match_records.db")
+    try:
+        row = conn.execute(
+            "SELECT replay_url FROM active_pairings WHERE pairing_id = ?", (pairing_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    return row[0] if row and row[0] else None
 
 
 def get_pairing_avatars(pairing_id: int) -> dict:

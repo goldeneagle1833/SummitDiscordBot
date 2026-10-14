@@ -126,6 +126,7 @@ export default function Matches() {
                 <th className="py-2 px-3 font-semibold text-text-muted">Loser ELO</th>
                 <th className="py-2 px-3 font-semibold text-text-muted">Match Time</th>
                 <th className="py-2 px-3 font-semibold text-text-muted">Date</th>
+                <th className="py-2 px-3 font-semibold text-text-muted">Replay</th>
               </tr>
             </thead>
             <tbody>
@@ -152,6 +153,18 @@ export default function Matches() {
                     <td className="py-2 px-3 text-accent-red">{loseSign}{match.loser_elo_change}</td>
                     <td className="py-2 px-3 text-text-muted">{matchTime}</td>
                     <td className="py-2 px-3 text-text-muted">{date}</td>
+                    <td className="py-2 px-3 text-text-muted">
+                      {match.replay_url ? (
+                        <a
+                          href={match.replay_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-secondary hover:underline"
+                        >
+                          Watch
+                        </a>
+                      ) : '-'}
+                    </td>
                   </tr>
                 )
               })}

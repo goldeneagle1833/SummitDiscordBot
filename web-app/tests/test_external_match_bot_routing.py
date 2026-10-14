@@ -162,6 +162,18 @@ class TestSummitPairedResultsUseBotPipeline:
         assert sent["loser_id"] == "20"
         assert sent["reporter_id"] == "10"  # defaults to the winner
 
+    def test_replay_link_is_passed_to_bot(self, client, match_db):
+        _seed_pairing(match_db)
+        replay = "https://playsorceryonline.com/replay/abc123"
+        with patch("routes.api.matchmaking.requests.request", return_value=_bot_ok()) as req:
+            resp = client.post(
+                "/api/report-external-match",
+                json=_payload(replayUrl=replay),
+                headers=HEADERS,
+            )
+        assert resp.status_code == 200, resp.get_json()
+        assert req.call_args.kwargs["json"]["replay_url"] == replay
+
     def test_reversed_player_order_still_matches_pairing(self, client, match_db):
         _seed_pairing(match_db, p1=20, p2=10)
         with patch("routes.api.matchmaking.requests.request", return_value=_bot_ok()) as req:

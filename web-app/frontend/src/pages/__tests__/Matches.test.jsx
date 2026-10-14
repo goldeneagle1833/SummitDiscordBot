@@ -56,3 +56,26 @@ describe('Matches page recap', () => {
     expect(get).not.toHaveBeenCalledWith(expect.stringContaining('/recap'))
   })
 })
+
+describe('Matches page replay column', () => {
+  it('links to the Sorcery Online replay when a match has one', async () => {
+    const replay = 'https://playsorceryonline.com/replay/abc123'
+    get.mockReset()
+    get.mockImplementation((url) => {
+      if (url.startsWith('/api/match-history/available-dates')) return Promise.resolve([])
+      return Promise.resolve([
+        { match_id: 2, winner: 'Alice', winner_id: '1', loser: 'Bob', loser_id: '2',
+          winner_elo_change: 16, loser_elo_change: -16, replay_url: replay },
+        { match_id: 1, winner: 'Cara', winner_id: '3', loser: 'Dan', loser_id: '4',
+          winner_elo_change: 16, loser_elo_change: -16, replay_url: null },
+      ])
+    })
+    renderWithRouter(<Matches />, { route: '/match-history' })
+
+    const watch = await screen.findByRole('link', { name: 'Watch' })
+    expect(watch).toHaveAttribute('href', replay)
+    expect(watch).toHaveAttribute('target', '_blank')
+    expect(screen.getAllByRole('link', { name: 'Watch' })).toHaveLength(1)
+    expect(screen.getByText('Replay')).toBeInTheDocument()
+  })
+})

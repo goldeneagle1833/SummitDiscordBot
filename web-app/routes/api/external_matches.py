@@ -401,6 +401,9 @@ def _record_via_bot(pairing: dict, data: dict, winner_id: str, loser_id: str, so
     players = data.get("players") or data.get("played_cards") or data.get("playedCards")
     if players:
         payload["players"] = players
+    replay_url = data.get("replay_url") or data.get("replayUrl")
+    if replay_url:
+        payload["replay_url"] = str(replay_url).strip()
 
     body, status = relay_to_bot(
         "POST",

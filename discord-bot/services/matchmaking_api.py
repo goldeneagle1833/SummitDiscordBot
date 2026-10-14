@@ -22,6 +22,7 @@ from cogs.lfg.voice import (
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
 from repositories.limited_repo import get_active_arena_run
 from repositories.pairing_bans_repo import get_pairing_ban, pairing_ban_message
+from repositories.elo_repo import set_pairing_replay
 from services.avatar_mode import (
     AVATAR_QUEUE_TYPES,
     DECK_REQUIRED_MESSAGE,
@@ -321,6 +322,13 @@ async def start_matchmaking_api(bot):
         )
         fields = _result_fields(payload)
         logger.info("SO report_result normalized fields: %s", fields)
+        # Not sent today, but take a replay link if Sorcery Online includes one
+        replay_url = _pick(payload, "replay_url", "replayUrl")
+        if replay_url and fields["queue_type"] != "limited":
+            try:
+                set_pairing_replay(int(request.match_info["pairing_id"]), replay_url)
+            except Exception as exc:
+                logger.warning("Could not save Sorcery Online replay link: %r", exc)
         try:
             result = await record_sorcery_online_result(
                 bot,

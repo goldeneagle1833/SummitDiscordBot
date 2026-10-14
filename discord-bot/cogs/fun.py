@@ -54,6 +54,7 @@ FROSTSHART_BLOCKED_SHOP_COMMANDS = frozenset(
         "big_banana",
         "star",
         "mushroom",
+        "fartabundance",
         "bobomb",
         "fart_star",
         "evil_star",
@@ -99,7 +100,13 @@ def drunken_case(text):
     return "".join(out)
 
 import config
-from cogs.fart_flavor import compose_fart_body, fart_roll_blurb, pick_fartlord_proclamation
+from cogs.fart_flavor import (
+    compose_abundance_fart_body,
+    compose_abundance_roll_line,
+    compose_fart_body,
+    fart_roll_blurb,
+    pick_fartlord_proclamation,
+)
 from utils.text import find_best_command_match
 from utils.checks import is_bot_admin
 
@@ -1541,6 +1548,17 @@ class FunCog(commands.Cog):
             inline=False,
         )
 
+        embed.add_field(
+            name="🍄 Roll Buffs (Shop)",
+            value=(
+                "`!mushroom` - Next fart rolls twice, keep the higher (5 pts, once/week)\n"
+                "`!fartabundance` / `!abundancefart` - Pay 500, get 400 back. "
+                "Next `!fart` rolls twice and you keep both "
+                "(once/week, separate from `!mushroom`, does not stack)"
+            ),
+            inline=False,
+        )
+
         # Separate daily bonus (does not consume !fart)
         embed.add_field(
             name="📆 Separate Daily Bonus",
@@ -1594,6 +1612,120 @@ class FunCog(commands.Cog):
 
         await ctx.send(embed=embed)
 
+    def _ensure_roll_buff_tables(self, cur):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS lucky_charms (
+                user_id INTEGER PRIMARY KEY,
+                activated_at TEXT
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS abundance_charms (
+                user_id INTEGER PRIMARY KEY,
+                activated_at TEXT
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS lucky_charm_usage (
+                user_id INTEGER,
+                command_name TEXT,
+                last_used TEXT,
+                PRIMARY KEY (user_id, command_name)
+            )
+        """)
+
+    def consume_fart_roll_buff(self, user_id, roll, roll2, *, allow_abundance=False):
+        """Consume one pending roll buff.
+
+        Returns (mode, points, rolls).
+        Abundance sums both rolls. Mushroom keeps the higher roll.
+        At most one buff applies. Abundance is only consumed from !fart
+        (allow_abundance=True); !fart_gift and !fartprediction leave it armed.
+        If both buffs are somehow active, abundance is used and mushroom stays.
+        """
+        mode = None
+        conn = None
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_roll_buff_tables(cur)
+            if allow_abundance:
+                cur.execute(
+                    "SELECT 1 FROM abundance_charms WHERE user_id = ?",
+                    (user_id,),
+                )
+                if cur.fetchone():
+                    cur.execute(
+                        "DELETE FROM abundance_charms WHERE user_id = ?",
+                        (user_id,),
+                    )
+                    conn.commit()
+                    mode = "abundance"
+            if mode is None:
+                cur.execute(
+                    "SELECT 1 FROM lucky_charms WHERE user_id = ?",
+                    (user_id,),
+                )
+                if cur.fetchone():
+                    cur.execute(
+                        "DELETE FROM lucky_charms WHERE user_id = ?",
+                        (user_id,),
+                    )
+                    conn.commit()
+                    mode = "mushroom"
+        except sqlite3.Error as e:
+            logger.error(f"Error checking fart roll buff: {e}")
+        finally:
+            if conn is not None:
+                conn.close()
+
+        if mode == "abundance":
+            return "abundance", roll + roll2, (roll, roll2)
+        if mode == "mushroom":
+            best = max(roll, roll2)
+            return "mushroom", best, (best,)
+        return None, roll, (roll,)
+
+    async def _announce_abundance_fart(self, ctx, rolls, now):
+        """Save both abundance rolls and send them as one fart."""
+        lines = []
+        embeds = []
+        total = 0
+        for index, roll in enumerate(rolls, start=1):
+            fart_message, fart_type = self.classify_fart_roll(roll)
+            uber_prefix, uber_embed, uber_variant = self.maybe_uber_rare_curio(
+                fart_type, ctx.author.id
+            )
+            variant_effect_msg = await self.apply_uber_rare_variant_effect(
+                ctx, ctx.author.id, uber_variant
+            )
+            stamp = now + datetime.timedelta(seconds=index - 1)
+            try:
+                self.save_fart_type(
+                    ctx.author.id, ctx.author.global_name, fart_type, roll, stamp
+                )
+            except sqlite3.Error as e:
+                logger.error(f"Error saving abundance fart type: {e}")
+                await ctx.send(
+                    "⚠️ There was an error saving your fart type, but continuing..."
+                )
+            blurb = fart_roll_blurb(fart_message, fart_type, uber_variant)
+            lines.append(
+                compose_abundance_roll_line(
+                    index, uber_prefix, variant_effect_msg, blurb, roll
+                )
+            )
+            if uber_embed is not None:
+                embeds.append(uber_embed)
+            total += roll
+
+        self.save_fart_score(now, ctx.author.id, ctx.author.global_name, total)
+        body = compose_abundance_fart_body(lines, total)
+        if embeds:
+            await ctx.send(body, embeds=embeds[:10])
+        else:
+            await ctx.send(body)
+
     @commands.command()
     async def fart(self, ctx):
         """Let out a magical fart once per day for points!"""
@@ -1645,88 +1777,75 @@ class FunCog(commands.Cog):
                 )
                 return
 
-            # Roll and point calculation
+            # Roll and point calculation. Abundance sums both rolls; mushroom
+            # keeps the higher one. Only !fart consumes abundance.
             roll = randrange(1, 101)
-
-            # Check for Lucky Charm
-            lucky_charm_active = False
-            try:
-                conn = sqlite3.connect("fart_scores.db")
-                cur = conn.cursor()
-                cur.execute(
-                    "SELECT activated_at FROM lucky_charms WHERE user_id = ?",
-                    (ctx.author.id,),
-                )
-                charm_result = cur.fetchone()
-
-                if charm_result:
-                    # Lucky charm is active - roll twice and take higher
-                    lucky_charm_active = True
-                    roll2 = randrange(1, 101)
-                    original_roll = roll
-                    roll = max(roll, roll2)
-
-                    # Remove the lucky charm after use
-                    cur.execute(
-                        "DELETE FROM lucky_charms WHERE user_id = ?",
-                        (ctx.author.id,),
-                    )
-                    conn.commit()
-
-                conn.close()
-            except sqlite3.Error as e:
-                logger.error(f"Error checking lucky charm: {e}")
-                if "conn" in locals():
-                    conn.close()
-
-            # Determine fart type based on roll (higher is better now)
-            fart_message, fart_type = self.classify_fart_roll(roll)
-            uber_prefix, uber_embed, uber_variant = self.maybe_uber_rare_curio(
-                fart_type, ctx.author.id
+            roll2 = randrange(1, 101)
+            mode, points_earned, _counted = self.consume_fart_roll_buff(
+                ctx.author.id, roll, roll2, allow_abundance=True
             )
-            variant_effect_msg = await self.apply_uber_rare_variant_effect(
-                ctx, ctx.author.id, uber_variant
-            )
-
             now = datetime.datetime.now()
-            points_earned = roll  # Points equal to roll value
 
-            # Save fart type with error handling
-            try:
-                self.save_fart_type(
-                    ctx.author.id, ctx.author.global_name, fart_type, roll, now
-                )
-            except sqlite3.Error as e:
-                logger.error(f"Error saving fart type: {e}")
-                await ctx.send(
-                    "⚠️ There was an error saving your fart type, but continuing..."
-                )
+            if mode == "abundance":
+                try:
+                    await self._announce_abundance_fart(ctx, (roll, roll2), now)
+                except Exception as e:
+                    logger.error(f"Error processing fart mechanics: {e}")
+                    await ctx.send(
+                        "⚠️ There was an error processing your fart. Please try again later."
+                    )
+                    return
+            else:
+                lucky_charm_active = mode == "mushroom"
+                roll = points_earned
 
-            try:
-                blurb = fart_roll_blurb(fart_message, fart_type, uber_variant)
-                self.save_fart_score(
-                    now, ctx.author.id, ctx.author.global_name, points_earned
+                # Determine fart type based on roll (higher is better now)
+                fart_message, fart_type = self.classify_fart_roll(roll)
+                uber_prefix, uber_embed, uber_variant = self.maybe_uber_rare_curio(
+                    fart_type, ctx.author.id
                 )
-                mushroom_boost_msg = (
-                    "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
-                )
-                await ctx.send(
-                    compose_fart_body(
-                        uber_prefix,
-                        variant_effect_msg,
-                        mushroom_boost_msg,
-                        blurb,
-                        f"You earned {points_earned} points.",
-                    ),
-                    embed=uber_embed,
+                variant_effect_msg = await self.apply_uber_rare_variant_effect(
+                    ctx, ctx.author.id, uber_variant
                 )
 
-            except Exception as e:
-                logger.error(f"Error processing fart mechanics: {e}")
-                await ctx.send(
-                    "⚠️ There was an error processing your fart. Please try again later."
-                )
-                return
+                points_earned = roll  # Points equal to roll value
+
+                # Save fart type with error handling
+                try:
+                    self.save_fart_type(
+                        ctx.author.id, ctx.author.global_name, fart_type, roll, now
+                    )
+                except sqlite3.Error as e:
+                    logger.error(f"Error saving fart type: {e}")
+                    await ctx.send(
+                        "⚠️ There was an error saving your fart type, but continuing..."
+                    )
+
+                try:
+                    blurb = fart_roll_blurb(fart_message, fart_type, uber_variant)
+                    self.save_fart_score(
+                        now, ctx.author.id, ctx.author.global_name, points_earned
+                    )
+                    mushroom_boost_msg = (
+                        "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
+                    )
+                    await ctx.send(
+                        compose_fart_body(
+                            uber_prefix,
+                            variant_effect_msg,
+                            mushroom_boost_msg,
+                            blurb,
+                            f"You earned {points_earned} points.",
+                        ),
+                        embed=uber_embed,
+                    )
+
+                except Exception as e:
+                    logger.error(f"Error processing fart mechanics: {e}")
+                    await ctx.send(
+                        "⚠️ There was an error processing your fart. Please try again later."
+                    )
+                    return
 
             # Update leader role
             try:
@@ -1809,31 +1928,13 @@ class FunCog(commands.Cog):
                 )
                 return
 
-            # Roll (gifter's mushroom boost applies)
+            # Roll. Mushroom applies; abundance stays armed until !fart.
             roll = randrange(1, 101)
-            lucky_charm_active = False
-            try:
-                conn = sqlite3.connect("fart_scores.db")
-                cur = conn.cursor()
-                cur.execute(
-                    "SELECT activated_at FROM lucky_charms WHERE user_id = ?",
-                    (ctx.author.id,),
-                )
-                charm_result = cur.fetchone()
-                if charm_result:
-                    lucky_charm_active = True
-                    roll2 = randrange(1, 101)
-                    roll = max(roll, roll2)
-                    cur.execute(
-                        "DELETE FROM lucky_charms WHERE user_id = ?",
-                        (ctx.author.id,),
-                    )
-                    conn.commit()
-                conn.close()
-            except sqlite3.Error as e:
-                logger.error(f"Error checking lucky charm for fart_gift: {e}")
-                if "conn" in locals():
-                    conn.close()
+            roll2 = randrange(1, 101)
+            mode, roll, _counted = self.consume_fart_roll_buff(
+                ctx.author.id, roll, roll2, allow_abundance=False
+            )
+            lucky_charm_active = mode == "mushroom"
 
             fart_message, fart_type = self.classify_fart_roll(roll)
             uber_prefix, uber_embed, uber_variant = self.maybe_uber_rare_curio(
@@ -2473,32 +2574,12 @@ class FartPredictionView(discord.ui.View):
             return
 
         roll = randrange(1, 101)
-
-        mushroom_boost_active = False
-        try:
-            conn = sqlite3.connect("fart_scores.db")
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT activated_at FROM lucky_charms WHERE user_id = ?",
-                (self.user_id,),
-            )
-            charm_result = cur.fetchone()
-
-            if charm_result:
-                mushroom_boost_active = True
-                roll2 = randrange(1, 101)
-                roll = max(roll, roll2)
-                cur.execute(
-                    "DELETE FROM lucky_charms WHERE user_id = ?",
-                    (self.user_id,),
-                )
-                conn.commit()
-
-            conn.close()
-        except sqlite3.Error as e:
-            logger.error(f"Error checking mushroom boost in prediction: {e}")
-            if "conn" in locals():
-                conn.close()
+        roll2 = randrange(1, 101)
+        # Abundance is only for !fart, so a prediction leaves that buff armed.
+        mode, roll, _counted = cog.consume_fart_roll_buff(
+            self.user_id, roll, roll2, allow_abundance=False
+        )
+        mushroom_boost_active = mode == "mushroom"
 
         fart_message, fart_type = cog.classify_fart_roll(roll)
         uber_prefix, uber_embed, uber_variant = cog.maybe_uber_rare_curio(

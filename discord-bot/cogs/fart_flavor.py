@@ -138,6 +138,24 @@ def compose_fart_body(uber_prefix, variant_effect_msg, mushroom_boost_msg, blurb
     return f"{head}{points_clause}"
 
 
+def compose_abundance_roll_line(index, uber_prefix, variant_effect_msg, blurb, points):
+    """One of the two Fart Abundance rolls. Uber-rares keep their own banner."""
+    head = f"{uber_prefix}{variant_effect_msg}"
+    if blurb:
+        return f"{head}**Roll {index}:** {blurb} ({points})"
+    return f"{head}**Roll {index}:** {points} points."
+
+
+def compose_abundance_fart_body(roll_lines, total_points):
+    """Both abundance rolls, then the combined point total."""
+    shown = [line for line in roll_lines if line]
+    header = "**FART ABUNDANCE!** Both rolls count.\n"
+    footer = f"Together you earned **{total_points}** points."
+    if shown:
+        return header + "\n".join(shown) + "\n" + footer
+    return f"{header}{footer}"
+
+
 FARTLORD_PROCLAMATIONS = (
     "I am the Fart Lord! All lesser breezes shall bow, and the air itself pays rent to me! 💨",
     "By decree of the throne of stink: my reign is fragrant, my word is wind, and my court is packed! 💨",

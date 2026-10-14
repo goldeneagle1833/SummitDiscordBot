@@ -693,6 +693,7 @@ class TestFartRepositoryReset:
             "fart_history",
             "command_usage",
             "lucky_charms",
+            "abundance_charms",
             "lucky_charm_usage",
             "fart_leader_only_once",
             "evil_star_usage",
@@ -773,6 +774,42 @@ class TestFartRepositoryReset:
         result = repo.evil_start()
         assert captured == {"a": -250, "b": 250}
         assert result["players"][0]["score"] == 123
+
+    def test_existing_shop_gains_fart_abundance(self, tmp_path):
+        from repositories.fart import FartRepository
+
+        db_path = tmp_path / "fart_scores.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE fart_shop_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                label TEXT NOT NULL,
+                description TEXT,
+                cost INTEGER NOT NULL DEFAULT 0,
+                damage INTEGER NOT NULL DEFAULT 0,
+                cooldown TEXT NOT NULL DEFAULT 'none',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                effect TEXT
+            )
+        """)
+        conn.execute(
+            "INSERT INTO fart_shop_items (name, label, cost, sort_order) "
+            "VALUES ('mushroom', 'Mushroom', 5, 1)"
+        )
+        conn.commit()
+        conn.close()
+
+        repo = FartRepository(db_path=db_path)
+        items = {item["name"]: item for item in repo.get_shop_items()}
+        abundance = items["fartabundance"]
+        assert abundance["cost"] == 500
+        assert abundance["cooldown"] == "weekly"
+        assert abundance["effect"]["effect"] == "sum_double_roll"
+        assert abundance["effect"]["refund"] == 400
+        assert abundance["effect"]["independent_of"] == "mushroom"
+        assert items["mushroom"]["cost"] == 5
 
 
 def _make_event(tmp_path, decks):

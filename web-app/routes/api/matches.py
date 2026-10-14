@@ -5,7 +5,7 @@ import re
 from flask import Blueprint, jsonify, request
 
 from services.match import MatchService
-from utils.auth import get_current_user, require_api_key
+from utils.auth import get_current_user, is_admin, require_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -86,10 +86,12 @@ def matches_date_range():
 
 
 def _only_players_see_replays(matches: list[dict]) -> list[dict]:
-    """Keep each replay link for the two players in that match only.
+    """Keep each replay link for the two players in that match (and admins).
 
     A replay shows both decks, and ranked deck lists stay private.
     """
+    if is_admin():
+        return matches
     user = get_current_user()
     viewer = str(user["id"]).removeprefix("google_") if user else None
     for match in matches:

@@ -140,6 +140,23 @@ class TestMatchRoutes:
             sess["user_id"] = "3"
         assert replays() == {"1": None, "3": None}
 
+    def test_admin_sees_every_replay_link(self, admin_session, match_db):
+        import sqlite3
+        seed_matches(match_db, [
+            {"winner_id": "1", "loser_id": "2", "timestamp": "2025-03-10 10:00:00"},
+        ])
+        replay = "https://playsorceryonline.com/replay/abc123"
+        conn = sqlite3.connect(str(match_db))
+        try:
+            conn.execute("ALTER TABLE match_records ADD COLUMN replay_url TEXT")
+        except sqlite3.OperationalError:
+            pass
+        conn.execute("UPDATE match_records SET replay_url = ?", (replay,))
+        conn.commit()
+        conn.close()
+        resp = admin_session.get("/api/match-history?date=2025-03-10")
+        assert [m["replay_url"] for m in resp.get_json()] == [replay]
+
     def test_match_history_recap(self, client, match_db):
         import json
         import sqlite3

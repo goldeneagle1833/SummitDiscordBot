@@ -5,7 +5,7 @@ import re
 from flask import Blueprint, jsonify, request
 
 from services.match import MatchService
-from utils.auth import require_api_key
+from utils.auth import get_current_user, require_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +85,19 @@ def matches_date_range():
         return jsonify({"error": "Internal server error"}), 500
 
 
+def _only_players_see_replays(matches: list[dict]) -> list[dict]:
+    """Keep each replay link for the two players in that match only.
+
+    A replay shows both decks, and ranked deck lists stay private.
+    """
+    user = get_current_user()
+    viewer = str(user["id"]).removeprefix("google_") if user else None
+    for match in matches:
+        if viewer not in (match.get("winner_id"), match.get("loser_id")):
+            match["replay_url"] = None
+    return matches
+
+
 @matches_bp.route("/match-history")
 def match_history():
     """Get match history, optionally filtered by date."""
@@ -92,7 +105,7 @@ def match_history():
         selected_date = request.args.get("date")
         service = MatchService()
         matches = service.get_match_history(date=selected_date)
-        return jsonify(matches)
+        return jsonify(_only_players_see_replays(matches))
     except Exception as e:
         logger.error(f"Error fetching match history: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500

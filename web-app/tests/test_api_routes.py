@@ -123,11 +123,22 @@ class TestMatchRoutes:
         conn.execute("UPDATE match_records SET replay_url = ? WHERE winner_id = '1'", (replay,))
         conn.commit()
         conn.close()
-        resp = client.get("/api/match-history?date=2025-03-10")
-        assert resp.status_code == 200
-        by_winner = {m["winner_id"]: m for m in resp.get_json()}
-        assert by_winner["1"]["replay_url"] == replay
-        assert by_winner["3"]["replay_url"] is None
+        def replays():
+            resp = client.get("/api/match-history?date=2025-03-10")
+            assert resp.status_code == 200
+            return {m["winner_id"]: m["replay_url"] for m in resp.get_json()}
+
+        # Logged out: nobody sees the link
+        assert replays() == {"1": None, "3": None}
+        # A player in the match sees it, winner or loser
+        for player in ("1", "2"):
+            with client.session_transaction() as sess:
+                sess["user_id"] = player
+            assert replays() == {"1": replay, "3": None}
+        # Anyone else does not
+        with client.session_transaction() as sess:
+            sess["user_id"] = "3"
+        assert replays() == {"1": None, "3": None}
 
     def test_match_history_recap(self, client, match_db):
         import json

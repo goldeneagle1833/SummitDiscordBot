@@ -3,8 +3,6 @@ import { get, post, put, patch, del } from './client'
 // Buyer
 export const getProducts = () => get('/api/store/products')
 export const getStorefronts = () => get('/api/store/storefronts')
-export const applyForStorefront = (data) => post('/api/store/storefront-applications', data)
-export const getMyStorefrontApplications = () => get('/api/store/storefront-applications/mine')
 export const searchMembers = (q) => get(`/api/store/user-search?q=${encodeURIComponent(q)}`)
 export const getCheckoutPrefill = () => get('/api/store/checkout/prefill')
 export const createCheckout = (payload) => post('/api/store/checkout', payload)

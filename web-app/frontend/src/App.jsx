@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef } from 'react'
-import { createBrowserRouter, RouterProvider, Outlet, useLocation } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import Nav from '@/components/layout/Nav'
 import Footer from '@/components/layout/Footer'
@@ -80,7 +80,6 @@ const Store = lazyPage(() => import('@/pages/Store'))
 const StoreCheckout = lazyPage(() => import('@/pages/StoreCheckout'))
 const StoreSuccess = lazyPage(() => import('@/pages/StoreSuccess'))
 const StoreCancelled = lazyPage(() => import('@/pages/StoreCancelled'))
-const StoreApply = lazyPage(() => import('@/pages/StoreApply'))
 const MyOrders = lazyPage(() => import('@/pages/MyOrders'))
 const Creator = lazyPage(() => import('@/pages/Creator'))
 const Feedback = lazyPage(() => import('@/pages/Feedback'))
@@ -253,7 +252,8 @@ const router = createBrowserRouter([
       { path: '/store/success', element: <StoreSuccess /> },
       { path: '/store/cancelled', element: <StoreCancelled /> },
       { path: '/store/orders', element: <LoginGuard><MyOrders /></LoginGuard> },
-      { path: '/store/apply', element: <LoginGuard><StoreApply /></LoginGuard> },
+      // Storefront applications are closed; old links land on the store
+      { path: '/store/apply', element: <Navigate to="/store" replace /> },
       { path: '/admin/store', element: <StoreAdminGuard><StoreAdmin /></StoreAdminGuard> },
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
       { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },

@@ -156,10 +156,10 @@ describe('Store storefront tabs', () => {
     getProducts.mockResolvedValue({ products: [{ ...TOKEN, storefront_id: 1 }, MAT] })
   })
 
-  it('titles the page and links to the storefront application', async () => {
+  it('titles the page and no longer offers storefront applications', async () => {
     renderStore()
     expect(await screen.findByRole('heading', { name: 'Sorcery Community Store' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Apply to have a storefront' })).toHaveAttribute('href', '/store/apply')
+    expect(screen.queryByRole('link', { name: 'Apply to have a storefront' })).not.toBeInTheDocument()
   })
 
   it('shows one storefront at a time', async () => {

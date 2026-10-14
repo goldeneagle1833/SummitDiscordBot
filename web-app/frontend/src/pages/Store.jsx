@@ -176,12 +176,6 @@ export default function Store() {
               My orders
             </Link>
           )}
-          <Link
-            to="/store/apply"
-            className="text-sm font-medium px-3 py-1.5 rounded-lg border border-brand-line bg-brand-panel text-brand-sky hover:border-primary/60 transition-colors"
-          >
-            Apply to have a storefront
-          </Link>
         </div>
       </div>
 

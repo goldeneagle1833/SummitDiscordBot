@@ -8,6 +8,7 @@ import time
 
 import config
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
+from cogs.lfg.voice_offer import offer_no_voice_game
 from cogs.lfg.queue_definitions import queue_definition, queue_is_enabled
 from cogs.lfg.helpers import correction_tip, match_type_presentation
 from cogs.lfg.voice import (
@@ -581,6 +582,13 @@ async def _process_queue_join(
                 voice=voice,
                 avatar=join_avatar,
             )
+
+    # A no-voice player with no match: ask waiting voice players if they'd play without voice
+    if not matched_user_id and voice == NO_VOICE and queue_has_voice_choice(queue_type):
+        try:
+            await offer_no_voice_game(bot, queue_type, interaction.user.id)
+        except Exception as e:
+            logger.error(f"Failed to send no-voice offers: {e}")
 
     # Notify limited ping channel when someone is waiting (no match found)
     if not matched_user_id and queue_type == "limited":

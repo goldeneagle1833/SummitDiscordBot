@@ -140,6 +140,37 @@ class TestMatchRoutes:
             sess["user_id"] = "3"
         assert replays() == {"1": None, "3": None}
 
+    def test_replay_is_public_when_both_players_opt_in(self, client, match_db):
+        import sqlite3
+        from repositories.user_profiles import UserProfileRepository
+        seed_matches(match_db, [
+            {"winner_id": "1", "loser_id": "2", "timestamp": "2025-03-10 10:00:00"},
+            {"winner_id": "3", "loser_id": "4", "timestamp": "2025-03-10 11:00:00"},
+        ])
+        replay = "https://playsorceryonline.com/replay/abc123"
+        conn = sqlite3.connect(str(match_db))
+        try:
+            conn.execute("ALTER TABLE match_records ADD COLUMN replay_url TEXT")
+        except sqlite3.OperationalError:
+            pass
+        conn.execute("UPDATE match_records SET replay_url = ?", (replay,))
+        for user_id in ("1", "google_2", "3"):
+            conn.execute(
+                "INSERT INTO user_profiles (user_id, provider, display_name, first_login_at, last_login_at)"
+                " VALUES (?, 'discord', 'P', 'now', 'now')",
+                (user_id,),
+            )
+        conn.commit()
+        conn.close()
+        repo = UserProfileRepository(match_db)
+        for user_id in ("1", "google_2", "3"):
+            repo.set_profile_visibility(user_id, {"replays": True})
+
+        resp = client.get("/api/match-history?date=2025-03-10")
+        replays = {m["winner_id"]: m["replay_url"] for m in resp.get_json()}
+        # 1 and 2 both opted in; 4 never did, so 3's match stays private
+        assert replays == {"1": replay, "3": None}
+
     def test_admin_sees_every_replay_link(self, admin_session, match_db):
         import sqlite3
         seed_matches(match_db, [

@@ -481,6 +481,7 @@ class UserProfileRepository:
         "recorded_games",
         "deck_urls",
         "deck_snapshots",
+        "replays",
     ]
 
     def get_profile_visibility(self, user_id: str) -> dict:
@@ -504,6 +505,44 @@ class UserProfileRepository:
             except (json.JSONDecodeError, TypeError):
                 pass
         return defaults
+
+    def users_with_public_section(self, user_ids, section: str) -> set[str]:
+        """Which of these players made a profile section public.
+
+        Ids come back bare (no ``google_`` prefix), as the bot's tables use.
+        """
+        wanted = {}
+        for user_id in user_ids or []:
+            if user_id:
+                wanted[str(user_id)] = str(user_id)
+                wanted[f"google_{user_id}"] = str(user_id)
+        if not wanted or section not in self.VISIBILITY_SECTIONS:
+            return set()
+
+        conn = self._get_connection()
+        cur = conn.cursor()
+        public = set()
+        keys = list(wanted)
+        try:
+            for start in range(0, len(keys), 500):
+                chunk = keys[start:start + 500]
+                placeholders = ",".join("?" * len(chunk))
+                cur.execute(
+                    "SELECT user_id, profile_public_sections FROM user_profiles"
+                    f" WHERE user_id IN ({placeholders})",
+                    chunk,
+                )
+                for user_id, raw in cur.fetchall():
+                    try:
+                        if raw and json.loads(raw).get(section):
+                            public.add(wanted[str(user_id)])
+                    except (json.JSONDecodeError, TypeError, AttributeError):
+                        pass
+        except sqlite3.OperationalError:
+            pass  # No visibility column yet: nobody has opted in
+        finally:
+            conn.close()
+        return public
 
     def set_profile_visibility(self, user_id: str, sections: dict) -> bool:
         """Update profile visibility settings. Only valid section keys are stored."""

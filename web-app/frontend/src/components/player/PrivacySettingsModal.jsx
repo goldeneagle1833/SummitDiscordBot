@@ -10,6 +10,7 @@ const SECTION_LABELS = {
   recorded_games: 'Self-Reported Games',
   deck_urls: 'Deck URLs',
   deck_snapshots: 'Deck Snapshots',
+  replays: 'Game Replays',
 }
 
 const SECTION_ORDER = [
@@ -21,6 +22,7 @@ const SECTION_ORDER = [
   'recorded_games',
   'deck_urls',
   'deck_snapshots',
+  'replays',
 ]
 
 export default function PrivacySettingsModal({ playerId, onClose, onSaved }) {

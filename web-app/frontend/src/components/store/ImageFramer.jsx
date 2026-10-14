@@ -3,7 +3,7 @@ import FramedImage, { DEFAULT_FRAMING, MIN_ZOOM, MAX_ZOOM, framedLayout } from '
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
-// Live previews of a product image at the store card's size, with drag to
+// Live preview of a product image in the store card's frame, with drag to
 // reposition and sliders for position and zoom.
 export default function ImageFramer({ url, framing, onChange }) {
   const f = { ...DEFAULT_FRAMING, ...framing }
@@ -22,6 +22,17 @@ export default function ImageFramer({ url, framing, onChange }) {
     const { w, h } = framedLayout(box.width, box.height, img.naturalWidth, img.naturalHeight, f)
     const nonZero = (v) => (Math.abs(v) < 1 ? (v < 0 ? -1 : 1) : v)
     return { x: nonZero(box.width - w), y: nonZero(box.height - h) }
+  }
+
+  // Zoom at which the whole picture just fits inside the card
+  const fitWhole = () => {
+    const box = boxRef.current?.getBoundingClientRect()
+    const img = imgRef.current
+    if (!box?.width || !img?.naturalWidth) return update({ zoom: 0.5, x: 50, y: 50 })
+    const rx = box.width / img.naturalWidth
+    const ry = box.height / img.naturalHeight
+    const zoom = Math.round((Math.min(rx, ry) / Math.max(rx, ry)) * 100) / 100
+    update({ zoom: Math.max(MIN_ZOOM, zoom), x: 50, y: 50 })
   }
 
   const onPointerDown = (e) => {
@@ -54,36 +65,27 @@ export default function ImageFramer({ url, framing, onChange }) {
         value={f[key]}
         onChange={(e) => update({ [key]: Number(e.target.value) })}
         aria-label={label}
-        className="flex-1 accent-secondary"
+        className="flex-1 min-w-0 accent-secondary"
       />
       {shown && <span className="w-10 text-right tabular-nums">{shown}</span>}
     </label>
   )
 
   return (
-    <div className="rounded border border-border bg-bg-elevated/40 p-3 space-y-3">
+    <div className="min-w-0 rounded border border-border bg-bg-elevated/40 p-3 space-y-3">
       <p className="text-xs text-text-muted">
-        Drag the picture to move it. Use Zoom to go closer, or below 100% to show more of the picture.
+        Drag the picture to move it. Use Zoom to go closer, or below 100% to show more of it. Any empty space shows as black. Store cards look exactly like this on every screen size.
       </p>
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="space-y-1 max-w-full">
-          <p className="text-[11px] uppercase tracking-wide text-text-muted">Desktop card</p>
-          <div
-            ref={boxRef}
-            data-testid="framing-preview"
-            className="w-[440px] max-w-full h-48 rounded border border-border cursor-grab active:cursor-grabbing touch-none"
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-          >
-            <FramedImage src={url} alt="Store card preview" framing={f} imgRef={imgRef} className="w-full h-full" />
-          </div>
-        </div>
-        <div className="space-y-1 max-w-full">
-          <p className="text-[11px] uppercase tracking-wide text-text-muted">Phone card</p>
-          <FramedImage src={url} alt="" framing={f} className="w-[340px] max-w-full h-48 rounded border border-border" />
-        </div>
+      <div
+        ref={boxRef}
+        data-testid="framing-preview"
+        className="w-full max-w-md aspect-[3/2] rounded border border-border cursor-grab active:cursor-grabbing touch-none"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      >
+        <FramedImage src={url} alt="Store card preview" framing={f} imgRef={imgRef} className="w-full h-full" />
       </div>
       {slider('Zoom', 'zoom', MIN_ZOOM, MAX_ZOOM, 0.05, `${Math.round(f.zoom * 100)}%`)}
       <div className="grid gap-2 sm:grid-cols-2">
@@ -93,7 +95,7 @@ export default function ImageFramer({ url, framing, onChange }) {
       <div className="flex flex-wrap gap-4">
         <button
           type="button"
-          onClick={() => update({ zoom: MIN_ZOOM })}
+          onClick={fitWhole}
           className="text-xs text-primary hover:underline"
         >
           Fit whole image

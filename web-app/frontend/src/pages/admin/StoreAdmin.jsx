@@ -202,7 +202,7 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
           </button>
         )}
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {!editing && storefronts.length > 1 && defaultStorefrontId == null && (
           <select
             className={`${inputCls} sm:col-span-2`}
@@ -235,7 +235,7 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
           onChange={set('max_per_user_monthly')}
         />
 
-        <div className="sm:col-span-2 space-y-2">
+        <div className="sm:col-span-2 min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-3">
             <input
               ref={fileRef}
@@ -327,7 +327,7 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
             />
           )}
           <p className="text-xs text-text-muted">
-            JPG, PNG, WEBP or GIF, up to {MAX_IMAGE_MB} MB each. Best size is 1200 × 600 (wide). Listings crop images to fit, so keep the product centered.
+            JPG, PNG, WEBP or GIF, up to {MAX_IMAGE_MB} MB each. Store cards are 3:2, so 1200 × 800 fits best. Use the preview to frame each image.
           </p>
         </div>
       </div>
@@ -1505,12 +1505,12 @@ export default function StoreAdmin() {
         </p>
       )}
 
-      <div className="flex gap-2 border-b border-border mb-6 mt-4">
+      <div className="flex flex-wrap gap-x-1 sm:gap-x-2 border-b border-border mb-6 mt-4">
         {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            className={`px-2.5 sm:px-4 py-2 text-sm whitespace-nowrap font-medium border-b-2 -mb-px transition-colors ${
               current === t.key
                 ? 'border-secondary text-secondary'
                 : 'border-transparent text-text-muted hover:text-text'

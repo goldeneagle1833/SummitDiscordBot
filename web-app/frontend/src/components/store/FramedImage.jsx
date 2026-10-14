@@ -2,18 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 
 // A product image placed in its box by the framing saved in Store Admin:
 // { x, y, zoom }. x/y are percents like object-position. zoom is relative
-// to filling the box (1 = cover, the old default); below 1 zooms out, down
-// to showing the whole image with the box color around it.
+// to filling the box (1 = cover, the old default); below 1 zooms out, even
+// past the image's edges, with black filling the space around it.
 export const DEFAULT_FRAMING = { x: 50, y: 50, zoom: 1 }
-export const MIN_ZOOM = 0.25
+export const MIN_ZOOM = 0.1
 export const MAX_ZOOM = 3
 
 // Pixel size and offset of the image inside a cw x ch box
 export function framedLayout(cw, ch, nw, nh, framing) {
   const { x, y, zoom } = { ...DEFAULT_FRAMING, ...framing }
   const cover = Math.max(cw / nw, ch / nh)
-  const contain = Math.min(cw / nw, ch / nh)
-  const scale = Math.max(cover * zoom, contain)
+  const scale = cover * zoom
   const w = nw * scale
   const h = nh * scale
   return { w, h, left: ((cw - w) * x) / 100, top: ((ch - h) * y) / 100 }
@@ -25,7 +24,7 @@ export function framingStyle(framing) {
   return {
     objectPosition: `${x}% ${y}%`,
     transformOrigin: `${x}% ${y}%`,
-    transform: zoom > 1 ? `scale(${zoom})` : undefined,
+    transform: zoom !== 1 ? `scale(${zoom})` : undefined,
   }
 }
 
@@ -57,7 +56,7 @@ export default function FramedImage({ src, alt, framing, className = '', imgRef,
     : framingStyle(framing)
 
   return (
-    <div ref={boxRef} className={`relative overflow-hidden bg-bg-elevated ${className}`}>
+    <div ref={boxRef} className={`relative overflow-hidden bg-black ${className}`}>
       <img
         ref={imgRef}
         src={src}

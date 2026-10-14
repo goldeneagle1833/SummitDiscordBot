@@ -66,7 +66,7 @@ function ProductGallery({ product }) {
 
   if (images.length === 0) {
     return (
-      <div className="w-full h-48 bg-gradient-to-br from-bg-elevated to-bg-surface flex items-center justify-center">
+      <div className="w-full aspect-[3/2] bg-gradient-to-br from-bg-elevated to-bg-surface flex items-center justify-center">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" className="text-border">
           <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
           <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
@@ -78,7 +78,7 @@ function ProductGallery({ product }) {
 
   return (
     <div>
-      <FramedImage src={current} alt={product.name} framing={product.image_framing?.[current]} className="w-full h-48" />
+      <FramedImage src={current} alt={product.name} framing={product.image_framing?.[current]} className="w-full aspect-[3/2]" />
       {images.length > 1 && (
         <div className="flex gap-1.5 p-2 overflow-x-auto bg-bg-elevated/60" role="list" aria-label={`${product.name} images`}>
           {images.map((url, i) => (

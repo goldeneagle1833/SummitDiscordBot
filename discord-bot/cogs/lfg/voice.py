@@ -4,7 +4,8 @@ Voice is a preference on a queue entry, not a separate queue: every player
 in Ranked stays on one ladder. A player picks ``voice`` or ``no_voice``, and
 players only pair with the same choice. There is no "either" option; an old
 ``either`` value (e.g. from an outdated client) is read as voice. Voice is the
-default when a join path gives no preference. Ranked voice matches count toward top-cut
+default when a join path gives no preference. Limited has no voice choice at
+all: players pair with whoever is waiting. Ranked voice matches count toward top-cut
 eligibility.
 """
 
@@ -13,6 +14,14 @@ NO_VOICE = "no_voice"
 LEGACY_EITHER = "either"  # retired choice, read as voice
 VOICE_PREFERENCES = (VOICE, NO_VOICE)
 DEFAULT_VOICE = VOICE
+
+# Queues with no voice choice: players join and pair with whoever is waiting.
+NO_VOICE_CHOICE_QUEUES = ("limited",)
+
+
+def queue_has_voice_choice(queue_type):
+    """Whether players pick voice or no voice when joining this queue."""
+    return queue_type not in NO_VOICE_CHOICE_QUEUES
 
 VOICE_LABELS = {
     VOICE: "🔊 Voice",

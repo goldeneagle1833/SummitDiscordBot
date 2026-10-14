@@ -49,6 +49,7 @@ from cogs.lfg.voice import (
     VOICE_ICONS,
     normalize_voice_preference,
     resolve_match_voice,
+    queue_has_voice_choice,
     voice_preferences_compatible,
 )
 from utils.database import (
@@ -922,7 +923,10 @@ class LFGCog(commands.Cog):
                     time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
                     time_remaining = entry["timeframe"] - time_elapsed
                     placeholder = SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]
-                    voice_icon = VOICE_ICONS.get(entry.get("voice"), VOICE_ICONS[DEFAULT_VOICE])
+                    voice_icon = (
+                        VOICE_ICONS.get(entry.get("voice"), VOICE_ICONS[DEFAULT_VOICE])
+                        if queue_has_voice_choice(definition["type"]) else ""
+                    )
                     details.append(f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min` {voice_icon}")
                 note = f' ({definition["status_note"]})' if definition.get("status_note") else ""
                 embed.add_field(
@@ -1123,7 +1127,8 @@ class LFGCog(commands.Cog):
         """Find a player in queue compatible with the given queue_type.
         All queue types use FIFO order (oldest first) with anti-rematch for ranked/limited.
         Casual (testing): No pairing restrictions, FIFO order (oldest first).
-        Every queue only pairs players with the same voice choice (voice or no voice).
+        Every queue but Limited only pairs players with the same voice choice
+        (voice or no voice); Limited pairs anyone.
         Returns user_id if a valid match is found, None otherwise.
         """
         now = datetime.datetime.now()
@@ -1162,7 +1167,9 @@ class LFGCog(commands.Cog):
                 logger.info(f"Skipping {user_id} - pairing ban")
                 continue
 
-            if not voice_preferences_compatible(voice, entry.get("voice")):
+            if queue_has_voice_choice(queue_type) and not voice_preferences_compatible(
+                voice, entry.get("voice")
+            ):
                 continue
 
             # Ranked/Limited: skip if they played each other in their last match

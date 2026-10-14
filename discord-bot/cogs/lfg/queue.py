@@ -16,6 +16,7 @@ from cogs.lfg.voice import (
     VOICE_LABELS,
     NO_VOICE,
     normalize_voice_preference,
+    queue_has_voice_choice,
     resolve_match_voice,
     voice_from_checkboxes,
 )
@@ -330,13 +331,16 @@ class LimitedQueueModal(discord.ui.Modal, title="Join Limited Queue"):
     def __init__(self, bot):
         super().__init__()
         self.bot = bot
-        self.voice_select = add_voice_select(self)
+        # Limited has no voice choice: players get whoever is waiting.
+        # Keep the duration field last, under the draft link.
+        self.remove_item(self.timeframe)
+        self.add_item(self.timeframe)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
         timeframe_value = parse_queue_timeframe(self.timeframe.value)
-        voice = selected_voice(self.voice_select)
+        voice = DEFAULT_VOICE
 
         active_run = get_active_arena_run(interaction.user.id)
         if active_run and active_run["status"] == "active" and active_run["wins"] < 4 and active_run["losses"] < 2:
@@ -505,7 +509,11 @@ async def _process_queue_join(
             matched_user_origin = matched_entry.get("origin", "discord")
             matched_join_avatar = matched_entry.get("avatar")
             match_type = lfg_cog.resolve_match_type(queue_type, matched_queue_type)
-            match_voice = resolve_match_voice(voice, matched_entry.get("voice"))
+            # Limited has no voice choice, so its match-found DM says neither voice nor no voice.
+            match_voice = (
+                resolve_match_voice(voice, matched_entry.get("voice"))
+                if queue_has_voice_choice(queue_type) else None
+            )
 
             if matched_ladder_info:
                 from utils.database import get_user_event_elo, save_ladder_challenge, delete_ladder_challenge
@@ -714,7 +722,7 @@ async def _process_queue_join(
                     "opponent_name": joiner_global,
                 },
             ],
-            voice=match_voice,
+            voice=bool(match_voice),
         )
 
         try:
@@ -816,7 +824,8 @@ async def _process_queue_join(
         deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
         if join_avatar:
             deck_msg += f"\n**Avatar:** {join_avatar} (locked when your match is made)"
-        deck_msg += f"\n**Voice:** {VOICE_LABELS[voice]}"
+        if queue_has_voice_choice(queue_type):
+            deck_msg += f"\n**Voice:** {VOICE_LABELS[voice]}"
         try:
             await interaction.user.send(
                 f"You have been added to the **{queue_label}** queue for {timeframe_value} minutes.{deck_msg}"

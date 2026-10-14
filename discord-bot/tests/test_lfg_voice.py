@@ -131,12 +131,18 @@ class TestVoiceMatching:
         assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=VOICE) == 111
         assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=NO_VOICE) is None
 
-    @pytest.mark.parametrize("queue_type", ["points", "ranked", "testing", "limited", "rumble"])
+    @pytest.mark.parametrize("queue_type", ["points", "ranked", "testing", "rumble"])
     def test_every_queue_respects_voice(self, lfg_cog, ctx, queue_type):
         lfg_queue[111] = entry(queue_type, 10, NO_VOICE)
         lfg_queue[222] = entry(queue_type, 5, VOICE)
         assert lfg_cog.check_if_someone_is_lfg(ctx, queue_type, voice=VOICE) == 222
         assert lfg_cog.check_if_someone_is_lfg(ctx, queue_type, voice=NO_VOICE) == 111
+
+    def test_limited_pairs_anyone_regardless_of_voice(self, lfg_cog, ctx):
+        lfg_queue[111] = entry("limited", 10, NO_VOICE)
+        assert lfg_cog.check_if_someone_is_lfg(ctx, "limited", voice=VOICE) == 111
+        lfg_queue[111] = entry("limited", 10, VOICE)
+        assert lfg_cog.check_if_someone_is_lfg(ctx, "limited", voice=NO_VOICE) == 111
 
     def test_waiting_old_either_entry_only_pairs_with_voice(self, lfg_cog, ctx):
         lfg_queue[111] = entry("ranked", 10, LEGACY_EITHER)
@@ -305,10 +311,11 @@ class TestVoiceModal:
         self.assert_voice_dropdown(modal)
         assert modal.children[0] is modal.deck_url
 
-    def test_limited_modal_has_voice_dropdown(self):
+    def test_limited_modal_has_no_voice_choice(self):
         modal = LimitedQueueModal(MagicMock())
-        self.assert_voice_dropdown(modal)
+        assert not [item for item in modal.children if isinstance(item, discord.ui.Label)]
         assert modal.children[0] is modal.draft_url
+        assert modal.children[-1] is modal.timeframe
 
     def test_points_modal_has_voice_dropdown(self):
         modal = PointsQueueModal(MagicMock())

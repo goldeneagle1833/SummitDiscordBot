@@ -17,6 +17,7 @@ from cogs.lfg.voice import (
     DEFAULT_VOICE,
     VOICE_PREFERENCES,
     normalize_voice_preference,
+    queue_has_voice_choice,
 )
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
 from repositories.limited_repo import get_active_arena_run
@@ -146,9 +147,9 @@ async def _status(bot, user_id):
                 "waiting_count": len(entries),
                 "joined": queue_type in joined or matching_web_users.get(user_id) == queue_type,
                 "deck_mode": deck_mode,
-                # Every queue takes a voice / no_voice choice (voice is the default).
-                "voice_options": True,
-                "voice_choices": list(VOICE_PREFERENCES),
+                # Every queue but Limited takes a voice / no_voice choice (voice is the default).
+                "voice_options": queue_has_voice_choice(queue_type),
+                "voice_choices": list(VOICE_PREFERENCES) if queue_has_voice_choice(queue_type) else [],
                 "default_voice": DEFAULT_VOICE,
             }
             waiting_by_voice = dict.fromkeys(VOICE_PREFERENCES, 0)
@@ -156,7 +157,7 @@ async def _status(bot, user_id):
                 waiting_by_voice[normalize_voice_preference(entry.get("voice")) or DEFAULT_VOICE] += 1
             queue["waiting_by_voice"] = waiting_by_voice
             queue["voice"] = None
-            if queue_type in joined:
+            if queue_type in joined and queue_has_voice_choice(queue_type):
                 queue["voice"] = normalize_voice_preference(joined[queue_type].get("voice")) or DEFAULT_VOICE
             queues.append(queue)
     result = pending_web_matches.get(user_id)
@@ -243,7 +244,11 @@ async def start_matchmaking_api(bot):
             raise web.HTTPBadRequest(text="Invalid queue duration")
         if duration < 5 or duration > 240:
             raise web.HTTPBadRequest(text="Queue duration must be between 5 and 240 minutes")
-        voice = normalize_voice_preference(payload.get("voice"))
+        # Limited has no voice choice; whatever the client sends is ignored.
+        voice = (
+            normalize_voice_preference(payload.get("voice"))
+            if queue_has_voice_choice(queue_type) else DEFAULT_VOICE
+        )
         if voice is None:
             raise web.HTTPBadRequest(text="voice must be one of: voice, no_voice")
         deck_url = str(payload.get("deck_url") or "").strip() or None

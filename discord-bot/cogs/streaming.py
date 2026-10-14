@@ -1,7 +1,8 @@
 """
 Streaming Detection Cog
 
-Monitors Discord presence updates to detect when members are streaming.
+Monitors voice state updates to detect when members are Go Live (screen sharing)
+in a Summit Discord voice channel. Twitch/YouTube presence is not tracked.
 Stores streaming status in a shared database for the web app to display.
 """
 
@@ -64,13 +65,19 @@ class StreamingCog(commands.Cog):
     def cog_unload(self):
         self.cleanup_stale_streamers.cancel()
 
-    def _get_streaming_activity(
-        self, member: discord.Member
-    ) -> discord.Streaming | None:
-        """Extract streaming activity from a member's activities."""
-        for activity in member.activities:
-            if isinstance(activity, discord.Streaming):
-                return activity
+    def _is_summit_guild(self, guild: discord.Guild | None) -> bool:
+        """True if the guild is the Summit server (or no Summit guild is configured)."""
+        summit_id = getattr(config, "SUMMIT_GUILD_ID", None)
+        return guild is not None and (not summit_id or guild.id == summit_id)
+
+    def _is_go_live(self, user_id: int) -> tuple[discord.Member, discord.VoiceChannel] | None:
+        """Return (member, channel) if the user is currently Go Live in a Summit voice channel."""
+        for guild in self.bot.guilds:
+            if not self._is_summit_guild(guild):
+                continue
+            member = guild.get_member(user_id)
+            if member and member.voice and member.voice.self_stream and member.voice.channel:
+                return member, member.voice.channel
         return None
 
     def _get_avatar_from_deck_json(self, deck_json: str) -> str | None:
@@ -168,58 +175,6 @@ class StreamingCog(commands.Cog):
         except Exception as e:
             logger.warning(f"Could not delete streaming notification: {e}")
 
-    def _add_streamer(self, member: discord.Member, activity: discord.Streaming):
-        """Add or update a streamer in the database (for Twitch/YouTube streaming)."""
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-
-        now = datetime.datetime.utcnow().isoformat()
-        avatar_url = str(member.display_avatar.url) if member.display_avatar else None
-
-        # Determine platform from URL
-        platform = "Unknown"
-        if activity.url:
-            if "twitch.tv" in activity.url.lower():
-                platform = "Twitch"
-            elif (
-                "youtube.com" in activity.url.lower()
-                or "youtu.be" in activity.url.lower()
-            ):
-                platform = "YouTube"
-
-        cursor.execute(
-            """
-            INSERT INTO active_streamers 
-                (user_id, username, display_name, avatar_url, stream_url, stream_title, game_name, platform, started_at, last_seen)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-                username = excluded.username,
-                display_name = excluded.display_name,
-                avatar_url = excluded.avatar_url,
-                stream_url = excluded.stream_url,
-                stream_title = excluded.stream_title,
-                game_name = excluded.game_name,
-                platform = excluded.platform,
-                last_seen = excluded.last_seen
-        """,
-            (
-                member.id,
-                member.name,
-                member.display_name,
-                avatar_url,
-                activity.url,
-                activity.name,  # Stream title
-                activity.game,  # Game being played
-                platform,
-                now,
-                now,
-            ),
-        )
-
-        conn.commit()
-        conn.close()
-        logger.info(f"Added/updated streamer: {member.display_name} - {activity.url}")
-
     def _add_voice_streamer(
         self, member: discord.Member, channel: discord.VoiceChannel
     ):
@@ -257,7 +212,8 @@ class StreamingCog(commands.Cog):
                 member.name,
                 member.display_name,
                 avatar_url,
-                None,  # No external URL for Discord Go Live
+                # Link straight to the voice channel so the site banner opens it in Discord
+                f"https://discord.com/channels/{channel.guild.id}/{channel.id}",
                 f"Live in #{channel.name}",  # Stream title
                 game_name,
                 "Discord",  # Platform
@@ -283,40 +239,20 @@ class StreamingCog(commands.Cog):
         await self._delete_avatar_notification(user_id)
 
     @commands.Cog.listener()
-    async def on_presence_update(self, before: discord.Member, after: discord.Member):
-        """Detect when a member starts or stops streaming."""
-        before_streaming = self._get_streaming_activity(before)
-        after_streaming = self._get_streaming_activity(after)
-
-        # Started streaming
-        if after_streaming and not before_streaming:
-            logger.info(
-                f"{after.display_name} started streaming: {after_streaming.url}"
-            )
-            self._add_streamer(after, after_streaming)
-
-        # Stopped streaming
-        elif before_streaming and not after_streaming:
-            logger.info(f"{after.display_name} stopped streaming")
-            await self._remove_streamer(after.id)
-
-        # Updated stream info (e.g., changed game)
-        elif after_streaming and before_streaming:
-            if (
-                after_streaming.url != before_streaming.url
-                or after_streaming.game != before_streaming.game
-                or after_streaming.name != before_streaming.name
-            ):
-                self._add_streamer(after, after_streaming)
-
-    @commands.Cog.listener()
     async def on_voice_state_update(
         self,
         member: discord.Member,
         before: discord.VoiceState,
         after: discord.VoiceState,
     ):
-        """Detect when a member starts or stops Go Live (screen sharing) in a voice channel."""
+        """Detect when a member starts or stops Go Live (screen sharing) in a voice channel.
+
+        This is the only way a member gets onto the site's live banner. Twitch/YouTube
+        "Streaming" presence is deliberately ignored: the banner is for people streaming
+        in the Summit Discord, not anyone in the server who happens to be live elsewhere.
+        """
+        if not self._is_summit_guild(member.guild):
+            return
         # Started streaming in voice channel
         if after.self_stream and not before.self_stream:
             if after.channel:
@@ -341,19 +277,25 @@ class StreamingCog(commands.Cog):
 
     @tasks.loop(minutes=5)
     async def cleanup_stale_streamers(self):
-        """Clean up streamers who haven't been seen in a while (in case we missed an update)."""
+        """Keep the table in sync with who is actually Go Live in Summit voice channels.
+
+        Refreshes last_seen for members still streaming and removes everyone else, which
+        also clears any leftover Twitch/YouTube rows from before presence was ignored.
+        """
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-
-        # Remove streamers not seen in the last 30 minutes
-        cutoff = (
-            datetime.datetime.utcnow() - datetime.timedelta(minutes=30)
-        ).isoformat()
-        cursor.execute("DELETE FROM active_streamers WHERE last_seen < ?", (cutoff,))
-        removed = cursor.rowcount
-
-        conn.commit()
+        cursor.execute("SELECT user_id FROM active_streamers")
+        user_ids = [row[0] for row in cursor.fetchall()]
         conn.close()
+
+        removed = 0
+        for user_id in user_ids:
+            live = self._is_go_live(user_id)
+            if live:
+                self._add_voice_streamer(*live)
+            else:
+                await self._remove_streamer(user_id)
+                removed += 1
 
         if removed > 0:
             logger.info(f"Cleaned up {removed} stale streamer entries")
@@ -430,33 +372,24 @@ class StreamingCog(commands.Cog):
         conn.commit()
         conn.close()
 
-        stream_count = 0
         voice_count = 0
 
         for guild in self.bot.guilds:
-            # Check for Twitch/YouTube streaming presence
-            for member in guild.members:
-                streaming = self._get_streaming_activity(member)
-                if streaming:
-                    self._add_streamer(member, streaming)
-                    stream_count += 1
-
-            # Check for Go Live in voice channels
+            if not self._is_summit_guild(guild):
+                continue
+            # Only Discord Go Live counts (Twitch/YouTube presence is ignored)
             for channel in guild.voice_channels:
                 for member in channel.members:
                     if member.voice and member.voice.self_stream:
                         self._add_voice_streamer(member, channel)
                         voice_count += 1
 
-        total = stream_count + voice_count
         log_admin_action(
             ctx.author.id, ctx.author.display_name, "refresh_streamers",
-            new_state={"stream_count": stream_count, "voice_count": voice_count, "total": total},
-            details=f"Refreshed streamers: {total} found ({stream_count} Twitch/YouTube, {voice_count} Go Live)",
+            new_state={"voice_count": voice_count, "total": voice_count},
+            details=f"Refreshed streamers: {voice_count} Discord Go Live found",
         )
-        await ctx.send(
-            f"✅ Found **{total}** active streamer(s)! ({stream_count} Twitch/YouTube, {voice_count} Discord Go Live)"
-        )
+        await ctx.send(f"✅ Found **{voice_count}** member(s) Go Live in Discord!")
 
     @commands.command(name="debug_activities")
     @is_bot_admin()

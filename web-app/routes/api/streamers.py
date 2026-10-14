@@ -73,6 +73,7 @@ def get_active_streamers():
             SELECT user_id, username, display_name, avatar_url, stream_url, 
                    stream_title, game_name, platform, started_at
             FROM active_streamers
+            WHERE platform = 'Discord'
             ORDER BY started_at DESC
         """)
         rows = cursor.fetchall()

@@ -37,12 +37,15 @@ from cogs.lfg.persistent_confirm import (
     PersistentDisputeButton,
     PersistentCorrectionConfirmButton,
     PersistentCorrectionDenyButton,
+    PersistentRemovalConfirmButton,
+    PersistentRemovalDenyButton,
     PersistentMatchCardReportButton,
     PersistentMatchCardCancelButton,
     PersistentPSOConfirmButton,
     PersistentPSODisputeButton,
     ensure_pending_confirmations_table,
     ensure_pending_corrections_table,
+    ensure_pending_removals_table,
     ensure_match_cards_table,
     _migrate_match_cards_columns,
 )
@@ -200,6 +203,7 @@ async def main():
         migrate_to_dual_elo_system()
         ensure_pending_confirmations_table()
         ensure_pending_corrections_table()
+        ensure_pending_removals_table()
         ensure_match_cards_table()
         _migrate_match_cards_columns()
         ensure_card_catalog_table()
@@ -209,6 +213,7 @@ async def main():
         bot.add_dynamic_items(
             PersistentConfirmButton, PersistentDisputeButton,
             PersistentCorrectionConfirmButton, PersistentCorrectionDenyButton,
+            PersistentRemovalConfirmButton, PersistentRemovalDenyButton,
             PersistentMatchCardReportButton, PersistentMatchCardCancelButton,
             PersistentPSOConfirmButton, PersistentPSODisputeButton,
             PersistentReportPlayerButton,

@@ -74,6 +74,11 @@ def test_correction_tip_fills_in_a_known_match_id():
     assert "<match id>" not in tip
 
 
+def test_correction_tip_also_offers_remove_match():
+    assert "!remove_match <match id>" in correction_tip()
+    assert "!remove_match 2241" in correction_tip(2241)
+
+
 @pytest.mark.asyncio
 async def test_a_result_recorded_outside_discord_carries_both_tips():
     bot = MagicMock()

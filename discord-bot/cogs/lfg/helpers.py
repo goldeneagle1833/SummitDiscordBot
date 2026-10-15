@@ -31,11 +31,13 @@ def correction_tip(match_id=None) -> str:
     Pass ``match_id`` wherever the match is already recorded so the command
     can be copied as-is; before that there is no id yet to name.
     """
-    command = f"!correct_match {match_id}" if match_id else "!correct_match <match id>"
+    match_ref = match_id if match_id else "<match id>"
     return (
-        f"🛠️ **Wrong result reported?** Run `{command}` in "
+        f"🛠️ **Wrong result reported?** Run `!correct_match {match_ref}` in "
         f"<#{MATCH_CORRECTION_CHANNEL_ID}> — the other player confirms the fix "
-        f"and ELO is recalculated."
+        f"and ELO is recalculated.\n"
+        f"🗑️ **Match shouldn't count?** Run `!remove_match {match_ref}` there "
+        f"instead — the other player confirms and the match is removed."
     )
 
 

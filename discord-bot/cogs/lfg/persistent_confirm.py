@@ -1874,6 +1874,269 @@ class PersistentCorrectionConfirmView(discord.ui.View):
 
 
 # ──────────────────────────────────────────────
+#  Match Removal Confirmation (non-admin flow)
+# ──────────────────────────────────────────────
+
+def ensure_pending_removals_table():
+    """Create the pending_removals table if it doesn't exist."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pending_removals (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            match_id        INTEGER NOT NULL,
+            requester_id    INTEGER NOT NULL,
+            requester_name  TEXT    NOT NULL,
+            other_player_id INTEGER NOT NULL,
+            other_player_name TEXT  NOT NULL,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def save_pending_removal(data: dict) -> int:
+    """Persist removal request and return the new row id."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO pending_removals (
+            match_id, requester_id, requester_name,
+            other_player_id, other_player_name
+        ) VALUES (?,?,?,?,?)
+        """,
+        (
+            data["match_id"],
+            data["requester_id"],
+            data["requester_name"],
+            data["other_player_id"],
+            data["other_player_name"],
+        ),
+    )
+    removal_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return removal_id
+
+
+def load_pending_removal(removal_id: int):
+    """Return removal dict or None."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM pending_removals WHERE id = ?", (removal_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return dict(row)
+
+
+def delete_pending_removal(removal_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM pending_removals WHERE id = ?", (removal_id,))
+    conn.commit()
+    conn.close()
+
+
+class PersistentRemovalConfirmButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"premove_confirm:(?P<id>\d+)",
+):
+    def __init__(self, removal_id: int):
+        super().__init__(
+            discord.ui.Button(
+                label="Confirm Removal",
+                style=discord.ButtonStyle.success,
+                custom_id=f"premove_confirm:{removal_id}",
+            )
+        )
+        self.removal_id = removal_id
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(removal_id=int(match["id"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        from utils.database import remove_match_record, log_admin_action
+
+        try:
+            data = load_pending_removal(self.removal_id)
+            if not data:
+                await interaction.response.send_message(
+                    "This removal request has expired or was already processed.",
+                    ephemeral=True,
+                )
+                return
+
+            # Only the other player can confirm
+            if interaction.user.id != data["other_player_id"]:
+                await interaction.response.send_message(
+                    "Only the other player in this match can confirm this removal.",
+                    ephemeral=True,
+                )
+                return
+
+            await interaction.response.defer()
+
+            # Claim the request first so a double click cannot remove twice
+            delete_pending_removal(self.removal_id)
+
+            result = remove_match_record(data["match_id"])
+
+            success_embed = discord.Embed(
+                title="Match Removed",
+                description=(
+                    f"**Match ID:** #{data['match_id']}\n"
+                    f"**Winner:** {result['winner_name']}\n"
+                    f"**Loser:** {result['loser_name']}\n"
+                    f"**Date:** {result['timestamp']}\n\n"
+                    f"**ELO Reverted:**\n" + ("\n".join(result["reverted_info"]) or "No ELO changes")
+                ),
+                color=discord.Color.orange(),
+            )
+            success_embed.set_footer(
+                text=f"Requested by {data['requester_name']} | Confirmed by {interaction.user.display_name}"
+            )
+
+            await interaction.message.edit(embed=success_embed, view=None)
+
+            log_admin_action(
+                data["requester_id"],
+                data["requester_name"],
+                "remove_match",
+                target_id=data["match_id"],
+                previous_state={
+                    "winner_name": result["winner_name"],
+                    "loser_name": result["loser_name"],
+                    "timestamp": result["timestamp"],
+                },
+                new_state={"result": "match deleted"},
+                details=f"Removed match #{data['match_id']} (player request confirmed by {interaction.user.display_name}): {result['winner_name']} vs {result['loser_name']} ({result['timestamp']})",
+            )
+
+            # Notify requester
+            try:
+                requester = await interaction.client.fetch_user(data["requester_id"])
+                await requester.send(
+                    f"{data['other_player_name']} has confirmed your request to remove Match #{data['match_id']}. "
+                    f"The match has been removed and ELO reverted."
+                )
+            except Exception:
+                pass
+
+            lfg_cog = interaction.client.get_cog("LFGCog")
+            if lfg_cog:
+                try:
+                    await lfg_cog.update_leaderboard()
+                except Exception as e:
+                    logger.error(f"Failed to update leaderboard after removal: {e}")
+
+        except ValueError as e:
+            await interaction.followup.send(str(e), ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error in PersistentRemovalConfirmButton: {e}", exc_info=True)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "An error occurred while removing the match. Please try again or contact an admin.",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "An error occurred while removing the match. Please try again or contact an admin.",
+                        ephemeral=True,
+                    )
+            except Exception:
+                pass
+
+
+class PersistentRemovalDenyButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"premove_deny:(?P<id>\d+)",
+):
+    def __init__(self, removal_id: int):
+        super().__init__(
+            discord.ui.Button(
+                label="Deny Removal",
+                style=discord.ButtonStyle.danger,
+                custom_id=f"premove_deny:{removal_id}",
+            )
+        )
+        self.removal_id = removal_id
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(removal_id=int(match["id"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            data = load_pending_removal(self.removal_id)
+            if not data:
+                await interaction.response.send_message(
+                    "This removal request has expired or was already processed.",
+                    ephemeral=True,
+                )
+                return
+
+            if interaction.user.id != data["other_player_id"]:
+                await interaction.response.send_message(
+                    "Only the other player in this match can respond to this removal request.",
+                    ephemeral=True,
+                )
+                return
+
+            await interaction.response.send_message(
+                "You have denied the match removal request.", ephemeral=True
+            )
+
+            await interaction.message.edit(
+                content=f"Removal of Match #{data['match_id']} was denied by {data['other_player_name']}.",
+                embed=None,
+                view=None,
+            )
+
+            try:
+                requester = await interaction.client.fetch_user(data["requester_id"])
+                await requester.send(
+                    f"{data['other_player_name']} has denied your request to remove Match #{data['match_id']}. "
+                    f"If you believe this is an error, please contact an admin."
+                )
+            except Exception:
+                pass
+
+            delete_pending_removal(self.removal_id)
+
+        except Exception as e:
+            logger.error(f"Error in PersistentRemovalDenyButton: {e}", exc_info=True)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "An error occurred. Please try again or contact an admin.",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "An error occurred. Please try again or contact an admin.",
+                        ephemeral=True,
+                    )
+            except Exception:
+                pass
+
+
+class PersistentRemovalConfirmView(discord.ui.View):
+    """Confirm / Deny removal view whose buttons survive bot restarts."""
+
+    def __init__(self, removal_id: int):
+        super().__init__(timeout=None)
+        self.add_item(PersistentRemovalConfirmButton(removal_id))
+        self.add_item(PersistentRemovalDenyButton(removal_id))
+
+
+# ──────────────────────────────────────────────
 #  PSO Ranked  —  Confirm / Dispute via web API
 # ──────────────────────────────────────────────
 

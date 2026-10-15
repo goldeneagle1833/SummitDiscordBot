@@ -3860,11 +3860,20 @@ class LFGCog(commands.Cog):
             await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
-    @is_bot_admin()
     async def remove_match(self, ctx, match_id: int = None):
         """Remove a match report and revert ELO changes. Usage: !remove_match <match_id>"""
         if match_id is None:
             await ctx.send("Please provide a match ID. Usage: `!remove_match <match_id>`")
+            return
+
+        # Admins remove immediately; players need the other player to confirm
+        is_admin = (
+            ctx.author.guild_permissions.administrator
+            or any(role.id == config.BOT_ADMIN_ROLE_ID for role in ctx.author.roles)
+            or any(role.id == config.JUDGE_ROLE_ID for role in ctx.author.roles)
+        ) if ctx.guild else False
+        if not is_admin:
+            await self._request_match_removal(ctx, match_id)
             return
 
         try:
@@ -3909,11 +3918,85 @@ class LFGCog(commands.Cog):
             await ctx.send(embed=error_embed)
             logger.error(f"Match removal failed: {e}")
 
+    async def _request_match_removal(self, ctx, match_id: int):
+        """Player flow: DM the other player to confirm removing a match."""
+        from cogs.lfg.persistent_confirm import (
+            ensure_pending_removals_table,
+            save_pending_removal,
+            PersistentRemovalConfirmView,
+        )
+        from utils.database import get_match_players
+
+        try:
+            match_info = get_match_players(match_id)
+        except ValueError as e:
+            await ctx.send(str(e))
+            return
+
+        author_id = ctx.author.id
+        winner_id = match_info["winner_id"]
+        loser_id = match_info["loser_id"]
+
+        if author_id != winner_id and author_id != loser_id:
+            await ctx.send("You were not a part of that match.")
+            return
+
+        if author_id == winner_id:
+            other_player_id = loser_id
+            other_player_name = match_info["loser_name"]
+        else:
+            other_player_id = winner_id
+            other_player_name = match_info["winner_name"]
+
+        ensure_pending_removals_table()
+        removal_id = save_pending_removal({
+            "match_id": match_id,
+            "requester_id": author_id,
+            "requester_name": ctx.author.display_name,
+            "other_player_id": other_player_id,
+            "other_player_name": other_player_name,
+        })
+
+        confirm_embed = discord.Embed(
+            title="Match Removal Request",
+            description=(
+                f"**{ctx.author.display_name}** is requesting to remove Match #{match_id}.\n\n"
+                f"**Current Result:**\n"
+                f"Winner: {match_info['winner_name']}\n"
+                f"Loser: {match_info['loser_name']}\n\n"
+                f"**If removed, the match is deleted and both players' ELO changes from it are reverted.**\n\n"
+                f"Do you confirm this removal?"
+            ),
+            color=discord.Color.orange(),
+        )
+
+        view = PersistentRemovalConfirmView(removal_id)
+        sent_msg = (
+            f"A removal request for Match #{match_id} has been sent to **{other_player_name}** for confirmation."
+        )
+
+        try:
+            other_user = await self.bot.fetch_user(other_player_id)
+            await other_user.send(embed=confirm_embed, view=view)
+            await ctx.send(sent_msg)
+        except discord.Forbidden:
+            match_report_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+            if match_report_channel:
+                await match_report_channel.send(
+                    f"<@{other_player_id}>", embed=confirm_embed, view=view
+                )
+                await ctx.send(sent_msg)
+            else:
+                await ctx.send(
+                    "Could not send the removal request. The other player has DMs disabled and no fallback channel is configured."
+                )
+        except Exception as e:
+            logger.error(f"Failed to send removal request: {e}")
+            await ctx.send(f"An error occurred while sending the removal request: {e}")
+
     @remove_match.error
     async def remove_match_error(self, ctx, error):
-        if isinstance(error, commands.MissingPermissions):
-            await ctx.send("You need administrator permissions to use this command.")
-        elif isinstance(error, commands.BadArgument):
+        if isinstance(error, commands.BadArgument):
             await ctx.send("Invalid match ID. Please provide a valid number.")
         else:
             logger.error(f"remove_match error: {error}")

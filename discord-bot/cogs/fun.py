@@ -10,6 +10,13 @@ from random import randrange
 
 # Uber-rare Curio Shart variants: every Curio Shart independently rolls
 # 10% frostshart / 10% lavashart / 5% Yourt (Yourt is the rarest).
+#
+# AI DEVS: Any new curio must be flagged the same way: a per-player seasonal flag that the Reset Fart Game button wipes.
+# Add the variant
+# to this dict (with an inventory_name), roll it from
+# roll_uber_rare_curio_variant, and record it with record_uber_rare_hit.
+# That writes uber_rare_curio_season. Do not store the flag on a table in
+# FartRepository._PRESERVE_ON_RESET or it will survive the red reset button.
 FROSTSHART_CURIO_CHANCE = 10
 LAVASHART_CURIO_CHANCE = 10
 YOURT_CURIO_CHANCE = 5
@@ -22,23 +29,36 @@ YOURT_EMOJI_FALLBACK = ":yourt:"
 UBER_RARE_CURIO_VARIANTS = {
     "lavashart": {
         "name": "LAVASHART",
+        "inventory_name": "Lavashart",
         "emoji": "🌋💥",
         "color": 0x8B4513,  # reddish brown
         "flavor": "Molten essence — an UBER-RARE CURIO forged in impossible heat!",
     },
     "frostshart": {
         "name": "FROSTSHART",
+        "inventory_name": "Frostshart",
         "emoji": "❄🥶",
         "color": 0x6B8A9E,  # blueish gray
         "flavor": "Absolute zero — an UBER-RARE CURIO crystallized from entropy!",
     },
     "yourt": {
         "name": "YOURTSHART",
+        "inventory_name": "Yourt",
         "emoji": YOURT_EMOJI_FALLBACK,
         "color": 0x2ECC71,  # green, matching the curio announcement vibe
         "flavor": "YoUrT fElL oUt — aN UBER-RARE CURIO soaked in tavern stank!",
     },
 }
+
+
+# !inventory Actions lines. Only the limited fart commands.
+# None is the shared daily !fart / !fart_gift / !fartprediction slot.
+# Bullfart has its own daily timer.
+# Mushroom and Abundance stay under Buffs. Shop items are not listed here.
+INVENTORY_ACTIONS = (
+    (None, "Daily fart"),
+    ("bullfart", "Daily bullfart"),
+)
 
 # Frostshart duration matches !stink_cloud (naive local now + 24h).
 FROSTSHART_DURATION = datetime.timedelta(hours=24)
@@ -315,16 +335,16 @@ def format_fart_inventory(info, who=None):
     lines.append("Evil Star: " + ("SPENT" if info["evil_star"] else "open"))
 
     lines.append("----------------")
-    lines.append("Today")
-    lines.append("Daily fart: " + ("used" if info["daily_used"] else "open"))
-    lines.append("Bullfart: " + ("used" if info["bullfart_used"] else "open"))
+    lines.append("Actions")
+    for label, used in info.get("actions") or []:
+        lines.append(f"{label}: " + ("used" if used else "open"))
 
     lines.append("----------------")
     lines.append("Uber curios")
     curios = info["curios"]
-    lines.append(f"Lavashart: {curios.get('lavashart', 0)}")
-    lines.append(f"Frostshart: {curios.get('frostshart', 0)}")
-    lines.append(f"Yourt: {curios.get('yourt', 0)}")
+    for variant, meta in UBER_RARE_CURIO_VARIANTS.items():
+        name = meta.get("inventory_name") or meta["name"].title()
+        lines.append(f"{name}: {curios.get(variant, 0)}")
 
     if info["frozen"] or info["clouded"]:
         lines.append("----------------")
@@ -333,6 +353,15 @@ def format_fart_inventory(info, who=None):
             lines.append("Frostshart: FROZEN")
         if info["clouded"]:
             lines.append("Stink cloud: BLIND")
+
+    # Fart score place (!fartrank). The ELO command !rank is a different ladder.
+    lines.append("----------------")
+    rank = info.get("rank")
+    score = info.get("score")
+    if rank is None:
+        lines.append("!rank: none yet")
+    else:
+        lines.append(f"!rank: #{rank} · {score}")
 
     lines.append("================")
     return "```\n" + "\n".join(lines) + "\n```"
@@ -376,6 +405,10 @@ class FunCog(commands.Cog):
                 )
         except Exception as e:
             logger.error(f"Error running one-shot Frostshart repair: {e}")
+        try:
+            self.ensure_uber_curio_flags()
+        except Exception as e:
+            logger.error(f"Error ensuring seasonal uber-curio flags: {e}")
         if not self.yourt_rampage_ticker.is_running():
             self.yourt_rampage_ticker.start()
 
@@ -1664,7 +1697,7 @@ class FunCog(commands.Cog):
                 f"{ABUNDANCE_CHARGES} doubled farts this season. "
                 "`!fart`, `!fart_gift`, and `!fartprediction` ask first. "
                 "Stacks with mushroom. Once per season.\n"
-                "`!inventory` - Your buffs, charges, season locks, curios"
+                "`!inventory` - Your buffs, charges, actions, curios, rank"
             ),
             inline=False,
         )
@@ -1750,6 +1783,49 @@ class FunCog(commands.Cog):
                 hit_at TEXT NOT NULL
             )
         """)
+
+    def _ensure_uber_curio_flag_table(self, cur):
+        """Seasonal per-player uber-curio flags (one row per user + variant).
+
+        AI DEVS: any new curio must be flagged the same way: a per-player
+        seasonal flag that the Reset Fart Game button wipes. record_uber_rare_hit
+        writes this table. Keep it out of FartRepository._PRESERVE_ON_RESET.
+        """
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS uber_rare_curio_season (
+                user_id INTEGER NOT NULL,
+                variant TEXT NOT NULL,
+                rolled_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, variant)
+            )
+        """)
+
+    def _backfill_uber_curio_flags(self, cur):
+        """Turn existing hit rows into seasonal flags. Idempotent."""
+        cur.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='uber_rare_hits'"
+        )
+        if cur.fetchone() is None:
+            return
+        cur.execute("""
+            INSERT OR IGNORE INTO uber_rare_curio_season (user_id, variant, rolled_at)
+            SELECT user_id, variant, MIN(hit_at)
+            FROM uber_rare_hits
+            WHERE variant IS NOT NULL AND variant != ''
+            GROUP BY user_id, variant
+        """)
+
+    def ensure_uber_curio_flags(self):
+        """Create the seasonal flag table and backfill it from hit history."""
+        conn = sqlite3.connect("fart_scores.db")
+        try:
+            cur = conn.cursor()
+            self._ensure_uber_hit_table(cur)
+            self._ensure_uber_curio_flag_table(cur)
+            self._backfill_uber_curio_flags(cur)
+            conn.commit()
+        finally:
+            conn.close()
 
     def consume_mushroom_boost(self, user_id, roll, roll2):
         """If a mushroom is armed, consume it and keep the higher roll.
@@ -1863,22 +1939,46 @@ class FunCog(commands.Cog):
         return points * 2, True
 
     def record_uber_rare_hit(self, user_id, variant):
-        """Remember a Lavashart / Frostshart / Yourt for !inventory."""
+        """Remember a curio hit and set the player's seasonal flag.
+
+        The flag lives in uber_rare_curio_season and is wiped by the red
+        Reset Fart Game button. AI DEVS: any new curio must be flagged the
+        same way: a per-player seasonal flag that the Reset Fart Game
+        button wipes. Call this with the new variant key.
+        """
         if not user_id or not variant:
             return
         conn = sqlite3.connect("fart_scores.db")
         try:
             cur = conn.cursor()
             self._ensure_uber_hit_table(cur)
+            self._ensure_uber_curio_flag_table(cur)
+            hit_at = datetime.datetime.now().isoformat()
             cur.execute(
                 "INSERT INTO uber_rare_hits (user_id, variant, hit_at) VALUES (?, ?, ?)",
-                (user_id, variant, datetime.datetime.now().isoformat()),
+                (user_id, variant, hit_at),
+            )
+            cur.execute(
+                """INSERT OR IGNORE INTO uber_rare_curio_season
+                   (user_id, variant, rolled_at) VALUES (?, ?, ?)""",
+                (user_id, variant, hit_at),
             )
             conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error recording uber-rare hit: {e}")
         finally:
             conn.close()
+
+    def _inventory_actions(self, info):
+        """(label, used) rows for the limited fart commands."""
+        rows = []
+        for command_name, label in INVENTORY_ACTIONS:
+            if command_name is None:
+                used = bool(info.get("daily_used"))
+            else:
+                used = bool(info.get("bullfart_used"))
+            rows.append((label, used))
+        return rows
 
     @staticmethod
     def _weekly_wait_label(last_used_iso):
@@ -1907,8 +2007,20 @@ class FunCog(commands.Cog):
             "bullfart_used": False,
             "reign_spent": False,
             "evil_star": False,
-            "curios": {"lavashart": 0, "frostshart": 0, "yourt": 0},
+            "curios": {
+                variant: 0 for variant in UBER_RARE_CURIO_VARIANTS
+            },
+            "curio_flags": [],
+            "actions": self._inventory_actions(
+                {"daily_used": False, "bullfart_used": False}
+            ),
+            "rank": None,
+            "score": None,
         }
+        try:
+            self.ensure_uber_curio_flags()
+        except sqlite3.Error:
+            pass
         try:
             info["daily_used"] = self.has_used_daily_fart_action(user_id)
         except sqlite3.Error:
@@ -1917,6 +2029,7 @@ class FunCog(commands.Cog):
             info["bullfart_used"] = self.has_used_bullfart_today(user_id)
         except sqlite3.Error:
             pass
+        info["actions"] = self._inventory_actions(info)
         try:
             info["frozen"] = self.is_frost_frozen(user_id) is True
         except Exception:
@@ -2005,8 +2118,31 @@ class FunCog(commands.Cog):
                 )
                 for variant, count in cur.fetchall():
                     info["curios"][variant] = count
+            if has_table("uber_rare_curio_season"):
+                cur.execute(
+                    """SELECT variant FROM uber_rare_curio_season
+                       WHERE user_id = ?""",
+                    (user_id,),
+                )
+                info["curio_flags"] = [row[0] for row in cur.fetchall()]
+                for variant in info["curio_flags"]:
+                    info["curios"][variant] = max(info["curios"].get(variant, 0), 1)
+            if has_table("fart_scores"):
+                cur.execute(
+                    "SELECT score FROM fart_scores WHERE user_id = ?",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+                if row is not None and row[0] is not None:
+                    info["score"] = row[0]
+                    cur.execute(
+                        "SELECT COUNT(*) FROM fart_scores WHERE score > ?",
+                        (row[0],),
+                    )
+                    info["rank"] = cur.fetchone()[0] + 1
         finally:
             conn.close()
+        info["actions"] = self._inventory_actions(info)
         return info
 
     async def offer_abundant_fart(self, ctx, user_id):
@@ -2406,7 +2542,7 @@ class FunCog(commands.Cog):
 
     @commands.command(aliases=["fartinventory", "fart_inventory", "inv"])
     async def inventory(self, ctx, user: discord.Member = None):
-        """Show your living fart buffs, season locks, and uber-rare curios.
+        """Show your fart buffs, actions, curios, and rank.
 
         Usage: !inventory
         Admins can pass @user to look up someone else.

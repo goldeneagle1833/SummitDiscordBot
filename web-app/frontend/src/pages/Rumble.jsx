@@ -714,7 +714,7 @@ function FartAdmin({ data, onRefresh }) {
   }
 
   const handleReset = async () => {
-    if (!confirm('Reset the entire fart game / season? This clears ALL scores, history, and every tracked cooldown/usage (daily, weekly, season, reign) — including items like !mushroom and !fartabundance, actions like !bullfart, Evil Star locks, gifts/donations, and status effects. Shop/command config is kept. This cannot be undone.')) return
+    if (!confirm('Reset the entire fart game / season? This clears ALL scores, history, and every tracked cooldown/usage (daily, weekly, season, reign) — including items like !mushroom and !fartabundance, actions like !bullfart, Evil Star locks, gifts/donations, status effects, and seasonal uber-curio flags (Lavashart, Frostshart, Yourt, and any new curio flagged the same way). Shop/command config is kept. This cannot be undone.')) return
     setLoading(true)
     try {
       const res = await post('/api/rumble/admin/fart/reset')
@@ -1354,7 +1354,10 @@ function FartAdmin({ data, onRefresh }) {
           <div className="p-3 border border-border rounded-lg">
             <h3 className="text-sm font-semibold mb-1">Reset Game</h3>
             <p className="text-xs text-text-muted mb-3">
-              Wipe all gameplay state: scores, history, and every cooldown/usage lock (daily, weekly, season, reign) — mushroom, fart abundance, bullfart, taxes/wealth, Evil Star, gifts/donations, protections, and any other trackers. Keeps shop/command config. Players start a fresh season.
+              Wipe all gameplay state: scores, history, and every cooldown/usage lock (daily, weekly, season, reign) — mushroom, fart abundance, bullfart, taxes/wealth, Evil Star, gifts/donations, protections, seasonal uber-curio flags, and any other trackers. Keeps shop/command config. Players start a fresh season.
+            </p>
+            <p className="text-xs text-text-muted mb-3">
+              Dev note: Uber curios (Lavashart, Frostshart, Yourt) are seasonal flags on each player, and this button clears them. Any new curio must be flagged the same way: a per-player seasonal flag that the Reset Fart Game button wipes. Do not store it on a table this reset keeps.
             </p>
             <button
               onClick={handleReset}
@@ -1367,7 +1370,7 @@ function FartAdmin({ data, onRefresh }) {
           <div className="p-3 border border-border rounded-lg">
             <h3 className="text-sm font-semibold mb-1">Evil Start</h3>
             <p className="text-xs text-text-muted mb-3">
-              Same full reset as Reset Fart Game, then give all existing players random chaotic starting scores between -250 and 250. Pure chaos.
+              Same full reset as Reset Fart Game, including seasonal uber-curio flags, then give all existing players random chaotic starting scores between -250 and 250. Pure chaos.
             </p>
             <button
               onClick={handleEvilStart}

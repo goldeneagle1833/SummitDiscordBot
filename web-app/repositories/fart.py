@@ -445,7 +445,7 @@ class FartRepository:
         "command_usage",          # !bullfart (own daily timer), shop daily/weekly items, !fart_court, etc.
         "lucky_charms",           # active !mushroom buff
         "abundance_buff",         # !fartabundance charges, once per season
-        "uber_rare_hits",         # Lavashart / Frostshart / Yourt the player has hit
+        "uber_rare_hits",         # Lavashart / Frostshart / Yourt hit counts
         "lucky_charm_usage",      # !mushroom once/week
         "fart_leader_only_once",  # !taxes / !wealth once/reign
         "evil_star_usage",        # once/season + star locks
@@ -456,7 +456,10 @@ class FartRepository:
         "gas_shields",
         "fart_traps",
         "frost_shart_freeze",     # Frostshart: shop + specials blocked for 24h (!fart ok)
-        "uber_rare_curio_season", # leftover per-player uber-rare flags (no longer used)
+        # Seasonal per-player uber-curio flags (one row per user + variant).
+        # AI DEVS: Any new curio must be flagged the same way: a per-player seasonal flag that the Reset Fart Game button wipes.
+        # FunCog.record_uber_rare_hit writes this table. Do not add it to _PRESERVE_ON_RESET.
+        "uber_rare_curio_season",
         "yourt_rampage",          # 1-minute Yourt shop-chaos window + attack ticker
     })
 
@@ -472,9 +475,11 @@ class FartRepository:
         (fart_game_commands, fart_shop_items, uber_rare_curio_claimed,
         frostshart_legacy_repair).
         Uses dynamic discovery so daily / weekly / season / reign cooldowns,
-        item usage, gifts, donations, protections, leftover uber-rare season
-        rows, and any future trackers are all cleared.
+        item usage, gifts, donations, protections, seasonal uber-curio flags
+        (uber_rare_curio_season), and any future trackers are all cleared.
         The unused legacy uber_rare_curio_claimed row is intentionally kept.
+        AI DEVS: any new curio must be flagged the same way: a per-player
+        seasonal flag that the Reset Fart Game button wipes.
         """
         conn = self._get_connection()
         rows = conn.execute(

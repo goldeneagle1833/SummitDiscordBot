@@ -13,9 +13,9 @@ from random import randrange
 FROSTSHART_CURIO_CHANCE = 10
 LAVASHART_CURIO_CHANCE = 10
 YOURT_CURIO_CHANCE = 5
-YOURT_RAMPAGE_SECONDS = 60 * 60
-YOURT_ATTACK_EVERY_SECONDS = 10 * 60
-YOURT_ATTACKS_TOTAL = 6
+YOURT_RAMPAGE_SECONDS = 60
+YOURT_ATTACK_EVERY_SECONDS = 5
+YOURT_ATTACKS_TOTAL = 12
 YOURT_EMOJI_NAME = "yourt"
 YOURT_EMOJI_FALLBACK = ":yourt:"
 
@@ -112,7 +112,7 @@ FART_PLAYER_ROLE_ID = getattr(config, "FART_PLAYER_ROLE_ID", 1555565625278205982
 FART_GAME_COGS = frozenset({"FunCog", "ShopCog"})
 # Admin-only tools shouldn't tag the admin as a player
 FART_ROLE_EXEMPT_COMMANDS = frozenset(
-    {"reset_fart_cooldown", "inventory", "givefart"}
+    {"reset_fart_cooldown", "givefart", "fartadmin"}
 )
 
 
@@ -307,9 +307,6 @@ def format_fart_inventory(info, who=None):
     else:
         lines.append("Star: none")
     lines.append("Gas shield: " + ("ARMED" if info["gas_shield"] else "none"))
-    lines.append("Your trap: " + ("armed" if info["trap_set"] else "none"))
-    if info["trap_on_you"]:
-        lines.append("Trapped: YES")
 
     lines.append("----------------")
     lines.append("Season")
@@ -338,6 +335,25 @@ def format_fart_inventory(info, who=None):
             lines.append("Stink cloud: BLIND")
 
     lines.append("================")
+    return "```\n" + "\n".join(lines) + "\n```"
+
+
+def format_fart_admin_help():
+    """Short stacked list of fart admin commands."""
+    lines = [
+        "================",
+        "FART ADMIN",
+        "================",
+        "!fartadmin",
+        "  this list",
+        "!givefart @user N",
+        "  add fart points",
+        "!reset_fart_cooldown",
+        "  @user daily fart",
+        "!inventory @user",
+        "  another player",
+        "================",
+    ]
     return "```\n" + "\n".join(lines) + "\n```"
 
 
@@ -1323,7 +1339,7 @@ class FunCog(commands.Cog):
         }
 
     def is_yourt_rampage_active(self):
-        """True while the 1-hour free-shop Yourt chaos window is running."""
+        """True while Yourt's 1-minute free-shop window is running."""
         state = self.get_yourt_rampage_state()
         if not state:
             return False
@@ -1334,7 +1350,7 @@ class FunCog(commands.Cog):
         return datetime.datetime.now() < ends
 
     def start_yourt_rampage(self, channel_id, summoned_by_user_id):
-        """Open the 1-hour shop chaos window. Returns False if already active."""
+        """Open the 1-minute shop chaos window. Returns False if already active."""
         if self.is_yourt_rampage_active():
             return False
         now = datetime.datetime.now()
@@ -1434,13 +1450,13 @@ class FunCog(commands.Cog):
             f"@here {e}{e}\n"
             f"**{drunken_case('YOURT IS SUMMONED')}** {e}\n"
             f"{e} {drunken_case('YOURT crashes the shop')} — "
-            f"{drunken_case('grab free loot for ONE HOUR')}! *hIc* {e}"
+            f"{drunken_case('grab free loot for ONE MINUTE')}! *hIc* {e}"
         )
         await self._send_yourt_channel_message(channel, crash)
         return f"{e} {drunken_case('YOURT wrecked the shop')} {e}\n"
 
     def expected_yourt_attacks(self, state, now=None):
-        """How many of the 6 attacks should have fired by `now`."""
+        """How many of the 5-second attacks should have fired by `now`."""
         now = datetime.datetime.now() if now is None else now
         try:
             started = datetime.datetime.fromisoformat(state["started_at"])
@@ -1560,7 +1576,7 @@ class FunCog(commands.Cog):
         self.clear_yourt_rampage()
 
     async def _tick_yourt_rampage(self, now=None):
-        """Fire Yourt's 10-minute attacks and close the window at 1 hour."""
+        """Fire Yourt's 5-second attacks and close the window at 1 minute."""
         state = self.get_yourt_rampage_state()
         if not state:
             return
@@ -1585,7 +1601,7 @@ class FunCog(commands.Cog):
         if expired:
             await self._yourt_retreat(state)
 
-    @tasks.loop(minutes=1)
+    @tasks.loop(seconds=YOURT_ATTACK_EVERY_SECONDS)
     async def yourt_rampage_ticker(self):
         await self._tick_yourt_rampage()
 
@@ -1647,7 +1663,8 @@ class FunCog(commands.Cog):
                 f"`!fartabundance` - Pay 500, get 400 back. "
                 f"{ABUNDANCE_CHARGES} doubled farts this season. "
                 "`!fart`, `!fart_gift`, and `!fartprediction` ask first. "
-                "Stacks with mushroom. Once per season."
+                "Stacks with mushroom. Once per season.\n"
+                "`!inventory` - Your buffs, charges, season locks, curios"
             ),
             inline=False,
         )
@@ -1884,8 +1901,6 @@ class FunCog(commands.Cog):
             "abundance_granted": ABUNDANCE_CHARGES,
             "star_until": None,
             "gas_shield": False,
-            "trap_set": False,
-            "trap_on_you": False,
             "frozen": False,
             "clouded": False,
             "daily_used": False,
@@ -1963,17 +1978,6 @@ class FunCog(commands.Cog):
                     (user_id,),
                 )
                 info["gas_shield"] = cur.fetchone() is not None
-            if has_table("fart_traps"):
-                cur.execute(
-                    "SELECT 1 FROM fart_traps WHERE set_by = ?",
-                    (user_id,),
-                )
-                info["trap_set"] = cur.fetchone() is not None
-                cur.execute(
-                    "SELECT 1 FROM fart_traps WHERE user_id = ?",
-                    (user_id,),
-                )
-                info["trap_on_you"] = cur.fetchone() is not None
             if has_table("shop_blocks"):
                 cur.execute(
                     """SELECT 1 FROM shop_blocks
@@ -2402,13 +2406,35 @@ class FunCog(commands.Cog):
 
     @commands.command(aliases=["fartinventory", "fart_inventory", "inv"])
     async def inventory(self, ctx, user: discord.Member = None):
-        """Admin: show living fart buffs, season locks, and uber-rare curios.
+        """Show your living fart buffs, season locks, and uber-rare curios.
 
-        Usage: !inventory [@user]
+        Usage: !inventory
+        Admins can pass @user to look up someone else.
         """
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
+            )
+            return
+        looking_up_someone_else = user is not None and user.id != ctx.author.id
+        if looking_up_someone_else and not member_has_fart_admin_role(ctx.author):
+            await ctx.send(
+                f"{ctx.author.mention}, you can only open your own inventory."
+            )
+            return
+        target = user or ctx.author
+        who = None
+        if looking_up_someone_else:
+            who = user.display_name or user.global_name or str(user.id)
+        info = self.collect_fart_inventory(target.id)
+        await ctx.send(format_fart_inventory(info, who=who))
+
+    @commands.command(name="fartadmin")
+    async def fartadmin(self, ctx):
+        """Admin: list the fart admin commands."""
         if not member_has_fart_admin_role(ctx.author):
             await ctx.send(
-                f"{ctx.author.mention}, you need the admin role to use `!inventory`."
+                f"{ctx.author.mention}, you need the admin role to use `!fartadmin`."
             )
             return
         if ctx.channel.id != self.fart_channel_id:
@@ -2416,12 +2442,7 @@ class FunCog(commands.Cog):
                 f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
             )
             return
-        target = user or ctx.author
-        who = None
-        if user is not None and user.id != ctx.author.id:
-            who = user.display_name or user.global_name or str(user.id)
-        info = self.collect_fart_inventory(target.id)
-        await ctx.send(format_fart_inventory(info, who=who))
+        await ctx.send(format_fart_admin_help())
 
     @inventory.error
     async def inventory_error(self, ctx, error):

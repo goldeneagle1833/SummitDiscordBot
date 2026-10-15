@@ -129,7 +129,7 @@ class ShopCog(commands.Cog):
         )
 
     def yourt_waives_shop_limits(self) -> bool:
-        """True during Yourt's 1-hour free-shop crash (costs, CDs, peel-out off)."""
+        """True during Yourt's 1-minute free-shop crash (costs, CDs, peel-out off)."""
         fun = self.bot.get_cog("FunCog")
         if fun is None:
             return False
@@ -2338,7 +2338,7 @@ class ShopCog(commands.Cog):
             shop_title = ":yourt: " + drunken_case("Fart Shop YOURT MESS")
             shop_description = (
                 ":yourt: "
-                + drunken_case("items everywhere grab them they are FREE for one hour")
+                + drunken_case("items everywhere grab them they are FREE for one minute")
                 + " :yourt:\n"
                 + shop_description
             )

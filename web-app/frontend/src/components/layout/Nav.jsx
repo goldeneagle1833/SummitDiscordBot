@@ -8,36 +8,39 @@ import SocialLinks from '@/components/layout/SocialLinks'
 
 // Discord, Patreon and Reddit live in SocialLinks as icons, and the logo is
 // the Home link, so none of them are text options here.
-const PERMANENT_LINKS = ['About', 'Feedback']
+// About and Feedback stay reachable from the footer and the Help tabs
+const PERMANENT_LINKS = []
 
+// Same order as the hamburger menu; the top bar shows chosen links in this order
 const ALL_NAV_OPTIONS = [
-  { to: '/community', label: 'Community' },
-  { to: '/about', label: 'About' },
+  { to: '/deck-rec', label: 'Sorcery Deck Rec' },
+  { to: '/top-8', label: 'Top 8 Decks' },
+  { to: '/deck-builder', label: 'Deck Visualizer' },
+  { to: '/deck-archetypes', label: 'Deck Archetypes' },
+  { to: '/avatars', label: 'Avatars' },
+  { to: '/avatars/top-players', label: 'Avatar Top 16' },
+  { to: '/meta-report', label: 'Meta Report' },
+  { to: '/elements', label: 'Element Winrates' },
+  { to: '/cards/played-winrates', label: 'Card Win Rates' },
+  { to: '/popular-cards', label: 'Popular Cards' },
   { to: '/elo', label: 'ELO Leaderboards' },
   { to: '/brackets', label: 'Season Top Cut' },
   { to: '/match-history', label: 'Match History' },
   { to: '/rumble', label: 'Rumble' },
   { to: '/fun-stats', label: 'Fun Stats' },
-  { to: '/meta-report', label: 'Meta Report' },
-  { to: '/avatars', label: 'Avatar Winrates' },
-  { to: '/avatars/top-players', label: 'Avatar Top 16' },
-  { to: '/cards/played-winrates', label: 'Card Win Rates' },
-  { to: '/popular-cards', label: 'Popular Cards' },
-  { to: '/elements', label: 'Element Winrates' },
-  { to: '/top-8', label: 'Top 8 Decks' },
-  { to: '/deck-archetypes', label: 'Deck Archetypes' },
-  { to: '/deck-rec', label: 'Sorcery Deck Rec' },
-  { to: '/deck-builder', label: 'Deck Visualizer' },
-  { to: '/explorer', label: 'Community Series' },
   { to: '/card-points', label: 'Omens' },
+  { to: '/explorer', label: 'Community Series' },
   { to: '/life-counter', label: 'Life Counter' },
   { to: '/help', label: 'Help' },
+  { to: '/about', label: 'About' },
   { to: '/feedback', label: 'Feedback' },
+  { to: '/community', label: 'Community' },
 ]
 
-const DEFAULT_NAV_LABELS = ['Community', 'About', 'Feedback']
+// The most visited pages (90-day page views, Oct 2026)
+const DEFAULT_NAV_LABELS = ['Sorcery Deck Rec', 'Top 8 Decks', 'Avatars', 'ELO Leaderboards']
 // Saved prefs from before a link was renamed
-const RENAMED_LABELS = { Brackets: 'Season Top Cut' }
+const RENAMED_LABELS = { Brackets: 'Season Top Cut', 'Avatar Winrates': 'Avatars' }
 
 function normalizeLabels(labels) {
   return labels.map((l) => RENAMED_LABELS[l] || l)
@@ -596,7 +599,7 @@ export default function Nav() {
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="hidden md:inline-block text-text hover:text-secondary font-medium transition-colors"
+                  className="hidden lg:inline-block whitespace-nowrap text-text hover:text-secondary font-medium transition-colors"
                 >
                   {label}
                 </a>
@@ -604,7 +607,7 @@ export default function Nav() {
                 <Link
                   key={label}
                   to={to}
-                  className={`hidden md:inline-block font-medium transition-colors ${
+                  className={`hidden lg:inline-block whitespace-nowrap font-medium transition-colors ${
                     location.pathname === to ? 'text-secondary' : 'text-text hover:text-secondary'
                   }`}
                 >

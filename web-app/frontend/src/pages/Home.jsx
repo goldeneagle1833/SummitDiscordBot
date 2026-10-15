@@ -687,7 +687,7 @@ export function StoreCard({ live = STORE_LIVE }) {
   }, [live])
 
   return (
-    <div className="relative overflow-hidden flex flex-col justify-between gap-5 p-6 bg-brand-panel border border-brand-line rounded-[10px] lg:flex-1">
+    <div className="relative overflow-hidden flex flex-col justify-between gap-5 p-6 bg-brand-panel border border-brand-line rounded-[10px] md:flex-1">
       {bgImage && (
         <>
           <img src={bgImage} alt="" aria-hidden="true" data-testid="store-card-bg" className="absolute inset-0 w-full h-full object-cover" />
@@ -887,8 +887,8 @@ export default function Home() {
       </section>
 
       {/* Promos + store */}
-      <section className="flex flex-col lg:flex-row gap-5">
-        <div className="lg:flex-[2] min-w-0 empty:hidden">
+      <section className="flex flex-col md:flex-row gap-5">
+        <div className="md:flex-[2] min-w-0 empty:hidden">
           <PromoCarousel />
         </div>
         <StoreCard />

@@ -53,11 +53,11 @@ UBER_RARE_CURIO_VARIANTS = {
 
 # !inventory Actions lines. Only the limited fart commands.
 # None is the shared daily !fart / !fart_gift / !fartprediction slot.
-# Bullfart has its own daily timer.
+# Bullfart has its own weekly timer.
 # Mushroom and Abundance stay under Buffs. Shop items are not listed here.
 INVENTORY_ACTIONS = (
     (None, "Daily fart"),
-    ("bullfart", "Daily bullfart"),
+    ("bullfart", "Weekly bullfart"),
 )
 
 # Frostshart duration matches !stink_cloud (naive local now + 24h).
@@ -172,6 +172,22 @@ def is_same_est_calendar_day(date_string, est_date=None):
     if last_date is None:
         return False
     return last_date == (est_date or get_est_date())
+
+
+def weekly_lock_days_left(last_used_iso, today=None):
+    """Days until a once-per-week lock opens. 0 means it is open.
+
+    Same calendar rule as !mushroom and the shop weeklies: available again
+    on the date one week after the last use.
+    """
+    if not last_used_iso:
+        return 0
+    parsed = safe_parse_datetime(str(last_used_iso))
+    if parsed is None:
+        return 0
+    today = today or datetime.datetime.now().date()
+    remaining = (parsed.date() + datetime.timedelta(weeks=1) - today).days
+    return remaining if remaining > 0 else 0
 
 
 def format_time_until_est_midnight():
@@ -769,8 +785,11 @@ class FunCog(commands.Cog):
                     PRIMARY KEY (user_id, command_name))"""
         )
 
-    def has_used_bullfart_today(self, user_id):
-        """True if !bullfart already ran today EST. Independent of the daily fart action."""
+    def bullfart_days_left(self, user_id):
+        """Days left on the weekly !bullfart lock. 0 means it is open.
+
+        Independent of the daily fart action.
+        """
         conn = sqlite3.connect("fart_scores.db")
         try:
             cur = conn.cursor()
@@ -781,10 +800,14 @@ class FunCog(commands.Cog):
             )
             row = cur.fetchone()
             if not row:
-                return False
-            return is_same_est_calendar_day(row[0])
+                return 0
+            return weekly_lock_days_left(row[0])
         finally:
             conn.close()
+
+    def has_used_bullfart_this_week(self, user_id):
+        """True if !bullfart is still inside its one-week lock."""
+        return self.bullfart_days_left(user_id) > 0
 
     def mark_bullfart_used(self, user_id, when=None):
         when = when or datetime.datetime.now()
@@ -1702,10 +1725,10 @@ class FunCog(commands.Cog):
             inline=False,
         )
 
-        # Separate daily bonus (does not consume !fart)
+        # Separate weekly bonus (does not consume !fart)
         embed.add_field(
-            name="📆 Separate Daily Bonus",
-            value="`!bullfart` / `!bull_fart` - Bonus points based on last fart (once/day, own 24h timer)",
+            name="📆 Separate Weekly Bonus",
+            value="`!bullfart` / `!bull_fart` - Bonus points based on last fart (once/week, separate from !fart)",
             inline=False,
         )
 
@@ -2026,7 +2049,7 @@ class FunCog(commands.Cog):
         except sqlite3.Error:
             pass
         try:
-            info["bullfart_used"] = self.has_used_bullfart_today(user_id)
+            info["bullfart_used"] = self.has_used_bullfart_this_week(user_id)
         except sqlite3.Error:
             pass
         info["actions"] = self._inventory_actions(info)
@@ -2697,7 +2720,7 @@ class FunCog(commands.Cog):
 
     @commands.command(aliases=["bull_fart", "fart_bull", "fartbull"])
     async def bullfart(self, ctx):
-        """Bonus points from your last fart. Once per day, separate from !fart."""
+        """Bonus points from your last fart. Once per week, separate from !fart."""
         if ctx.channel.id != self.fart_channel_id:
             await ctx.send(
                 f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
@@ -2705,10 +2728,12 @@ class FunCog(commands.Cog):
             return
 
         try:
-            if self.has_used_bullfart_today(ctx.author.id):
+            days_left = self.bullfart_days_left(ctx.author.id)
+            if days_left:
+                noun = "day" if days_left == 1 else "days"
                 await ctx.send(
-                    f"{ctx.author.mention}, you can only use `!bullfart` once per day "
-                    f"(separate from `!fart`)! Try again in {format_time_until_est_midnight()}."
+                    f"{ctx.author.mention}, you can only use `!bullfart` once per week "
+                    f"(separate from `!fart`)! Try again in {days_left} {noun}."
                 )
                 return
         except sqlite3.Error as e:

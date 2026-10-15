@@ -99,7 +99,7 @@ class FartRepository:
         ("fart", "Fart", "Roll for random fart points", 0, 0, "daily", 1),
         ("fart_gift", "Fart Gift", "Roll your daily fart and give the points to another player (once per player per season)", 0, 0, "daily", 2),
         ("fartprediction", "Fart Prediction", "Predict fart type for 2x or half points", 0, 0, "daily", 3),
-        ("bullfart", "Bull Fart", "Bonus points based on last fart type (separate daily timer)", 0, 0, "daily", 4),
+        ("bullfart", "Bull Fart", "Bonus points based on last fart type (once per week, separate from the daily fart)", 0, 0, "weekly", 4),
         ("taxes", "Taxes", "Take 20% from everyone else, give it all to the fartlord", 0, 20, "once_per_reign", 5),
         ("wealth", "Wealth", "Take 50% from top 5, give to everyone else", 0, 50, "once_per_reign", 6),
     ]
@@ -442,7 +442,7 @@ class FartRepository:
     _KNOWN_TRACKING_TABLES = frozenset({
         "fart_scores",
         "fart_history",
-        "command_usage",          # !bullfart (own daily timer), shop daily/weekly items, !fart_court, etc.
+        "command_usage",          # !bullfart (own weekly timer), shop daily/weekly items, !fart_court, etc.
         "lucky_charms",           # active !mushroom buff
         "abundance_buff",         # !fartabundance charges, once per season
         "uber_rare_hits",         # Lavashart / Frostshart / Yourt hit counts

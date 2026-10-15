@@ -1,4 +1,4 @@
-"""!bullfart uses its own daily timer; !fartprediction scoring is independent."""
+"""!bullfart uses its own weekly timer; !fartprediction scoring is independent."""
 
 import datetime
 import os
@@ -22,7 +22,6 @@ sys.modules.setdefault(
 from cogs.fun import (  # noqa: E402
     FunCog,
     FartPredictionView,
-    is_same_est_calendar_day,
 )
 
 
@@ -98,7 +97,7 @@ class TestBullfartSeparateCooldown:
         assert label == "Elite Fart"
         fart_db.add_score_points(1, "Alice", points)
         fart_db.mark_bullfart_used(1)
-        assert fart_db.has_used_bullfart_today(1) is True
+        assert fart_db.has_used_bullfart_this_week(1) is True
         assert fart_db.has_used_daily_fart_action(1) is False
         score, last_updated = _score_and_daily()
         assert score == 125
@@ -108,21 +107,27 @@ class TestBullfartSeparateCooldown:
         yesterday = (datetime.datetime.now(EST) - datetime.timedelta(days=2)).isoformat()
         _seed_player(last_updated=yesterday)
         fart_db.mark_bullfart_used(1)
-        assert fart_db.has_used_bullfart_today(1) is True
+        assert fart_db.has_used_bullfart_this_week(1) is True
         assert fart_db.has_used_daily_fart_action(1) is False
 
-    def test_yesterday_bullfart_is_available_again(self, fart_db):
-        yesterday = datetime.datetime.now(EST) - datetime.timedelta(days=1, hours=1)
+    def test_yesterday_bullfart_stays_locked(self, fart_db):
+        yesterday = datetime.datetime.now() - datetime.timedelta(days=1)
         _seed_player(last_updated=None)
-        fart_db.mark_bullfart_used(1, when=yesterday.replace(tzinfo=None))
-        # last_used stored as naive ISO; EST calendar day should not be today
-        assert is_same_est_calendar_day(yesterday.isoformat()) is False
-        assert fart_db.has_used_bullfart_today(1) is False
+        fart_db.mark_bullfart_used(1, when=yesterday)
+        assert fart_db.has_used_bullfart_this_week(1) is True
+        assert fart_db.bullfart_days_left(1) == 6
+
+    def test_week_old_bullfart_is_available_again(self, fart_db):
+        last_week = datetime.datetime.now() - datetime.timedelta(days=8)
+        _seed_player(last_updated=None)
+        fart_db.mark_bullfart_used(1, when=last_week)
+        assert fart_db.has_used_bullfart_this_week(1) is False
+        assert fart_db.bullfart_days_left(1) == 0
 
     def test_daily_fart_does_not_block_bullfart(self, fart_db):
         _seed_player(last_updated=datetime.datetime.now().isoformat())
         assert fart_db.has_used_daily_fart_action(1) is True
-        assert fart_db.has_used_bullfart_today(1) is False
+        assert fart_db.has_used_bullfart_this_week(1) is False
 
 
 class TestFartPredictionScoring:
@@ -169,4 +174,4 @@ class TestFartPredictionScoring:
         score, last_updated = _score_and_daily()
         assert score == 240
         assert fart_db.has_used_daily_fart_action(1) is True
-        assert fart_db.has_used_bullfart_today(1) is False
+        assert fart_db.has_used_bullfart_this_week(1) is False

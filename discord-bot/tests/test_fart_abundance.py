@@ -454,9 +454,9 @@ class TestInventory:
         assert "Actions" in text
         assert "Today" not in text
         assert "Daily fart: open" in text
-        assert "Daily bullfart: open" in text
+        assert "Weekly bullfart: open" in text
         assert "blue shell" not in text.lower()
-        assert "Weekly" not in text
+        assert "Weekly star" not in text
         assert "!rank: none yet" in text
         body_lines = [ln for ln in text.splitlines() if ln and ln != "```"]
         assert body_lines[-2].startswith("!rank:")
@@ -525,7 +525,7 @@ class TestInventory:
 
         text = format_fart_inventory(fun.collect_fart_inventory(5))
         assert "Daily fart: used" in text
-        assert "Daily bullfart: used" in text
+        assert "Weekly bullfart: used" in text
         assert "blue shell" not in text.lower()
         assert "Weekly star" not in text
         assert "leech" not in text.lower()

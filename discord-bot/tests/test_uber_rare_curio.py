@@ -25,6 +25,7 @@ from cogs.fun import (  # noqa: E402
     UBER_RARE_CURIO_VARIANTS,
     YOURT_ATTACKS_TOTAL,
     YOURT_ATTACK_EVERY_SECONDS,
+    YOURT_RAMPAGE_SECONDS,
     drunken_case,
 )
 
@@ -433,30 +434,32 @@ class TestYourtRampage:
         assert fart_db.is_yourt_rampage_active() is True
         assert fart_db.start_yourt_rampage(99, 8) is False
 
-    def test_expected_attacks_every_ten_minutes(self, fart_db):
+    def test_expected_attacks_every_five_seconds(self, fart_db):
         fart_db.start_yourt_rampage(1, 1)
         state = fart_db.get_yourt_rampage_state()
         started = datetime.datetime.fromisoformat(state["started_at"])
+        assert YOURT_RAMPAGE_SECONDS == 60
+        assert YOURT_ATTACK_EVERY_SECONDS == 5
+        assert YOURT_ATTACKS_TOTAL == 12
         assert fart_db.expected_yourt_attacks(state, now=started) == 0
         assert (
             fart_db.expected_yourt_attacks(
-                state, now=started + datetime.timedelta(minutes=10)
+                state, now=started + datetime.timedelta(seconds=5)
             )
             == 1
         )
         assert (
             fart_db.expected_yourt_attacks(
-                state, now=started + datetime.timedelta(minutes=59)
+                state, now=started + datetime.timedelta(seconds=55)
             )
-            == 5
+            == 11
         )
         assert (
             fart_db.expected_yourt_attacks(
-                state, now=started + datetime.timedelta(minutes=60)
+                state, now=started + datetime.timedelta(seconds=60)
             )
             == YOURT_ATTACKS_TOTAL
         )
-        assert YOURT_ATTACK_EVERY_SECONDS == 600
 
     def test_apply_yourt_sends_here_ping(self, fart_db):
         ctx = MagicMock()
@@ -471,6 +474,7 @@ class TestYourtRampage:
         ctx.channel.send.assert_awaited()
         sent = ctx.channel.send.await_args.args[0]
         assert "@here" in sent
+        assert "minute" in sent.lower()
         assert ":yourt:" in sent
         assert "YOURT" in sent.upper() or "YoUrT" in sent
 
@@ -485,7 +489,7 @@ class TestYourtRampage:
         fart_db.start_yourt_rampage(1, 1)
         state = fart_db.get_yourt_rampage_state()
         started = datetime.datetime.fromisoformat(state["started_at"])
-        past_end = started + datetime.timedelta(hours=1, seconds=1)
+        past_end = started + datetime.timedelta(seconds=61)
         fart_db._yourt_random_attack = AsyncMock()
         fart_db._yourt_retreat = AsyncMock()
         asyncio.run(fart_db._tick_yourt_rampage(now=past_end))

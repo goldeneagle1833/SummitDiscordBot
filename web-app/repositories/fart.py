@@ -457,7 +457,7 @@ class FartRepository:
         "fart_traps",
         "frost_shart_freeze",     # Frostshart: shop + specials blocked for 24h (!fart ok)
         "uber_rare_curio_season", # leftover per-player uber-rare flags (no longer used)
-        "yourt_rampage",          # 1-hour Yourt shop-chaos window + attack ticker
+        "yourt_rampage",          # 1-minute Yourt shop-chaos window + attack ticker
     })
 
     @staticmethod

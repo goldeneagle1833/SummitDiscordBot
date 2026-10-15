@@ -28,6 +28,7 @@ from cogs.fun import (  # noqa: E402
     FartPredictionView,
     FunCog,
     PREGNANT_MAN,
+    format_fart_admin_help,
     format_fart_inventory,
 )
 from cogs.shop import ShopCog  # noqa: E402
@@ -449,6 +450,7 @@ class TestInventory:
         assert "Reign: open" in text
         assert "Evil Star: open" in text
         assert "Mushroom: none" in text
+        assert "trap" not in text.lower()
         assert "***" not in text
         for line in text.strip("`").splitlines():
             assert len(line) <= 32
@@ -475,7 +477,7 @@ class TestInventory:
 
     @pytest.mark.asyncio
     async def test_inventory_command_sends_the_block(self, fun):
-        ctx = _admin(_ctx(5, fun.fart_channel_id))
+        ctx = _player(_ctx(5, fun.fart_channel_id))
         await fun.inventory.callback(fun, ctx)
         body = ctx.send.await_args.args[0]
         assert body.startswith("```")
@@ -483,22 +485,16 @@ class TestInventory:
         assert "Abundance: not bought" in body
 
     @pytest.mark.asyncio
-    async def test_inventory_requires_the_admin_role(self, fun):
+    async def test_inventory_lookup_requires_the_admin_role(self, fun):
+        fun.grant_abundance(9)
         ctx = _player(_ctx(5, fun.fart_channel_id))
-        await fun.inventory.callback(fun, ctx)
+        target = MagicMock()
+        target.id = 9
+        target.display_name = "Giftee"
+        await fun.inventory.callback(fun, ctx, target)
         body = ctx.send.await_args.args[0]
-        assert "admin role" in body
-        assert "INVENTORY" not in body
-
-    @pytest.mark.asyncio
-    async def test_inventory_allows_the_bot_admin_role(self, fun, monkeypatch):
-        monkeypatch.setattr("cogs.fun.config.BOT_ADMIN_ROLE_ID", 4242, raising=False)
-        ctx = _player(_ctx(5, fun.fart_channel_id))
-        role = MagicMock()
-        role.id = 4242
-        ctx.author.roles = [role]
-        await fun.inventory.callback(fun, ctx)
-        assert "INVENTORY" in ctx.send.await_args.args[0]
+        assert "your own inventory" in body
+        assert "7/7" not in body
 
     @pytest.mark.asyncio
     async def test_inventory_can_look_up_another_player(self, fun):
@@ -525,7 +521,8 @@ class TestInventory:
         )[0]
         assert "Admin Commands" not in help_fn
         assert "!abundancefart" not in help_fn
-        assert "!inventory" not in help_fn
+        assert "!fartadmin" not in help_fn
+        assert "`!inventory`" in help_fn
         assert "`!fartabundance`" in help_fn
         assert "!abundancefart" not in shop_src
         assert "!fartabundance / " not in shop_src
@@ -574,6 +571,32 @@ class TestGiveFart:
         await fun.givefart.callback(fun, ctx, user, 0)
         assert _score(9) == 10
         assert "positive" in _sent(ctx).lower()
+
+
+class TestFartAdmin:
+    def test_help_lines_stay_short(self):
+        text = format_fart_admin_help()
+        assert "FART ADMIN" in text
+        assert "!givefart" in text
+        assert "!reset_fart_cooldown" in text
+        for line in text.strip("`").splitlines():
+            assert len(line) <= 32
+
+    @pytest.mark.asyncio
+    async def test_admin_sees_the_list(self, fun):
+        ctx = _admin(_ctx(5, fun.fart_channel_id))
+        await fun.fartadmin.callback(fun, ctx)
+        body = ctx.send.await_args.args[0]
+        assert "FART ADMIN" in body
+        assert "!givefart" in body
+
+    @pytest.mark.asyncio
+    async def test_player_cannot_open_the_list(self, fun):
+        ctx = _player(_ctx(5, fun.fart_channel_id))
+        await fun.fartadmin.callback(fun, ctx)
+        body = ctx.send.await_args.args[0]
+        assert "admin role" in body
+        assert "FART ADMIN" not in body
 
     def test_abundant_view_buttons(self):
         view = AbundantFartView(5)

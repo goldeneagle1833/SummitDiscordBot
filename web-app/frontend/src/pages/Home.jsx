@@ -11,6 +11,7 @@ import { badgesByPlayer, getAvatarImagePath } from '@/utils/avatarBadges'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import { STORE_LIVE } from '@/utils/store'
+import { getProducts } from '@/api/store'
 
 const DISCORD_URL = 'https://discord.gg/ZDqHSK9VGx'
 const HERO_LOGO = '/static/images/summit-logo-hero.png'
@@ -669,11 +670,33 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
 
 // ── Store Card ────────────────────────────────────────────────
 
-function StoreCard() {
+// Once the store is live, the tile's background is a photo from a random listing
+export function StoreCard({ live = STORE_LIVE }) {
+  const [bgImage, setBgImage] = useState(null)
+
+  useEffect(() => {
+    if (!live) return
+    let cancelled = false
+    getProducts()
+      .then((data) => {
+        const images = (data?.products || []).map((p) => p.images?.[0] || p.image_url).filter(Boolean)
+        if (!cancelled && images.length) setBgImage(images[Math.floor(Math.random() * images.length)])
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [live])
+
   return (
-    <div className="flex flex-col justify-between gap-5 p-6 bg-brand-panel border border-brand-line rounded-[10px] lg:flex-1">
-      <div className="flex flex-col gap-2.5 items-start">
-        {!STORE_LIVE && (
+    <div className="relative overflow-hidden flex flex-col justify-between gap-5 p-6 bg-brand-panel border border-brand-line rounded-[10px] lg:flex-1">
+      {bgImage && (
+        <>
+          <img src={bgImage} alt="" aria-hidden="true" data-testid="store-card-bg" className="absolute inset-0 w-full h-full object-cover" />
+          {/* Keeps the heading and button readable over any photo */}
+          <div className="absolute inset-0 bg-gradient-to-t from-brand-panel via-brand-panel/80 to-brand-panel/40" />
+        </>
+      )}
+      <div className="relative flex flex-col gap-2.5 items-start">
+        {!live && (
           <span className="text-xs font-bold tracking-[0.12em] uppercase px-2.5 py-1 rounded-full border border-secondary text-secondary">
             Coming soon
           </span>
@@ -683,10 +706,10 @@ function StoreCard() {
           Support the Summit and other Sorcery groups by picking up tokens or merch.
         </p>
       </div>
-      {STORE_LIVE ? (
+      {live ? (
         <Link
           to="/store"
-          className="inline-flex items-center justify-center h-12 px-6 rounded-soft bg-brand-blue hover:bg-brand-blue-light text-white font-semibold transition-colors"
+          className="relative inline-flex items-center justify-center h-12 px-6 rounded-soft bg-brand-blue hover:bg-brand-blue-light text-white font-semibold transition-colors"
         >
           Shop Summit Store
         </Link>

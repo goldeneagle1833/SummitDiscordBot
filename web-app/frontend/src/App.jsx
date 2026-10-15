@@ -6,7 +6,6 @@ import Footer from '@/components/layout/Footer'
 import AdminGuard from '@/components/layout/AdminGuard'
 import StoreAdminGuard from '@/components/layout/StoreAdminGuard'
 import LoginGuard from '@/components/layout/LoginGuard'
-import CreatorGuard from '@/components/layout/CreatorGuard'
 import ExplorerAdminGuard from '@/components/layout/ExplorerAdminGuard'
 import Spinner from '@/components/ui/Spinner'
 
@@ -87,6 +86,7 @@ const Feedback = lazyPage(() => import('@/pages/Feedback'))
 const ExplorerStandings = lazyPage(() => import('@/pages/ExplorerStandings'))
 
 // Phase 7: Admin
+const AdminHub = lazyPage(() => import('@/pages/admin/AdminHub'))
 const AuditLog = lazyPage(() => import('@/pages/admin/AuditLog'))
 const StoreAdmin = lazyPage(() => import('@/pages/admin/StoreAdmin'))
 const StoreOrderPrint = lazyPage(() => import('@/pages/admin/StoreOrderPrint'))
@@ -244,8 +244,9 @@ const router = createBrowserRouter([
       // Post-season survey: unlisted, the link goes out in the announcement
       { path: '/season-feedback', element: <SeasonFeedback /> },
       { path: '/login', element: <Login /> },
-      // Creator
-      { path: '/creator', element: <CreatorGuard><Creator /></CreatorGuard> },
+      // Popular Cards (was the creator-only Creator Stats page)
+      { path: '/popular-cards', element: <Creator /> },
+      { path: '/creator', element: <Navigate to="/popular-cards" replace /> },
       // Store (soft launch: public by direct link, not yet in the nav)
       { path: '/store', element: <Store /> },
       { path: '/store/checkout', element: <StoreCheckout /> },
@@ -255,6 +256,7 @@ const router = createBrowserRouter([
       // Storefront applications are closed; old links land on the store
       { path: '/store/apply', element: <Navigate to="/store" replace /> },
       { path: '/admin/store', element: <StoreAdminGuard><StoreAdmin /></StoreAdminGuard> },
+      { path: '/admin', element: <AdminGuard><AdminHub /></AdminGuard> },
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
       { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },
       { path: '/admin/unique-users', element: <AdminGuard><UniqueUsers /></AdminGuard> },

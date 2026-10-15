@@ -68,7 +68,7 @@ describe('Brackets landing page', () => {
   it('says so when nothing has been published', async () => {
     listBrackets.mockResolvedValue({ brackets: [] })
     renderWithRouter(<Brackets />)
-    expect(await screen.findByText(/No brackets have been published yet/)).toBeInTheDocument()
+    expect(await screen.findByText(/No top cut bracket has been published yet/)).toBeInTheDocument()
   })
 
   it('points a player at matches waiting in another bracket', async () => {

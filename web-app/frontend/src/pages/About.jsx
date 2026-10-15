@@ -1,5 +1,7 @@
 import { useEffect } from 'react'
 import usePageTitle from '@/hooks/usePageTitle'
+import PageTabs from '@/components/ui/PageTabs'
+import { HELP_TABS } from '@/utils/pageTabs'
 
 export default function About() {
   usePageTitle('About')
@@ -8,6 +10,7 @@ export default function About() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      <PageTabs tabs={HELP_TABS} label="Help pages" />
       <h1 className="text-2xl font-display text-secondary">About Sorcerers Summit</h1>
       <div className="bg-bg-surface border border-border rounded-soft p-6 space-y-4 text-sm leading-relaxed">
         <p>

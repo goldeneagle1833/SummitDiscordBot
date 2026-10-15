@@ -686,7 +686,7 @@ export default function BracketsAdmin() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <div className="flex items-baseline justify-between gap-3">
-        <h1 className="text-2xl font-display">Brackets</h1>
+        <h1 className="text-2xl font-display">Manage Top Cut</h1>
         <Link to="/brackets" className="text-sm text-secondary hover:underline">
           Public page
         </Link>

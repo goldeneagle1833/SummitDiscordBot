@@ -11,7 +11,7 @@ import CardImagePopup from '@/components/deck/CardImagePopup'
 import usePageTitle from '@/hooks/usePageTitle'
 
 export default function Creator() {
-  usePageTitle('Creator Stats')
+  usePageTitle('Popular Cards')
   const { user } = useAuth()
   const isAdmin = user?.is_admin
 
@@ -140,9 +140,10 @@ export default function Creator() {
 
   return (
     <div>
-      <h1 className="text-2xl font-display text-secondary mb-2">Creator Stats</h1>
+      <h1 className="text-2xl font-display text-secondary mb-2">Popular Cards</h1>
       <p className="text-text-muted text-sm mb-6">
-        Card popularity data from reported matches. This data is exclusive to creators.
+        How often each card shows up in decklists reported to the Summit. The running season
+        is included in All Events and gets its own entry once it ends.
       </p>
 
       {/* Filters - same layout as Avatar Winrates */}
@@ -270,7 +271,7 @@ export default function Creator() {
         <div className="mt-10 border border-border rounded-lg p-5 bg-bg-raised">
           <h2 className="text-base font-semibold text-text-primary mb-1">Creator Access</h2>
           <p className="text-xs text-text-muted mb-4">
-            Grant or revoke creator page access for specific users.
+            Grant or revoke the creator role for specific users. Popular Cards is public, so this no longer gates any page.
           </p>
 
           {actionMsg && (

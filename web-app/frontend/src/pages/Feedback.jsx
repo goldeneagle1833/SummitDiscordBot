@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import usePageTitle from '@/hooks/usePageTitle'
+import PageTabs from '@/components/ui/PageTabs'
+import { HELP_TABS } from '@/utils/pageTabs'
 
 const FEEDBACK_TYPES = [
   { value: 'feature_request', label: 'Feature Request' },
@@ -46,6 +48,7 @@ export default function Feedback() {
   if (submitted) {
     return (
       <div className="max-w-2xl mx-auto space-y-6">
+        <PageTabs tabs={HELP_TABS} label="Help pages" />
         <h1 className="text-2xl font-display text-secondary">Feedback</h1>
         <div className="bg-bg-surface border border-border rounded-soft p-8 text-center space-y-4">
           <div className="text-4xl">&#10003;</div>
@@ -67,6 +70,7 @@ export default function Feedback() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
+      <PageTabs tabs={HELP_TABS} label="Help pages" />
       <h1 className="text-2xl font-display text-secondary">Feedback</h1>
       <p className="text-text-muted text-sm">
         Have an idea, found a bug, or just want to share your thoughts? Let us know!

@@ -12,7 +12,7 @@ import Bracket from './Bracket'
  * events, the last one finished - with tabs to flip to any other.
  */
 export default function Brackets() {
-  usePageTitle('Brackets')
+  usePageTitle('Season Top Cut')
   const { user } = useAuth()
   const [brackets, setBrackets] = useState(null)
   const [myMatches, setMyMatches] = useState([])
@@ -38,8 +38,8 @@ export default function Brackets() {
   if (!active) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-6">
-        <h1 className="text-2xl font-display text-text-primary">Brackets</h1>
-        <p className="text-text-muted text-center py-12">No brackets have been published yet.</p>
+        <h1 className="text-2xl font-display text-text-primary">Season Top Cut</h1>
+        <p className="text-text-muted text-center py-12">No top cut bracket has been published yet.</p>
       </div>
     )
   }

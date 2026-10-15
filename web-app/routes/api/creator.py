@@ -1,28 +1,66 @@
-"""Creator-only API routes for advanced stats."""
+"""Popular Cards API (the page used to be creator-only "Creator Stats").
+
+Public with the same season limits creators had: the running season is never
+offered on its own (only finished events, past season ranges, and all-time).
+Admins can still ask for the running season.
+"""
 
 import json
 import logging
 import sqlite3
+import threading
+import time
 from collections import defaultdict
 
 from flask import Blueprint, jsonify, request
 
 from repositories.card_catalog import CardCatalogRepository
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS
-from utils.auth import require_creator
+from utils.auth import is_admin
 from routes.api.cards import _build_card_image_lookup, _find_card_image, _get_event_date_range
 
 logger = logging.getLogger(__name__)
 
 creator_bp = Blueprint("creator", __name__)
 
+# Both endpoints read every reported decklist, so results are cached per worker
+# for a few minutes; the lock keeps a burst of visitors from each starting the
+# same build.
+_CACHE_TTL_SECONDS = 600
+_cache = {}  # key -> (built_at, data)
+_cache_lock = threading.Lock()
+
+
+def _cached(key, build):
+    hit = _cache.get(key)
+    if hit and time.time() - hit[0] < _CACHE_TTL_SECONDS:
+        return hit[1]
+    with _cache_lock:
+        hit = _cache.get(key)
+        if hit and time.time() - hit[0] < _CACHE_TTL_SECONDS:
+            return hit[1]
+        data = build()
+        _cache[key] = (time.time(), data)
+        return data
+
+
+def _active_event_ids():
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        try:
+            rows = conn.execute("SELECT event_id FROM events WHERE is_active = 1").fetchall()
+        finally:
+            conn.close()
+        return {str(r[0]) for r in rows}
+    except sqlite3.OperationalError:
+        return set()
+
 
 @creator_bp.route("/filters")
-@require_creator
 def get_creator_filters():
-    """Return available past events and sources for the creator page filter dropdown.
+    """Return available past events and sources for the Popular Cards filter dropdown.
 
-    Same format as /api/avatars/filters but excludes active events.
+    Same format as /api/avatars/filters but excludes active events (admins see them).
     """
     events = []
 
@@ -37,15 +75,17 @@ def get_creator_filters():
                 FROM events
                 ORDER BY start_date DESC
             """)
+            user_admin = is_admin()
             for row in cur.fetchall():
-                if bool(row[4]):
-                    continue  # Skip active events for creators
+                active = bool(row[4])
+                if active and not user_admin:
+                    continue  # The running season is admin-only
                 events.append({
                     "event_id": row[0],
                     "event_name": row[1],
                     "start_date": row[2],
                     "end_date": row[3],
-                    "is_active": False,
+                    "is_active": active,
                 })
         conn.close()
     except sqlite3.OperationalError as e:
@@ -65,16 +105,36 @@ def get_creator_filters():
 
 
 @creator_bp.route("/popular-cards")
-@require_creator
 def get_creator_popular_cards():
     """Card popularity stats from match_records (same source as live-popular-cards).
 
     Query params:
     - event: event_id or season filter ID (e.g. "season_gothic_1"). Omit for all data.
-    - source: "discord" | "web" | "all" (default: "discord")
+      "current" and the running season's event_id are admin-only.
+    - source: "discord" | "web" | "all" (default: "all")
     """
     event_filter = request.args.get("event", "all")
     source_filter = request.args.get("source", "all")
+    if source_filter not in ("discord", "web", "all"):
+        source_filter = "all"
+
+    if not is_admin() and (event_filter == "current" or event_filter in _active_event_ids()):
+        return jsonify({"error": "The current season isn't public yet"}), 403
+
+    if event_filter not in ("all", "current") and not event_filter.startswith("season_"):
+        try:
+            event_filter = str(int(event_filter))
+        except ValueError:
+            return jsonify([])
+
+    result = _cached(("popular", event_filter, source_filter),
+                     lambda: _build_popular_cards(event_filter, source_filter))
+    if result is None:
+        return jsonify({"error": "Failed to load card data"}), 500
+    return jsonify(result)
+
+
+def _build_popular_cards(event_filter, source_filter):
 
     # Load card metadata from DB
     card_metadata = {}
@@ -90,7 +150,7 @@ def get_creator_popular_cards():
             }
     except Exception as e:
         logger.error(f"Error loading card pool: {e}")
-        return jsonify({"error": "Failed to load card data"}), 500
+        return None
 
     # Match the avatar winrates query pattern exactly
     deck_where = ("((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
@@ -105,24 +165,49 @@ def get_creator_popular_cards():
     else:
         source_clause = ""
 
-    all_decks = []
+    # Decks are tallied as they are read rather than held in memory
+    card_stats = {}
+    deck_count = [0]
+    sections = ["avatar", "spellbook", "atlas", "sideboard"]
+
+    def _add_deck(deck):
+        if isinstance(deck, list) and len(deck) > 0:
+            deck = deck[0]
+        if not isinstance(deck, dict):
+            return
+        deck_count[0] += 1
+        cards_in_deck = set()
+        for section in sections:
+            for card in deck.get(section, []) or []:
+                card_name = card.get("name")
+                quantity = card.get("quantity", 1)
+                if not card_name:
+                    continue
+                if card_name not in card_stats:
+                    card_stats[card_name] = {"total_count": 0, "decks_with_card": 0, "sideboard_count": 0}
+                card_stats[card_name]["total_count"] += quantity
+                if section == "sideboard":
+                    card_stats[card_name]["sideboard_count"] += quantity
+                if card_name not in cards_in_deck:
+                    card_stats[card_name]["decks_with_card"] += 1
+                    cards_in_deck.add(card_name)
     conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
     cur = conn.cursor()
 
     def _parse_deck_rows(rows, dual_column=True):
-        """Parse deck JSON from query rows into all_decks list."""
+        """Parse deck JSON from query rows and tally each deck."""
         for row in rows:
             if dual_column:
                 for deck_str in [row[0], row[1]]:
                     if deck_str and deck_str not in ("", "{}"):
                         try:
-                            all_decks.append(json.loads(deck_str))
+                            _add_deck(json.loads(deck_str))
                         except json.JSONDecodeError:
                             pass
             else:
                 if row[0]:
                     try:
-                        all_decks.append(json.loads(row[0]))
+                        _add_deck(json.loads(row[0]))
                     except json.JSONDecodeError:
                         pass
 
@@ -134,7 +219,7 @@ def get_creator_popular_cards():
                 FROM match_records
                 WHERE {deck_where} {source_clause}
             """)
-            _parse_deck_rows(cur.fetchall())
+            _parse_deck_rows(cur)
         except sqlite3.OperationalError as e:
             logger.warning(f"Error querying match_records: {e}")
 
@@ -146,7 +231,7 @@ def get_creator_popular_cards():
                     FROM match_records_archive
                     WHERE {deck_where}
                 """)
-                _parse_deck_rows(cur.fetchall())
+                _parse_deck_rows(cur)
             except sqlite3.OperationalError:
                 logger.info("Archive table not found - continuing without archive data")
 
@@ -156,7 +241,7 @@ def get_creator_popular_cards():
                 SELECT json_deck_data FROM solo_match_reports
                 WHERE {solo_deck_where}
             """)
-            _parse_deck_rows(cur.fetchall(), dual_column=False)
+            _parse_deck_rows(cur, dual_column=False)
         except sqlite3.OperationalError:
             pass
 
@@ -172,7 +257,7 @@ def get_creator_popular_cards():
                     WHERE {deck_where} {source_clause}
                       AND timestamp >= ? AND timestamp <= ?
                 """, (start_date, end_date))
-                _parse_deck_rows(cur.fetchall())
+                _parse_deck_rows(cur)
             except sqlite3.OperationalError:
                 pass
             try:
@@ -182,7 +267,7 @@ def get_creator_popular_cards():
                     WHERE {deck_where}
                       AND timestamp >= ? AND timestamp <= ?
                 """, (start_date, end_date))
-                _parse_deck_rows(cur.fetchall())
+                _parse_deck_rows(cur)
             except sqlite3.OperationalError:
                 pass
             # Solo match reports with date range (no source column, uses report_date)
@@ -192,7 +277,7 @@ def get_creator_popular_cards():
                     WHERE {solo_deck_where}
                       AND report_date >= ? AND report_date <= ?
                 """, (start_date, end_date))
-                _parse_deck_rows(cur.fetchall(), dual_column=False)
+                _parse_deck_rows(cur, dual_column=False)
             except sqlite3.OperationalError:
                 pass
 
@@ -205,44 +290,15 @@ def get_creator_popular_cards():
                 FROM match_records_archive
                 WHERE {deck_where} AND event_id = ?
             """, (event_id,))
-            _parse_deck_rows(cur.fetchall())
+            _parse_deck_rows(cur)
         except (ValueError, sqlite3.OperationalError) as e:
             logger.warning(f"Error querying archive for event {event_filter}: {e}")
 
     conn.close()
 
-    if not all_decks:
-        return jsonify([])
-
-    # Aggregate card stats
-    card_stats = {}
-    total_decks = len(all_decks)
-    sections = ["avatar", "spellbook", "atlas", "sideboard"]
-
-    for deck in all_decks:
-        if isinstance(deck, list) and len(deck) > 0:
-            deck = deck[0]
-
-        cards_in_deck = set()
-
-        for section in sections:
-            for card in deck.get(section, []) or []:
-                card_name = card.get("name")
-                quantity = card.get("quantity", 1)
-
-                if not card_name:
-                    continue
-
-                if card_name not in card_stats:
-                    card_stats[card_name] = {"total_count": 0, "decks_with_card": 0, "sideboard_count": 0}
-
-                card_stats[card_name]["total_count"] += quantity
-                if section == "sideboard":
-                    card_stats[card_name]["sideboard_count"] += quantity
-
-                if card_name not in cards_in_deck:
-                    card_stats[card_name]["decks_with_card"] += 1
-                    cards_in_deck.add(card_name)
+    total_decks = deck_count[0]
+    if not total_decks:
+        return []
 
     card_list = []
     for name, stats in card_stats.items():
@@ -278,11 +334,10 @@ def get_creator_popular_cards():
 
     card_list.sort(key=lambda x: (x["percent_of_decks"], x["count"]), reverse=True)
 
-    return jsonify(card_list)
+    return card_list
 
 
 @creator_bp.route("/card-history")
-@require_creator
 def get_card_history():
     """Monthly popularity trend for a specific card.
 
@@ -297,6 +352,28 @@ def get_card_history():
         return jsonify({"error": "card parameter required"}), 400
 
     source_filter = request.args.get("source", "all")
+    if source_filter not in ("discord", "web", "all"):
+        source_filter = "all"
+
+    totals, per_card = _cached(("history", source_filter), lambda: _build_card_history(source_filter))
+    card_months = per_card.get(card_name, {})
+
+    result = []
+    for month in sorted(totals.keys()):
+        total = totals[month]
+        with_card = card_months.get(month, 0)
+        result.append({
+            "month": month,
+            "total_decks": total,
+            "decks_with_card": with_card,
+            "percent_of_decks": round((with_card / total) * 100, 1) if total > 0 else 0,
+        })
+
+    return jsonify(result)
+
+
+def _build_card_history(source_filter):
+    """Decks per month, and decks per month containing each card, for every card at once."""
 
     if source_filter == "discord":
         source_clause = "AND (source = 'Discord' OR source IS NULL)"
@@ -311,8 +388,8 @@ def get_card_history():
 
     sections = ["avatar", "spellbook", "atlas", "sideboard"]
 
-    # {month_str: {"total": int, "with_card": int}}
-    monthly = defaultdict(lambda: {"total": 0, "with_card": 0})
+    totals = defaultdict(int)  # month -> decks
+    per_card = defaultdict(lambda: defaultdict(int))  # card -> month -> decks with it
 
     conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
     cur = conn.cursor()
@@ -343,18 +420,18 @@ def get_card_history():
                 if isinstance(deck, list) and len(deck) > 0:
                     deck = deck[0]
 
-                monthly[month]["total"] += 1
+                if not isinstance(deck, dict):
+                    continue
+                totals[month] += 1
 
-                found = False
+                names = set()
                 for section in sections:
                     for c in deck.get(section, []) or []:
-                        if c.get("name") == card_name:
-                            found = True
-                            break
-                    if found:
-                        break
-                if found:
-                    monthly[month]["with_card"] += 1
+                        name = c.get("name")
+                        if name:
+                            names.add(name)
+                for name in names:
+                    per_card[name][month] += 1
 
     # match_records (current)
     try:
@@ -363,7 +440,7 @@ def get_card_history():
             FROM match_records
             WHERE {deck_where} {source_clause}
         """)
-        _process_rows(cur.fetchall())
+        _process_rows(cur)
     except sqlite3.OperationalError:
         pass
 
@@ -374,7 +451,7 @@ def get_card_history():
             FROM match_records_archive
             WHERE {deck_where}
         """)
-        _process_rows(cur.fetchall())
+        _process_rows(cur)
     except sqlite3.OperationalError:
         pass
 
@@ -385,22 +462,10 @@ def get_card_history():
             FROM solo_match_reports
             WHERE {solo_deck_where}
         """)
-        _process_rows(cur.fetchall(), dual_column=False)
+        _process_rows(cur, dual_column=False)
     except sqlite3.OperationalError:
         pass
 
     conn.close()
 
-    result = []
-    for month in sorted(monthly.keys()):
-        data = monthly[month]
-        total = data["total"]
-        with_card = data["with_card"]
-        result.append({
-            "month": month,
-            "total_decks": total,
-            "decks_with_card": with_card,
-            "percent_of_decks": round((with_card / total) * 100, 1) if total > 0 else 0,
-        })
-
-    return jsonify(result)
+    return dict(totals), {name: dict(months) for name, months in per_card.items()}

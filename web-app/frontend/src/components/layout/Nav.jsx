@@ -3,42 +3,51 @@ import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { getStreamerBanner } from '@/api/streamers'
 import { DECK_URL_PLACEHOLDER } from '@/utils/deckLinks'
+import { STORE_LIVE } from '@/utils/store'
+import SocialLinks from '@/components/layout/SocialLinks'
 
-const PERMANENT_LINKS = ['Home', 'Discord', 'About', 'Patreon', 'Feedback']
+// Discord, Patreon and Reddit live in SocialLinks as icons, and the logo is
+// the Home link, so none of them are text options here.
+const PERMANENT_LINKS = ['About', 'Feedback']
 
 const ALL_NAV_OPTIONS = [
-  { to: '/', label: 'Home' },
   { to: '/community', label: 'Community' },
-  { href: 'https://discord.gg/ZDqHSK9VGx', label: 'Discord' },
-  { href: 'https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink', label: 'Patreon' },
   { to: '/about', label: 'About' },
+  { to: '/elo', label: 'ELO Leaderboards' },
+  { to: '/brackets', label: 'Season Top Cut' },
+  { to: '/match-history', label: 'Match History' },
+  { to: '/rumble', label: 'Rumble' },
+  { to: '/fun-stats', label: 'Fun Stats' },
+  { to: '/meta-report', label: 'Meta Report' },
   { to: '/avatars', label: 'Avatar Winrates' },
   { to: '/avatars/top-players', label: 'Avatar Top 16' },
   { to: '/cards/played-winrates', label: 'Card Win Rates' },
-  { to: '/meta-report', label: 'Meta Report' },
+  { to: '/popular-cards', label: 'Popular Cards' },
+  { to: '/elements', label: 'Element Winrates' },
+  { to: '/top-8', label: 'Top 8 Decks' },
+  { to: '/deck-archetypes', label: 'Deck Archetypes' },
   { to: '/deck-rec', label: 'Sorcery Deck Rec' },
   { to: '/deck-builder', label: 'Deck Visualizer' },
-  { to: '/elements', label: 'Element Winrates' },
   { to: '/explorer', label: 'Community Series' },
-  { to: '/top-8', label: 'Top 8 Decks' },
-  { to: '/brackets', label: 'Brackets' },
-  { to: '/fun-stats', label: 'Fun Stats' },
-  { to: '/rumble', label: 'Rumble' },
-  { to: '/elo', label: 'ELO Leaderboards' },
-  { to: '/match-history', label: 'Match History' },
+  { to: '/card-points', label: 'Omens' },
   { to: '/life-counter', label: 'Life Counter' },
   { to: '/help', label: 'Help' },
-  { to: '/card-points', label: 'Omens' },
   { to: '/feedback', label: 'Feedback' },
 ]
 
-const DEFAULT_NAV_LABELS = ['Home', 'Community', 'Discord', 'Patreon', 'About', 'Feedback']
+const DEFAULT_NAV_LABELS = ['Community', 'About', 'Feedback']
+// Saved prefs from before a link was renamed
+const RENAMED_LABELS = { Brackets: 'Season Top Cut' }
+
+function normalizeLabels(labels) {
+  return labels.map((l) => RENAMED_LABELS[l] || l)
+}
 const STORAGE_KEY = 'summit-nav-prefs'
 
 function getNavPrefs() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) return JSON.parse(stored)
+    if (stored) return normalizeLabels(JSON.parse(stored))
   } catch {}
   return null
 }
@@ -519,8 +528,9 @@ export default function Nav() {
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data?.labels) {
-          setNavLabels(data.labels)
-          saveNavPrefs(data.labels)
+          const labels = normalizeLabels(data.labels)
+          setNavLabels(labels)
+          saveNavPrefs(labels)
         }
       })
       .catch(() => {})
@@ -603,6 +613,8 @@ export default function Nav() {
               )
             )}
 
+            <SocialLinks labels={['Discord', 'Patreon']} className="hidden md:flex" />
+
             {/* Customize nav pencil icon - only when logged in */}
             {user && (
               <button
@@ -671,18 +683,8 @@ export default function Nav() {
           </button>
         </div>
 
-        {/* Navigation & External links - hidden on desktop since they're in the nav bar */}
+        {/* Account - on desktop this lives in the username menu instead */}
         <div className="border-b border-border md:hidden">
-          <SidebarLink to="/" label="Home" location={location} onClick={close} />
-          <SidebarLink to="/community" label="Community" location={location} onClick={close} />
-          {user?.is_store_admin && <SidebarLink to="/store" label="Store" location={location} onClick={close} />}
-          <SidebarExternal href="https://discord.gg/ZDqHSK9VGx" label="Discord" />
-          <SidebarExternal href="https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink" label="Patreon" />
-          <SidebarLink to="/about" label="About" location={location} onClick={close} />
-        </div>
-
-        {/* Auth section */}
-        <div className="border-b border-border">
           {!loading && (
             user ? (
               <>
@@ -718,115 +720,70 @@ export default function Nav() {
           )}
         </div>
 
-        {/* Full navigation */}
-        <div>
-          {/* Creator link */}
-          {(user?.is_store_admin || user?.is_store_staff) && (
-            <div className="border-b border-border">
-              <SidebarLink to="/admin/store" label="Store Admin" location={location} onClick={close} />
-            </div>
-          )}
-
-          {(user?.is_creator || user?.is_admin) && (
-            <div className="border-b border-border">
-              <SidebarLink to="/creator" label="Creator Stats" location={location} onClick={close} />
-            </div>
-          )}
-
-          {/* Explorer admin link (global admins see it via the admin block too) */}
-          {user?.is_explorer_admin && !user?.is_admin && (
-            <div className="border-b border-border">
+        {/* Staff tools */}
+        {(user?.is_admin || user?.is_explorer_admin || user?.is_store_admin || user?.is_store_staff) && (
+          <div className="border-b border-border">
+            {user?.is_admin && (
+              <Link
+                to="/admin"
+                className={`block px-4 py-3 transition-colors font-medium ${
+                  location.pathname === '/admin' ? 'text-accent-red bg-accent-red/10' : 'text-accent-red hover:bg-accent-red/10'
+                }`}
+                onClick={close}
+              >
+                Admin
+              </Link>
+            )}
+            {/* Explorer admins who aren't site admins reach their one tool directly */}
+            {user?.is_explorer_admin && !user?.is_admin && (
               <SidebarLink
                 to="/admin/explorer-applications"
                 label="Explorer Applications"
                 location={location}
                 onClick={close}
               />
-            </div>
-          )}
+            )}
+            {(user?.is_store_admin || user?.is_store_staff) && (
+              <SidebarLink to="/admin/store" label="Store Admin" location={location} onClick={close} />
+            )}
+          </div>
+        )}
 
-          {/* Admin link */}
-          {user?.is_admin && (
-            <div className="border-b border-border">
-              <Link
-                to="/admin/audit-log"
-                className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
-                onClick={close}
-              >
-                Admin Log
-              </Link>
-              <Link
-                to="/admin/brackets"
-                className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
-                onClick={close}
-              >
-                Brackets
-              </Link>
-              <Link
-                to="/admin/monitoring"
-                className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
-                onClick={close}
-              >
-                Monitoring
-              </Link>
-              <Link
-                to="/admin/users"
-                className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
-                onClick={close}
-              >
-                Users
-              </Link>
-              <Link
-                to="/admin/meta-reports"
-                className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
-                onClick={close}
-              >
-                Meta Reports
-              </Link>
-              <Link
-                to="/admin/explorer-applications"
-                className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
-                onClick={close}
-              >
-                Explorer Applications
-              </Link>
-            </div>
-          )}
-
-          {/* Stats */}
-          <SidebarHeading label="Stats" />
-          <SidebarLink to="/meta-report" label="Meta Report" location={location} onClick={close} />
-          <SidebarLink to="/avatars" label="Avatar Winrates" location={location} onClick={close} />
-          <SidebarLink to="/avatars/top-players" label="Avatar Top 16" location={location} onClick={close} />
-          <SidebarLink to="/cards/played-winrates" label="Card Win Rates" location={location} onClick={close} />
-          <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
-          <SidebarLink to="/deck-archetypes" label="Deck Archetypes" location={location} onClick={close} />
-
-          {/* Event Info */}
-          <SidebarHeading label="Event Info" />
-          <SidebarLink to="/top-8" label="Top 8 Decks" location={location} onClick={close} />
-          <SidebarLink to="/brackets" label="Brackets" location={location} onClick={close} />
-          <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
-          <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} />
-          <SidebarLink to="/explorer/apply" label="Host an Explorer Event" location={location} onClick={close} />
-          <SidebarLink to="/card-points" label="Omens" location={location} onClick={close} />
-
-          {/* Summit Stats */}
-          <SidebarHeading label="Summit Stats" />
+        <div className="pb-4">
+          <SidebarHeading label="Summit Ranked" />
           <SidebarLink to="/elo" label="ELO Leaderboards" location={location} onClick={close} />
+          <SidebarLink to="/brackets" label="Season Top Cut" location={location} onClick={close} />
           <SidebarLink to="/match-history" label="Match History" location={location} onClick={close} />
           <SidebarLink to="/rumble" label="Rumble" location={location} onClick={close} />
           <SidebarLink to="/fun-stats" label="Fun Stats" location={location} onClick={close} />
 
-          {/* Tools & Info */}
-          <SidebarHeading label="Tools & Info" />
+          <SidebarHeading label="Meta & Stats" />
+          <SidebarLink to="/meta-report" label="Meta Report" location={location} onClick={close} />
+          <SidebarLink to="/avatars" label="Avatars" location={location} onClick={close} match={['/avatars', '/avatars/top-players']} />
+          <SidebarLink to="/cards/played-winrates" label="Card Win Rates" location={location} onClick={close} />
+          <SidebarLink to="/popular-cards" label="Popular Cards" location={location} onClick={close} />
+          <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
+
+          <SidebarHeading label="Decks" />
+          <SidebarLink to="/top-8" label="Top 8 Decks" location={location} onClick={close} />
+          <SidebarLink to="/deck-archetypes" label="Deck Archetypes" location={location} onClick={close} />
+          <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
           <SidebarLink to="/deck-builder" label="Deck Visualizer" location={location} onClick={close} />
+
+          <SidebarHeading label="Events" />
+          <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} match={['/explorer', '/explorer/apply']} />
+          <SidebarLink to="/card-points" label="Omens" location={location} onClick={close} />
+
+          <SidebarHeading label="Tools" />
           <SidebarLink to="/life-counter" label="Life Counter" location={location} onClick={close} />
-          <SidebarLink to="/help" label="Help" location={location} onClick={close} />
-          <SidebarLink to="/feedback" label="Feedback" location={location} onClick={close} />
-          <SidebarLink to="/community" label="Community" location={location} onClick={close} />
-          <SidebarExternal href="https://www.reddit.com/r/SorcerersSummit/" label="Reddit" />
-          {user?.is_store_admin && <SidebarLink to="/store" label="Store" location={location} onClick={close} />}
+          <SidebarLink to="/help" label="Help" location={location} onClick={close} match={['/help', '/about', '/feedback']} />
+
+          <SidebarHeading label="Community" />
+          <SidebarLink to="/community" label="Community Links" location={location} onClick={close} />
+          {(STORE_LIVE || user?.is_store_admin) && (
+            <SidebarLink to="/store" label="Store" location={location} onClick={close} />
+          )}
+          <SocialLinks className="px-2 pt-2" />
         </div>
       </aside>
 
@@ -918,8 +875,8 @@ function SidebarHeading({ label }) {
   )
 }
 
-function SidebarLink({ to, label, location, onClick }) {
-  const active = location.pathname === to
+function SidebarLink({ to, label, location, onClick, match }) {
+  const active = (match || [to]).includes(location.pathname)
   return (
     <Link
       to={to}

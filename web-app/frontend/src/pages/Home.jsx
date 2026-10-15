@@ -10,11 +10,10 @@ import { getAvatarImageFiles, getSeasonAvatarBadges } from '@/api/cards'
 import { badgesByPlayer, getAvatarImagePath } from '@/utils/avatarBadges'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
+import { STORE_LIVE } from '@/utils/store'
 
 const DISCORD_URL = 'https://discord.gg/ZDqHSK9VGx'
 const HERO_LOGO = '/static/images/summit-logo-hero.png'
-// Flip to true when the store opens to everyone
-const STORE_LIVE = false
 // Anchor for shareable links straight to the leaderboard (e.g. /#leaderboard)
 const LEADERBOARD_ANCHOR = 'leaderboard'
 

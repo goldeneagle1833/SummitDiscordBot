@@ -55,6 +55,11 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.leaderboard.get_archived_limited_events",
     "api.leaderboard.get_archived_limited_leaderboard",
 
+    # -- Popular Cards (public; running season admin-only inside) --
+    "api.creator.get_creator_filters",
+    "api.creator.get_creator_popular_cards",
+    "api.creator.get_card_history",
+
     # -- Card points (public, pilot-gated) --
     "api.card_points.get_card_points_public",
     "api.card_points.get_card_points_history",

@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { getAvatarFilters, getAvatarTopPlayers } from '@/api/cards'
 import { getAvatarLeaderboards } from '@/api/leaderboard'
 import Spinner from '@/components/ui/Spinner'
+import PageTabs from '@/components/ui/PageTabs'
+import { AVATAR_TABS } from '@/utils/pageTabs'
 import usePageTitle from '@/hooks/usePageTitle'
 
 // Season Elo reads the running season's per-avatar ladder (Avatar-mode seasons only)
@@ -201,9 +203,7 @@ export default function AvatarTopPlayers() {
 
   return (
     <div>
-      <div className="mb-4">
-        <Link to="/avatars" className="text-sm text-primary hover:underline">&larr; Back to Avatar Win Rates</Link>
-      </div>
+      <PageTabs tabs={AVATAR_TABS} label="Avatar pages" className="mb-4" />
 
       <section className="text-center mb-6">
         <h1 className="text-2xl font-display text-secondary">

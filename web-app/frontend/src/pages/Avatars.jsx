@@ -12,6 +12,8 @@ import { getAvatarImageSettings } from "@/api/admin";
 import { useAuth } from "@/context/AuthContext";
 import AvatarImageAdmin from "@/components/ui/AvatarImageAdmin";
 import Spinner from "@/components/ui/Spinner";
+import PageTabs from "@/components/ui/PageTabs";
+import { AVATAR_TABS } from "@/utils/pageTabs";
 import usePageTitle from "@/hooks/usePageTitle";
 
 const SORT_OPTIONS = [
@@ -399,6 +401,7 @@ export default function Avatars() {
 
   return (
     <div>
+      <PageTabs tabs={AVATAR_TABS} label="Avatar pages" className="mb-4" />
       <section className="text-center mb-6">
         <h1 className="text-2xl font-display text-secondary">
           Avatar Win Rates
@@ -417,9 +420,6 @@ export default function Avatars() {
             ))}
           </p>
         )}
-        <Link to="/avatars/top-players" className="inline-block text-sm text-primary hover:underline mt-2">
-          View Top 16 Players by Avatar
-        </Link>
         {playDraw?.play_stats && playDraw?.draw_stats && playDraw.play_stats.total > 0 && (
           <p className="text-xs text-text-muted mt-2">
             {playDrawLabel}:&nbsp; On the Play:{" "}

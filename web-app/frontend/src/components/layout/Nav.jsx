@@ -574,7 +574,7 @@ export default function Nav() {
       <nav className="bg-bg-surface border-b border-border sticky top-0 z-[1000]">
         <div className="max-w-content mx-auto px-4 flex items-center h-16">
           {/* Left: Hamburger (mobile only) + Brand */}
-          <div className="flex items-center gap-4 flex-1">
+          <div className="flex items-center gap-4 shrink-0">
             <button
               className="flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
               onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -589,7 +589,7 @@ export default function Nav() {
           </div>
 
           {/* Right */}
-          <div className="flex items-center gap-3 flex-1 justify-end">
+          <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
             <LiveIndicator />
 
             {/* Nav links - visible on desktop */}
@@ -600,7 +600,7 @@ export default function Nav() {
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="hidden lg:inline-block whitespace-nowrap text-text hover:text-secondary font-medium transition-colors"
+                  className="hidden md:inline-block whitespace-nowrap text-sm lg:text-base text-text hover:text-secondary font-medium transition-colors"
                 >
                   {label}
                 </a>
@@ -608,7 +608,7 @@ export default function Nav() {
                 <Link
                   key={label}
                   to={to}
-                  className={`hidden lg:inline-block whitespace-nowrap font-medium transition-colors ${
+                  className={`hidden md:inline-block whitespace-nowrap text-sm lg:text-base font-medium transition-colors ${
                     location.pathname === to ? 'text-secondary' : 'text-text hover:text-secondary'
                   }`}
                 >
@@ -617,7 +617,7 @@ export default function Nav() {
               )
             )}
 
-            <SocialLinks labels={['Discord', 'Patreon']} className="hidden md:flex" />
+            <SocialLinks labels={['Discord', 'Patreon']} className="hidden lg:flex" />
 
             {/* Customize nav pencil icon - only when logged in */}
             {user && (

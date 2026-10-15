@@ -44,6 +44,7 @@ from services.sorcery_online_table import (
 from utils.auth import is_admin, require_admin
 from utils.formatting import normalize_card_name
 from repositories.card_catalog import CardCatalogRepository
+from repositories.events import EventRepository
 
 logger = logging.getLogger(__name__)
 
@@ -373,6 +374,9 @@ def get_decks():
 
         # Filter out hidden decks (admins can opt-in to see them)
         hidden_ids = corpus.repo.get_hidden_deck_ids()
+        events = EventRepository()
+        event_dates = events.get_event_dates()
+        event_ranks = events.get_event_ranks()
         show_hidden = request.args.get("show_hidden") == "1" and is_admin()
 
         deck_list = []
@@ -392,6 +396,9 @@ def get_decks():
                 "cluster_size": len(cluster_members),
                 "elements": sorted(seed.elements),
                 "event_year": seed.event_year,
+                "event_date": event_dates.get(seed.event_name),
+                # Position on the Top 8 page (0 = newest); Deck Rec's "Newest First" follows it
+                "event_rank": event_ranks.get(seed.event_name),
                 "is_admin_rec": seed.is_admin_rec,
                 "primer": seed.primer or "",
                 "stars": seed.stars,

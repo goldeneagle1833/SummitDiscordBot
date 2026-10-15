@@ -195,6 +195,32 @@ class EventRepository:
             pass
         return {}
 
+    def get_event_dates(self) -> dict[str, str | None]:
+        """ISO date for each event folder (admin override first, then parsed
+        from the folder name), without reading the deck files."""
+        if not self._events_dir.exists():
+            return {}
+        overrides = self._load_metadata_overrides()
+        return {
+            folder.name: (overrides.get(folder.name, {}).get("event_date")
+                          or extract_date_from_name(folder.name))
+            for folder in self._events_dir.iterdir()
+            if folder.is_dir()
+        }
+
+    def get_event_ranks(self) -> dict[str, int]:
+        """Each event folder's position on the Top 8 page (0 = first), without
+        reading the deck files: the admin's saved order when set, otherwise
+        newest date first with undated events last."""
+        dates = self.get_event_dates()
+        saved_order = self._load_event_order()
+        if saved_order:
+            order_map = {name: i for i, name in enumerate(saved_order)}
+            folders = sorted(dates, key=lambda f: order_map.get(f, len(saved_order)))
+        else:
+            folders = sorted(dates, key=lambda f: (dates[f] is not None, dates[f] or ""), reverse=True)
+        return {folder: i for i, folder in enumerate(folders)}
+
     def get_event_description(self, folder: str) -> str:
         """Get the description for an event, or empty string if none set."""
         overrides = self._load_metadata_overrides()

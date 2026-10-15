@@ -38,7 +38,8 @@ const ALL_NAV_OPTIONS = [
 ]
 
 // The most visited pages (90-day page views, Oct 2026)
-const DEFAULT_NAV_LABELS = ['Sorcery Deck Rec', 'Top 8 Decks', 'Avatars', 'ELO Leaderboards']
+// (ELO Leaderboards is left out: the home page is the leaderboard)
+const DEFAULT_NAV_LABELS = ['Sorcery Deck Rec', 'Top 8 Decks', 'Avatars']
 // Saved prefs from before a link was renamed
 const RENAMED_LABELS = { Brackets: 'Season Top Cut', 'Avatar Winrates': 'Avatars' }
 

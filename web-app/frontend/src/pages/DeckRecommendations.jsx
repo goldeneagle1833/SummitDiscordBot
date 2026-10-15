@@ -8,6 +8,25 @@ import { getAvatarImageSettings } from '@/api/admin'
 import { useAuth } from '@/context/AuthContext'
 import usePageTitle from '@/hooks/usePageTitle'
 
+// Newest events first by default; ?sort=popular etc. still pick the others
+const DEFAULT_SORT = 'newest'
+
+const NO_RANK = Number.MAX_SAFE_INTEGER
+const deckRank = (d) => (d.event_rank ?? NO_RANK)
+
+/** Same event order as the Top 8 page (newest first), then the bigger archetype; unlisted events last. */
+export function compareNewest(a, b) {
+  return deckRank(a) - deckRank(b) || b.cluster_size - a.cluster_size
+}
+
+/** Reverse of the Top 8 page order; unlisted events still last. */
+export function compareOldest(a, b) {
+  const ra = deckRank(a)
+  const rb = deckRank(b)
+  if (ra === NO_RANK || rb === NO_RANK) return ra - rb || b.cluster_size - a.cluster_size
+  return rb - ra || b.cluster_size - a.cluster_size
+}
+
 const ELEMENT_ICONS = { Fire: 'fire.png', Water: 'water.png', Earth: 'earth.png', Air: 'wind.png' }
 const PAGE_SIZE = 24
 
@@ -349,7 +368,7 @@ export default function DeckRecommendations() {
     return raw ? new Set(raw.split(',').filter((e) => ELEMENT_ICONS[e])) : new Set()
   }, [searchParams])
   const activeYear = searchParams.get('year') || ''
-  const activeSort = searchParams.get('sort') || 'popular'
+  const activeSort = searchParams.get('sort') || DEFAULT_SORT
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false)
@@ -420,10 +439,10 @@ export default function DeckRecommendations() {
 
     const sorted = [...result]
     switch (activeSort) {
-      case 'newest': sorted.sort((a, b) => (b.event_year || 0) - (a.event_year || 0) || b.cluster_size - a.cluster_size); break
-      case 'oldest': sorted.sort((a, b) => (a.event_year || 9999) - (b.event_year || 9999) || b.cluster_size - a.cluster_size); break
+      case 'popular': sorted.sort((a, b) => b.cluster_size - a.cluster_size || (a.deck_name || '').localeCompare(b.deck_name || '')); break
+      case 'oldest': sorted.sort(compareOldest); break
       case 'alpha': sorted.sort((a, b) => (a.deck_name || '').localeCompare(b.deck_name || '')); break
-      default: sorted.sort((a, b) => b.cluster_size - a.cluster_size || (a.deck_name || '').localeCompare(b.deck_name || ''))
+      default: sorted.sort(compareNewest)
     }
     return sorted
   }, [tournamentDecks, activeAvatar, activeElements, activeYear, activeSort])
@@ -443,7 +462,7 @@ export default function DeckRecommendations() {
   const setFilter = useCallback((key, val) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev)
-      if (!val || val === 'all' || val === 'popular') next.delete(key)
+      if (!val || val === 'all' || val === DEFAULT_SORT) next.delete(key)
       else next.set(key, val)
       return next
     }, { replace: true })
@@ -537,8 +556,8 @@ export default function DeckRecommendations() {
             value={activeSort}
             onChange={(e) => setFilter('sort', e.target.value)}
           >
-            <option value="popular">Most Popular</option>
             <option value="newest">Newest First</option>
+            <option value="popular">Most Popular</option>
             <option value="oldest">Oldest First</option>
             <option value="alpha">A - Z</option>
           </select>

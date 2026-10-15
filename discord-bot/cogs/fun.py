@@ -100,13 +100,7 @@ def drunken_case(text):
     return "".join(out)
 
 import config
-from cogs.fart_flavor import (
-    compose_abundance_fart_body,
-    compose_abundance_roll_line,
-    compose_fart_body,
-    fart_roll_blurb,
-    pick_fartlord_proclamation,
-)
+from cogs.fart_flavor import compose_fart_body, fart_roll_blurb, pick_fartlord_proclamation
 from utils.text import find_best_command_match
 from utils.checks import is_bot_admin
 
@@ -117,7 +111,9 @@ EST = ZoneInfo("America/New_York")
 FART_PLAYER_ROLE_ID = getattr(config, "FART_PLAYER_ROLE_ID", 1555565625278205982)
 FART_GAME_COGS = frozenset({"FunCog", "ShopCog"})
 # Admin-only tools shouldn't tag the admin as a player
-FART_ROLE_EXEMPT_COMMANDS = frozenset({"reset_fart_cooldown"})
+FART_ROLE_EXEMPT_COMMANDS = frozenset(
+    {"reset_fart_cooldown", "inventory", "givefart"}
+)
 
 
 def get_est_now():
@@ -248,6 +244,101 @@ def safe_parse_datetime(date_string):
 logger = logging.getLogger("discord_bot")
 
 daily_usage_message = "You have already used your daily action today. The actions are `!fart`, `!fart_gift`, `!fartprediction`. \n Use `!fartrank` to check your score."
+
+# Discord :pregnant_man: — the Abundance icon.
+PREGNANT_MAN = "\U0001FAC3"
+# One purchase per season. Each charge doubles one core fart, if the player accepts.
+ABUNDANCE_CHARGES = 7
+
+
+def member_has_fart_admin_role(member) -> bool:
+    """True for the Bot Admin role, or Discord's Administrator permission."""
+    perms = getattr(member, "guild_permissions", None)
+    if perms is not None and getattr(perms, "administrator", None) is True:
+        return True
+    admin_role_id = getattr(config, "BOT_ADMIN_ROLE_ID", None)
+    if admin_role_id is None:
+        return False
+    return any(
+        getattr(role, "id", None) == admin_role_id
+        for role in getattr(member, "roles", []) or []
+    )
+
+
+def format_fart_inventory(info, who=None):
+    """Short stacked inventory. A code block keeps phones from reflowing it."""
+    lines = [
+        "================",
+        "INVENTORY",
+        "================",
+    ]
+    if who:
+        label = str(who).replace("\n", " ").strip()
+        if len(label) > 18:
+            label = label[:17] + "…"
+        lines.append(f"For: {label}")
+    lines.append("Buffs")
+    if info["mushroom_active"]:
+        lines.append("Mushroom: ARMED")
+        lines.append("  next fart, higher")
+    else:
+        lines.append("Mushroom: none")
+    weekly = info["mushroom_weekly"]
+    if weekly == "open":
+        lines.append("  weekly buy: open")
+    else:
+        lines.append(f"  weekly buy: {weekly}")
+
+    remaining = info["abundance_remaining"]
+    granted = info["abundance_granted"]
+    if remaining is None:
+        lines.append("Abundance: not bought")
+        lines.append("  once per season")
+    elif remaining > 0:
+        lines.append(f"Abundance: {remaining}/{granted}")
+        lines.append("  doubled farts left")
+    else:
+        lines.append("Abundance: spent")
+        lines.append("  season lock used")
+
+    if info["star_until"]:
+        lines.append("Star: up")
+        lines.append(f"  until {info['star_until']}")
+    else:
+        lines.append("Star: none")
+    lines.append("Gas shield: " + ("ARMED" if info["gas_shield"] else "none"))
+    lines.append("Your trap: " + ("armed" if info["trap_set"] else "none"))
+    if info["trap_on_you"]:
+        lines.append("Trapped: YES")
+
+    lines.append("----------------")
+    lines.append("Season")
+    lines.append("Reign: " + ("SPENT" if info["reign_spent"] else "open"))
+    lines.append("  !taxes / !wealth")
+    lines.append("Evil Star: " + ("SPENT" if info["evil_star"] else "open"))
+
+    lines.append("----------------")
+    lines.append("Today")
+    lines.append("Daily fart: " + ("used" if info["daily_used"] else "open"))
+    lines.append("Bullfart: " + ("used" if info["bullfart_used"] else "open"))
+
+    lines.append("----------------")
+    lines.append("Uber curios")
+    curios = info["curios"]
+    lines.append(f"Lavashart: {curios.get('lavashart', 0)}")
+    lines.append(f"Frostshart: {curios.get('frostshart', 0)}")
+    lines.append(f"Yourt: {curios.get('yourt', 0)}")
+
+    if info["frozen"] or info["clouded"]:
+        lines.append("----------------")
+        lines.append("Status")
+        if info["frozen"]:
+            lines.append("Frostshart: FROZEN")
+        if info["clouded"]:
+            lines.append("Stink cloud: BLIND")
+
+    lines.append("================")
+    return "```\n" + "\n".join(lines) + "\n```"
 
 
 class FunCog(commands.Cog):
@@ -1516,6 +1607,7 @@ class FunCog(commands.Cog):
             return "", None, None
         if not variant:
             return "", None, None
+        self.record_uber_rare_hit(user_id, variant)
         return (
             self.format_uber_rare_highlight(variant),
             self.build_uber_rare_embed(variant),
@@ -1549,12 +1641,13 @@ class FunCog(commands.Cog):
         )
 
         embed.add_field(
-            name="🍄 Roll Buffs (Shop)",
+            name=f"{PREGNANT_MAN} Roll Buffs (Shop)",
             value=(
                 "`!mushroom` - Next fart rolls twice, keep the higher (5 pts, once/week)\n"
-                "`!fartabundance` / `!abundancefart` - Pay 500, get 400 back. "
-                "Next `!fart` rolls twice and you keep both "
-                "(once/week, separate from `!mushroom`, does not stack)"
+                f"`!fartabundance` - Pay 500, get 400 back. "
+                f"{ABUNDANCE_CHARGES} doubled farts this season. "
+                "`!fart`, `!fart_gift`, and `!fartprediction` ask first. "
+                "Stacks with mushroom. Once per season."
             ),
             inline=False,
         )
@@ -1588,13 +1681,6 @@ class FunCog(commands.Cog):
             inline=False,
         )
 
-        # Admin Commands Section
-        embed.add_field(
-            name="🔧 Admin Commands",
-            value="`!reset_fart_cooldown @user` - Reset a user's fart cooldown",
-            inline=False,
-        )
-
         # Fart Types Section
         embed.add_field(
             name="💨 Fart Types & Points",
@@ -1620,12 +1706,6 @@ class FunCog(commands.Cog):
             )
         """)
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS abundance_charms (
-                user_id INTEGER PRIMARY KEY,
-                activated_at TEXT
-            )
-        """)
-        cur.execute("""
             CREATE TABLE IF NOT EXISTS lucky_charm_usage (
                 user_id INTEGER,
                 command_name TEXT,
@@ -1634,97 +1714,322 @@ class FunCog(commands.Cog):
             )
         """)
 
-    def consume_fart_roll_buff(self, user_id, roll, roll2, *, allow_abundance=False):
-        """Consume one pending roll buff.
+    def _ensure_abundance_table(self, cur):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS abundance_buff (
+                user_id INTEGER PRIMARY KEY,
+                charges_remaining INTEGER NOT NULL,
+                charges_granted INTEGER NOT NULL,
+                bought_at TEXT NOT NULL
+            )
+        """)
 
-        Returns (mode, points, rolls).
-        Abundance sums both rolls. Mushroom keeps the higher roll.
-        At most one buff applies. Abundance is only consumed from !fart
-        (allow_abundance=True); !fart_gift and !fartprediction leave it armed.
-        If both buffs are somehow active, abundance is used and mushroom stays.
+    def _ensure_uber_hit_table(self, cur):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS uber_rare_hits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                variant TEXT NOT NULL,
+                hit_at TEXT NOT NULL
+            )
+        """)
+
+    def consume_mushroom_boost(self, user_id, roll, roll2):
+        """If a mushroom is armed, consume it and keep the higher roll.
+
+        Returns (mushroom_active, roll_used). Abundance is separate and stacks.
         """
-        mode = None
+        active = False
         conn = None
         try:
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
             self._ensure_roll_buff_tables(cur)
-            if allow_abundance:
+            cur.execute(
+                "SELECT 1 FROM lucky_charms WHERE user_id = ?",
+                (user_id,),
+            )
+            if cur.fetchone():
                 cur.execute(
-                    "SELECT 1 FROM abundance_charms WHERE user_id = ?",
+                    "DELETE FROM lucky_charms WHERE user_id = ?",
                     (user_id,),
                 )
-                if cur.fetchone():
-                    cur.execute(
-                        "DELETE FROM abundance_charms WHERE user_id = ?",
-                        (user_id,),
-                    )
-                    conn.commit()
-                    mode = "abundance"
-            if mode is None:
+                conn.commit()
+                active = True
+        except sqlite3.Error as e:
+            logger.error(f"Error checking mushroom boost: {e}")
+        finally:
+            if conn is not None:
+                conn.close()
+        if active:
+            return True, max(roll, roll2)
+        return False, roll
+
+    def abundance_charges(self, user_id):
+        """Charges left this season. 0 if they never bought or have spent them."""
+        conn = sqlite3.connect("fart_scores.db")
+        try:
+            cur = conn.cursor()
+            self._ensure_abundance_table(cur)
+            cur.execute(
+                "SELECT charges_remaining FROM abundance_buff WHERE user_id = ?",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            return row[0] if row else 0
+        finally:
+            conn.close()
+
+    def has_bought_abundance(self, user_id):
+        """True after this season's purchase, even when every charge is spent."""
+        conn = sqlite3.connect("fart_scores.db")
+        try:
+            cur = conn.cursor()
+            self._ensure_abundance_table(cur)
+            cur.execute(
+                "SELECT 1 FROM abundance_buff WHERE user_id = ?",
+                (user_id,),
+            )
+            return cur.fetchone() is not None
+        finally:
+            conn.close()
+
+    def grant_abundance(self, user_id, charges=ABUNDANCE_CHARGES):
+        """Give this season's Abundance bank. False if they already bought."""
+        conn = sqlite3.connect("fart_scores.db")
+        try:
+            cur = conn.cursor()
+            self._ensure_abundance_table(cur)
+            cur.execute(
+                "SELECT 1 FROM abundance_buff WHERE user_id = ?",
+                (user_id,),
+            )
+            if cur.fetchone():
+                return False
+            cur.execute(
+                """INSERT INTO abundance_buff
+                   (user_id, charges_remaining, charges_granted, bought_at)
+                   VALUES (?, ?, ?, ?)""",
+                (user_id, charges, charges, datetime.datetime.now().isoformat()),
+            )
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+    def try_consume_abundance_charge(self, user_id):
+        """Spend one charge. False when none remain."""
+        conn = sqlite3.connect("fart_scores.db")
+        try:
+            cur = conn.cursor()
+            self._ensure_abundance_table(cur)
+            cur.execute(
+                """UPDATE abundance_buff
+                   SET charges_remaining = charges_remaining - 1
+                   WHERE user_id = ? AND charges_remaining > 0""",
+                (user_id,),
+            )
+            conn.commit()
+            return cur.rowcount == 1
+        finally:
+            conn.close()
+
+    def spend_abundance_double(self, user_id, points, wants_abundant):
+        """Double points when the player accepted and a charge is still there.
+
+        Returns (points, did_double).
+        """
+        if not wants_abundant:
+            return points, False
+        if not self.try_consume_abundance_charge(user_id):
+            return points, False
+        return points * 2, True
+
+    def record_uber_rare_hit(self, user_id, variant):
+        """Remember a Lavashart / Frostshart / Yourt for !inventory."""
+        if not user_id or not variant:
+            return
+        conn = sqlite3.connect("fart_scores.db")
+        try:
+            cur = conn.cursor()
+            self._ensure_uber_hit_table(cur)
+            cur.execute(
+                "INSERT INTO uber_rare_hits (user_id, variant, hit_at) VALUES (?, ?, ?)",
+                (user_id, variant, datetime.datetime.now().isoformat()),
+            )
+            conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Error recording uber-rare hit: {e}")
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _weekly_wait_label(last_used_iso):
+        try:
+            last_used = datetime.datetime.fromisoformat(last_used_iso).date()
+        except (TypeError, ValueError):
+            return "open"
+        available = last_used + datetime.timedelta(weeks=1)
+        today = datetime.datetime.now().date()
+        if available > today:
+            return f"{(available - today).days}d"
+        return "open"
+
+    def collect_fart_inventory(self, user_id):
+        """Snapshot of buffs, season locks, and uber-rare curios for one player."""
+        info = {
+            "mushroom_active": False,
+            "mushroom_weekly": "open",
+            "abundance_remaining": None,
+            "abundance_granted": ABUNDANCE_CHARGES,
+            "star_until": None,
+            "gas_shield": False,
+            "trap_set": False,
+            "trap_on_you": False,
+            "frozen": False,
+            "clouded": False,
+            "daily_used": False,
+            "bullfart_used": False,
+            "reign_spent": False,
+            "evil_star": False,
+            "curios": {"lavashart": 0, "frostshart": 0, "yourt": 0},
+        }
+        try:
+            info["daily_used"] = self.has_used_daily_fart_action(user_id)
+        except sqlite3.Error:
+            pass
+        try:
+            info["bullfart_used"] = self.has_used_bullfart_today(user_id)
+        except sqlite3.Error:
+            pass
+        try:
+            info["frozen"] = self.is_frost_frozen(user_id) is True
+        except Exception:
+            pass
+
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            def has_table(name):
+                cur.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    (name,),
+                )
+                return cur.fetchone() is not None
+
+            if has_table("lucky_charms"):
                 cur.execute(
                     "SELECT 1 FROM lucky_charms WHERE user_id = ?",
                     (user_id,),
                 )
-                if cur.fetchone():
-                    cur.execute(
-                        "DELETE FROM lucky_charms WHERE user_id = ?",
-                        (user_id,),
-                    )
-                    conn.commit()
-                    mode = "mushroom"
-        except sqlite3.Error as e:
-            logger.error(f"Error checking fart roll buff: {e}")
+                info["mushroom_active"] = cur.fetchone() is not None
+            if has_table("lucky_charm_usage"):
+                cur.execute(
+                    """SELECT last_used FROM lucky_charm_usage
+                       WHERE user_id = ? AND command_name = 'mushroom'""",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+                if row:
+                    info["mushroom_weekly"] = self._weekly_wait_label(row[0])
+            if has_table("abundance_buff"):
+                cur.execute(
+                    """SELECT charges_remaining, charges_granted
+                       FROM abundance_buff WHERE user_id = ?""",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+                if row:
+                    info["abundance_remaining"] = row[0]
+                    info["abundance_granted"] = row[1]
+            if has_table("protection_status"):
+                cur.execute(
+                    "SELECT protected_until FROM protection_status WHERE user_id = ?",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+                if row and row[0]:
+                    parsed = safe_parse_datetime(str(row[0]))
+                    if parsed is None:
+                        try:
+                            parsed = datetime.datetime.fromisoformat(str(row[0]))
+                        except ValueError:
+                            parsed = None
+                    if parsed is not None and parsed > datetime.datetime.now():
+                        info["star_until"] = parsed.strftime("%m-%d %H:%M")
+            if has_table("gas_shields"):
+                cur.execute(
+                    "SELECT 1 FROM gas_shields WHERE user_id = ?",
+                    (user_id,),
+                )
+                info["gas_shield"] = cur.fetchone() is not None
+            if has_table("fart_traps"):
+                cur.execute(
+                    "SELECT 1 FROM fart_traps WHERE set_by = ?",
+                    (user_id,),
+                )
+                info["trap_set"] = cur.fetchone() is not None
+                cur.execute(
+                    "SELECT 1 FROM fart_traps WHERE user_id = ?",
+                    (user_id,),
+                )
+                info["trap_on_you"] = cur.fetchone() is not None
+            if has_table("shop_blocks"):
+                cur.execute(
+                    """SELECT 1 FROM shop_blocks
+                       WHERE user_id = ? AND blocked_until > datetime('now')""",
+                    (user_id,),
+                )
+                info["clouded"] = cur.fetchone() is not None
+            if has_table("fart_leader_only_once"):
+                cur.execute(
+                    "SELECT 1 FROM fart_leader_only_once WHERE user_id = ?",
+                    (user_id,),
+                )
+                info["reign_spent"] = cur.fetchone() is not None
+            if has_table("evil_star_usage"):
+                cur.execute(
+                    "SELECT 1 FROM evil_star_usage WHERE user_id = ?",
+                    (user_id,),
+                )
+                info["evil_star"] = cur.fetchone() is not None
+            if has_table("uber_rare_hits"):
+                cur.execute(
+                    """SELECT variant, COUNT(*) FROM uber_rare_hits
+                       WHERE user_id = ? GROUP BY variant""",
+                    (user_id,),
+                )
+                for variant, count in cur.fetchall():
+                    info["curios"][variant] = count
         finally:
-            if conn is not None:
-                conn.close()
+            conn.close()
+        return info
 
-        if mode == "abundance":
-            return "abundance", roll + roll2, (roll, roll2)
-        if mode == "mushroom":
-            best = max(roll, roll2)
-            return "mushroom", best, (best,)
-        return None, roll, (roll,)
+    async def offer_abundant_fart(self, ctx, user_id):
+        """Ask before a core fart. Returns 'yes', 'no', 'timeout', or 'none'.
 
-    async def _announce_abundance_fart(self, ctx, rolls, now):
-        """Save both abundance rolls and send them as one fart."""
-        lines = []
-        embeds = []
-        total = 0
-        for index, roll in enumerate(rolls, start=1):
-            fart_message, fart_type = self.classify_fart_roll(roll)
-            uber_prefix, uber_embed, uber_variant = self.maybe_uber_rare_curio(
-                fart_type, ctx.author.id
-            )
-            variant_effect_msg = await self.apply_uber_rare_variant_effect(
-                ctx, ctx.author.id, uber_variant
-            )
-            stamp = now + datetime.timedelta(seconds=index - 1)
-            try:
-                self.save_fart_type(
-                    ctx.author.id, ctx.author.global_name, fart_type, roll, stamp
-                )
-            except sqlite3.Error as e:
-                logger.error(f"Error saving abundance fart type: {e}")
-                await ctx.send(
-                    "⚠️ There was an error saving your fart type, but continuing..."
-                )
-            blurb = fart_roll_blurb(fart_message, fart_type, uber_variant)
-            lines.append(
-                compose_abundance_roll_line(
-                    index, uber_prefix, variant_effect_msg, blurb, roll
-                )
-            )
-            if uber_embed is not None:
-                embeds.append(uber_embed)
-            total += roll
-
-        self.save_fart_score(now, ctx.author.id, ctx.author.global_name, total)
-        body = compose_abundance_fart_body(lines, total)
-        if embeds:
-            await ctx.send(body, embeds=embeds[:10])
-        else:
-            await ctx.send(body)
+        Does not spend a charge. The fart spends one only after a 'yes'
+        and only when the roll is actually scored.
+        """
+        remaining = self.abundance_charges(user_id)
+        if remaining <= 0:
+            return "none"
+        view = AbundantFartView(user_id)
+        noun = "fart" if remaining == 1 else "farts"
+        await ctx.send(
+            f"{PREGNANT_MAN} **Would you like to fart Abundantly?**\n"
+            f"This fart is rolled normally, then the points are doubled. "
+            f"It stacks with `!mushroom`.\n"
+            f"You have **{remaining}** abundant {noun} left this season.\n"
+            f"✅ spend one    ❌ save it",
+            view=view,
+        )
+        await view.wait()
+        if view.choice is True:
+            return "yes"
+        if view.choice is False:
+            return "no"
+        return "timeout"
 
     @commands.command()
     async def fart(self, ctx):
@@ -1777,75 +2082,81 @@ class FunCog(commands.Cog):
                 )
                 return
 
-            # Roll and point calculation. Abundance sums both rolls; mushroom
-            # keeps the higher one. Only !fart consumes abundance.
+            offer = await self.offer_abundant_fart(ctx, ctx.author.id)
+            if offer == "timeout":
+                await ctx.send(
+                    f"{ctx.author.mention}, the Abundance offer expired. "
+                    f"Your daily fart was not used, and no charge was spent."
+                )
+                return
+
+            # Mushroom keeps the higher roll. Abundance doubles the points after.
             roll = randrange(1, 101)
             roll2 = randrange(1, 101)
-            mode, points_earned, _counted = self.consume_fart_roll_buff(
-                ctx.author.id, roll, roll2, allow_abundance=True
+            mushroom_active, roll = self.consume_mushroom_boost(
+                ctx.author.id, roll, roll2
             )
             now = datetime.datetime.now()
 
-            if mode == "abundance":
-                try:
-                    await self._announce_abundance_fart(ctx, (roll, roll2), now)
-                except Exception as e:
-                    logger.error(f"Error processing fart mechanics: {e}")
-                    await ctx.send(
-                        "⚠️ There was an error processing your fart. Please try again later."
-                    )
-                    return
-            else:
-                lucky_charm_active = mode == "mushroom"
-                roll = points_earned
+            # Determine fart type based on roll (higher is better now)
+            fart_message, fart_type = self.classify_fart_roll(roll)
+            uber_prefix, uber_embed, uber_variant = self.maybe_uber_rare_curio(
+                fart_type, ctx.author.id
+            )
+            variant_effect_msg = await self.apply_uber_rare_variant_effect(
+                ctx, ctx.author.id, uber_variant
+            )
 
-                # Determine fart type based on roll (higher is better now)
-                fart_message, fart_type = self.classify_fart_roll(roll)
-                uber_prefix, uber_embed, uber_variant = self.maybe_uber_rare_curio(
-                    fart_type, ctx.author.id
+            points_earned, abundant = self.spend_abundance_double(
+                ctx.author.id, roll, offer == "yes"
+            )
+
+            # Save fart type with error handling
+            try:
+                self.save_fart_type(
+                    ctx.author.id, ctx.author.global_name, fart_type, roll, now
                 )
-                variant_effect_msg = await self.apply_uber_rare_variant_effect(
-                    ctx, ctx.author.id, uber_variant
+            except sqlite3.Error as e:
+                logger.error(f"Error saving fart type: {e}")
+                await ctx.send(
+                    "⚠️ There was an error saving your fart type, but continuing..."
                 )
 
-                points_earned = roll  # Points equal to roll value
-
-                # Save fart type with error handling
-                try:
-                    self.save_fart_type(
-                        ctx.author.id, ctx.author.global_name, fart_type, roll, now
-                    )
-                except sqlite3.Error as e:
-                    logger.error(f"Error saving fart type: {e}")
-                    await ctx.send(
-                        "⚠️ There was an error saving your fart type, but continuing..."
-                    )
-
-                try:
-                    blurb = fart_roll_blurb(fart_message, fart_type, uber_variant)
-                    self.save_fart_score(
-                        now, ctx.author.id, ctx.author.global_name, points_earned
-                    )
+            try:
+                blurb = fart_roll_blurb(fart_message, fart_type, uber_variant)
+                self.save_fart_score(
+                    now, ctx.author.id, ctx.author.global_name, points_earned
+                )
+                mushroom_boost_msg = (
+                    "**MUSHROOM BOOST ACTIVATED!** \n" if mushroom_active else ""
+                )
+                if abundant:
                     mushroom_boost_msg = (
-                        "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
+                        f"{PREGNANT_MAN} **ABUNDANT FART!** Doubled.\n"
+                        + mushroom_boost_msg
                     )
-                    await ctx.send(
-                        compose_fart_body(
-                            uber_prefix,
-                            variant_effect_msg,
-                            mushroom_boost_msg,
-                            blurb,
-                            f"You earned {points_earned} points.",
-                        ),
-                        embed=uber_embed,
+                    points_clause = (
+                        f"You earned {points_earned} points ({roll} doubled)."
                     )
+                else:
+                    points_clause = f"You earned {points_earned} points."
+                await ctx.send(
+                    compose_fart_body(
+                        uber_prefix,
+                        variant_effect_msg,
+                        mushroom_boost_msg,
+                        blurb,
+                        points_clause,
+                    ),
+                    embed=uber_embed,
+                )
 
-                except Exception as e:
-                    logger.error(f"Error processing fart mechanics: {e}")
-                    await ctx.send(
-                        "⚠️ There was an error processing your fart. Please try again later."
-                    )
-                    return
+            except Exception as e:
+                logger.error(f"Error processing fart mechanics: {e}")
+                await ctx.send(
+                    "⚠️ There was an error processing your fart. Please try again later."
+                )
+                return
 
             # Update leader role
             try:
@@ -1928,13 +2239,19 @@ class FunCog(commands.Cog):
                 )
                 return
 
-            # Roll. Mushroom applies; abundance stays armed until !fart.
+            offer = await self.offer_abundant_fart(ctx, ctx.author.id)
+            if offer == "timeout":
+                await ctx.send(
+                    f"{ctx.author.mention}, the Abundance offer expired. "
+                    f"Your daily fart was not used, and no charge was spent."
+                )
+                return
+
             roll = randrange(1, 101)
             roll2 = randrange(1, 101)
-            mode, roll, _counted = self.consume_fart_roll_buff(
-                ctx.author.id, roll, roll2, allow_abundance=False
+            mushroom_active, roll = self.consume_mushroom_boost(
+                ctx.author.id, roll, roll2
             )
-            lucky_charm_active = mode == "mushroom"
 
             fart_message, fart_type = self.classify_fart_roll(roll)
             uber_prefix, uber_embed, uber_variant = self.maybe_uber_rare_curio(
@@ -1945,7 +2262,9 @@ class FunCog(commands.Cog):
             )
 
             now = datetime.datetime.now()
-            points_earned = roll
+            points_earned, abundant = self.spend_abundance_double(
+                ctx.author.id, roll, offer == "yes"
+            )
 
             try:
                 self.save_fart_type(
@@ -1970,8 +2289,13 @@ class FunCog(commands.Cog):
             self.mark_gifted_this_season(ctx.author.id, target.id)
 
             mushroom_boost_msg = (
-                "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
+                "**MUSHROOM BOOST ACTIVATED!** \n" if mushroom_active else ""
             )
+            if abundant:
+                mushroom_boost_msg = (
+                    f"{PREGNANT_MAN} **ABUNDANT GIFT!** Doubled ({roll} → {points_earned}).\n"
+                    + mushroom_boost_msg
+                )
             await ctx.send(
                 f"{uber_prefix}{variant_effect_msg}{mushroom_boost_msg}🎁 **FART GIFT!** "
                 f"{gift_roll_line}"
@@ -2076,6 +2400,84 @@ class FunCog(commands.Cog):
         conn.close()
         await self.update_fart_leader_role(ctx)
 
+    @commands.command(aliases=["fartinventory", "fart_inventory", "inv"])
+    async def inventory(self, ctx, user: discord.Member = None):
+        """Admin: show living fart buffs, season locks, and uber-rare curios.
+
+        Usage: !inventory [@user]
+        """
+        if not member_has_fart_admin_role(ctx.author):
+            await ctx.send(
+                f"{ctx.author.mention}, you need the admin role to use `!inventory`."
+            )
+            return
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
+            )
+            return
+        target = user or ctx.author
+        who = None
+        if user is not None and user.id != ctx.author.id:
+            who = user.display_name or user.global_name or str(user.id)
+        info = self.collect_fart_inventory(target.id)
+        await ctx.send(format_fart_inventory(info, who=who))
+
+    @inventory.error
+    async def inventory_error(self, ctx, error):
+        if isinstance(error, commands.UserInputError):
+            await ctx.send("Usage: `!inventory` or `!inventory @user`")
+
+    @commands.command(name="givefart", aliases=["give_fart", "give_fart_points"])
+    async def givefart(self, ctx, user: discord.Member = None, points: int = None):
+        """Admin: add fart points to a player. Usage: !givefart @user <points>"""
+        if not member_has_fart_admin_role(ctx.author):
+            await ctx.send(
+                f"{ctx.author.mention}, you need the admin role to use `!givefart`."
+            )
+            return
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
+            )
+            return
+        if user is None or points is None:
+            await ctx.send("Usage: `!givefart @user <points>`")
+            return
+        if user.bot:
+            await ctx.send("Bots don't keep a fart score.")
+            return
+        if points <= 0:
+            await ctx.send(
+                "Points have to be a positive number. Usage: `!givefart @user <points>`"
+            )
+            return
+
+        display_name = user.global_name or user.display_name or str(user.id)
+        self.add_score_points(user.id, display_name, points)
+        conn = sqlite3.connect("fart_scores.db")
+        try:
+            row = conn.execute(
+                "SELECT score FROM fart_scores WHERE user_id = ?",
+                (user.id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        new_score = row[0] if row else points
+        await ctx.send(
+            f"{ctx.author.mention} gave {user.mention} **{points}** fart points. "
+            f"They now have **{new_score}**."
+        )
+        try:
+            await self.update_fart_leader_role(ctx)
+        except Exception as e:
+            logger.error(f"Error updating leader role after givefart: {e}")
+
+    @givefart.error
+    async def givefart_error(self, ctx, error):
+        if isinstance(error, commands.UserInputError):
+            await ctx.send("Usage: `!givefart @user <points>`")
+
     @commands.command(aliases=["fart_prediction", "prediction_fart", "predictionfart"])
     async def fartprediction(self, ctx):
         """Predict your fart for double points or lose half!"""
@@ -2118,9 +2520,22 @@ class FunCog(commands.Cog):
             ),
             inline=False,
         )
+        offer = await self.offer_abundant_fart(ctx, ctx.author.id)
+        if offer == "timeout":
+            await ctx.send(
+                f"{ctx.author.mention}, the Abundance offer expired. "
+                f"Your daily fart was not used, and no charge was spent."
+            )
+            return
+        wants_abundant = offer == "yes"
+        if wants_abundant:
+            embed.description += (
+                f"\n{PREGNANT_MAN} **Abundance is armed** — "
+                "whatever you earn here is doubled again."
+            )
         embed.set_footer(text="Open the dropdown and tap a type — that submits your prediction.")
 
-        view = FartPredictionView(self, ctx.author.id)
+        view = FartPredictionView(self, ctx.author.id, wants_abundant=wants_abundant)
         await ctx.send(embed=embed, view=view)
 
     @commands.command(aliases=["bull_fart", "fart_bull", "fartbull"])
@@ -2477,11 +2892,59 @@ class FunCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
 
 
+class AbundantFartView(discord.ui.View):
+    """Yes spends an Abundance charge. No leaves the bank alone."""
+
+    def __init__(self, user_id):
+        super().__init__(timeout=90)
+        self.user_id = user_id
+        self.choice = None
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "This abundant fart isn't yours.", ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(
+        label="Fart Abundantly",
+        style=discord.ButtonStyle.success,
+        emoji="✅",
+    )
+    async def accept(self, interaction, button):
+        self.choice = True
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(
+            content=f"{PREGNANT_MAN} Abundant fart armed. Rolling...",
+            view=self,
+        )
+        self.stop()
+
+    @discord.ui.button(
+        label="Not this one",
+        style=discord.ButtonStyle.secondary,
+        emoji="❌",
+    )
+    async def decline(self, interaction, button):
+        self.choice = False
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(
+            content="Keeping your Abundance charges. Rolling a normal fart...",
+            view=self,
+        )
+        self.stop()
+
+
 class FartPredictionView(discord.ui.View):
-    def __init__(self, cog, user_id):
+    def __init__(self, cog, user_id, wants_abundant=False):
         super().__init__(timeout=900)  # 15 minutes — Discord component tokens last this long
         self.cog = cog
         self.user_id = user_id
+        self.wants_abundant = wants_abundant
         self.prediction_made = False
 
     async def interaction_check(self, interaction):
@@ -2575,11 +3038,9 @@ class FartPredictionView(discord.ui.View):
 
         roll = randrange(1, 101)
         roll2 = randrange(1, 101)
-        # Abundance is only for !fart, so a prediction leaves that buff armed.
-        mode, roll, _counted = cog.consume_fart_roll_buff(
-            self.user_id, roll, roll2, allow_abundance=False
+        mushroom_boost_active, roll = cog.consume_mushroom_boost(
+            self.user_id, roll, roll2
         )
-        mushroom_boost_active = mode == "mushroom"
 
         fart_message, fart_type = cog.classify_fart_roll(roll)
         uber_prefix, uber_embed, uber_variant = cog.maybe_uber_rare_curio(
@@ -2594,8 +3055,19 @@ class FartPredictionView(discord.ui.View):
         points_earned, was_correct = FunCog.score_fart_prediction(
             chosen_type, fart_type, roll
         )
-        if was_correct:
+        points_earned, abundant = cog.spend_abundance_double(
+            self.user_id, points_earned, self.wants_abundant
+        )
+        if was_correct and abundant:
+            result_message = (
+                "\n🎉 Correct (2x), then Abundance doubled it again!"
+            )
+        elif was_correct:
             result_message = "\n🎉 You predicted correctly! Your points are doubled!"
+        elif abundant:
+            result_message = (
+                "\n😢 Wrong prediction (half), then Abundance doubled it."
+            )
         else:
             result_message = "\n😢 Wrong prediction! Your points are halved."
 

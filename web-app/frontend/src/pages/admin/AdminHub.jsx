@@ -17,7 +17,6 @@ const SECTIONS = [
     tools: [
       { to: '/admin/brackets', label: 'Manage Top Cut', blurb: 'Create and run the season top cut bracket.' },
       { to: '/admin/meta-reports', label: 'Meta Reports', blurb: 'Build and publish reports.' },
-      { to: '/admin/explorer-applications', label: 'Explorer Applications', blurb: 'Review host applications.' },
     ],
   },
 ]

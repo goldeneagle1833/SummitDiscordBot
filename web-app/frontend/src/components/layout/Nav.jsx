@@ -734,8 +734,7 @@ export default function Nav() {
                 Admin
               </Link>
             )}
-            {/* Explorer admins who aren't site admins reach their one tool directly */}
-            {user?.is_explorer_admin && !user?.is_admin && (
+            {(user?.is_explorer_admin || user?.is_admin) && (
               <SidebarLink
                 to="/admin/explorer-applications"
                 label="Explorer Applications"

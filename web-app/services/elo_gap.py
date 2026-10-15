@@ -17,6 +17,25 @@ def _gap_sql(cols):
     return f"ABS(({wa} - {wc}) - ({la} - {lc}))", " AND ".join(f"{c} IS NOT NULL" for c in cols)
 
 
+def pre_match_sql(columns):
+    """(winner, loser) SQL for each side's pre-match rating, or None if the table can't say.
+
+    Same rule as the gap: avatar ratings when the game has them for both
+    players, else lifetime, else NULL.
+    """
+    sources = [c for c in (_AVATAR, _LIFETIME) if set(c) <= set(columns)]
+    if not sources:
+        return None
+    sides = []
+    for side in (0, 2):
+        whens = " ".join(
+            f"WHEN {' AND '.join(f'{c} IS NOT NULL' for c in cols)} THEN {cols[side]} - {cols[side + 1]}"
+            for cols in sources
+        )
+        sides.append(f"CASE {whens} END")
+    return tuple(sides)
+
+
 def elo_gap_by_day(cur, tables) -> list[list]:
     """[date, games, total gap] rows (oldest first) across the given match tables."""
     totals = {}

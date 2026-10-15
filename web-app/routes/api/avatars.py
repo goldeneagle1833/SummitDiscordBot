@@ -12,6 +12,7 @@ from urllib.parse import unquote
 from flask import Blueprint, jsonify, request
 
 from repositories.card_catalog import CardCatalogRepository
+from services.elo_gap import pre_match_sql
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS, AVATAR_IMAGES_DIR
 from utils.formatting import generate_pseudonym
 from utils.auth import is_admin
@@ -480,16 +481,16 @@ def reset_rows_cache():
         _rows_cache.clear()
 
 
-def _collect_discord_rows_with_players(cur, event_filter, play_draw=False):
+def _collect_discord_rows_with_players(cur, event_filter, play_draw=False, pre_elo=False):
     """Like _collect_discord_rows but also includes player IDs and names.
 
     Cached until the database changes; see _query_discord_rows_with_players.
     """
-    return _cached_rows(("discord", event_filter, play_draw),
-                        lambda: _query_discord_rows_with_players(cur, event_filter, play_draw))
+    return _cached_rows(("discord", event_filter, play_draw, pre_elo),
+                        lambda: _query_discord_rows_with_players(cur, event_filter, play_draw, pre_elo))
 
 
-def _query_discord_rows_with_players(cur, event_filter, play_draw=False):
+def _query_discord_rows_with_players(cur, event_filter, play_draw=False, pre_elo=False):
     """Like _collect_discord_rows but also includes player IDs and names.
 
     Returns (rows, use_new_columns) where rows are tuples of
@@ -498,14 +499,23 @@ def _query_discord_rows_with_players(cur, event_filter, play_draw=False):
 
     With play_draw=True each row gains a 7th column: whether the winner went
     first ('y'/'n'), or NULL when unknown or before PLAY_DRAW_CUTOFF.
+
+    With pre_elo=True (needs play_draw=True) each row gains the winner's and
+    loser's rating before the game, or NULL where the record doesn't store it.
     """
     all_rows = []
     use_new_columns = True
 
-    cols = f"{_deck_avatar_columns(cur)}, winner_id, winner_display_name, losser_id, losser_display_name"
+    base_cols = f"{_deck_avatar_columns(cur)}, winner_id, winner_display_name, losser_id, losser_display_name"
     if play_draw:
-        cols += (f", CASE WHEN timestamp >= '{PLAY_DRAW_CUTOFF}'"
-                 " THEN COALESCE(winner_went_first, first_player) END")
+        base_cols += (f", CASE WHEN timestamp >= '{PLAY_DRAW_CUTOFF}'"
+                      " THEN COALESCE(winner_went_first, first_player) END")
+
+    def cols_for(table):
+        if not pre_elo:
+            return base_cols
+        pre = pre_match_sql({r[1] for r in cur.execute(f"PRAGMA table_info({table})")})
+        return base_cols + (f", {pre[0]}, {pre[1]}" if pre else ", NULL, NULL")
 
     deck_where = ("((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
                   " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))")
@@ -513,7 +523,7 @@ def _query_discord_rows_with_players(cur, event_filter, play_draw=False):
     if event_filter in ("all", "current"):
         try:
             cur.execute(f"""
-                SELECT {cols}
+                SELECT {cols_for("match_records")}
                 FROM match_records
                 WHERE {deck_where}
                   AND (source = 'Discord' OR source IS NULL)
@@ -526,7 +536,7 @@ def _query_discord_rows_with_players(cur, event_filter, play_draw=False):
     if event_filter == "all" and use_new_columns:
         try:
             cur.execute(f"""
-                SELECT {cols}
+                SELECT {cols_for("match_records_archive")}
                 FROM match_records_archive
                 WHERE {deck_where}
             """)
@@ -540,7 +550,7 @@ def _query_discord_rows_with_players(cur, event_filter, play_draw=False):
                 for table in ("match_records", "match_records_archive"):
                     try:
                         cur.execute(f"""
-                            SELECT {cols}
+                            SELECT {cols_for(table)}
                             FROM {table}
                             WHERE {deck_where} AND timestamp >= ? AND timestamp <= ?
                               AND (source = 'Discord' OR source IS NULL)
@@ -552,7 +562,7 @@ def _query_discord_rows_with_players(cur, event_filter, play_draw=False):
             try:
                 event_id = int(event_filter)
                 cur.execute(f"""
-                    SELECT {cols}
+                    SELECT {cols_for("match_records_archive")}
                     FROM match_records_archive
                     WHERE {deck_where} AND event_id = ?
                 """, (event_id,))
@@ -1842,10 +1852,17 @@ def get_avatar_elo_matrix(avatar_name):
         if not winner_id or not loser_id:
             continue
 
-        winner_elo = elo_lookup.get(winner_id)
-        loser_elo = elo_lookup.get(loser_id)
-        if winner_elo is None or loser_elo is None:
-            continue
+        # Rating before the game when the record stores it, else today's rating
+        winner_pre, loser_pre = (row[7], row[8]) if len(row) > 8 else (None, None)
+        if winner_pre is not None and loser_pre is not None:
+            winner_elo, loser_elo = winner_pre, loser_pre
+            pre_match_games += 1
+        else:
+            winner_elo = elo_lookup.get(winner_id)
+            loser_elo = elo_lookup.get(loser_id)
+            if winner_elo is None or loser_elo is None:
+                continue
+        counted_games += 1
 
         winner_bracket = elo_bracket(winner_elo)
         loser_bracket = elo_bracket(loser_elo)
@@ -1965,10 +1982,17 @@ def get_avatars_elo_breakdown():
         if not winner_id or not loser_id:
             continue
 
-        winner_elo = elo_lookup.get(winner_id)
-        loser_elo = elo_lookup.get(loser_id)
-        if winner_elo is None or loser_elo is None:
-            continue
+        # Rating before the game when the record stores it, else today's rating
+        winner_pre, loser_pre = (row[7], row[8]) if len(row) > 8 else (None, None)
+        if winner_pre is not None and loser_pre is not None:
+            winner_elo, loser_elo = winner_pre, loser_pre
+            pre_match_games += 1
+        else:
+            winner_elo = elo_lookup.get(winner_id)
+            loser_elo = elo_lookup.get(loser_id)
+            if winner_elo is None or loser_elo is None:
+                continue
+        counted_games += 1
 
         winner_bracket = elo_bracket(winner_elo)
         loser_bracket = elo_bracket(loser_elo)
@@ -2735,7 +2759,7 @@ def get_elo_bracket_matrix():
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
         if source in ("all", "discord"):
-            rows, use_new = _collect_discord_rows_with_players(cur, event_filter, play_draw=True)
+            rows, use_new = _collect_discord_rows_with_players(cur, event_filter, play_draw=True, pre_elo=True)
         else:
             event_start, event_end = (None, None)
             if event_filter != "all":
@@ -2768,6 +2792,9 @@ def get_elo_bracket_matrix():
         return {"wins": d["wins"], "losses": d["losses"], "total": t,
                 "win_rate": round(d["wins"] / t * 100, 1) if t >= min_games else None}
 
+    pre_match_games = 0
+    counted_games = 0
+
     for row in rows:
         winner_id = str(row[2]) if row[2] else None
         loser_id = str(row[4]) if row[4] else None
@@ -2775,10 +2802,17 @@ def get_elo_bracket_matrix():
         if not winner_id or not loser_id:
             continue
 
-        winner_elo = elo_lookup.get(winner_id)
-        loser_elo = elo_lookup.get(loser_id)
-        if winner_elo is None or loser_elo is None:
-            continue
+        # Rating before the game when the record stores it, else today's rating
+        winner_pre, loser_pre = (row[7], row[8]) if len(row) > 8 else (None, None)
+        if winner_pre is not None and loser_pre is not None:
+            winner_elo, loser_elo = winner_pre, loser_pre
+            pre_match_games += 1
+        else:
+            winner_elo = elo_lookup.get(winner_id)
+            loser_elo = elo_lookup.get(loser_id)
+            if winner_elo is None or loser_elo is None:
+                continue
+        counted_games += 1
 
         w_bracket = elo_bracket(winner_elo)
         l_bracket = elo_bracket(loser_elo)
@@ -2845,4 +2879,6 @@ def get_elo_bracket_matrix():
         "event": event_filter,
         "brackets": brackets,
         "rows": result_rows,
+        "games": counted_games,
+        "pre_match_games": pre_match_games,
     })

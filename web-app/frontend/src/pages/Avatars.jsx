@@ -113,10 +113,16 @@ function EloBracketMatrix({ sourceFilter, eventFilter }) {
   if (loading) return <p className="text-text-muted text-sm py-4">Loading ELO bracket matrix...</p>
   if (!data || !data.rows?.length) return <p className="text-text-muted text-sm py-4">Not enough data for ELO bracket matrix.</p>
 
-  const { brackets, rows } = data
+  const { brackets, rows, games, pre_match_games: preMatchGames } = data
+  const currentRatingGames = (games || 0) - (preMatchGames || 0)
 
   return (
     <div className="overflow-x-auto">
+      {currentRatingGames > 0 && (
+        <p className="text-xs text-text-muted text-center mb-2">
+          {currentRatingGames.toLocaleString()} of {games.toLocaleString()} older games have no stored rating and use the player's current rating.
+        </p>
+      )}
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="border-b border-border">
@@ -622,7 +628,7 @@ export default function Avatars() {
             </h2>
             <p className="text-xs text-text-muted text-center mb-4">
               Shows win rates for each player ELO bracket against each opponent ELO bracket, plus each bracket's
-              win rate on the play and on the draw (matches from 2/7/2026 onward). Uses current player ratings.
+              win rate on the play and on the draw (matches from 2/7/2026 onward). Uses each player's rating at the time of the game.
             </p>
             <EloBracketMatrix sourceFilter={sourceFilter} eventFilter={eventFilter} />
           </section>

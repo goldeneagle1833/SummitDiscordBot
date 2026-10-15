@@ -151,3 +151,30 @@ def test_matrix_current_event_falls_back_for_non_admin(matrix):
     data = matrix.get("/api/avatars/elo-bracket-matrix?source=discord&event=current").get_json()
     assert data["event"] == "all"
     assert _row(data, 1600)["overall"]["total"] == 11
+
+
+
+def test_matrix_uses_rating_before_the_game(matrix, match_db):
+    # 'lo' is 1450 today but was 1750 when it beat 'hi' (1550 then) ten times
+    conn = sqlite3.connect(str(match_db))
+    conn.execute("ALTER TABLE match_records ADD COLUMN winner_lifetime_elo_change INTEGER")
+    conn.execute("ALTER TABLE match_records ADD COLUMN loser_lifetime_elo_change INTEGER")
+    for _ in range(10):
+        conn.execute(
+            "INSERT INTO match_records (winner_id, losser_id, json_deck_data_winner, json_deck_data_loser,"
+            " timestamp, winner_lifetime_elo_after, winner_lifetime_elo_change,"
+            " loser_lifetime_elo_after, loser_lifetime_elo_change)"
+            " VALUES ('lo', 'hi', ?, ?, '2026-09-02', 1760, 10, 1540, -10)",
+            (_deck("Geomancer"), _deck("Sparkmage")),
+        )
+    conn.commit()
+    conn.close()
+
+    data = matrix.get("/api/avatars/elo-bracket-matrix?source=discord").get_json()
+    assert data["games"] == 21
+    assert data["pre_match_games"] == 10
+    then_high = _row(data, 1700)
+    cell = then_high["cells"][data["brackets"].index(1500)]
+    assert (cell["wins"], cell["losses"]) == (10, 0)
+    # The 11 games without stored ratings keep today's brackets
+    assert _row(data, 1600)["overall"]["total"] == 11

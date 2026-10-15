@@ -494,3 +494,23 @@ def test_dm_toggle_needs_a_discord_login(client, api_repo):
     assert client.put("/api/meta-reports/dm", json={"on": True}).get_json() == {"canDm": True, "subscribed": True}
     assert client.get("/api/meta-reports/dm").get_json()["subscribed"] is True
     assert client.put("/api/meta-reports/dm", json={"on": False}).get_json()["subscribed"] is False
+
+
+def test_report_today_rolls_over_at_1am_utc():
+    from datetime import datetime, timezone
+    utc = timezone.utc
+    assert meta_report.report_today(datetime(2026, 10, 16, 0, 59, tzinfo=utc)) == date(2026, 10, 15)
+    assert meta_report.report_today(datetime(2026, 10, 16, 1, 0, tzinfo=utc)) == date(2026, 10, 16)
+    # Not due until 01:00 UTC on publish day.
+    assert latest(meta_report.report_today(datetime(2026, 10, 16, 0, 30, tzinfo=utc))) == "2026-09-a"
+    assert latest(meta_report.report_today(datetime(2026, 10, 16, 1, 5, tzinfo=utc))) == "2026-09-b"
+
+
+def test_match_days_are_utc():
+    from datetime import datetime, timezone
+    assert meta_report._utc_day("2026-09-30T23:30:00+00:00") == "2026-09-30"
+    assert meta_report._utc_day("2026-09-30T22:30:00-04:00") == "2026-10-01"
+    naive = "2026-09-30 22:30:00"
+    expected = datetime.fromisoformat(naive).astimezone(timezone.utc).date().isoformat()
+    assert meta_report._utc_day(naive) == expected
+    assert meta_report._utc_day("garbage-ish") == "garbage-is"

@@ -16,7 +16,7 @@ import usePageTitle from '@/hooks/usePageTitle'
 /**
  * Admin: Meta Reports.
  *
- * Reports build and publish themselves on the 1st and 16th (once PSO has
+ * Reports build and publish themselves at 1:00 AM UTC on the 1st and 16th (once PSO has
  * released the period's card data). This page is for everything else:
  * building past periods, editing the takeaways, and publishing by hand, with
  * or without the Discord post, home page banner and email.
@@ -190,7 +190,7 @@ export default function MetaReportsAdmin() {
       <header>
         <h1 className="font-display text-secondary text-3xl">Meta Reports</h1>
         <p className="text-sm text-text-muted mt-1">
-          Reports publish themselves on the 1st and 16th. Next up: <b className="text-text-primary">{data.next?.label}</b>, due {data.next?.publishLabel}.
+          Reports publish themselves at 1:00 AM UTC on the 1st and 16th. Next up: <b className="text-text-primary">{data.next?.label}</b>, due {data.next?.publishLabel}.
           Publishing posts to the content channel, puts a banner on the home page and DMs players who turned report DMs on.
         </p>
       </header>

@@ -38,14 +38,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from html import escape
-from zoneinfo import ZoneInfo
 
 import webapp_config
 from repositories.meta_reports import MetaReportRepository
 
 logger = logging.getLogger(__name__)
 
-EASTERN = ZoneInfo("America/New_York")
+PUBLISH_HOUR_UTC = 1       # reports come out at 01:00 UTC on the 1st and 16th
 MIN_ARCHETYPE_GAMES = 20   # deck-games before an Avatar + element pair is listed...
 MIN_ARCHETYPE_SHARE = 0.01  # ...and at least 1% of the period's decks
 MIN_MATCHUP_GAMES = 10     # games before a matchup cell shows a number
@@ -126,8 +125,24 @@ def latest_due_period(today: date) -> Period:
     return period
 
 
-def today_eastern() -> date:
-    return datetime.now(EASTERN).date()
+def report_today(now: datetime | None = None) -> date:
+    """Today's date on the report clock: UTC, rolling over at 01:00 UTC.
+
+    Before 01:00 UTC on the 1st or 16th it is still the day before, so the
+    new period isn't due yet.
+    """
+    now = now or datetime.now(timezone.utc)
+    return (now.astimezone(timezone.utc) - timedelta(hours=PUBLISH_HOUR_UTC)).date()
+
+
+def _utc_day(timestamp: str | None) -> str | None:
+    """UTC "YYYY-MM-DD" for a match timestamp (naive values are server-local time)."""
+    if not timestamp:
+        return None
+    try:
+        return datetime.fromisoformat(str(timestamp)).astimezone(timezone.utc).date().isoformat()
+    except ValueError:
+        return str(timestamp)[:10]
 
 
 # ---------------------------------------------------------------------- #
@@ -179,6 +194,13 @@ def _went_first(value) -> bool | None:
     return True if v in ("y", "yes", "true", "1") else False if v in ("n", "no", "false", "0") else None
 
 
+def _shift_day(day: str, days: int) -> str:
+    try:
+        return (date.fromisoformat(day) + timedelta(days=days)).isoformat()
+    except ValueError:
+        return day
+
+
 def ranked_games(period_from: str, period_through: str, db_path=None) -> list[dict]:
     """Every ranked game in the period as {winner, loser}, each an archetype or None."""
     path = db_path or webapp_config.MATCH_RECORDS_DB_PATH
@@ -199,14 +221,18 @@ def ranked_games(period_from: str, period_through: str, db_path=None) -> list[di
             ident = id_col if id_col in cols else "NULL"
             minutes = "match_time" if "match_time" in cols else "NULL"
             first = "winner_went_first" if "winner_went_first" in cols else "NULL"
+            # Periods are UTC days; timestamps are server-local, so widen by a day and convert.
             rows = conn.execute(
                 f"""SELECT {ident}, json_deck_data_winner, json_deck_data_loser,
-                           substr(timestamp, 1, 10), {minutes}, {first}
+                           timestamp, {minutes}, {first}
                     FROM {table}
                     WHERE substr(timestamp, 1, 10) BETWEEN ? AND ? {ranked}""",
-                (period_from, period_through),
+                (_shift_day(period_from, -1), _shift_day(period_through, 1)),
             )
-            for match_id, winner_json, loser_json, day, mins, went_first in rows:
+            for match_id, winner_json, loser_json, stamp, mins, went_first in rows:
+                day = _utc_day(stamp)
+                if day is None or not period_from <= day <= period_through:
+                    continue
                 if match_id is not None:
                     if match_id in seen_ids:
                         continue  # archived copy of a live row
@@ -1121,7 +1147,7 @@ def auto_publish_due(today: date | None = None, repo: MetaReportRepository | Non
     if os.environ.get("META_REPORT_AUTOPUBLISH", "1") != "1":
         return None
     repo = repo or MetaReportRepository()
-    today = today or today_eastern()
+    today = today or report_today()
     period = latest_due_period(today)
     late = (today - period.publish_day).days
     if late > AUTO_PUBLISH_GRACE_DAYS or repo.get(period.slug):

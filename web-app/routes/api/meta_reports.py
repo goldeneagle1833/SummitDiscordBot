@@ -180,7 +180,7 @@ def dm_toggle():
 @require_admin
 def admin_list():
     repo = MetaReportRepository()
-    today = meta_report.today_eastern()
+    today = meta_report.report_today()
     due = meta_report.latest_due_period(today)
     # Periods an admin can build: the newest due one and the eleven before it.
     periods, p = [], due
@@ -220,7 +220,7 @@ def admin_build():
         period = meta_report.Period.from_slug(slug)
     except ValueError:
         return jsonify({"error": "Pick a report period."}), 400
-    if period.publish_day > meta_report.today_eastern():
+    if period.publish_day > meta_report.report_today():
         return jsonify({"error": f"That period's data comes out {period.publish_label()}."}), 400
     report = meta_report.build(period)
     _audit("meta_report_build", period.slug, f"Built meta report {period.label()}")

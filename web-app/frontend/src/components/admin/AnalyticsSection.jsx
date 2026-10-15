@@ -102,6 +102,15 @@ export function ActiveUsersTiles({ activeUsers }) {
   )
 }
 
+/** Download link for every page's views in the current range; `by` = 'url' for exact URLs. */
+export function pageViewsCsvUrl(days, by) {
+  const params = new URLSearchParams()
+  if (days != null) params.set('hours', String(days * 24))
+  if (by) params.set('by', by)
+  const qs = params.toString()
+  return `/api/analytics/page-views.csv${qs ? `?${qs}` : ''}`
+}
+
 /** Page views, banner clicks and top pages for the last `days` days (null = all time). */
 export function PageViewsPanel({ days }) {
   const [data, setData] = useState(null)
@@ -156,7 +165,13 @@ export function PageViewsPanel({ days }) {
         </div>
 
         <div className="bg-bg-raised border border-border rounded-lg p-4">
-          <h3 className="text-sm font-semibold mb-3">Top Pages</h3>
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+            <h3 className="text-sm font-semibold">Top Pages</h3>
+            <div className="flex gap-3 text-xs">
+              <a href={pageViewsCsvUrl(days)} className="text-primary hover:underline">Export by page (CSV)</a>
+              <a href={pageViewsCsvUrl(days, 'url')} className="text-primary hover:underline">Every URL (CSV)</a>
+            </div>
+          </div>
           {data.page_views.top_pages?.length > 0 ? (
             <div className="overflow-y-auto max-h-52">
               <table className="w-full text-xs">

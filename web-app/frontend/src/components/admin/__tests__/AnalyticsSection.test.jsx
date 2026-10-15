@@ -149,3 +149,12 @@ describe('dailyActiveRange', () => {
     expect(dailyActiveRange([], 30, now)).toEqual([])
   })
 })
+
+describe('pageViewsCsvUrl', () => {
+  it('passes the range and URL mode to the export', async () => {
+    const { pageViewsCsvUrl } = await import('../AnalyticsSection')
+    expect(pageViewsCsvUrl(30)).toBe('/api/analytics/page-views.csv?hours=720')
+    expect(pageViewsCsvUrl(null)).toBe('/api/analytics/page-views.csv')
+    expect(pageViewsCsvUrl(7, 'url')).toBe('/api/analytics/page-views.csv?hours=168&by=url')
+  })
+})

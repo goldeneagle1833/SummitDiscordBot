@@ -3,6 +3,7 @@
 import json
 import os
 import uuid
+from datetime import datetime
 
 from flask import Blueprint, jsonify, request, session
 from werkzeug.utils import secure_filename
@@ -113,6 +114,41 @@ def analytics_stats():
         "active_users": repo.get_daily_active_users(hours=hours),
         "banner_clicks": repo.get_banner_click_stats(),
     })
+
+
+@analytics_bp.route("/analytics/page-views.csv", methods=["GET"])
+@require_admin
+def page_views_csv():
+    """Download every page's views and visitors (admin only).
+
+    ?hours= limits the window (omit for all time). ?by=url lists every exact
+    URL; the default folds ids together so each page is one row.
+    """
+    import csv
+    import io
+    from flask import Response
+
+    hours = request.args.get("hours", type=int)
+    data = AnalyticsRepository().get_page_view_export(hours=hours)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    if request.args.get("by") == "url":
+        writer.writerow(["url", "page", "views", "visitors"])
+        for r in data["paths"]:
+            writer.writerow([r["path"], r["page"], r["views"], r["visitors"]])
+        kind = "urls"
+    else:
+        writer.writerow(["page", "views", "visitors", "urls"])
+        for r in data["pages"]:
+            writer.writerow([r["page"], r["views"], r["visitors"], r["urls"]])
+        kind = "pages"
+    window = f"last-{hours // 24}-days" if hours else "all-time"
+    filename = f"summit-{kind}-{window}-{datetime.utcnow():%Y-%m-%d}.csv"
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # --- Banner Image Upload ---

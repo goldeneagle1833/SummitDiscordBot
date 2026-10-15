@@ -1,9 +1,11 @@
 """Repository for site analytics data access."""
 
 import json
+import re
 import sqlite3
 import logging
 import time
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 from webapp_config import ANALYTICS_DB_PATH
@@ -13,6 +15,38 @@ logger = logging.getLogger(__name__)
 # Throttle persist_expired_sessions to run at most once per 60 seconds
 _last_persist_time = 0
 _PERSIST_INTERVAL = 60
+
+
+# Site routes with ids in them (from frontend/src/App.jsx), most specific first.
+# Fixed pages that share a prefix are listed in _STATIC_PAGES so they keep their name.
+_STATIC_PAGES = {"/top-8/compare", "/meta-report/email"}
+_PAGE_PATTERNS = [
+    (re.compile(r"^/player/[^/]+/avatar/[^/]+/?$"), "/player/:id/avatar/:name"),
+    (re.compile(r"^/deck-snapshot/[^/]+/[^/]+/?$"), "/deck-snapshot/:match/:player"),
+    (re.compile(r"^/admin/store/orders/[^/]+/print/?$"), "/admin/store/orders/:id/print"),
+    (re.compile(r"^/admin/chart/[^/]+/?$"), "/admin/chart/:chart"),
+    (re.compile(r"^/elo/server/[^/]+/?$"), "/elo/server/:id"),
+    (re.compile(r"^/player/[^/]+/?$"), "/player/:id"),
+    (re.compile(r"^/deck-stats/[^/]+/?$"), "/deck-stats/:id"),
+    (re.compile(r"^/season/[^/]+/?$"), "/season/:id"),
+    (re.compile(r"^/brackets/[^/]+/?$"), "/brackets/:slug"),
+    (re.compile(r"^/top-8/[^/]+/?$"), "/top-8/:event"),
+    (re.compile(r"^/stats/[^/]+/?$"), "/stats/:event"),
+    (re.compile(r"^/meta-report/[^/]+/?$"), "/meta-report/:report"),
+    (re.compile(r"^/deck-rec/[^/]+/?$"), "/deck-rec/:deck"),
+    (re.compile(r"^/avatar/[^/]+/?$"), "/avatar/:name"),
+    (re.compile(r"^/card/[^/]+/?$"), "/card/:name"),
+]
+
+
+def page_pattern(path: str) -> str:
+    """The page a URL belongs to, with ids folded into placeholders."""
+    if path in _STATIC_PAGES:
+        return path
+    for regex, name in _PAGE_PATTERNS:
+        if regex.match(path):
+            return name
+    return path
 
 
 class AnalyticsRepository:
@@ -85,6 +119,53 @@ class AnalyticsRepository:
 
         conn.close()
         return {"total": total, "top_pages": top_pages, "daily": daily}
+
+    def get_page_view_export(self, hours: int | None = None) -> dict:
+        """Every page's views and visitors for the CSV export.
+
+        Returns {"paths": [...], "pages": [...]}: one row per exact URL, and
+        one row per page with player/card/event ids folded together
+        (/player/123 and /player/456 both count toward /player/:id).
+        Visitors are distinct browser sessions.
+        """
+        self._ensure_session_views_table()
+        where = ""
+        params = ()
+        if hours:
+            cutoff = (datetime.utcnow() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+            where = "WHERE timestamp >= ?"
+            params = (cutoff,)
+
+        conn = self._connect()
+        try:
+            views = dict(conn.execute(
+                f"SELECT path, COUNT(*) FROM page_views {where} GROUP BY path", params,
+            ).fetchall())
+            path_visitors = {}
+            page_sessions = defaultdict(set)
+            for path, session_id in conn.execute(
+                f"SELECT path, session_id FROM session_page_views {where}", params,
+            ):
+                path_visitors.setdefault(path, set()).add(session_id)
+                page_sessions[page_pattern(path)].add(session_id)
+        finally:
+            conn.close()
+
+        paths = sorted(
+            ({"path": path, "page": page_pattern(path), "views": views.get(path, 0),
+              "visitors": len(path_visitors.get(path, ()))}
+             for path in set(views) | set(path_visitors)),
+            key=lambda r: (-r["views"], r["path"]),
+        )
+        grouped = {}
+        for r in paths:
+            g = grouped.setdefault(r["page"], {"page": r["page"], "views": 0, "urls": 0})
+            g["views"] += r["views"]
+            g["urls"] += 1
+        pages = sorted(grouped.values(), key=lambda g: (-g["views"], g["page"]))
+        for g in pages:
+            g["visitors"] = len(page_sessions.get(g["page"], ()))
+        return {"paths": paths, "pages": pages}
 
     def get_daily_active_users(self, hours: int | None = None) -> dict:
         """Daily active users from session page views.

@@ -99,7 +99,7 @@ class FartRepository:
         ("fart", "Fart", "Roll for random fart points", 0, 0, "daily", 1),
         ("fart_gift", "Fart Gift", "Roll your daily fart and give the points to another player (once per player per season)", 0, 0, "daily", 2),
         ("fartprediction", "Fart Prediction", "Predict fart type for 2x or half points", 0, 0, "daily", 3),
-        ("bullfart", "Bull Fart", "Bonus points based on last fart type (separate daily timer)", 0, 0, "daily", 4),
+        ("bullfart", "Bull Fart", "Bonus points based on last fart type (once per week, separate from the daily fart)", 0, 0, "weekly", 4),
         ("taxes", "Taxes", "Take 20% from everyone else, give it all to the fartlord", 0, 20, "once_per_reign", 5),
         ("wealth", "Wealth", "Take 50% from top 5, give to everyone else", 0, 50, "once_per_reign", 6),
     ]
@@ -442,10 +442,10 @@ class FartRepository:
     _KNOWN_TRACKING_TABLES = frozenset({
         "fart_scores",
         "fart_history",
-        "command_usage",          # !bullfart (own daily timer), shop daily/weekly items, !fart_court, etc.
+        "command_usage",          # !bullfart (own weekly timer), shop daily/weekly items, !fart_court, etc.
         "lucky_charms",           # active !mushroom buff
         "abundance_buff",         # !fartabundance charges, once per season
-        "uber_rare_hits",         # Lavashart / Frostshart / Yourt the player has hit
+        "uber_rare_hits",         # Lavashart / Frostshart / Yourt hit counts
         "lucky_charm_usage",      # !mushroom once/week
         "fart_leader_only_once",  # !taxes / !wealth once/reign
         "evil_star_usage",        # once/season + star locks
@@ -456,7 +456,10 @@ class FartRepository:
         "gas_shields",
         "fart_traps",
         "frost_shart_freeze",     # Frostshart: shop + specials blocked for 24h (!fart ok)
-        "uber_rare_curio_season", # leftover per-player uber-rare flags (no longer used)
+        # Seasonal per-player uber-curio flags (one row per user + variant).
+        # AI DEVS: Any new curio must be flagged the same way: a per-player seasonal flag that the Reset Fart Game button wipes.
+        # FunCog.record_uber_rare_hit writes this table. Do not add it to _PRESERVE_ON_RESET.
+        "uber_rare_curio_season",
         "yourt_rampage",          # 1-minute Yourt shop-chaos window + attack ticker
     })
 
@@ -472,9 +475,11 @@ class FartRepository:
         (fart_game_commands, fart_shop_items, uber_rare_curio_claimed,
         frostshart_legacy_repair).
         Uses dynamic discovery so daily / weekly / season / reign cooldowns,
-        item usage, gifts, donations, protections, leftover uber-rare season
-        rows, and any future trackers are all cleared.
+        item usage, gifts, donations, protections, seasonal uber-curio flags
+        (uber_rare_curio_season), and any future trackers are all cleared.
         The unused legacy uber_rare_curio_claimed row is intentionally kept.
+        AI DEVS: any new curio must be flagged the same way: a per-player
+        seasonal flag that the Reset Fart Game button wipes.
         """
         conn = self._get_connection()
         rows = conn.execute(

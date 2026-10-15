@@ -749,6 +749,20 @@ export default function Nav() {
         )}
 
         <div className="pb-4">
+          {/* Sections and links ordered by page views (last 90 days, Oct 2026) */}
+          <SidebarHeading label="Decks" />
+          <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
+          <SidebarLink to="/top-8" label="Top 8 Decks" location={location} onClick={close} />
+          <SidebarLink to="/deck-builder" label="Deck Visualizer" location={location} onClick={close} />
+          <SidebarLink to="/deck-archetypes" label="Deck Archetypes" location={location} onClick={close} />
+
+          <SidebarHeading label="Meta & Stats" />
+          <SidebarLink to="/avatars" label="Avatars" location={location} onClick={close} match={['/avatars', '/avatars/top-players']} />
+          <SidebarLink to="/meta-report" label="Meta Report" location={location} onClick={close} />
+          <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
+          <SidebarLink to="/cards/played-winrates" label="Card Win Rates" location={location} onClick={close} />
+          <SidebarLink to="/popular-cards" label="Popular Cards" location={location} onClick={close} />
+
           <SidebarHeading label="Summit Ranked" />
           <SidebarLink to="/elo" label="ELO Leaderboards" location={location} onClick={close} />
           <SidebarLink to="/brackets" label="Season Top Cut" location={location} onClick={close} />
@@ -756,22 +770,9 @@ export default function Nav() {
           <SidebarLink to="/rumble" label="Rumble" location={location} onClick={close} />
           <SidebarLink to="/fun-stats" label="Fun Stats" location={location} onClick={close} />
 
-          <SidebarHeading label="Meta & Stats" />
-          <SidebarLink to="/meta-report" label="Meta Report" location={location} onClick={close} />
-          <SidebarLink to="/avatars" label="Avatars" location={location} onClick={close} match={['/avatars', '/avatars/top-players']} />
-          <SidebarLink to="/cards/played-winrates" label="Card Win Rates" location={location} onClick={close} />
-          <SidebarLink to="/popular-cards" label="Popular Cards" location={location} onClick={close} />
-          <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
-
-          <SidebarHeading label="Decks" />
-          <SidebarLink to="/top-8" label="Top 8 Decks" location={location} onClick={close} />
-          <SidebarLink to="/deck-archetypes" label="Deck Archetypes" location={location} onClick={close} />
-          <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
-          <SidebarLink to="/deck-builder" label="Deck Visualizer" location={location} onClick={close} />
-
           <SidebarHeading label="Events" />
-          <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} match={['/explorer', '/explorer/apply']} />
           <SidebarLink to="/card-points" label="Omens" location={location} onClick={close} />
+          <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} match={['/explorer', '/explorer/apply']} />
 
           <SidebarHeading label="Tools" />
           <SidebarLink to="/life-counter" label="Life Counter" location={location} onClick={close} />

@@ -10,7 +10,9 @@ import time
 import config
 from utils.text import find_best_command_match
 from cogs.fun import (
+    ABUNDANCE_CHARGES,
     FROSTSHART_BLOCKED_SHOP_COMMANDS,
+    PREGNANT_MAN,
     parse_to_est_date,
     get_est_date,
     get_est_now,
@@ -48,7 +50,7 @@ class ShopCog(commands.Cog):
             "banana": 5,  # Banana
             "star": 50,  # Star (actual cost is 10% of points)
             "mushroom": 5,  # Mushroom — next fart rolls twice, take higher
-            "fartabundance": self.FART_ABUNDANCE_COST,  # next !fart rolls twice, keep both
+            "fartabundance": self.FART_ABUNDANCE_COST,  # 7 doubled farts, once per season
             "bobomb": 25,  # Bob-omb
             "fart_star": 200,  # Star Killer (actual cost is 10% of points)
             "thunder_fart": 10,  # Thunder Fart - 10 damage to all, once/week
@@ -959,12 +961,6 @@ class ShopCog(commands.Cog):
             )
         """)
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS abundance_charms (
-                user_id INTEGER PRIMARY KEY,
-                activated_at TEXT
-            )
-        """)
-        cur.execute("""
             CREATE TABLE IF NOT EXISTS lucky_charm_usage (
                 user_id INTEGER,
                 command_name TEXT,
@@ -976,8 +972,8 @@ class ShopCog(commands.Cog):
     def weekly_charm_block_message(self, cur, user_id, command_name, label):
         """Cooldown text for a once-per-week charm, or None when it can be used.
 
-        Each command_name has its own row, so !fartabundance does not share
-        !mushroom's weekly lock.
+        Each command_name has its own row, so one charm's week does not
+        lock another.
         """
         if self.yourt_waives_shop_limits():
             return None
@@ -1014,7 +1010,7 @@ class ShopCog(commands.Cog):
         )
 
     def charm_row_active(self, cur, table, user_id):
-        if table not in ("lucky_charms", "abundance_charms"):
+        if table != "lucky_charms":
             raise ValueError(f"Unknown charm table: {table}")
         cur.execute(
             f"SELECT activated_at FROM {table} WHERE user_id = ?",
@@ -1023,7 +1019,7 @@ class ShopCog(commands.Cog):
         return cur.fetchone() is not None
 
     def activate_charm(self, cur, table, user_id, now_iso):
-        if table not in ("lucky_charms", "abundance_charms"):
+        if table != "lucky_charms":
             raise ValueError(f"Unknown charm table: {table}")
         cur.execute(
             f"INSERT INTO {table} (user_id, activated_at) VALUES (?, ?)",
@@ -1385,13 +1381,6 @@ class ShopCog(commands.Cog):
             if cooldown_msg:
                 return await ctx.send(cooldown_msg)
 
-            # Buffs don't stack: finish Fart Abundance before buying a mushroom.
-            if self.charm_row_active(cur, "abundance_charms", ctx.author.id):
-                return await ctx.send(
-                    "You already have Fart Abundance active! Use `!fart` to consume it first. "
-                    "It doesn't stack with Mushroom Boost."
-                )
-
             if self.charm_row_active(cur, "lucky_charms", ctx.author.id):
                 return await ctx.send(
                     "You already have a Mushroom Boost active! Use `!fart` to consume it first."
@@ -1420,18 +1409,39 @@ class ShopCog(commands.Cog):
             if conn is not None:
                 conn.close()
 
+    def _abundance_already_owned_message(self, mention, fun, user_id):
+        remaining = fun.abundance_charges(user_id)
+        if remaining > 0:
+            noun = "fart" if remaining == 1 else "farts"
+            left = f"You have **{remaining}** abundant {noun} left this season."
+        else:
+            left = "You already used every abundant fart this season."
+        return (
+            f"{PREGNANT_MAN} {mention}, you already bought Fart Abundance "
+            f"this season. {left}"
+        )
+
     @commands.command(
         name="fartabundance",
         aliases=["abundancefart", "fart_abundance", "abundance_fart"],
     )
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fartabundance(self, ctx):
-        """Pay 500, get 400 back. Next !fart rolls twice and you keep both. Once per week, separate from !mushroom."""
+        """Pay 500, get 400 back. Seven doubled farts this season. Stacks with mushroom."""
         conn = None
-        activated = False
         try:
             cost = self.item_costs["fartabundance"]
             refund = self.FART_ABUNDANCE_REFUND
+            fun = self.bot.get_cog("FunCog")
+            if fun is None or not hasattr(fun, "grant_abundance"):
+                return await ctx.send(
+                    "Fart Abundance isn't available right now. Try again in a moment."
+                )
+            if fun.has_bought_abundance(ctx.author.id):
+                return await ctx.send(
+                    self._abundance_already_owned_message(ctx.author.mention, fun, ctx.author.id)
+                )
+
             if not await self.check_points(ctx.author.id, "fartabundance"):
                 return await ctx.send(
                     f"You don't have enough points! Fart Abundance costs {cost} points "
@@ -1440,28 +1450,6 @@ class ShopCog(commands.Cog):
 
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
-            self.ensure_charm_tables(cur)
-
-            cooldown_msg = self.weekly_charm_block_message(
-                cur, ctx.author.id, "fartabundance", "Fart Abundance"
-            )
-            if cooldown_msg:
-                return await ctx.send(cooldown_msg)
-
-            if self.charm_row_active(cur, "abundance_charms", ctx.author.id):
-                return await ctx.send(
-                    "You already have Fart Abundance active! Use `!fart` to consume it first."
-                )
-
-            # Separate weekly timer from !mushroom, but the buffs don't stack.
-            if self.charm_row_active(cur, "lucky_charms", ctx.author.id):
-                return await ctx.send(
-                    "You already have a Mushroom Boost active! Use `!fart` to consume it first. "
-                    "Fart Abundance doesn't stack with it."
-                )
-
-            now = datetime.datetime.now()
-            now_iso = now.isoformat()
             paid = not self.yourt_waives_shop_limits()
             if paid:
                 cur.execute(
@@ -1478,11 +1466,7 @@ class ShopCog(commands.Cog):
                     "UPDATE fart_scores SET score = score + ? WHERE user_id = ?",
                     (refund, ctx.author.id),
                 )
-
-            self.activate_charm(cur, "abundance_charms", ctx.author.id, now_iso)
-            self.mark_charm_weekly_use(cur, ctx.author.id, "fartabundance", now_iso)
             conn.commit()
-            activated = True
         except Exception as e:
             logger.error(f"Error in fartabundance command: {e}")
             await ctx.send("An error occurred while processing the command.")
@@ -1491,8 +1475,21 @@ class ShopCog(commands.Cog):
             if conn is not None:
                 conn.close()
 
-        if not activated:
-            return
+        if not fun.grant_abundance(ctx.author.id, ABUNDANCE_CHARGES):
+            if not self.yourt_waives_shop_limits():
+                net = self.item_costs["fartabundance"] - self.FART_ABUNDANCE_REFUND
+                refund_conn = sqlite3.connect("fart_scores.db")
+                try:
+                    refund_conn.execute(
+                        "UPDATE fart_scores SET score = score + ? WHERE user_id = ?",
+                        (net, ctx.author.id),
+                    )
+                    refund_conn.commit()
+                finally:
+                    refund_conn.close()
+            return await ctx.send(
+                self._abundance_already_owned_message(ctx.author.mention, fun, ctx.author.id)
+            )
 
         if self.yourt_waives_shop_limits():
             cost_line = ""
@@ -1503,10 +1500,13 @@ class ShopCog(commands.Cog):
                 f"**{self.FART_ABUNDANCE_REFUND}** back (net **{net}**).\n"
             )
         await ctx.send(
-            f"🌾 **FART ABUNDANCE!** \n"
+            f"{PREGNANT_MAN} **FART ABUNDANCE!** \n"
             f"<@{ctx.author.id}> {cost_line}"
-            f"Your next `!fart` will be rolled twice, and you'll keep **both** results!\n"
-            f"(Once per week — this timer is separate from `!mushroom`, and they don't stack.)"
+            f"You have **{ABUNDANCE_CHARGES}** abundant farts this season.\n"
+            f"`!fart`, `!fart_gift`, and `!fartprediction` will ask "
+            f"**Would you like to fart Abundantly?**\n"
+            f"✅ doubles that fart (stacks with `!mushroom`). ❌ saves the charge.\n"
+            f"Once per season."
         )
 
     @commands.command(name="bobomb")
@@ -2387,12 +2387,14 @@ class ShopCog(commands.Cog):
                 self.item_costs["mushroom"],
             ),
             (
-                "Fart Abundance (!fartabundance / !abundancefart)",
+                f"{PREGNANT_MAN} Fart Abundance (!fartabundance)",
                 (
                     f"Pay {self.FART_ABUNDANCE_COST}, get {self.FART_ABUNDANCE_REFUND} back. "
-                    "Your next !fart rolls twice and you keep BOTH. "
-                    "Once per week, on its own timer from !mushroom. Does not stack with an active Mushroom Boost.\n"
-                    "*Two farts. One sitting.*"
+                    f"{ABUNDANCE_CHARGES} doubled farts this season. "
+                    "!fart, !fart_gift, and !fartprediction ask first. "
+                    "Yes doubles that fart and stacks with Mushroom. No saves the charge. "
+                    "Once per season.\n"
+                    "*One additional fart, until the season clears.*"
                 ),
                 f"{self.FART_ABUNDANCE_COST} ({self.FART_ABUNDANCE_REFUND} back)",
             ),

@@ -31,11 +31,13 @@ _SHOP_EFFECTS = {
     "mushroom": {"action": "buff", "effect": "double_roll", "description": "Next fart rolls twice, take higher"},
     "fartabundance": {
         "action": "buff",
-        "effect": "sum_double_roll",
-        "description": "Next !fart rolls twice, keep both",
+        "effect": "double_points",
+        "description": "7 doubled farts this season, prompted on each core fart",
         "cost": 500,
         "refund": 400,
-        "independent_of": "mushroom",
+        "charges": 7,
+        "once_per_season": True,
+        "stacks_with": "mushroom",
     },
     "bobomb": {"action": "damage", "target": "top5", "formula": "3d20/2"},
     "fart_star": {"action": "remove_buff", "target": "random_protected", "removes": "star",
@@ -75,7 +77,7 @@ class FartRepository:
         ("big_banana", "Big Banana", "Hits a random player behind you with 4d10 damage", 20, 0, "daily"),
         ("star", "Star", "Protects you from all items for 72 hours (costs 10% of your points). Blocked after Evil Star.", 0, 0, "weekly"),
         ("mushroom", "Mushroom", "Next fart rolls twice, take higher!", 5, 0, "weekly"),
-        ("fartabundance", "Fart Abundance", "Pay 500, get 400 back. Next !fart rolls twice and you keep both. Once per week, separate from Mushroom.", 500, 0, "weekly"),
+        ("fartabundance", "Fart Abundance", "Pay 500, get 400 back. 7 doubled farts this season. Core farts ask first. Stacks with Mushroom. Once per season.", 500, 0, "once_per_season"),
         ("bobomb", "Bob-omb", "Hits the top 5 players with 3d20/2 damage", 25, 0, "none"),
         ("fart_star", "Fart Star", "Removes star protection from a random protected user. Blocked after Evil Star.", 0, 0, "weekly"),
         ("evil_star", "Evil Star", "Doubles your points if you have exactly 666. Once/season; locks out other stars.", 0, 0, "once_per_season"),
@@ -340,6 +342,23 @@ class FartRepository:
                     (name, label, desc, cost, damage, cooldown, max_order, effect_json),
                 )
             conn.commit()
+        self._sync_fartabundance_item(conn)
+        conn.commit()
+
+    def _sync_fartabundance_item(self, conn):
+        """Keep the built-in Abundance card matched to the bot (charges, season lock)."""
+        effect_json = json.dumps(_SHOP_EFFECTS.get("fartabundance", {}))
+        for name, label, desc, cost, damage, cooldown in self._DEFAULT_SHOP_ITEMS:
+            if name != "fartabundance":
+                continue
+            conn.execute(
+                """UPDATE fart_shop_items
+                   SET label = ?, description = ?, cost = ?, damage = ?,
+                       cooldown = ?, effect = ?
+                   WHERE name = ?""",
+                (label, desc, cost, damage, cooldown, effect_json, name),
+            )
+            return
 
     def get_shop_items(self) -> list[dict]:
         """Get all fart shop item configs."""
@@ -425,8 +444,9 @@ class FartRepository:
         "fart_history",
         "command_usage",          # !bullfart (own daily timer), shop daily/weekly items, !fart_court, etc.
         "lucky_charms",           # active !mushroom buff
-        "abundance_charms",       # active !fartabundance buff
-        "lucky_charm_usage",      # !mushroom and !fartabundance once/week (separate rows)
+        "abundance_buff",         # !fartabundance charges, once per season
+        "uber_rare_hits",         # Lavashart / Frostshart / Yourt the player has hit
+        "lucky_charm_usage",      # !mushroom once/week
         "fart_leader_only_once",  # !taxes / !wealth once/reign
         "evil_star_usage",        # once/season + star locks
         "fart_donation_usage",    # once/recipient/season

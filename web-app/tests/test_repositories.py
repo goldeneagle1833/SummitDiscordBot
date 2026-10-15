@@ -693,7 +693,8 @@ class TestFartRepositoryReset:
             "fart_history",
             "command_usage",
             "lucky_charms",
-            "abundance_charms",
+            "abundance_buff",
+            "uber_rare_hits",
             "lucky_charm_usage",
             "fart_leader_only_once",
             "evil_star_usage",
@@ -805,11 +806,47 @@ class TestFartRepositoryReset:
         items = {item["name"]: item for item in repo.get_shop_items()}
         abundance = items["fartabundance"]
         assert abundance["cost"] == 500
-        assert abundance["cooldown"] == "weekly"
-        assert abundance["effect"]["effect"] == "sum_double_roll"
+        assert abundance["cooldown"] == "once_per_season"
+        assert abundance["effect"]["effect"] == "double_points"
         assert abundance["effect"]["refund"] == 400
-        assert abundance["effect"]["independent_of"] == "mushroom"
+        assert abundance["effect"]["charges"] == 7
+        assert abundance["effect"]["stacks_with"] == "mushroom"
         assert items["mushroom"]["cost"] == 5
+
+    def test_stale_weekly_abundance_row_becomes_seasonal(self, tmp_path):
+        from repositories.fart import FartRepository
+
+        db_path = tmp_path / "fart_scores.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE fart_shop_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                label TEXT NOT NULL,
+                description TEXT,
+                cost INTEGER NOT NULL DEFAULT 0,
+                damage INTEGER NOT NULL DEFAULT 0,
+                cooldown TEXT NOT NULL DEFAULT 'none',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                effect TEXT
+            )
+        """)
+        conn.execute(
+            "INSERT INTO fart_shop_items (name, label, description, cost, cooldown, effect) "
+            "VALUES ('fartabundance', 'Fart Abundance', 'old weekly copy', 500, 'weekly', ?)",
+            ('{"effect": "sum_rolls"}',),
+        )
+        conn.commit()
+        conn.close()
+
+        repo = FartRepository(db_path=db_path)
+        items = {item["name"]: item for item in repo.get_shop_items()}
+        abundance = items["fartabundance"]
+        assert abundance["cooldown"] == "once_per_season"
+        assert "Once per season" in abundance["description"]
+        assert abundance["effect"]["effect"] == "double_points"
+        assert abundance["effect"]["charges"] == 7
 
 
 def _make_event(tmp_path, decks):

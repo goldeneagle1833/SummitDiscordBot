@@ -673,7 +673,7 @@ export default function MetaReport() {
       <header className="pt-2 pb-3">
         <h1 className="font-display text-secondary text-3xl md:text-4xl">Meta Report</h1>
         <p className="text-text-muted mt-1 max-w-prose">
-          What the Summit is playing and winning with. A new report comes out on the 1st and 16th of each month.
+          What the Summit is playing and winning with. A new report comes out on the 1st and 15th of each month at 1:00 AM UTC.
         </p>
       </header>
 
@@ -722,7 +722,7 @@ export default function MetaReport() {
       {loading ? (
         <Spinner className="py-20" />
       ) : !reports?.length ? (
-        <div className={`${panel} mt-6 text-text-muted`}>The first Meta Report hasn&apos;t been published yet. Check back on the 1st or 16th.</div>
+        <div className={`${panel} mt-6 text-text-muted`}>The first Meta Report hasn&apos;t been published yet. Check back on the 1st or 15th.</div>
       ) : error ? (
         <div className={`${panel} mt-6 text-text-muted`}>
           {error.status === 404 ? "That report doesn't exist." : "Couldn't load this report. Try again in a moment."}
@@ -770,7 +770,7 @@ export default function MetaReport() {
 
           <Section title="How this report is made">
             <ul className={`${panel} text-sm text-text-muted grid gap-1.5 list-disc pl-8`}>
-              <li>Each report covers half a month and comes out one month later, the same delay as the ranked card data on Card Win Rates. The report on the 1st covers the previous month&apos;s 1st to 15th; the report on the 16th covers the 16th to month end.</li>
+              <li>Each report covers half a month and comes out the next month, in step with the ranked card data on Card Win Rates. The report on the 1st covers the previous month&apos;s 1st to 15th; the report on the 15th covers the previous month&apos;s 16th to month end. Reports come out at 1:00 AM UTC.</li>
               <li>Ranked games count toward totals only. No ranked deck lists or player names appear in a report.</li>
               <li>Deck lists come only from public Top 8 events.</li>
               <li>Small samples are hidden: an Avatar needs 20 games (or 1% of decks) for the tiers, matchups and counter picks need 10, and card win rates need 20.</li>

@@ -47,16 +47,17 @@ def no_events(monkeypatch):
 
 def test_periods_lag_one_month():
     assert Period(2026, 9, "a").publish_day == date(2026, 10, 1)
-    assert Period(2026, 9, "b").publish_day == date(2026, 10, 16)
-    assert Period(2026, 12, "b").publish_day == date(2027, 1, 16)
+    assert Period(2026, 9, "b").publish_day == date(2026, 10, 15)
+    assert Period(2026, 12, "b").publish_day == date(2027, 1, 15)
     assert Period(2026, 2, "b").end == date(2026, 2, 28)
 
 
 def test_latest_due_period():
-    # Oct 1-15 shows Sep 1-15; Oct 16 onward shows Sep 16-30.
+    # Oct 1-14 shows Sep 1-15; Oct 15 onward shows Sep 16-30.
     assert latest(date(2026, 10, 1)) == "2026-09-a"
-    assert latest(date(2026, 10, 15)) == "2026-09-a"
-    assert latest(date(2026, 10, 16)) == "2026-09-b"
+    assert latest(date(2026, 10, 14)) == "2026-09-a"
+    assert latest(date(2026, 10, 15)) == "2026-09-b"
+    assert latest(date(2026, 10, 31)) == "2026-09-b"
     assert latest(date(2026, 1, 3)) == "2025-12-a"
 
 
@@ -229,7 +230,7 @@ def test_auto_publish_gives_up_waiting_and_skips_stale_periods(repo, monkeypatch
     monkeypatch.setattr(meta_report, "deliver", lambda r, repo=None: {})
     # Eleven days past Oct 1: too late to announce on its own.
     assert meta_report.auto_publish_due(date(2026, 10, 12), repo, pso_ready=lambda p: True) is None
-    # Three days after Oct 16 with no PSO data: publish anyway.
+    # Four days after Oct 15 with no PSO data: publish anyway.
     report = meta_report.auto_publish_due(date(2026, 10, 19), repo, pso_ready=lambda p: False)
     assert report["slug"] == "2026-09-b"
 
@@ -499,11 +500,11 @@ def test_dm_toggle_needs_a_discord_login(client, api_repo):
 def test_report_today_rolls_over_at_1am_utc():
     from datetime import datetime, timezone
     utc = timezone.utc
-    assert meta_report.report_today(datetime(2026, 10, 16, 0, 59, tzinfo=utc)) == date(2026, 10, 15)
-    assert meta_report.report_today(datetime(2026, 10, 16, 1, 0, tzinfo=utc)) == date(2026, 10, 16)
+    assert meta_report.report_today(datetime(2026, 10, 15, 0, 59, tzinfo=utc)) == date(2026, 10, 14)
+    assert meta_report.report_today(datetime(2026, 10, 15, 1, 0, tzinfo=utc)) == date(2026, 10, 15)
     # Not due until 01:00 UTC on publish day.
-    assert latest(meta_report.report_today(datetime(2026, 10, 16, 0, 30, tzinfo=utc))) == "2026-09-a"
-    assert latest(meta_report.report_today(datetime(2026, 10, 16, 1, 5, tzinfo=utc))) == "2026-09-b"
+    assert latest(meta_report.report_today(datetime(2026, 10, 15, 0, 30, tzinfo=utc))) == "2026-09-a"
+    assert latest(meta_report.report_today(datetime(2026, 10, 15, 1, 5, tzinfo=utc))) == "2026-09-b"
 
 
 def test_match_days_are_utc():

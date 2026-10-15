@@ -1,11 +1,11 @@
 """Meta Report: a twice-monthly look at what the Summit plays and wins with.
 
 Each report covers one half-month period (the 1st-15th, or the 16th-month end)
-and comes out one month after the period starts, the same lag as the ranked
-card data Play Sorcery Online releases for Card Win Rates:
+and comes out at 01:00 UTC on the 1st or 15th of the next month, in step with
+the ranked card data Play Sorcery Online releases for Card Win Rates:
 
     Sep 1-15   -> published Oct 1
-    Sep 16-30  -> published Oct 16
+    Sep 16-30  -> published Oct 15
 
 Data sources, all held to the report's period:
   - Summit ranked games (match_records.db): Avatar + element pair share, win
@@ -44,7 +44,7 @@ from repositories.meta_reports import MetaReportRepository
 
 logger = logging.getLogger(__name__)
 
-PUBLISH_HOUR_UTC = 1       # reports come out at 01:00 UTC on the 1st and 16th
+PUBLISH_HOUR_UTC = 1       # reports come out at 01:00 UTC on the 1st and 15th
 MIN_ARCHETYPE_GAMES = 20   # deck-games before an Avatar + element pair is listed...
 MIN_ARCHETYPE_SHARE = 0.01  # ...and at least 1% of the period's decks
 MIN_MATCHUP_GAMES = 10     # games before a matchup cell shows a number
@@ -99,9 +99,9 @@ class Period:
 
     @property
     def publish_day(self) -> date:
-        """One month after the period starts: the 1st or the 16th."""
+        """The 1st (for the 1st-15th) or the 15th (for the 16th-month end) of the next month."""
         y, m = (self.year + 1, 1) if self.month == 12 else (self.year, self.month + 1)
-        return date(y, m, 1 if self.half == "a" else 16)
+        return date(y, m, 1 if self.half == "a" else 15)
 
     def previous(self) -> "Period":
         if self.half == "b":
@@ -128,7 +128,7 @@ def latest_due_period(today: date) -> Period:
 def report_today(now: datetime | None = None) -> date:
     """Today's date on the report clock: UTC, rolling over at 01:00 UTC.
 
-    Before 01:00 UTC on the 1st or 16th it is still the day before, so the
+    Before 01:00 UTC on the 1st or 15th it is still the day before, so the
     new period isn't due yet.
     """
     now = now or datetime.now(timezone.utc)

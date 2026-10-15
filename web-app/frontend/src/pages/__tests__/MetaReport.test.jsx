@@ -16,7 +16,7 @@ vi.mock('@/api/decks', () => ({ createPsoTable: vi.fn() }))
 
 const REPORT = {
   slug: '2026-09-b',
-  period: { label: 'Sep 16–30, 2026', publishLabel: 'Oct 16, 2026' },
+  period: { label: 'Sep 16–30, 2026', publishLabel: 'Oct 15, 2026' },
   story: [{ headline: 'Pathfinder is the best deck nobody plays.', detail: '56% win rate.' }],
   ranked: {
     rankedGames: 1284,
@@ -71,7 +71,7 @@ describe('MetaReport', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     listMetaReports.mockResolvedValue({ reports: [
-      { slug: '2026-09-b', label: 'Sep 16–30, 2026', publishLabel: 'Oct 16, 2026' },
+      { slug: '2026-09-b', label: 'Sep 16–30, 2026', publishLabel: 'Oct 15, 2026' },
       { slug: '2026-09-a', label: 'Sep 1–15, 2026', publishLabel: 'Oct 1, 2026' },
     ] })
     getMetaReport.mockResolvedValue(REPORT)

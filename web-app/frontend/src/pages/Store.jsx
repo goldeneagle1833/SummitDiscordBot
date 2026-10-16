@@ -9,6 +9,7 @@ import Spinner from '@/components/ui/Spinner'
 import FramedImage from '@/components/store/FramedImage'
 import LinkifiedText from '@/components/ui/LinkifiedText'
 import usePageTitle from '@/hooks/usePageTitle'
+import ShopifyApparel from '@/components/store/ShopifyApparel'
 
 function LoginPromptModal({ onClose }) {
   const returnUrl = encodeURIComponent(window.location.href)
@@ -302,6 +303,8 @@ export default function Store() {
           })}
         </div>
       )}
+
+      <ShopifyApparel />
 
       {cartItems.length > 0 && (
         <div className="sticky bottom-4 mt-8 bg-bg-elevated border border-secondary/30 rounded-lg p-4 flex items-center justify-between shadow-harsh">

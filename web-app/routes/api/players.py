@@ -1708,6 +1708,7 @@ def player_api(player_id):
     # the current season (they back the player's live rank). Admins always see
     # the full history.
     profile_reset_at = profile.get("profile_reset_at") if profile else None
+    reset_cutoff = None
     if profile_reset_at and not is_admin():
         reset_cutoff = profile_reset_at
         try:
@@ -1850,8 +1851,11 @@ def player_api(player_id):
     # One record per game: which avatar the player was on, which avatar they
     # faced, when, and the ELO it moved. Only the main avatar counts (type
     # "Avatar"), never sideboard avatars, so Imposter decks count as Imposter.
+    # Ranked games only, so the Avatars tab agrees with the record in the header.
     avatar_games = []
     for row in all_rows:
+        if _is_casual_row(row):
+            continue
         did_win = row[0]
         winner_json = row[13] if len(row) > 13 else None
         loser_json = row[14] if len(row) > 14 else None
@@ -1882,8 +1886,25 @@ def player_api(player_id):
             "elo_change": elo_change if isinstance(elo_change, (int, float)) else None,
         })
 
-    # External matches feed avatar stats too
+    # External matches feed avatar stats too, but only those inside the period
+    # being viewed (and after a Fresh Start), like every other game.
+    def _in_period(timestamp):
+        ts = str(timestamp or "")[:19].replace("T", " ")
+        if not ts:
+            return event_start_date is None and event_end_date is None and not reset_cutoff
+        if event_filter != "lifetime" and not (event_start_date or event_end_date):
+            return False  # a period we can't date: keep externals out
+        if event_start_date and ts < str(event_start_date)[:19].replace("T", " "):
+            return False
+        if event_end_date and ts > str(event_end_date)[:19].replace("T", " "):
+            return False
+        if reset_cutoff and ts < str(reset_cutoff)[:19].replace("T", " "):
+            return False
+        return True
+
     for em in external_matches_raw:
+        if not _in_period(em.get("timestamp")):
+            continue
         did_win = str(em["winner_id"]) == str(player_id_normalized)
         avatar_games.append({
             "did_win": did_win,

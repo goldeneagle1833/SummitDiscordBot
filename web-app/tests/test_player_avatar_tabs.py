@@ -112,3 +112,43 @@ def test_only_the_owner_can_hide_avatars(client, avatar_games, match_db):
     with client.session_transaction() as sess:
         sess["user_id"] = "100"
     assert client.put("/api/player/100/hidden-avatars", json={"avatars": "Druid"}).status_code == 400
+
+
+def test_avatars_tab_counts_only_ranked_games_in_the_period(client, avatar_games, match_db, elo_db, monkeypatch):
+    """A casual game, or an external game from an earlier season, must not add avatars."""
+    conn = sqlite3.connect(str(elo_db))
+    conn.execute("INSERT INTO events (event_name, start_date, is_active) VALUES ('Now', '2026-10-01 00:00:00', 1)")
+    conn.commit()
+    conn.close()
+    conn = sqlite3.connect(str(match_db))
+    conn.execute(
+        """INSERT INTO match_records
+           (winner_id, winner_display_name, winner_elo_change, losser_id, losser_display_name,
+            loser_elo_change, timestamp, match_type, reporter_id, json_deck_data_winner, json_deck_data_loser)
+           VALUES ('100', 'A', 0, '200', 'B', 0, '2026-10-04 12:00:00', 'casual', '100', ?, ?)""",
+        (_deck("Necromancer"), _deck("Seer")),
+    )
+    conn.commit()
+    conn.close()
+    old_external = {
+        "id": 1, "winner_id": "100", "loser_id": "300", "timestamp": "2026-03-25 12:00:00",
+        "winner_display_name": "A", "loser_display_name": "C", "match_time": 0, "source": "Paper",
+        "winner_deck_url": None, "loser_deck_url": None, "winner_went_first": None, "match_comment": None,
+        "json_deck_data_winner": _deck("Savior"), "json_deck_data_loser": _deck("Seer"),
+    }
+    new_external = {**old_external, "id": 2, "timestamp": "2026-10-05 12:00:00", "json_deck_data_winner": _deck("Witch")}
+    monkeypatch.setattr(
+        players_routes.ExternalMatchRepository, "get_player_matches",
+        lambda self, pid, limit=100: [new_external, old_external],
+    )
+    with client.session_transaction() as sess:
+        sess["user_id"] = "100"
+
+    current = client.get("/api/player/100?event=current").get_json()
+    perf = {a["name"]: a for a in current["avatar_performance"]}
+    assert "Necromancer" not in perf and "Savior" not in perf
+    assert perf["Witch"]["wins"] == 2  # the ranked win plus the external one this season
+
+    lifetime = client.get("/api/player/100").get_json()
+    names = {a["name"] for a in lifetime["avatar_performance"]}
+    assert "Savior" in names and "Necromancer" not in names

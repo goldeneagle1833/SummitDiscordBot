@@ -127,54 +127,12 @@ class StoreCheckoutService:
         Returns {order_number, checkout_url}. Raises ValueError for stock or
         validation problems (caller maps these to HTTP 400/409).
         """
-        import time
-
         storefront = self._storefront_for_items(items)
         if storefront and not self.repo.accepts_payments(storefront):
             raise ValueError(f"{storefront['name']} isn't taking orders yet")
-        # Connected storefronts and ones with their own API key take payments
-        # on their own Stripe account rather than Summit's
-        own_account = self._payee(storefront) is not None
-
-        # Free shipping for Patreon / Summit ticket holders, on Summit's
-        # own products only
-        has_free_shipping = bool(
-            not own_account
-            and discord_roles and FREE_SHIPPING_ROLE_IDS.intersection(discord_roles)
+        shipping_options, shipping_cents = self._shipping_plan(
+            storefront, discord_roles
         )
-
-        # Build Stripe shipping_options from Shipping Rate objects. Those
-        # live on Summit's account, so connected storefronts use their own
-        # flat rate instead.
-        use_shipping_rates = bool(
-            not own_account
-            and STRIPE_SHIPPING_RATE_DOMESTIC
-        )
-
-        if own_account:
-            shipping_options = None
-            shipping_cents = (
-                storefront["shipping_cents"]
-                if storefront.get("shipping_cents") is not None
-                else FLAT_SHIPPING_CENTS
-            )
-        elif has_free_shipping and STRIPE_SHIPPING_RATE_FREE:
-            shipping_options = [
-                {"shipping_rate": STRIPE_SHIPPING_RATE_FREE},
-            ]
-            shipping_cents = 0
-        elif use_shipping_rates:
-            # US only, so the international rate is never offered
-            shipping_options = [
-                {"shipping_rate": STRIPE_SHIPPING_RATE_DOMESTIC},
-            ]
-            # Actual shipping cost determined by Stripe at checkout;
-            # store 0 now, update from webhook when payment completes.
-            shipping_cents = 0
-        else:
-            # Fallback: flat-rate domestic-only (legacy / unconfigured)
-            shipping_options = None
-            shipping_cents = 0 if has_free_shipping else FLAT_SHIPPING_CENTS
 
         order = self.repo.create_order(
             user_id=user_id,
@@ -189,63 +147,10 @@ class StoreCheckoutService:
         )
 
         full_order = self.repo.get_order(order["id"])
-        line_items = [
-            {
-                "price_data": {
-                    "currency": full_order["currency"].lower(),
-                    "product_data": {"name": item["product_name"]},
-                    "unit_amount": item["unit_price_cents"],
-                },
-                "quantity": item["quantity"],
-            }
-            for item in full_order["items"]
-        ]
-        # Only add shipping as a line item if NOT using Stripe Shipping Rates
-        if not use_shipping_rates and not has_free_shipping and shipping_cents:
-            line_items.append(
-                {
-                    "price_data": {
-                        "currency": full_order["currency"].lower(),
-                        "product_data": {"name": "Shipping"},
-                        "unit_amount": shipping_cents,
-                    },
-                    "quantity": 1,
-                }
-            )
-
-        # The success/cancel pages clear or keep this storefront's cart only
         storefront = self.repo.get_storefront(full_order["storefront_id"]) or {}
-        sf = f"&storefront={storefront.get('slug', '')}" if storefront else ""
-
-        session_params = {
-            "mode": "payment",
-            "line_items": line_items,
-            "customer_email": email,
-            "metadata": {
-                "order_id": str(order["id"]),
-                "order_number": order["order_number"],
-                "storefront": storefront.get("slug", ""),
-            },
-            "success_url": _site_url(
-                f"/store/success?order={order['order_number']}{sf}"
-            ),
-            "cancel_url": _site_url(
-                f"/store/cancelled?order={order['order_number']}{sf}"
-            ),
-            "expires_at": int(time.time()) + CHECKOUT_EXPIRES_MINUTES * 60,
-        }
-
-        # Always collect a shipping address, US only
-        session_params["shipping_address_collection"] = {
-            "allowed_countries": SHIP_COUNTRIES,
-        }
-
-        if shipping_options:
-            session_params["shipping_options"] = shipping_options
-
         try:
-            checkout_session = stripe.checkout.Session.create(
-                **session_params, **self._stripe_kwargs(storefront)
+            checkout_session = self._create_session(
+                full_order, storefront, shipping_options, email
             )
         except stripe.StripeError:
             # Stripe rejected the session: release the reserved stock.
@@ -264,6 +169,154 @@ class StoreCheckoutService:
             "order_number": order["order_number"],
             "checkout_url": checkout_session.url,
         }
+
+    def resume_checkout(self, order: dict, discord_roles: list[str] | None = None) -> str:
+        """Payment URL for an order still awaiting payment ("Continue payment").
+
+        Reuses the order's Checkout Session while it is open. Once that
+        session has expired (or never got created) a new one is made for the
+        same order, on the same storefront's Stripe account, at the prices
+        and shipping already on the order; its stock is still reserved.
+        Raises ValueError when the order can't be paid any more.
+        """
+        if order["status"] != "pending_payment":
+            raise ValueError("This order is no longer awaiting payment")
+        storefront = self._order_storefront(order) or {}
+        if not self.repo.accepts_payments(storefront):
+            raise ValueError(
+                f"{storefront.get('name') or 'This store'} isn't taking payments "
+                "right now"
+            )
+        account = self._stripe_kwargs(storefront)
+
+        if order.get("payment_provider") == "stripe" and order.get("payment_ref"):
+            existing = stripe.checkout.Session.retrieve(order["payment_ref"], **account)
+            if existing.status == "open" and existing.url:
+                return existing.url
+            if existing.status == "complete":
+                raise ValueError(
+                    "Payment for this order already went through. "
+                    "It will show as paid shortly."
+                )
+
+        if order["shipping_cents"]:
+            # Shipping was priced when the order was placed; charge the same
+            shipping_options = None
+        else:
+            shipping_options, _ = self._shipping_plan(storefront, discord_roles)
+        full_order = self.repo.get_order(order["id"])
+        checkout_session = self._create_session(
+            full_order, storefront, shipping_options, full_order.get("email")
+        )
+        if not self.repo.attach_payment(order["id"], "stripe", checkout_session.id):
+            # Paid or cancelled meanwhile: close the session we just made
+            try:
+                stripe.checkout.Session.expire(checkout_session.id, **account)
+            except stripe.StripeError:
+                logger.exception(f"Could not close spare session {checkout_session.id}")
+            raise ValueError("This order is no longer awaiting payment")
+        logger.info(
+            f"Checkout resumed: order {order['order_number']} "
+            f"new session {checkout_session.id}"
+        )
+        return checkout_session.url
+
+    def _shipping_plan(
+        self, storefront: dict | None, discord_roles: list[str] | None
+    ) -> tuple[list[dict] | None, int]:
+        """(Stripe shipping_options, shipping_cents to store on the order).
+
+        With shipping_options Stripe prices shipping at checkout and the
+        order stores 0; without them shipping_cents is charged as a line item.
+        """
+        # Connected storefronts and ones with their own API key take payments
+        # on their own Stripe account rather than Summit's
+        own_account = self._payee(storefront) is not None
+
+        # Free shipping for Patreon / Summit ticket holders, on Summit's
+        # own products only
+        has_free_shipping = bool(
+            not own_account
+            and discord_roles and FREE_SHIPPING_ROLE_IDS.intersection(discord_roles)
+        )
+
+        # Shipping Rate objects live on Summit's account, so connected
+        # storefronts use their own flat rate instead.
+        if own_account:
+            return None, (
+                storefront["shipping_cents"]
+                if storefront.get("shipping_cents") is not None
+                else FLAT_SHIPPING_CENTS
+            )
+        if has_free_shipping and STRIPE_SHIPPING_RATE_FREE:
+            return [{"shipping_rate": STRIPE_SHIPPING_RATE_FREE}], 0
+        if STRIPE_SHIPPING_RATE_DOMESTIC:
+            # US only, so the international rate is never offered.
+            # Actual shipping cost determined by Stripe at checkout;
+            # store 0 now, update from webhook when payment completes.
+            return [{"shipping_rate": STRIPE_SHIPPING_RATE_DOMESTIC}], 0
+        # Fallback: flat-rate domestic-only (legacy / unconfigured)
+        return None, 0 if has_free_shipping else FLAT_SHIPPING_CENTS
+
+    def _create_session(
+        self,
+        full_order: dict,
+        storefront: dict,
+        shipping_options: list[dict] | None,
+        email: str | None,
+    ):
+        """Create a Stripe Checkout Session for an order, on its storefront's account."""
+        import time
+
+        line_items = [
+            {
+                "price_data": {
+                    "currency": full_order["currency"].lower(),
+                    "product_data": {"name": item["product_name"]},
+                    "unit_amount": item["unit_price_cents"],
+                },
+                "quantity": item["quantity"],
+            }
+            for item in full_order["items"]
+        ]
+        # Shipping is a line item unless Stripe Shipping Rates price it
+        if not shipping_options and full_order["shipping_cents"]:
+            line_items.append(
+                {
+                    "price_data": {
+                        "currency": full_order["currency"].lower(),
+                        "product_data": {"name": "Shipping"},
+                        "unit_amount": full_order["shipping_cents"],
+                    },
+                    "quantity": 1,
+                }
+            )
+
+        # The success/cancel pages clear or keep this storefront's cart only
+        sf = f"&storefront={storefront.get('slug', '')}" if storefront else ""
+        number = full_order["order_number"]
+
+        session_params = {
+            "mode": "payment",
+            "line_items": line_items,
+            "customer_email": email,
+            "metadata": {
+                "order_id": str(full_order["id"]),
+                "order_number": number,
+                "storefront": storefront.get("slug", ""),
+            },
+            "success_url": _site_url(f"/store/success?order={number}{sf}"),
+            "cancel_url": _site_url(f"/store/cancelled?order={number}{sf}"),
+            "expires_at": int(time.time()) + CHECKOUT_EXPIRES_MINUTES * 60,
+            # Always collect a shipping address, US only
+            "shipping_address_collection": {"allowed_countries": SHIP_COUNTRIES},
+        }
+        if shipping_options:
+            session_params["shipping_options"] = shipping_options
+
+        return stripe.checkout.Session.create(
+            **session_params, **self._stripe_kwargs(storefront)
+        )
 
     def _storefront_for_items(self, items: list[dict]) -> dict | None:
         for item in items:
@@ -593,6 +646,11 @@ class StoreCheckoutService:
 
     def _handle_expired(self, session_obj, account: str | None = None) -> dict:
         order = self._order_from_session(session_obj, account)
+        if (order is not None and order.get("payment_ref")
+                and order["payment_ref"] != session_obj.get("id")):
+            # An older session the buyer replaced with "Continue payment";
+            # the order still has a live one, so keep it.
+            return {"handled": False, "reason": "replaced checkout session"}
         if order is None or not self.repo.cancel_order(
             order["id"], from_statuses=("pending_payment",)
         ):

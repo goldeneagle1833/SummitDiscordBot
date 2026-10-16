@@ -670,6 +670,33 @@ def my_orders():
     return jsonify({"orders": result})
 
 
+@store_bp.route("/store/orders/<order_number>/pay", methods=["POST"])
+@require_auth
+def continue_my_payment(order_number: str):
+    """Buyer gets back into checkout for an order still awaiting payment.
+
+    Returns the open Stripe Checkout URL, or a fresh one for the same order
+    if the old session expired. 409 with a message when it can't be paid.
+    """
+    user_id = str(session.get("user_id", 0))
+    repo = _repo()
+    order = repo.get_order_by_number(order_number)
+    if not order or str(order["user_id"]) != user_id:
+        return jsonify({"error": "Order not found"}), 404
+
+    service = StoreCheckoutService(repo)
+    if not service.is_configured():
+        return jsonify({"error": "Payments are not configured"}), 503
+    try:
+        url = service.resume_checkout(order, session.get("discord_roles", []))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    except Exception:
+        logger.exception(f"Continue payment failed for {order_number}")
+        return jsonify({"error": "Could not reopen checkout, please try again"}), 502
+    return jsonify({"checkout_url": url})
+
+
 @store_bp.route("/store/orders/<order_number>/cancel", methods=["POST"])
 @require_auth
 def cancel_my_order(order_number: str):

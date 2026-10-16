@@ -7,6 +7,8 @@ export const searchMembers = (q) => get(`/api/store/user-search?q=${encodeURICom
 export const getCheckoutPrefill = () => get('/api/store/checkout/prefill')
 export const createCheckout = (payload) => post('/api/store/checkout', payload)
 export const getMyOrders = () => get('/api/store/orders/mine')
+export const continueMyPayment = (orderNumber) =>
+  post(`/api/store/orders/${encodeURIComponent(orderNumber)}/pay`)
 export const cancelMyOrder = (orderNumber) =>
   post(`/api/store/orders/${encodeURIComponent(orderNumber)}/cancel`)
 

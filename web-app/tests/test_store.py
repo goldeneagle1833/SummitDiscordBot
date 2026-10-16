@@ -1357,6 +1357,81 @@ class TestStoreBuyerCancel:
         assert store_repo.get_order(order["id"])["status"] == "pending_payment"
 
 
+@patch("services.store_checkout.STRIPE_SECRET_KEY", "sk_test_xxx")
+@patch("services.store_checkout.STRIPE_WEBHOOK_SECRET", "whsec_xxx")
+class TestStoreBuyerContinuePayment:
+    @staticmethod
+    def _url(order):
+        return f"/api/store/orders/{order['order_number']}/pay"
+
+    def test_requires_login(self, client, store_repo):
+        order = _seed_order(store_repo, user_id="buyer_1")
+        assert client.post(self._url(order)).status_code == 401
+
+    def test_someone_elses_order(self, buyer_session, store_repo):
+        order = _seed_order(store_repo, user_id="other_user")
+        assert buyer_session.post(self._url(order)).status_code == 404
+
+    @patch("services.store_checkout.stripe")
+    def test_reuses_open_session(self, mock_stripe, buyer_session, store_repo):
+        order = _seed_order(store_repo, user_id="buyer_1")
+        store_repo.attach_payment(order["id"], "stripe", "cs_open")
+        mock_stripe.checkout.Session.retrieve.return_value = MagicMock(
+            status="open", url="https://pay/open")
+
+        resp = buyer_session.post(self._url(order))
+        assert resp.status_code == 200
+        assert resp.get_json()["checkout_url"] == "https://pay/open"
+        mock_stripe.checkout.Session.create.assert_not_called()
+
+    @patch("services.store_checkout.stripe")
+    def test_expired_session_gets_new_one(self, mock_stripe, buyer_session, store_repo):
+        pid = _seed_product(store_repo, stock_quantity=10)
+        order = _seed_order(store_repo, product_id=pid, user_id="buyer_1")
+        store_repo.attach_payment(order["id"], "stripe", "cs_old")
+        mock_stripe.checkout.Session.retrieve.return_value = MagicMock(status="expired")
+        mock_stripe.checkout.Session.create.return_value = MagicMock(
+            id="cs_new", url="https://pay/new")
+
+        resp = buyer_session.post(self._url(order))
+        assert resp.status_code == 200
+        assert resp.get_json()["checkout_url"] == "https://pay/new"
+        kwargs = mock_stripe.checkout.Session.create.call_args.kwargs
+        assert kwargs["metadata"]["order_id"] == str(order["id"])
+        assert kwargs["shipping_address_collection"] == {"allowed_countries": ["US"]}
+        fresh = store_repo.get_order(order["id"])
+        assert fresh["payment_ref"] == "cs_new"
+        assert fresh["status"] == "pending_payment"
+        assert store_repo.get_product(pid)["stock_quantity"] == 9  # still reserved
+
+        # The old session's late expiry event must not cancel the order
+        from services.store_checkout import StoreCheckoutService
+        result = StoreCheckoutService(store_repo).handle_event({
+            "type": "checkout.session.expired",
+            "data": {"object": {"id": "cs_old",
+                                "metadata": {"order_id": str(order["id"])}}},
+        })
+        assert result["handled"] is False
+        assert store_repo.get_order(order["id"])["status"] == "pending_payment"
+
+    @patch("services.store_checkout.stripe")
+    def test_completed_session_is_not_paid_twice(self, mock_stripe, buyer_session, store_repo):
+        order = _seed_order(store_repo, user_id="buyer_1")
+        store_repo.attach_payment(order["id"], "stripe", "cs_done")
+        mock_stripe.checkout.Session.retrieve.return_value = MagicMock(status="complete")
+
+        resp = buyer_session.post(self._url(order))
+        assert resp.status_code == 409
+        mock_stripe.checkout.Session.create.assert_not_called()
+
+    @patch("services.store_checkout.stripe")
+    def test_paid_or_cancelled_order(self, mock_stripe, buyer_session, store_repo):
+        order = _seed_order(store_repo, user_id="buyer_1")
+        store_repo.mark_paid(order["id"])
+        assert buyer_session.post(self._url(order)).status_code == 409
+        mock_stripe.checkout.Session.create.assert_not_called()
+
+
 class TestStoreWebhookRoute:
     def test_webhook_bad_signature(self, client, store_repo):
         with patch("routes.api.store.StoreCheckoutService") as MockSvc:

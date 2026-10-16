@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getMyOrders, formatMoney } from '@/api/store'
+import { getMyOrders, continueMyPayment, formatMoney } from '@/api/store'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -19,6 +19,39 @@ function StatusBadge({ status }) {
     <span className={`inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-full ${cfg.bg} ${cfg.text}`}>
       {cfg.label}
     </span>
+  )
+}
+
+function ContinuePayment({ order }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  const go = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const { checkout_url: url } = await continueMyPayment(order.order_number)
+      window.location.href = url
+    } catch (err) {
+      setError(err.message || 'Could not reopen checkout, please try again')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="border-t border-border px-4 py-3 flex flex-wrap items-center justify-between gap-2 bg-bg-elevated/40">
+      <p className="text-sm text-text-muted">
+        {error ? <span className="text-accent-red">{error}</span> : 'Payment for this order isn\u2019t finished yet.'}
+      </p>
+      <button
+        type="button"
+        onClick={go}
+        disabled={busy}
+        className="text-sm font-semibold text-primary hover:underline disabled:opacity-60 disabled:no-underline"
+      >
+        {busy ? 'Opening checkout\u2026' : 'Continue payment \u2192'}
+      </button>
+    </div>
   )
 }
 
@@ -58,6 +91,8 @@ function OrderCard({ order }) {
           </div>
         </div>
       </button>
+
+      {order.status === 'pending_payment' && <ContinuePayment order={order} />}
 
       {expanded && (
         <div className="border-t border-border">

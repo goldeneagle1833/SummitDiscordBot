@@ -117,6 +117,8 @@ export default function Store() {
   const [error, setError] = useState(null)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
 
+  // Apparel is its own tab: Shopify's cart and checkout, not one of our storefronts
+  const showApparel = params.get('tab') === 'apparel'
   const active =
     storefronts.find((s) => s.slug === params.get('storefront')) || storefronts[0]
   // Each storefront has its own cart, because each one checks out separately
@@ -182,8 +184,8 @@ export default function Store() {
 
       <div role="tablist" aria-label="Storefronts" className="flex gap-6 border-b border-border mb-6 overflow-x-auto">
         {storefronts.map((sf) => {
-          const selected = sf.slug === active.slug
-          const inCart = selected ? totalQty : cartCount(sf.slug)
+          const selected = !showApparel && sf.slug === active.slug
+          const inCart = sf.slug === active.slug ? totalQty : cartCount(sf.slug)
           return (
             <button
               key={sf.slug}
@@ -206,8 +208,22 @@ export default function Store() {
             </button>
           )
         })}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={showApparel}
+          onClick={() => setParams({ tab: 'apparel' })}
+          className={`py-3 -mb-px border-b-2 text-sm font-semibold whitespace-nowrap transition-colors ${
+            showApparel
+              ? 'border-secondary text-secondary'
+              : 'border-transparent text-text-muted hover:text-text'
+          }`}
+        >
+          Apparel
+        </button>
       </div>
 
+      {showApparel ? <ShopifyApparel /> : (<>
       {active.description && (
         <p className="text-sm text-text-muted mb-2 max-w-3xl whitespace-pre-line">
           <LinkifiedText text={active.description} />
@@ -304,8 +320,6 @@ export default function Store() {
         </div>
       )}
 
-      <ShopifyApparel />
-
       {cartItems.length > 0 && (
         <div className="sticky bottom-4 mt-8 bg-bg-elevated border border-secondary/30 rounded-lg p-4 flex items-center justify-between shadow-harsh">
           <div className="text-sm">
@@ -344,6 +358,7 @@ export default function Store() {
           )}
         </div>
       )}
+      </>)}
 
       {showLoginPrompt && <LoginPromptModal onClose={() => setShowLoginPrompt(false)} />}
     </div>

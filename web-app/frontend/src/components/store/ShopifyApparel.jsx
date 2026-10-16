@@ -14,7 +14,8 @@ const SHOP = {
   // Shopify's public, read-only Storefront key, made to be embedded in pages
   storefrontAccessToken: '787e2ef44b98115a0a846c1b274faeee',
 }
-const COLLECTION_ID = '505064325359'
+// Explorer Series TShirt 1 (the collection's other listing is a duplicate)
+export const PRODUCT_ID = '9685424210159'
 
 const C = {
   text: '#f0f6fc',
@@ -43,7 +44,8 @@ const quantityInput = {
   'font-size': '15px',
   'padding-top': '12px',
   'padding-bottom': '12px',
-  color: C.text,
+  color: C.gold,
+  background: C.elevated,
   'background-color': C.elevated,
   'border-color': C.line,
 }
@@ -54,13 +56,13 @@ export const BUY_BUTTON_OPTIONS = {
     styles: {
       product: {
         '@media (min-width: 601px)': {
-          'max-width': 'calc(33.333% - 20px)',
-          'margin-left': '20px',
+          'max-width': '100%',
+          'margin-left': '0',
           'margin-bottom': '40px',
-          width: 'calc(33.333% - 20px)',
         },
+        'text-align': 'left',
       },
-      title: { 'font-family': FONT, 'font-size': '17px', 'font-weight': '600', color: C.text },
+      title: { 'font-family': FONT, 'font-size': '22px', 'font-weight': '600', color: C.text },
       price: { 'font-family': FONT, 'font-size': '16px', 'font-weight': '600', color: C.gold },
       compareAt: { 'font-family': FONT, 'font-size': '14px', color: C.muted },
       unitPrice: { 'font-family': FONT, 'font-size': '14px', color: C.muted },
@@ -69,12 +71,11 @@ export const BUY_BUTTON_OPTIONS = {
       quantityInput,
     },
     buttonDestination: 'cart',
-    contents: { img: false, imgWithCarousel: true, button: false, buttonWithQuantity: true },
+    layout: 'horizontal',
+    width: '100%',
+    contents: { img: false, imgWithCarousel: true, button: false, buttonWithQuantity: true, description: true },
     text: { button: 'Add to cart' },
     googleFonts: ['Figtree'],
-  },
-  productSet: {
-    styles: { products: { '@media (min-width: 601px)': { 'margin-left': '-20px' } } },
   },
   modalProduct: {
     contents: { img: false, imgWithCarousel: true, button: false, buttonWithQuantity: true },
@@ -192,8 +193,8 @@ export default function ShopifyApparel() {
         return ShopifyBuy.UI.onReady(client).then((ui) => {
           if (cancelled || !node.current) return
           node.current.innerHTML = ''
-          ui.createComponent('collection', {
-            id: COLLECTION_ID,
+          ui.createComponent('product', {
+            id: PRODUCT_ID,
             node: node.current,
             moneyFormat: '%24%7B%7Bamount%7D%7D',
             options: BUY_BUTTON_OPTIONS,
@@ -209,14 +210,14 @@ export default function ShopifyApparel() {
   }, [])
 
   return (
-    <section aria-labelledby="apparel-heading" className="mt-14 pt-10 border-t border-border/60">
+    <section aria-labelledby="apparel-heading">
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
         <h2 id="apparel-heading" className="text-2xl font-display text-secondary">Apparel</h2>
         <span className="text-xs uppercase tracking-wider text-text-muted">Explorer Series shirts</span>
       </div>
       <p className="text-sm text-text-muted mb-6 max-w-3xl">
         Apparel has its own cart and checks out on the Explorer Series Shopify store, separate from
-        the cart above. Add your jersey name in the apparel cart&apos;s note before checking out.
+        the other store tabs. Add your jersey name in the apparel cart&apos;s note before checking out.
       </p>
       {failed ? (
         <p className="text-sm text-text-muted">

@@ -182,6 +182,20 @@ describe('Store storefront tabs', () => {
     expect(screen.queryByRole('button', { name: /^Checkout/ })).not.toBeInTheDocument()
   })
 
+  it('shows Shopify apparel on its own tab, apart from the store carts', async () => {
+    renderStore()
+    await userEvent.click(await screen.findByRole('tab', { name: 'Apparel' }))
+    expect(screen.getByRole('tab', { name: 'Apparel' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /Summit Store/ })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('heading', { name: 'Apparel' })).toBeInTheDocument()
+    expect(screen.queryByText('Fire Token')).not.toBeInTheDocument()
+    expect(screen.queryByText('Ships within the United States only.')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('tab', { name: /Summit Store/ }))
+    expect(screen.getByText('Fire Token')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Apparel' })).not.toBeInTheDocument()
+  })
+
   it('opens the tab named in the link', async () => {
     renderStore('/store?storefront=explorer')
     expect(await screen.findByText('Explorer Mat')).toBeInTheDocument()

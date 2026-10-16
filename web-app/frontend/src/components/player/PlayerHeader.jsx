@@ -7,6 +7,20 @@ function initials(name) {
   return text.toUpperCase()
 }
 
+function ProfilePicture({ name, src }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [src])
+  const frame = 'w-20 h-20 sm:w-24 sm:h-24 shrink-0 rounded-full border-[3px] border-secondary bg-bg-raised'
+  if (src && !failed) {
+    return <img src={src} alt="" className={`${frame} object-cover`} onError={() => setFailed(true)} />
+  }
+  return (
+    <div aria-hidden="true" className={`${frame} flex items-center justify-center font-display text-3xl text-secondary`}>
+      {initials(name)}
+    </div>
+  )
+}
+
 function BigStat({ value, label, gold = false }) {
   return (
     <div>
@@ -90,12 +104,7 @@ export default function PlayerHeader({
       className="rounded-2xl border border-border bg-bg-surface p-5 sm:p-7 flex flex-wrap gap-6 sm:gap-8 items-center"
     >
       <div className="flex items-center gap-5 flex-[1_1_380px] min-w-0">
-        <div
-          aria-hidden="true"
-          className="w-20 h-20 sm:w-24 sm:h-24 shrink-0 rounded-full border-[3px] border-secondary bg-bg-raised flex items-center justify-center font-display text-3xl text-secondary"
-        >
-          {initials(data.name)}
-        </div>
+        <ProfilePicture name={data.name} src={data.avatar_url} />
         <div className="min-w-0 flex flex-col gap-2">
           <h1 className="text-3xl sm:text-4xl font-display text-text-primary leading-tight break-words">
             <PostseasonName playerId={playerId} yurtSize={22}>

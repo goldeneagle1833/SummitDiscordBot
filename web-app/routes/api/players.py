@@ -980,6 +980,15 @@ def search_players():
         return jsonify({"players": []})
 
 
+def _profile_picture_url(profile):
+    """Discord or Google profile picture for a stored profile, else None."""
+    if not profile or not profile.get("avatar"):
+        return None
+    if profile.get("provider") == "google":
+        return profile["avatar"]
+    return f"https://cdn.discordapp.com/avatars/{profile['user_id']}/{profile['avatar']}.png?size=256"
+
+
 @players_bp.route("/player/<player_id>")
 def player_api(player_id):
     """Get comprehensive player stats and match history.
@@ -2662,6 +2671,7 @@ def player_api(player_id):
         {
             "id": player_id_normalized,
             "name": player_name,
+            "avatar_url": _profile_picture_url(profile),
             "elo": player_elo if show_lifetime else None,
             "event_elo": event_elo,
             "displayed_elo": displayed_elo if event_filter != "lifetime" or show_lifetime else event_elo,

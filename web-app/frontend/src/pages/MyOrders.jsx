@@ -176,7 +176,7 @@ export default function MyOrders() {
         </div>
       ) : (
         <>
-          <div role="tablist" aria-label="Orders by storefront" className="flex gap-6 border-b border-border mb-5 overflow-x-auto">
+          <div role="tablist" aria-label="Orders by storefront" className="flex gap-6 border-b border-border mb-5 overflow-x-auto no-scrollbar">
             {tabs.map((t) => (
               <button
                 key={t.slug || 'all'}

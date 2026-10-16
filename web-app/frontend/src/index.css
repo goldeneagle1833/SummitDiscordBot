@@ -56,3 +56,11 @@ option {
 .shopify-buy-frame--toggle {
   display: none !important;
 }
+
+/* Tab rows that scroll sideways on narrow screens without showing a scroll bar */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

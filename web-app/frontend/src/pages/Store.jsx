@@ -10,6 +10,7 @@ import FramedImage from '@/components/store/FramedImage'
 import LinkifiedText from '@/components/ui/LinkifiedText'
 import usePageTitle from '@/hooks/usePageTitle'
 import ShopifyApparel from '@/components/store/ShopifyApparel'
+import ImageLightbox from '@/components/store/ImageLightbox'
 
 function LoginPromptModal({ onClose }) {
   const returnUrl = encodeURIComponent(window.location.href)
@@ -60,9 +61,11 @@ function productImages(p) {
 }
 
 // Main image plus a thumbnail strip when a product has more than one image.
+// Clicking the main image opens it full screen, uncropped.
 function ProductGallery({ product }) {
   const images = productImages(product)
   const [index, setIndex] = useState(0)
+  const [viewing, setViewing] = useState(false)
   const current = images[Math.min(index, images.length - 1)]
 
   if (images.length === 0) {
@@ -79,7 +82,27 @@ function ProductGallery({ product }) {
 
   return (
     <div>
-      <FramedImage src={current} alt={product.name} framing={product.image_framing?.[current]} className="w-full aspect-[3/2]" />
+      <button
+        type="button"
+        onClick={() => setViewing(true)}
+        aria-label={`View ${product.name} image full screen`}
+        className="group relative block w-full cursor-zoom-in"
+      >
+        <FramedImage src={current} alt={product.name} framing={product.image_framing?.[current]} className="w-full aspect-[3/2]" />
+        <span className="absolute bottom-2 right-2 h-8 w-8 flex items-center justify-center rounded-full bg-black/60 text-white/90 opacity-70 group-hover:opacity-100 group-hover:text-secondary transition" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+          </svg>
+        </span>
+      </button>
+      {viewing && (
+        <ImageLightbox
+          images={images}
+          startIndex={images.indexOf(current)}
+          alt={product.name}
+          onClose={() => setViewing(false)}
+        />
+      )}
       {images.length > 1 && (
         <div className="flex gap-1.5 p-2 overflow-x-auto bg-bg-elevated/60" role="list" aria-label={`${product.name} images`}>
           {images.map((url, i) => (
@@ -182,7 +205,7 @@ export default function Store() {
         </div>
       </div>
 
-      <div role="tablist" aria-label="Storefronts" className="flex gap-6 border-b border-border mb-6 overflow-x-auto">
+      <div role="tablist" aria-label="Storefronts" className="flex gap-6 border-b border-border mb-6 overflow-x-auto no-scrollbar">
         {storefronts.map((sf) => {
           const selected = !showApparel && sf.slug === active.slug
           const inCart = sf.slug === active.slug ? totalQty : cartCount(sf.slug)

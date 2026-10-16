@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Routes, Route } from 'react-router-dom'
-import { screen, renderWithRouter, userEvent, waitFor } from '@/test/test-utils'
+import { screen, renderWithRouter, userEvent, waitFor, within } from '@/test/test-utils'
 
 vi.mock('@/context/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/api/store', async () => {
@@ -49,6 +49,46 @@ describe('Store page', () => {
 
     await userEvent.click(screen.getByLabelText('Show image 2 of Fire Token'))
     expect(screen.getByAltText('Fire Token')).toHaveAttribute('src', '/two.png')
+  })
+
+  it('opens the clicked image full screen and steps through the others', async () => {
+    getProducts.mockResolvedValue({
+      products: [{ ...TOKEN, images: ['/one.png', '/two.png', '/three.png'] }],
+    })
+    renderStore()
+    await userEvent.click(await screen.findByLabelText('Show image 2 of Fire Token'))
+    await userEvent.click(screen.getByLabelText('View Fire Token image full screen'))
+
+    const viewer = screen.getByRole('dialog', { name: 'Fire Token image viewer' })
+    expect(within(viewer).getByAltText('Fire Token')).toHaveAttribute('src', '/two.png')
+    expect(viewer).toHaveTextContent('2 / 3')
+
+    await userEvent.click(within(viewer).getByLabelText('Next image'))
+    expect(within(viewer).getByAltText('Fire Token')).toHaveAttribute('src', '/three.png')
+    await userEvent.keyboard('{ArrowRight}')
+    expect(within(viewer).getByAltText('Fire Token')).toHaveAttribute('src', '/one.png')
+    await userEvent.click(within(viewer).getByLabelText('Previous image'))
+    expect(within(viewer).getByAltText('Fire Token')).toHaveAttribute('src', '/three.png')
+
+    // Clicking the image itself keeps the viewer open
+    await userEvent.click(within(viewer).getByAltText('Fire Token'))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('closes the full screen image with the X or a click outside it', async () => {
+    getProducts.mockResolvedValue({ products: [{ ...TOKEN, image_url: '/solo.png', images: ['/solo.png'] }] })
+    renderStore()
+    await userEvent.click(await screen.findByLabelText('View Fire Token image full screen'))
+    expect(screen.queryByLabelText('Next image')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByLabelText('Close image viewer'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByLabelText('View Fire Token image full screen'))
+    await userEvent.click(screen.getByRole('dialog'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('shows a single image without a thumbnail strip', async () => {

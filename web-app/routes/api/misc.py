@@ -112,6 +112,19 @@ def community():
         })
 
 
+@misc_bp.route("/link-previews/decks")
+def deck_link_previews():
+    """Link previews for deck pages (?url=...&url=...), like Discord embeds.
+
+    Only sorcerytcg.com / Sorcery Online deck links are fetched, so this can't
+    be used to fetch arbitrary pages; at most 12 per call, cached by the service.
+    """
+    from services.curiosa import is_deck_url
+    from services.link_previews import get_previews
+    urls = [u for u in request.args.getlist("url") if u and is_deck_url(u)][:12]
+    return jsonify({"previews": get_previews(urls) if urls else {}})
+
+
 @misc_bp.route("/community", methods=["POST"])
 @require_admin
 def add_community_entry():

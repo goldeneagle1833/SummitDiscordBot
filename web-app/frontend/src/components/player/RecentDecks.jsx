@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react'
 import CollapsibleSection from './CollapsibleSection'
+import { getDeckLinkPreviews } from '@/api/community'
+import { getDeckSourceLabel } from '@/utils/deckLinks'
 
 function signed(n) {
   return n > 0 ? `+${n}` : `${n}`
@@ -9,7 +12,58 @@ function EloDelta({ value }) {
   return <span className={`font-medium ${tone}`}>{signed(value)}</span>
 }
 
-export default function RecentDecks({ decks, playerId, open, onToggle }) {
+/** Discord-style embed for the deck page: site, title, description, image. */
+function DeckPreview({ url, preview }) {
+  const [imageFailed, setImageFailed] = useState(false)
+  const [iconFailed, setIconFailed] = useState(false)
+  if (!preview) return null
+  const { title, description, image, icon, site_name: siteName } = preview
+  if (!title && !description && !image) return null
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-3 flex gap-3 rounded-lg border border-border border-l-4 border-l-secondary bg-bg-surface p-3 hover:border-secondary/60 transition-colors"
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 text-xs text-text-muted">
+          {icon && !iconFailed && (
+            <img src={icon} alt="" className="w-4 h-4 rounded-sm" loading="lazy" onError={() => setIconFailed(true)} />
+          )}
+          <span className="truncate">{siteName || getDeckSourceLabel(url)}</span>
+        </div>
+        {title && <p className="text-sm font-semibold text-secondary mt-1 break-words">{title}</p>}
+        {description && <p className="text-xs text-text-muted mt-1 line-clamp-2 break-words">{description}</p>}
+      </div>
+      {image && !imageFailed && (
+        <img
+          src={image}
+          alt=""
+          loading="lazy"
+          onError={() => setImageFailed(true)}
+          className="w-28 h-20 sm:w-40 sm:h-24 rounded object-cover bg-black shrink-0"
+        />
+      )}
+    </a>
+  )
+}
+
+export default function RecentDecks({ decks, playerId, showLinks = false, open, onToggle }) {
+  const [previews, setPreviews] = useState({})
+  const urlKey = showLinks ? (decks || []).map((d) => d.url).join('\n') : ''
+
+  useEffect(() => {
+    if (!urlKey) return undefined
+    let active = true
+    getDeckLinkPreviews(urlKey.split('\n'))
+      .then((res) => active && setPreviews(res?.previews || {}))
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [urlKey])
+
   if (!decks?.length) return null
 
   return (
@@ -21,45 +75,48 @@ export default function RecentDecks({ decks, playerId, open, onToggle }) {
           const hasSeason = deck.elo_season !== null && deck.elo_season !== undefined
           const hasLifetime = deck.elo_lifetime !== null && deck.elo_lifetime !== undefined
           return (
-            <div key={deck.url} className="bg-bg-raised border border-border rounded-lg p-3 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-text-primary truncate">{deck.deck_name}</p>
-                <p className="text-xs text-text-muted">
-                  {deck.avatar} &middot;{' '}
-                  <span className="text-accent-green">{deck.wins}W</span>
-                  {' / '}
-                  <span className="text-accent-red">{deck.losses}L</span>
-                  {' '}({deck.win_rate}%)
-                </p>
-                {(hasSeason || hasLifetime) && (
-                  <p
-                    className="text-xs text-text-muted mt-0.5"
-                    title="Lifetime ELO gained or lost while piloting this deck"
-                  >
-                    ELO:{' '}
-                    {hasSeason && (
-                      <>
-                        Season <EloDelta value={deck.elo_season} />
-                        {' '}({deck.season_wins}-{deck.season_losses})
-                      </>
-                    )}
-                    {hasSeason && hasLifetime && ' · '}
-                    {hasLifetime && (
-                      <>
-                        Lifetime <EloDelta value={deck.elo_lifetime} />
-                      </>
-                    )}
+            <div key={deck.url} className="bg-bg-raised border border-border rounded-lg p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-text-primary truncate">{deck.deck_name}</p>
+                  <p className="text-xs text-text-muted">
+                    {deck.avatar} &middot;{' '}
+                    <span className="text-accent-green">{deck.wins}W</span>
+                    {' / '}
+                    <span className="text-accent-red">{deck.losses}L</span>
+                    {' '}({deck.win_rate}%)
                   </p>
-                )}
+                  {(hasSeason || hasLifetime) && (
+                    <p
+                      className="text-xs text-text-muted mt-0.5"
+                      title="Lifetime ELO gained or lost while piloting this deck"
+                    >
+                      ELO:{' '}
+                      {hasSeason && (
+                        <>
+                          Season <EloDelta value={deck.elo_season} />
+                          {' '}({deck.season_wins}-{deck.season_losses})
+                        </>
+                      )}
+                      {hasSeason && hasLifetime && ' · '}
+                      {hasLifetime && (
+                        <>
+                          Lifetime <EloDelta value={deck.elo_lifetime} />
+                        </>
+                      )}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href={statsHref}
+                    className="text-xs text-secondary hover:underline whitespace-nowrap"
+                  >
+                    Stats &rarr;
+                  </a>
+                </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <a
-                  href={statsHref}
-                  className="text-xs text-secondary hover:underline whitespace-nowrap"
-                >
-                  Stats &rarr;
-                </a>
-              </div>
+              {showLinks && <DeckPreview url={deck.url} preview={previews[deck.url]} />}
             </div>
           )
         })}

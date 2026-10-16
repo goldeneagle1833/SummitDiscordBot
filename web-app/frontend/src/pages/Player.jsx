@@ -259,7 +259,7 @@ export default function Player() {
             />
           )}
           {sectionVisible('recent_decks') && (
-            <RecentDecks decks={data.recent_decks} playerId={playerId} open />
+            <RecentDecks decks={data.recent_decks} playerId={playerId} showLinks={sectionVisible('deck_urls')} open />
           )}
           {data.matches?.length > 0 && (
             <div className="flex justify-end">

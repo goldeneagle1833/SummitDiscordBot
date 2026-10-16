@@ -79,6 +79,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.get_profile_visibility",
     "api.players.set_profile_visibility",
     "api.players.set_hidden_avatars",  # owner/admin, checked in the handler
+    "api.misc.deck_link_previews",  # deck-site links only
     "api.players.reset_own_profile",
     "api.players.undo_profile_reset",
     "api.players.delete_own_account",

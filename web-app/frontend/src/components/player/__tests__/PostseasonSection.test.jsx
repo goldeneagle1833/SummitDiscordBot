@@ -21,6 +21,11 @@ const ENTRIES = [
     wins: 4,
     losses: 0,
     played_at: '2026-09-18T13:40:30',
+    avatar: 'Witch',
+    run: [
+      { match_no: 3, round_title: 'Quarterfinals', result: 'win', opponent_seed: 5, opponent_name: 'Bob', opponent_user_id: 'u5', opponent_avatar: 'Druid' },
+      { match_no: 9, round_title: 'Finals', result: 'win', opponent_seed: 1, opponent_name: 'Cy', opponent_user_id: null, opponent_avatar: null },
+    ],
   },
   {
     slug: 'gothic-5',
@@ -68,6 +73,17 @@ describe('PostseasonSection', () => {
       'href',
       '/brackets/gothic-6',
     )
+    expect(screen.getAllByRole('link', { name: /view bracket/i })[0]).toHaveAttribute('href', '/brackets/gothic-6')
+  })
+
+  it('shows the top cut run round by round', async () => {
+    renderWithRouter(<PostseasonSection playerId="u1" />)
+    const run = await screen.findByRole('list', { name: 'Gothic Season 6 Postseason run' })
+    expect(run.querySelectorAll('li')).toHaveLength(2)
+    expect(screen.getByText('Quarterfinals')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Bob' })).toHaveAttribute('href', '/player/u5')
+    expect(screen.getByText(/· Druid/)).toBeInTheDocument()
+    expect(screen.getByText(/on Witch/)).toBeInTheDocument()
   })
 
   it('stays hidden for a player who has never been in one', async () => {

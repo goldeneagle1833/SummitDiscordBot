@@ -1049,6 +1049,9 @@ class BracketService:
                 ]
             )
 
+            decks = {d["seed"]: d for d in self._repo.get_decks(bracket["bracket_id"])}
+            own_deck = decks.get(entrant["seed"]) or {}
+
             out.append(
                 {
                     "slug": bracket["slug"],
@@ -1061,10 +1064,41 @@ class BracketService:
                     "wins": wins,
                     "losses": losses,
                     "played_at": bracket["published_at"] or bracket["created_at"],
+                    "avatar": own_deck.get("avatar_name"),
+                    "run": self._player_run(matches, entrant["seed"], decks),
                 }
             )
 
         return out
+
+    @staticmethod
+    def _player_run(matches: list[dict], seed: int, decks: dict) -> list[dict]:
+        """One player's games in a bracket, round by round: who, on what, and how it went."""
+        run = []
+        for m in sorted(matches, key=lambda m: (m["round"], m["position"])):
+            if seed not in (m["p1_seed"], m["p2_seed"]):
+                continue
+            mine = 1 if m["p1_seed"] == seed else 2
+            opp_seed = m["p2_seed"] if mine == 1 else m["p1_seed"]
+            if m["state"] == "bye" or opp_seed is None:
+                result = "bye" if m["state"] in ("bye", "complete") else "waiting"
+            elif m["state"] == "complete":
+                result = "win" if m["winner_seed"] == seed else "loss"
+            else:
+                result = "pending"
+            run.append(
+                {
+                    "match_no": m["match_no"],
+                    "round": m["round"],
+                    "round_title": m["round_title"] or f"Round {m['round']}",
+                    "result": result,
+                    "opponent_seed": opp_seed,
+                    "opponent_name": (m["p2_name"] if mine == 1 else m["p1_name"]) if opp_seed else None,
+                    "opponent_user_id": (m["p2_user_id"] if mine == 1 else m["p1_user_id"]) if opp_seed else None,
+                    "opponent_avatar": (decks.get(opp_seed) or {}).get("avatar_name") if opp_seed else None,
+                }
+            )
+        return run
 
     # -- Top 8 page ----------------------------------------------
 

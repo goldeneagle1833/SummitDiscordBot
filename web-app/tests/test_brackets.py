@@ -2019,6 +2019,22 @@ class TestPlayerPostseason:
         assert entry["label"] == "Top 8"
         assert (entry["wins"], entry["losses"]) == (0, 1)
 
+    def test_each_entry_carries_the_round_by_round_run(self, service, repo):
+        slug, bracket_id = published(service, repo, 8, name="History Cup")
+        first = repo.get_matches(bracket_id)[0]  # seed 1 v seed 8
+        service.set_result(slug, first["match_no"], "u1", admin_id="a")
+
+        winner_run = service.get_player_postseason("u1")[0]["run"]
+        assert winner_run[0]["result"] == "win"
+        assert winner_run[0]["opponent_seed"] == 8
+        assert winner_run[0]["round_title"]
+        assert winner_run[-1]["result"] in ("pending", "waiting")  # next round not played yet
+
+        loser_run = service.get_player_postseason("u8")[0]["run"]
+        assert [g["result"] for g in loser_run] == ["loss"]
+        assert loser_run[0]["opponent_seed"] == 1
+        assert loser_run[0]["opponent_user_id"] == "u1"
+
     def test_someone_who_never_entered_has_nothing(self, service, repo):
         published(service, repo, 8, name="History Cup")
         assert service.get_player_postseason("u99") == []

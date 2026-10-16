@@ -1,4 +1,16 @@
+/**
+ * A titled profile section. With onToggle it collapses behind its title;
+ * without one (inside a profile tab) it is always open under a plain heading.
+ */
 export default function CollapsibleSection({ title, open, onToggle, children }) {
+  if (!onToggle) {
+    return (
+      <section className="bg-bg-surface border border-border rounded-xl p-5">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted mb-4">{title}</h2>
+        {children}
+      </section>
+    )
+  }
   return (
     <section>
       <button

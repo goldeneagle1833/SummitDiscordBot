@@ -28,3 +28,9 @@ export const deleteOwnAccount = (id) => del(`/api/player/${id}/account`)
 export const getBlockedUsers = (id) => get(`/api/player/${id}/blocked-users`)
 export const blockUser = (id, blockedUserId, reason) => post(`/api/player/${id}/blocked-users`, { blocked_user_id: blockedUserId, reason })
 export const unblockUser = (id, blockedUserId) => del(`/api/player/${id}/blocked-users/${blockedUserId}`)
+export const getPlayerCardStats = (id, { event } = {}) => {
+  const params = new URLSearchParams()
+  if (event && event !== 'lifetime') params.set('event', event)
+  const qs = params.toString()
+  return get(`/api/player/${id}/card-stats${qs ? '?' + qs : ''}`)
+}

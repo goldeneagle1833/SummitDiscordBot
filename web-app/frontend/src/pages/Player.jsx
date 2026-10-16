@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { getPlayer, resetOwnProfile, undoProfileReset } from '@/api/players'
 import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
@@ -24,6 +24,8 @@ import AvatarEloHistory from '@/components/player/AvatarEloHistory'
 import PostseasonSection from '@/components/player/PostseasonSection'
 import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
 import BlockListModal from '@/components/player/BlockListModal'
+import CardStats from '@/components/player/CardStats'
+import { useBracketMarks } from '@/components/player/BracketMarks'
 import { useAuth } from '@/context/AuthContext'
 
 const PER_PAGE_OPTIONS = [15, 25, 50]
@@ -56,19 +58,19 @@ export default function Player() {
   const [showBlockListModal, setShowBlockListModal] = useState(false)
   const [showResetModal, setShowResetModal] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
-const [editDeck, setEditDeck] = useState(null)
+  const [editDeck, setEditDeck] = useState(null)
 
-  // Collapsible sections
-  const [openSections, setOpenSections] = useState({
-    eloHistory: false,
-    avatarElo: false,
-    eloBrackets: false,
-    avatarPerf: false,
-    avatarMatchups: false,
-    recentDecks: false,
-    limitedArena: false,
-  })
-  const toggle = (key) => setOpenSections((s) => ({ ...s, [key]: !s[key] }))
+  // Profile tab, kept in the URL so a tab can be linked to
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('tab') || 'overview'
+  const setTab = (id) => {
+    const next = new URLSearchParams(searchParams)
+    if (id === 'overview') next.delete('tab')
+    else next.set('tab', id)
+    setSearchParams(next, { replace: true })
+  }
+  const navigate = useNavigate()
+  const hasPostseason = Boolean(useBracketMarks(playerId)?.entries?.length)
 
   const fetchData = useCallback(
     (ev, pg, src, cpg, pp, epg) => {
@@ -117,43 +119,57 @@ const [editDeck, setEditDeck] = useState(null)
   if (error && !data) return <p className="text-center text-accent-red py-8">{error}</p>
   if (!data) return null
 
-  // ELO display logic
+  // Headline numbers for the header card
   const avatarMode = data.avatar_event_elo?.elo_mode === 'avatar'
   const avatarEntries = data.avatar_event_elo?.entries || []
-  let eloText = ''
-  let rankText = ''
-  if ((eventFilter === 'lifetime' || !eventFilter) && avatarMode) {
-    // Lifetime ELO for owners/admins; the season's per-avatar entries are listed below
-    eloText = canSeeLifetime && data.elo != null ? `Lifetime ELO: ${data.elo}` : ''
-    rankText = canSeeLifetime && data.rank ? `Rank #${data.rank}` : ''
-  } else if (eventFilter === 'lifetime' || !eventFilter) {
+  const isLifetime = eventFilter === 'lifetime' || !eventFilter
+  const headline = { elo: null, eloLabel: '', rank: null, rankLabel: 'Rank', note: '' }
+  if (isLifetime) {
     if (canSeeLifetime && data.elo != null) {
-      eloText = `Lifetime ELO: ${data.elo}`
-      if (data.event_elo && data.event_elo !== 1500) eloText += ` | Event ELO: ${data.event_elo}`
-      rankText = data.rank ? `Rank #${data.rank}` : ''
-    } else {
-      eloText = data.event_elo && data.event_elo !== 1500 ? `Event ELO: ${data.event_elo}` : ''
-      rankText = ''
+      headline.elo = data.elo
+      headline.eloLabel = 'Lifetime ELO'
+      headline.rank = data.rank || null
+    } else if (data.event_elo && data.event_elo !== 1500) {
+      headline.elo = data.event_elo
+      headline.eloLabel = 'Event ELO'
     }
   } else if (avatarMode) {
-    // Avatar-mode event: one event ELO per avatar, listed under the header
-    eloText = avatarEntries.length
-      ? `Event ELO per avatar${data.avatar_event_elo?.event_name ? ` (${data.avatar_event_elo.event_name})` : ''}:`
-      : 'No avatar games this event yet'
-    rankText = ''
-  } else if (eventFilter === 'current') {
-    eloText = data.displayed_elo !== 1500 ? `Current Event ELO: ${data.displayed_elo}` : 'No current event data'
-    rankText = data.displayed_rank > 0 ? `Event Rank #${data.displayed_rank}` : ''
+    if (!avatarEntries.length) headline.note = 'No avatar games this event yet'
+  } else if (data.displayed_elo !== 1500) {
+    headline.elo = data.displayed_elo
+    headline.eloLabel = eventFilter === 'current' ? 'Current event ELO' : 'Event ELO'
+    headline.rank = data.displayed_rank > 0 ? data.displayed_rank : null
+    headline.rankLabel = eventFilter === 'current' ? 'Event rank' : 'Rank'
   } else {
-    eloText = data.displayed_elo !== 1500 ? `Event ELO: ${data.displayed_elo}` : 'No data for this event'
-    rankText = data.displayed_rank > 0 ? `#${data.displayed_rank}` : ''
+    headline.note = eventFilter === 'current' ? 'No current event data' : 'No data for this event'
   }
 
   const stats = statsType === 'casual' ? data.casual_stats : data
   const pastEvents = events?.events?.filter((e) => !e.is_active) || []
   const vis = data.profile_visibility || {}
   const sectionVisible = (key) => data.is_owner || vis[key]
-  const isProfilePrivate = !data.is_owner && Object.values(vis).every((v) => !v)
+
+  // A tab shows only when the viewer can see something on it
+  const tabs = [
+    { id: 'overview', label: 'Overview' },
+    (sectionVisible('avatar_performance') && data.avatar_performance?.length > 0) && { id: 'avatars', label: 'Avatars' },
+    ((sectionVisible('avatar_matchups') && data.avatar_matchups?.length > 0)
+      || (sectionVisible('elo_brackets') && data.elo_vs_brackets?.length > 0)) && { id: 'matchups', label: 'Matchups' },
+    sectionVisible('card_stats') && { id: 'cards', label: 'Card Stats' },
+    data.limited?.has_data && { id: 'limited', label: 'Limited' },
+    { id: 'matches', label: 'Matches' },
+    hasPostseason && { id: 'postseason', label: 'Postseason' },
+  ].filter(Boolean)
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : 'overview'
+
+  const settingsItems = [
+    { label: 'Privacy settings', onClick: () => setShowPrivacyModal(true) },
+    { label: 'Block list', onClick: () => setShowBlockListModal(true) },
+    { label: data.profile_reset_at ? 'Undo Fresh Start' : 'Fresh Start', onClick: () => setShowResetModal(true) },
+    authUser?.is_store_admin && { label: 'My orders', onClick: () => navigate('/store/orders') },
+  ].filter(Boolean)
+
+  const hiddenSections = !data.is_owner && Object.values(vis).some((v) => !v)
 
   return (
     <div className="space-y-6">
@@ -181,126 +197,15 @@ const [editDeck, setEditDeck] = useState(null)
       <PlayerHeader
         data={data}
         playerId={playerId}
-        eloText={eloText}
-        rankText={rankText}
+        headline={headline}
         avatarEntries={avatarMode ? avatarEntries : []}
         eventFilter={eventFilter}
         pastEvents={pastEvents}
         onEventChange={(val) => refetch(val, 1, undefined, 1)}
         canSeeLifetime={canSeeLifetime}
-      />
-
-      {/* Report Game & Privacy Settings buttons (owner only) */}
-      {data.is_owner && (
-        <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={() => setShowReportModal(true)}
-            className="px-4 py-2 text-sm bg-secondary text-black rounded hover:opacity-90 transition-opacity"
-          >
-            Report a Game
-          </button>
-          <button
-            onClick={() => setShowPrivacyModal(true)}
-            className="px-4 py-2 text-sm rounded border border-border text-text-muted hover:text-text-primary hover:border-secondary/50 transition-colors"
-          >
-            Privacy Settings
-          </button>
-          <button
-            onClick={() => setShowBlockListModal(true)}
-            className="px-4 py-2 text-sm rounded border border-border text-text-muted hover:text-text-primary hover:border-secondary/50 transition-colors"
-          >
-            Block List
-          </button>
-          <button
-            onClick={() => setShowResetModal(true)}
-            className="px-4 py-2 text-sm rounded border border-border text-text-muted hover:text-text-primary hover:border-secondary/50 transition-colors"
-          >
-            {data.profile_reset_at ? 'Undo Fresh Start' : 'Fresh Start'}
-          </button>
-          {authUser?.is_store_admin && (
-            <Link
-              to="/store/orders"
-              className="px-4 py-2 text-sm rounded border border-border text-text-muted hover:text-text-primary hover:border-secondary/50 transition-colors"
-            >
-              My Orders
-            </Link>
-          )}
-        </div>
-      )}
-
-      {isProfilePrivate && (
-        <div className="text-center py-4 text-text-muted border border-border rounded-lg bg-bg-surface">
-          <p className="text-sm">Some sections of this profile are private.</p>
-        </div>
-      )}
-
-      <PostseasonSection playerId={playerId} />
-
-      <OverallStats
-        data={data}
-        stats={stats}
-        statsType={statsType}
-        onStatsTypeChange={setStatsType}
-      />
-
-      {sectionVisible('elo_history') && (
-        <EloHistory
-          eloHistory={data.elo_history}
-          currentElo={data.elo}
-          open={openSections.eloHistory}
-          onToggle={() => toggle('eloHistory')}
-        />
-      )}
-
-      {avatarMode && sectionVisible('elo_history') && (
-        <AvatarEloHistory
-          history={data.avatar_event_elo.history}
-          entries={avatarEntries}
-          eventName={data.avatar_event_elo.event_name}
-          open={openSections.avatarElo}
-          onToggle={() => toggle('avatarElo')}
-        />
-      )}
-
-      {sectionVisible('elo_brackets') && (
-        <EloBrackets
-          brackets={data.elo_vs_brackets}
-          open={openSections.eloBrackets}
-          onToggle={() => toggle('eloBrackets')}
-        />
-      )}
-
-      {sectionVisible('avatar_performance') && (
-        <AvatarPerformance
-          avatars={data.avatar_performance}
-          playerId={playerId}
-          open={openSections.avatarPerf}
-          onToggle={() => toggle('avatarPerf')}
-        />
-      )}
-
-      {sectionVisible('avatar_matchups') && (
-        <AvatarMatchups
-          matchups={data.avatar_matchups}
-          open={openSections.avatarMatchups}
-          onToggle={() => toggle('avatarMatchups')}
-        />
-      )}
-
-      {sectionVisible('recent_decks') && (
-        <RecentDecks
-          decks={data.recent_decks}
-          playerId={playerId}
-          open={openSections.recentDecks}
-          onToggle={() => toggle('recentDecks')}
-        />
-      )}
-
-      <LimitedArena
-        limited={data.limited}
-        playerId={playerId}
-        open={openSections.limitedArena}
-        onToggle={() => toggle('limitedArena')}
+        onReport={data.is_owner ? () => setShowReportModal(true) : undefined}
+        settingsItems={data.is_owner ? settingsItems : []}
+        onPostseason={() => setTab('postseason')}
       />
 
       <PendingMatches
@@ -310,47 +215,133 @@ const [editDeck, setEditDeck] = useState(null)
         onDispute={refreshCurrentPage}
       />
 
-      <MatchHistoryTable
-        title="Ranked Match History"
-        matches={data.matches}
-        pagination={data.pagination}
-        playerId={playerId}
-        isOwner={data.is_owner}
-        profileVisibility={vis}
-        perPage={perPage}
-        perPageOptions={PER_PAGE_OPTIONS}
-        onPageChange={(p) => refetch(undefined, p)}
-        onPerPageChange={(pp) => refetch(undefined, 1, undefined, undefined, pp)}
-        onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
-        onMatchUpdate={refreshCurrentPage}
-      />
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border">
+        <nav aria-label="Profile sections" className="flex flex-wrap gap-x-6" role="tablist">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === t.id}
+              onClick={() => setTab(t.id)}
+              className={`min-h-11 px-1 text-[15px] font-semibold border-b-[3px] -mb-px transition-colors ${
+                activeTab === t.id
+                  ? 'text-text-primary border-secondary'
+                  : 'text-text-muted border-transparent hover:text-text-primary'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+        {hiddenSections && (
+          <p className="text-xs text-text-muted pb-3">Some sections of this profile are private.</p>
+        )}
+      </div>
 
-      {data.casual_matches?.length > 0 && (
-        <MatchHistoryTable
-          title="Casual Match History"
-          subtitle="Casual games do not affect ELO ratings."
-          matches={data.casual_matches}
-          pagination={data.casual_pagination}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          <OverallStats
+            data={data}
+            stats={stats}
+            statsType={statsType}
+            onStatsTypeChange={setStatsType}
+          />
+          {sectionVisible('elo_history') && (
+            <EloHistory eloHistory={data.elo_history} currentElo={data.elo} open />
+          )}
+          {avatarMode && sectionVisible('elo_history') && (
+            <AvatarEloHistory
+              history={data.avatar_event_elo.history}
+              entries={avatarEntries}
+              eventName={data.avatar_event_elo.event_name}
+              open
+            />
+          )}
+          {sectionVisible('recent_decks') && (
+            <RecentDecks decks={data.recent_decks} playerId={playerId} open />
+          )}
+          {data.matches?.length > 0 && (
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setTab('matches')} className="text-sm font-semibold text-secondary hover:underline">
+                See all matches &rarr;
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'avatars' && (
+        <AvatarPerformance avatars={data.avatar_performance} playerId={playerId} open />
+      )}
+
+      {activeTab === 'matchups' && (
+        <div className="space-y-6">
+          {sectionVisible('avatar_matchups') && <AvatarMatchups matchups={data.avatar_matchups} open />}
+          {sectionVisible('elo_brackets') && <EloBrackets brackets={data.elo_vs_brackets} open />}
+        </div>
+      )}
+
+      {activeTab === 'cards' && (
+        <CardStats
           playerId={playerId}
+          eventFilter={eventFilter}
           isOwner={data.is_owner}
-          profileVisibility={vis}
-          onPageChange={(p) => refetch(undefined, undefined, undefined, p)}
-          onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
-          onMatchUpdate={refreshCurrentPage}
+          isPublic={Boolean(vis.card_stats)}
         />
       )}
 
-      {data.external_matches?.length > 0 && (
-        <ExternalMatches
-          matches={data.external_matches}
-          stats={data.external_stats}
-          pagination={data.external_pagination}
-          playerId={playerId}
-          onPageChange={(p) => refetch(undefined, undefined, undefined, undefined, undefined, p)}
-        />
+      {activeTab === 'limited' && (
+        <LimitedArena limited={data.limited} playerId={playerId} open />
       )}
 
-      {sectionVisible('recorded_games') && <RecordedGames games={data.recorded_games} />}
+      {activeTab === 'matches' && (
+        <div className="space-y-6">
+          <MatchHistoryTable
+            title="Ranked Match History"
+            matches={data.matches}
+            pagination={data.pagination}
+            playerId={playerId}
+            isOwner={data.is_owner}
+            profileVisibility={vis}
+            perPage={perPage}
+            perPageOptions={PER_PAGE_OPTIONS}
+            onPageChange={(p) => refetch(undefined, p)}
+            onPerPageChange={(pp) => refetch(undefined, 1, undefined, undefined, pp)}
+            onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
+            onMatchUpdate={refreshCurrentPage}
+          />
+
+          {data.casual_matches?.length > 0 && (
+            <MatchHistoryTable
+              title="Casual Match History"
+              subtitle="Casual games do not affect ELO ratings."
+              matches={data.casual_matches}
+              pagination={data.casual_pagination}
+              playerId={playerId}
+              isOwner={data.is_owner}
+              profileVisibility={vis}
+              onPageChange={(p) => refetch(undefined, undefined, undefined, p)}
+              onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
+              onMatchUpdate={refreshCurrentPage}
+            />
+          )}
+
+          {data.external_matches?.length > 0 && (
+            <ExternalMatches
+              matches={data.external_matches}
+              stats={data.external_stats}
+              pagination={data.external_pagination}
+              playerId={playerId}
+              onPageChange={(p) => refetch(undefined, undefined, undefined, undefined, undefined, p)}
+            />
+          )}
+
+          {sectionVisible('recorded_games') && <RecordedGames games={data.recorded_games} />}
+        </div>
+      )}
+
+      {activeTab === 'postseason' && <PostseasonSection playerId={playerId} />}
 
       {/* Modals */}
       {showReportModal && (

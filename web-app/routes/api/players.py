@@ -2875,6 +2875,58 @@ def set_profile_visibility(player_id):
     return jsonify({"success": True, "sections": updated})
 
 
+@players_bp.route("/player/<player_id>/card-stats")
+def player_card_stats(player_id):
+    """One player's played-card stats from Sorcery Online games.
+
+    Private by default: the owner and admins always see it, everyone else
+    only when the player turned on the "card_stats" profile section.
+    Query parameters: event = 'lifetime' (default), 'current', or an event id.
+    """
+    from routes.api.cards import (
+        _build_card_image_lookup, _find_card_image, _get_event_date_range, _load_card_elements,
+    )
+    from services.player_card_stats import load_player_games, summarize
+
+    player_id_normalized = str(player_id)
+    if player_id_normalized.startswith("google_"):
+        player_id_normalized = player_id_normalized[7:]
+
+    viewer = session.get("user_id")
+    viewer = str(viewer)[7:] if viewer is not None and str(viewer).startswith("google_") else viewer
+    is_owner = viewer is not None and str(viewer) == player_id_normalized
+    api_key = request.headers.get("X-API-Key")
+    if (api_key and api_key in VALID_API_KEYS) or is_admin():
+        is_owner = True
+
+    profile_repo = UserProfileRepository()
+    if not is_owner:
+        visibility = profile_repo.get_profile_visibility(player_id_normalized)
+        if not visibility.get("card_stats", False):
+            return jsonify({"error": "This player's card stats are private"}), 403
+
+    event_filter = request.args.get("event", "lifetime")
+    start, end = (None, None) if event_filter == "lifetime" else _get_event_date_range(event_filter)
+
+    # A Fresh Start hides older games from everyone but admins, same as the rest of the profile
+    if not is_admin():
+        reset_at = profile_repo.get_profile_reset_at(player_id_normalized) or profile_repo.get_profile_reset_at(str(player_id))
+        if reset_at and (not start or str(reset_at) > str(start)):
+            start = reset_at
+
+    result = summarize(load_player_games(MATCH_RECORDS_DB_PATH, player_id_normalized, start, end))
+    image_lookup = _build_card_image_lookup()
+    elements = _load_card_elements()
+    for card in result["cards"]:
+        img = _find_card_image(card["name"], image_lookup)
+        card["image_url"] = f"/card-images/{img}" if img else None
+        element = elements.get(card["name"].lower())
+        if isinstance(element, (set, list, tuple)):
+            element = " / ".join(sorted(element)) or None
+        card["element"] = element
+    return jsonify(result)
+
+
 def _stripped_id(pid) -> str:
     """Strip the google_ prefix for identity comparison across ID forms."""
     s = str(pid)

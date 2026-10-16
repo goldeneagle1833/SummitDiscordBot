@@ -482,6 +482,7 @@ class UserProfileRepository:
         "deck_urls",
         "deck_snapshots",
         "replays",
+        "card_stats",
     ]
 
     def get_profile_visibility(self, user_id: str) -> dict:

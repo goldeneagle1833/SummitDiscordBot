@@ -36,18 +36,18 @@ describe('ShopifyApparel', () => {
 
   it('shows our own cart bar instead of Shopify\'s floating tab and opens Shopify\'s cart from it', async () => {
     const openCart = vi.fn()
-    const cart = { model: { lineItems: [{ quantity: 2 }, { quantity: 1 }], lineItemsSubtotalPrice: { amount: '120.0' } } }
+    const cart = { open: openCart, model: { lineItems: [{ quantity: 2 }, { quantity: 1 }], lineItemsSubtotalPrice: { amount: '120.0' } } }
     const createComponent = vi.fn((type, config) => {
       config.options.cart.events.afterRender(cart)
       return Promise.resolve()
     })
-    window.ShopifyBuy = { buildClient: vi.fn(), UI: { onReady: vi.fn(() => Promise.resolve({ createComponent, openCart, closeCart: vi.fn() })) } }
+    window.ShopifyBuy = { buildClient: vi.fn(), UI: { onReady: vi.fn(() => Promise.resolve({ createComponent })) } }
 
     render(<ShopifyApparel />)
     expect(await screen.findByText('3 items')).toBeInTheDocument()
     expect(screen.getByText('$120.00')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /View cart/ }))
-    expect(openCart).toHaveBeenCalled()
+    await waitFor(() => expect(openCart).toHaveBeenCalled())
   })
 
   it('has no cart bar while the apparel cart is empty', () => {

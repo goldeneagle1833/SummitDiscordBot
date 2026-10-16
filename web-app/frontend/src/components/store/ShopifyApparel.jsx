@@ -173,9 +173,33 @@ export const BUY_BUTTON_OPTIONS = {
 // Shopify keeps one cart for the page and its events from the first mount,
 // so they call whichever Apparel view is showing now
 let cartListener = null
-const CART_EVENTS = {
-  afterInit: (c) => cartListener?.(c),
-  afterRender: (c) => cartListener?.(c),
+// Shopify's cart itself, as handed to its events. The object onReady gives
+// back from Shopify's hosted build doesn't reliably have openCart, so the bar
+// opens and closes this instead
+let shopifyCart = null
+const onCart = (c) => {
+  shopifyCart = c
+  cartListener?.(c)
+}
+const CART_EVENTS = { afterInit: onCart, afterRender: onCart }
+
+function openCartNow() {
+  if (typeof shopifyCart?.open === 'function') shopifyCart.open()
+  else if (typeof shopifyCart?.toggleVisibility === 'function') shopifyCart.toggleVisibility(true)
+}
+
+// Shopify closes its cart on any click outside it, including the click on
+// our View cart button, so open it once that click has finished
+export function openShopifyCart() {
+  setTimeout(openCartNow, 0)
+}
+
+function closeShopifyCart() {
+  try {
+    if (shopifyCart?.isVisible && typeof shopifyCart.close === 'function') shopifyCart.close()
+  } catch {
+    // leaving the tab must never fail over a cart drawer
+  }
 }
 
 let sdkPromise = null
@@ -204,7 +228,6 @@ export function cartSummary(cart) {
 
 export default function ShopifyApparel() {
   const node = useRef(null)
-  const ui = useRef(null)
   const [failed, setFailed] = useState(false)
   const [cart, setCart] = useState({ count: 0, subtotalCents: 0 })
 
@@ -216,7 +239,6 @@ export default function ShopifyApparel() {
         const client = ShopifyBuy.buildClient(SHOP)
         return ShopifyBuy.UI.onReady(client).then((shopifyUi) => {
           if (cancelled || !node.current) return
-          ui.current = shopifyUi
           node.current.innerHTML = ''
           // Shopify's floating cart tab is hidden (index.css); our bar below
           // shows the cart instead and opens Shopify's cart for checkout
@@ -237,8 +259,8 @@ export default function ShopifyApparel() {
           // nothing after drawing may hide a shirt that's already showing
           Promise.resolve(drawn)
             .then(() => {
-              const existing = shopifyUi.components?.cart?.[0]
-              if (!cancelled && existing?.model) setCart(cartSummary(existing))
+              // Coming back to the tab: the cart already exists, so no event fires
+              if (!cancelled && shopifyCart?.model) setCart(cartSummary(shopifyCart))
             })
             .catch(() => {})
         })
@@ -248,7 +270,7 @@ export default function ShopifyApparel() {
     return () => {
       cancelled = true
       cartListener = null
-      ui.current?.closeCart()
+      closeShopifyCart()
       if (current) current.innerHTML = ''
     }
   }, [])
@@ -284,7 +306,7 @@ export default function ShopifyApparel() {
           </div>
           <button
             type="button"
-            onClick={() => ui.current?.openCart()}
+            onClick={openShopifyCart}
             className="bg-primary hover:bg-primary-dark text-white font-medium px-5 py-2.5 rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap"
           >
             View cart

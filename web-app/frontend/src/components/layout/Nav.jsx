@@ -8,7 +8,9 @@ import SocialLinks from '@/components/layout/SocialLinks'
 
 // Discord, Patreon and Reddit live in SocialLinks as icons, and the logo is
 // the Home link, so none of them are text options here.
-// About and Feedback stay reachable from the footer and the Help tabs
+// About stays reachable from the footer and the Help tabs, and Avatar Top 16
+// from the Avatars page toggle, so neither is a top bar option (Bruce, 2026-10-16)
+
 // Always first on the top bar, in this order; links a user adds follow them
 const PERMANENT_LINKS = ['Avatars', 'Deck Archetypes', 'Top 8 Decks']
 
@@ -19,7 +21,6 @@ const ALL_NAV_OPTIONS = [
   { to: '/deck-builder', label: 'Deck Visualizer' },
   { to: '/deck-archetypes', label: 'Deck Archetypes' },
   { to: '/avatars', label: 'Avatars' },
-  { to: '/avatars/top-players', label: 'Avatar Top 16' },
   { to: '/meta-report', label: 'Meta Report' },
   { to: '/elements', label: 'Element Winrates' },
   { to: '/cards/played-winrates', label: 'Card Win Rates' },
@@ -33,7 +34,6 @@ const ALL_NAV_OPTIONS = [
   { to: '/explorer', label: 'Community Series' },
   { to: '/life-counter', label: 'Life Counter' },
   { to: '/help', label: 'Help' },
-  { to: '/about', label: 'About' },
   { to: '/feedback', label: 'Feedback' },
   { to: '/community', label: 'Community' },
 ]

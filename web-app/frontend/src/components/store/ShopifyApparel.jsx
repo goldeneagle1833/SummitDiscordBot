@@ -221,7 +221,7 @@ export default function ShopifyApparel() {
           // Shopify's floating cart tab is hidden (index.css); our bar below
           // shows the cart instead and opens Shopify's cart for checkout
           cartListener = (c) => setCart(cartSummary(c))
-          shopifyUi.createComponent('product', {
+          const drawn = shopifyUi.createComponent('product', {
             id: PRODUCT_ID,
             node: node.current,
             moneyFormat: '%24%7B%7Bamount%7D%7D',
@@ -232,10 +232,15 @@ export default function ShopifyApparel() {
                 events: CART_EVENTS,
               },
             },
-          }).then(() => {
-            const existing = shopifyUi.components?.cart?.[0]
-            if (!cancelled && existing) setCart(cartSummary(existing))
           })
+          // Shopify's hosted build doesn't always return a promise here, and
+          // nothing after drawing may hide a shirt that's already showing
+          Promise.resolve(drawn)
+            .then(() => {
+              const existing = shopifyUi.components?.cart?.[0]
+              if (!cancelled && existing?.model) setCart(cartSummary(existing))
+            })
+            .catch(() => {})
         })
       })
       .catch(() => { if (!cancelled) setFailed(true) })

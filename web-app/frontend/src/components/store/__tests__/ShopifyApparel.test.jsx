@@ -54,4 +54,15 @@ describe('ShopifyApparel', () => {
     expect(cartSummary({ model: { lineItems: [] } })).toEqual({ count: 0, subtotalCents: 0 })
     expect(cartSummary(undefined)).toEqual({ count: 0, subtotalCents: 0 })
   })
+
+  it("keeps the shirt showing when Shopify's hosted build returns nothing from createComponent", async () => {
+    const createComponent = vi.fn(() => undefined)
+    window.ShopifyBuy = { buildClient: vi.fn(), UI: { onReady: vi.fn(() => Promise.resolve({ createComponent, closeCart: vi.fn() })) } }
+
+    render(<ShopifyApparel />)
+    await waitFor(() => expect(createComponent).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.getByTestId('shopify-apparel')).toBeInTheDocument()
+    expect(screen.queryByText(/couldn.t load/)).not.toBeInTheDocument()
+  })
 })

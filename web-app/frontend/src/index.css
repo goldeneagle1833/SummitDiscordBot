@@ -51,3 +51,8 @@ option {
     transition: none !important;
   }
 }
+
+/* Shopify Buy Button's floating cart tab: the Apparel tab shows its own cart bar */
+.shopify-buy-frame--toggle {
+  display: none !important;
+}

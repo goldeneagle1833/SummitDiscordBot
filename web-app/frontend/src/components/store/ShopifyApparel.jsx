@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { formatMoney } from '@/api/store'
 
 /**
  * Explorer Series apparel, sold through the Explorer team's Shopify store.
@@ -42,11 +43,12 @@ const button = {
 }
 const quantityInput = {
   'font-size': '15px',
+  'font-family': FONT,
+  'font-weight': '600',
   'padding-top': '12px',
   'padding-bottom': '12px',
-  color: C.gold,
+  color: C.text,
   background: C.elevated,
-  'background-color': C.elevated,
   'border-color': C.line,
 }
 const lineItemText = { color: C.text }
@@ -69,6 +71,9 @@ export const BUY_BUTTON_OPTIONS = {
       description: { 'font-family': FONT, 'font-size': '14px', color: C.muted },
       button,
       quantityInput,
+      // Shopify's own sheet paints the box beside the button white with a
+      // more specific selector; nesting matches it so ours wins
+      buttonWithQuantity: { quantityInput },
     },
     buttonDestination: 'cart',
     layout: 'horizontal',
@@ -90,6 +95,7 @@ export const BUY_BUTTON_OPTIONS = {
       description: { 'font-family': FONT, 'font-size': '14px', color: C.muted },
       button,
       quantityInput,
+      buttonWithQuantity: { quantityInput },
     },
     text: { button: 'Add to cart' },
     googleFonts: ['Figtree'],
@@ -164,6 +170,14 @@ export const BUY_BUTTON_OPTIONS = {
   },
 }
 
+// Shopify keeps one cart for the page and its events from the first mount,
+// so they call whichever Apparel view is showing now
+let cartListener = null
+const CART_EVENTS = {
+  afterInit: (c) => cartListener?.(c),
+  afterRender: (c) => cartListener?.(c),
+}
+
 let sdkPromise = null
 function loadSdk() {
   if (window.ShopifyBuy?.UI) return Promise.resolve(window.ShopifyBuy)
@@ -180,9 +194,19 @@ function loadSdk() {
   return sdkPromise
 }
 
+// What the apparel cart holds, read from Shopify's cart: { count, subtotalCents }
+export function cartSummary(cart) {
+  const items = cart?.model?.lineItems || []
+  const count = items.reduce((n, item) => n + (item.quantity || 0), 0)
+  const amount = cart?.model?.lineItemsSubtotalPrice?.amount
+  return { count, subtotalCents: Math.round(parseFloat(amount || 0) * 100) }
+}
+
 export default function ShopifyApparel() {
   const node = useRef(null)
+  const ui = useRef(null)
   const [failed, setFailed] = useState(false)
+  const [cart, setCart] = useState({ count: 0, subtotalCents: 0 })
 
   useEffect(() => {
     let cancelled = false
@@ -190,14 +214,27 @@ export default function ShopifyApparel() {
       .then((ShopifyBuy) => {
         if (cancelled || !node.current) return null
         const client = ShopifyBuy.buildClient(SHOP)
-        return ShopifyBuy.UI.onReady(client).then((ui) => {
+        return ShopifyBuy.UI.onReady(client).then((shopifyUi) => {
           if (cancelled || !node.current) return
+          ui.current = shopifyUi
           node.current.innerHTML = ''
-          ui.createComponent('product', {
+          // Shopify's floating cart tab is hidden (index.css); our bar below
+          // shows the cart instead and opens Shopify's cart for checkout
+          cartListener = (c) => setCart(cartSummary(c))
+          shopifyUi.createComponent('product', {
             id: PRODUCT_ID,
             node: node.current,
             moneyFormat: '%24%7B%7Bamount%7D%7D',
-            options: BUY_BUTTON_OPTIONS,
+            options: {
+              ...BUY_BUTTON_OPTIONS,
+              cart: {
+                ...BUY_BUTTON_OPTIONS.cart,
+                events: CART_EVENTS,
+              },
+            },
+          }).then(() => {
+            const existing = shopifyUi.components?.cart?.[0]
+            if (!cancelled && existing) setCart(cartSummary(existing))
           })
         })
       })
@@ -205,6 +242,8 @@ export default function ShopifyApparel() {
     const current = node.current
     return () => {
       cancelled = true
+      cartListener = null
+      ui.current?.closeCart()
       if (current) current.innerHTML = ''
     }
   }, [])
@@ -225,6 +264,28 @@ export default function ShopifyApparel() {
         </p>
       ) : (
         <div ref={node} data-testid="shopify-apparel" className="min-h-[120px]" />
+      )}
+
+      {cart.count > 0 && (
+        <div className="sticky bottom-4 mt-8 bg-bg-elevated border border-secondary/30 rounded-lg p-4 flex items-center justify-between gap-3 shadow-harsh">
+          <div className="text-sm">
+            <span className="block text-xs text-text-muted mb-0.5">Apparel cart</span>
+            <span className="font-medium text-text-primary">
+              {cart.count} {cart.count === 1 ? 'item' : 'items'}
+            </span>
+            {' '}&middot;{' '}
+            <span className="text-secondary font-semibold">{formatMoney(cart.subtotalCents)}</span>
+            <span className="text-text-muted ml-1.5 hidden sm:inline">+ shipping on Shopify</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => ui.current?.openCart()}
+            className="bg-primary hover:bg-primary-dark text-white font-medium px-5 py-2.5 rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap"
+          >
+            View cart
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+        </div>
       )}
     </section>
   )

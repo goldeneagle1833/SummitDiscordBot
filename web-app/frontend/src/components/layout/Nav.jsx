@@ -9,9 +9,10 @@ import SocialLinks from '@/components/layout/SocialLinks'
 // Discord, Patreon and Reddit live in SocialLinks as icons, and the logo is
 // the Home link, so none of them are text options here.
 // About and Feedback stay reachable from the footer and the Help tabs
-const PERMANENT_LINKS = []
+// Always first on the top bar, in this order; links a user adds follow them
+const PERMANENT_LINKS = ['Avatars', 'Deck Archetypes', 'Top 8 Decks']
 
-// Same order as the hamburger menu; the top bar shows chosen links in this order
+// Same order as the hamburger menu; the top bar shows added links in this order
 const ALL_NAV_OPTIONS = [
   { to: '/deck-rec', label: 'Sorcery Deck Rec' },
   { to: '/top-8', label: 'Top 8 Decks' },
@@ -37,9 +38,7 @@ const ALL_NAV_OPTIONS = [
   { to: '/community', label: 'Community' },
 ]
 
-// The most visited pages (90-day page views, Oct 2026)
-// (ELO Leaderboards is left out: the home page is the leaderboard)
-const DEFAULT_NAV_LABELS = ['Sorcery Deck Rec', 'Top 8 Decks', 'Avatars']
+const DEFAULT_NAV_LABELS = PERMANENT_LINKS
 // Saved prefs from before a link was renamed
 const RENAMED_LABELS = { Brackets: 'Season Top Cut', 'Avatar Winrates': 'Avatars' }
 
@@ -435,7 +434,7 @@ function NavCustomizeModal({ activeLabels, onSave, onClose }) {
           <div className="space-y-1 max-h-72 overflow-y-auto">
             {ALL_NAV_OPTIONS.map(({ label }) => {
               const isPermanent = PERMANENT_LINKS.includes(label)
-              const isActive = selected.has(label)
+              const isActive = isPermanent || selected.has(label)
               return (
                 <label
                   key={label}
@@ -540,10 +539,13 @@ export default function Nav() {
       .catch(() => {})
   }, [user])
 
-  // Ensure permanent links always appear even if missing from saved prefs
-  const activeNavLinks = ALL_NAV_OPTIONS.filter((opt) =>
-    navLabels.includes(opt.label) || PERMANENT_LINKS.includes(opt.label)
-  )
+  // Permanent links always come first, even if missing from saved prefs
+  const activeNavLinks = [
+    ...PERMANENT_LINKS.map((label) => ALL_NAV_OPTIONS.find((opt) => opt.label === label)),
+    ...ALL_NAV_OPTIONS.filter((opt) =>
+      navLabels.includes(opt.label) && !PERMANENT_LINKS.includes(opt.label)
+    ),
+  ]
 
   const handleSavePrefs = (labels) => {
     setNavLabels(labels)

@@ -73,7 +73,7 @@ describe('profile in Avatar mode', () => {
         ]}
       />,
     )
-    expect(screen.getByRole('columnheader', { name: /event elo/i })).toBeInTheDocument()
+    expect(screen.getByText('1600')).toBeInTheDocument()
     expect(screen.getByText('#1')).toBeInTheDocument()
   })
 })

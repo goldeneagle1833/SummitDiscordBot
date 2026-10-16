@@ -980,6 +980,24 @@ def search_players():
         return jsonify({"players": []})
 
 
+def _main_avatar_name(deck_json):
+    """The deck's main avatar (type "Avatar", not a sideboard avatar), or None."""
+    if not deck_json or deck_json == "{}":
+        return None
+    try:
+        deck_data = json.loads(deck_json)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    avatar_list = deck_data.get("avatar") if isinstance(deck_data, dict) else None
+    if not avatar_list:
+        return None
+    for av in avatar_list:
+        if isinstance(av, dict) and av.get("type") == "Avatar" and av.get("name"):
+            return av["name"]
+    first = avatar_list[0]
+    return first.get("name") if isinstance(first, dict) and first.get("name") else None
+
+
 def _profile_picture_url(profile):
     """Discord or Google profile picture for a stored profile, else None."""
     if not profile or not profile.get("avatar"):
@@ -1829,8 +1847,10 @@ def player_api(player_id):
     external_repo = ExternalMatchRepository()
     external_matches_raw = external_repo.get_player_matches(str(player_id_normalized))
 
-    # Avatar stats - only count the main avatar (type: "Avatar"), exclude sideboard
-    avatar_stats = {}
+    # One record per game: which avatar the player was on, which avatar they
+    # faced, when, and the ELO it moved. Only the main avatar counts (type
+    # "Avatar"), never sideboard avatars, so Imposter decks count as Imposter.
+    avatar_games = []
     for row in all_rows:
         did_win = row[0]
         winner_json = row[13] if len(row) > 13 else None
@@ -1839,76 +1859,57 @@ def player_api(player_id):
         deck_json = winner_json if did_win else loser_json
         if not deck_json or deck_json == "{}":
             deck_json = row[2]
+        own_avatar = _main_avatar_name(deck_json)
 
-        if deck_json and deck_json != "{}":
-            try:
-                deck_data = json.loads(deck_json)
-                if not deck_data or not deck_data.get("avatar"):
-                    continue
+        opponent_name = row[5] if did_win else row[4]
+        opponent_id = row[11] if did_win else row[10] if len(row) > 10 else None
+        opponent_avatar = _main_avatar_name(loser_json if did_win else winner_json)
+        if not opponent_avatar and opponent_name and opponent_id == 0:
+            if "Opponent (" in opponent_name:
+                start_i = opponent_name.find("(") + 1
+                end_i = opponent_name.find(")")
+                if start_i > 0 and end_i > start_i:
+                    opponent_avatar = opponent_name[start_i:end_i].strip() or None
+            else:
+                opponent_avatar = opponent_name
 
-                avatar_list = deck_data.get("avatar", [])
-                if not avatar_list:
-                    continue
+        elo_change = (row[7] if did_win else row[8]) if len(row) > 8 else None
+        avatar_games.append({
+            "did_win": bool(did_win),
+            "own": own_avatar,
+            "opponent": opponent_avatar,
+            "timestamp": str(row[6]) if row[6] else None,
+            "elo_change": elo_change if isinstance(elo_change, (int, float)) else None,
+        })
 
-                # Find the main avatar - must have type "Avatar" (not sideboard avatars)
-                # For Imposter decks, this ensures we only count Imposter, not the extra avatars
-                main_avatar_name = None
-                for av in avatar_list:
-                    if av and av.get("type") == "Avatar" and av.get("name"):
-                        main_avatar_name = av.get("name")
-                        break
-
-                # Fallback: if no type field, use first avatar with a name
-                if (
-                    not main_avatar_name
-                    and avatar_list[0]
-                    and avatar_list[0].get("name")
-                ):
-                    main_avatar_name = avatar_list[0].get("name")
-
-                if not main_avatar_name:
-                    continue
-
-                if main_avatar_name not in avatar_stats:
-                    avatar_stats[main_avatar_name] = {"wins": 0, "losses": 0}
-
-                if did_win:
-                    avatar_stats[main_avatar_name]["wins"] += 1
-                else:
-                    avatar_stats[main_avatar_name]["losses"] += 1
-            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-                continue
-
-    # Include external matches in avatar stats
+    # External matches feed avatar stats too
     for em in external_matches_raw:
         did_win = str(em["winner_id"]) == str(player_id_normalized)
-        deck_json = em.get("json_deck_data_winner") if did_win else em.get("json_deck_data_loser")
-        if not deck_json or deck_json == "{}":
+        avatar_games.append({
+            "did_win": did_win,
+            "own": _main_avatar_name(em.get("json_deck_data_winner") if did_win else em.get("json_deck_data_loser")),
+            "opponent": _main_avatar_name(em.get("json_deck_data_loser") if did_win else em.get("json_deck_data_winner")),
+            "timestamp": str(em["timestamp"]) if em.get("timestamp") else None,
+            "elo_change": None,
+        })
+
+    # Newest first, so each avatar's form reads left to right from the latest game
+    avatar_games.sort(key=lambda g: g["timestamp"] or "", reverse=True)
+
+    avatar_stats = {}
+    for g in avatar_games:
+        if not g["own"]:
             continue
-        try:
-            deck_data = json.loads(deck_json)
-            if not deck_data or not deck_data.get("avatar"):
-                continue
-            avatar_list = deck_data.get("avatar", [])
-            if not avatar_list:
-                continue
-            main_avatar_name = None
-            for av in avatar_list:
-                if av and av.get("type") == "Avatar" and av.get("name"):
-                    main_avatar_name = av.get("name")
-                    break
-            if not main_avatar_name and avatar_list[0] and avatar_list[0].get("name"):
-                main_avatar_name = avatar_list[0].get("name")
-            if not main_avatar_name:
-                continue
-            if main_avatar_name not in avatar_stats:
-                avatar_stats[main_avatar_name] = {"wins": 0, "losses": 0}
-            if did_win:
-                avatar_stats[main_avatar_name]["wins"] += 1
-            else:
-                avatar_stats[main_avatar_name]["losses"] += 1
-        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-            continue
+        stats = avatar_stats.setdefault(
+            g["own"], {"wins": 0, "losses": 0, "form": [], "last_played": None, "elo_change": 0}
+        )
+        stats["wins" if g["did_win"] else "losses"] += 1
+        if len(stats["form"]) < 10:
+            stats["form"].append("W" if g["did_win"] else "L")
+        if not stats["last_played"] and g["timestamp"]:
+            stats["last_played"] = g["timestamp"]
+        if g["elo_change"]:
+            stats["elo_change"] += g["elo_change"]
 
     avatar_performance = []
     for name, stats in avatar_stats.items():
@@ -1920,6 +1921,9 @@ def player_api(player_id):
                 "wins": stats["wins"],
                 "losses": stats["losses"],
                 "win_rate": round(rate, 1),
+                "form": stats["form"],
+                "last_played": stats["last_played"],
+                "elo_change": round(stats["elo_change"], 1),
             }
         )
     avatar_performance.sort(key=lambda x: x["wins"] + x["losses"], reverse=True)
@@ -1939,103 +1943,37 @@ def player_api(player_id):
         perf["event_elo"] = entry["event_elo"] if entry else None
         perf["event_rank"] = entry["rank"] if entry else None
 
-    # Opponent avatar stats - only count main avatar (type: "Avatar"), exclude sideboard
+    def _matchup_rows(counts):
+        result = []
+        for name, stats in counts.items():
+            total = stats["wins"] + stats["losses"]
+            result.append(
+                {
+                    "opponent_avatar": name,
+                    "wins": stats["wins"],
+                    "losses": stats["losses"],
+                    "win_rate": round(stats["wins"] / total * 100, 1) if total else 0,
+                    "total_games": total,
+                }
+            )
+        result.sort(key=lambda x: x["total_games"], reverse=True)
+        return result
+
+    # Opponent avatar stats, overall and split by the avatar the player was on
     opponent_avatar_stats = {}
-    for row in all_rows:
-        did_win = row[0]
-        winner_json = row[13] if len(row) > 13 else None
-        loser_json = row[14] if len(row) > 14 else None
-        opponent_name = row[5] if did_win else row[4]
-        opponent_id = row[11] if did_win else row[10] if len(row) > 10 else None
-
-        opponent_avatar_name = None
-        opponent_deck_json = loser_json if did_win else winner_json
-
-        if opponent_deck_json and opponent_deck_json != "{}":
-            try:
-                deck_data = json.loads(opponent_deck_json)
-                if deck_data and deck_data.get("avatar"):
-                    avatar_list = deck_data.get("avatar", [])
-                    # Find the main avatar - must have type "Avatar"
-                    for av in avatar_list:
-                        if av and av.get("type") == "Avatar" and av.get("name"):
-                            opponent_avatar_name = av.get("name")
-                            break
-                    # Fallback: if no type field, use first avatar with a name
-                    if (
-                        not opponent_avatar_name
-                        and avatar_list
-                        and avatar_list[0]
-                        and avatar_list[0].get("name")
-                    ):
-                        opponent_avatar_name = avatar_list[0].get("name")
-            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-                pass
-
-        if not opponent_avatar_name and opponent_name and opponent_id == 0:
-            if "Opponent (" in opponent_name:
-                try:
-                    start = opponent_name.find("(") + 1
-                    end = opponent_name.find(")")
-                    if start > 0 and end > start:
-                        opponent_avatar_name = opponent_name[start:end].strip()
-                except (IndexError, ValueError):
-                    pass
-            else:
-                opponent_avatar_name = opponent_name
-
-        if not opponent_avatar_name:
+    matchups_by_own = {}
+    for g in avatar_games:
+        if not g["opponent"]:
             continue
+        key = "wins" if g["did_win"] else "losses"
+        opponent_avatar_stats.setdefault(g["opponent"], {"wins": 0, "losses": 0})[key] += 1
+        if g["own"]:
+            matchups_by_own.setdefault(g["own"], {}).setdefault(
+                g["opponent"], {"wins": 0, "losses": 0}
+            )[key] += 1
 
-        if opponent_avatar_name not in opponent_avatar_stats:
-            opponent_avatar_stats[opponent_avatar_name] = {"wins": 0, "losses": 0}
-
-        if did_win:
-            opponent_avatar_stats[opponent_avatar_name]["wins"] += 1
-        else:
-            opponent_avatar_stats[opponent_avatar_name]["losses"] += 1
-
-    # Include external matches in opponent avatar stats
-    for em in external_matches_raw:
-        did_win = str(em["winner_id"]) == str(player_id_normalized)
-        opponent_deck_json = em.get("json_deck_data_loser") if did_win else em.get("json_deck_data_winner")
-        opponent_avatar_name = None
-        if opponent_deck_json and opponent_deck_json != "{}":
-            try:
-                deck_data = json.loads(opponent_deck_json)
-                if deck_data and deck_data.get("avatar"):
-                    avatar_list = deck_data.get("avatar", [])
-                    for av in avatar_list:
-                        if av and av.get("type") == "Avatar" and av.get("name"):
-                            opponent_avatar_name = av.get("name")
-                            break
-                    if not opponent_avatar_name and avatar_list and avatar_list[0] and avatar_list[0].get("name"):
-                        opponent_avatar_name = avatar_list[0].get("name")
-            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-                pass
-        if not opponent_avatar_name:
-            continue
-        if opponent_avatar_name not in opponent_avatar_stats:
-            opponent_avatar_stats[opponent_avatar_name] = {"wins": 0, "losses": 0}
-        if did_win:
-            opponent_avatar_stats[opponent_avatar_name]["wins"] += 1
-        else:
-            opponent_avatar_stats[opponent_avatar_name]["losses"] += 1
-
-    avatar_matchups = []
-    for name, stats in opponent_avatar_stats.items():
-        total = stats["wins"] + stats["losses"]
-        rate = (stats["wins"] / total * 100) if total > 0 else 0
-        avatar_matchups.append(
-            {
-                "opponent_avatar": name,
-                "wins": stats["wins"],
-                "losses": stats["losses"],
-                "win_rate": round(rate, 1),
-                "total_games": total,
-            }
-        )
-    avatar_matchups.sort(key=lambda x: x["total_games"], reverse=True)
+    avatar_matchups = _matchup_rows(opponent_avatar_stats)
+    avatar_matchups_by_avatar = {own: _matchup_rows(c) for own, c in matchups_by_own.items()}
 
     # Winrate vs ELO brackets
     # Calculate opponent ELO at match time and group by bracket
@@ -2712,6 +2650,7 @@ def player_api(player_id):
                 "history": avatar_elo["history"] if _section_visible("elo_history") else {},
             },
             "avatar_matchups": avatar_matchups if _section_visible("avatar_matchups") else [],
+            "avatar_matchups_by_avatar": avatar_matchups_by_avatar if _section_visible("avatar_matchups") else {},
             "recent_decks": recent_decks if _section_visible("recent_decks") else [],
             "elo_history": elo_history if _section_visible("elo_history") else [],
             "matches": match_history,

@@ -272,13 +272,19 @@ export default function Player() {
       )}
 
       {activeTab === 'avatars' && (
-        <AvatarPerformance avatars={data.avatar_performance} playerId={playerId} open />
+        <AvatarPerformance avatars={data.avatar_performance} playerId={playerId} />
       )}
 
       {activeTab === 'matchups' && (
         <div className="space-y-6">
-          {sectionVisible('avatar_matchups') && <AvatarMatchups matchups={data.avatar_matchups} open />}
-          {sectionVisible('elo_brackets') && <EloBrackets brackets={data.elo_vs_brackets} open />}
+          {sectionVisible('avatar_matchups') && (
+            <AvatarMatchups
+              matchups={data.avatar_matchups}
+              byAvatar={data.avatar_matchups_by_avatar}
+              myAvatars={(data.avatar_performance || []).map((a) => a.name)}
+            />
+          )}
+          {sectionVisible('elo_brackets') && <EloBrackets brackets={data.elo_vs_brackets} />}
         </div>
       )}
 

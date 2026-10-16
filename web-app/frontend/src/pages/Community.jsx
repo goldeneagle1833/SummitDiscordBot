@@ -35,6 +35,70 @@ function ServerIcon({ server }) {
   )
 }
 
+function hostOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url }
+}
+
+// Discord-style link embed: site line, title, description, big preview image.
+function WebsiteCard({ site, canDelete, deleting, onDelete }) {
+  const p = site.preview || {}
+  const [imageFailed, setImageFailed] = useState(false)
+  const [iconFailed, setIconFailed] = useState(false)
+  const accent = /^#[0-9a-f]{3,8}$/i.test(p.color || '') ? p.color : undefined
+  const description = site.description || p.description
+
+  return (
+    <div
+      className="bg-bg-surface border border-border border-l-4 border-l-secondary rounded-lg p-4 flex flex-col min-w-0"
+      style={accent ? { borderLeftColor: accent } : undefined}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0 text-xs text-text-muted mb-1">
+          {p.icon && !iconFailed && (
+            <img src={p.icon} alt="" className="w-4 h-4 rounded-sm shrink-0" loading="lazy" onError={() => setIconFailed(true)} />
+          )}
+          <span className="truncate">{p.site_name || hostOf(site.url)}</span>
+        </div>
+        {canDelete && (
+          <button
+            onClick={onDelete}
+            disabled={deleting}
+            className="text-xs text-red-400 hover:text-red-300 transition-colors shrink-0 disabled:opacity-40"
+            title="Remove entry"
+          >
+            {deleting ? '...' : 'X'}
+          </button>
+        )}
+      </div>
+      <a
+        href={site.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-semibold text-secondary hover:underline mb-1 break-words"
+      >
+        {site.name}
+      </a>
+      {p.title && p.title !== site.name && (
+        <p className="text-sm text-text-primary mb-1 break-words">{p.title}</p>
+      )}
+      {description && (
+        <p className="text-sm text-text-muted mb-2 line-clamp-3 break-words">{description}</p>
+      )}
+      {p.image && !imageFailed && (
+        <a href={site.url} target="_blank" rel="noopener noreferrer" className="mt-auto block">
+          <img
+            src={p.image}
+            alt=""
+            className="w-full max-h-48 object-cover rounded bg-black"
+            loading="lazy"
+            onError={() => setImageFailed(true)}
+          />
+        </a>
+      )}
+    </div>
+  )
+}
+
 export default function Community() {
   usePageTitle('Community Links')
   const { user } = useAuth()
@@ -224,32 +288,13 @@ export default function Community() {
         {websites.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {websites.map((site) => (
-              <div key={site.id || site.url} className="bg-bg-surface border border-border rounded-lg p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-semibold text-text-primary mb-1">{site.name}</h3>
-                  {user?.is_admin && (
-                    <button
-                      onClick={() => handleDelete('website', site.id, site.name)}
-                      disabled={deleting === `website-${site.id}`}
-                      className="text-xs text-red-400 hover:text-red-300 transition-colors shrink-0 disabled:opacity-40"
-                      title="Remove entry"
-                    >
-                      {deleting === `website-${site.id}` ? '...' : 'X'}
-                    </button>
-                  )}
-                </div>
-                {site.description && (
-                  <p className="text-sm text-text-muted mb-2">{site.description}</p>
-                )}
-                <a
-                  href={site.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-secondary hover:underline"
-                >
-                  Visit Site →
-                </a>
-              </div>
+              <WebsiteCard
+                key={site.id || site.url}
+                site={site}
+                canDelete={user?.is_admin}
+                deleting={deleting === `website-${site.id}`}
+                onDelete={() => handleDelete('website', site.id, site.name)}
+              />
             ))}
           </div>
         ) : (

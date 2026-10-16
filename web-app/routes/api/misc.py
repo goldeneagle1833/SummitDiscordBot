@@ -99,12 +99,17 @@ def event_spotlight():
 def community():
     """Get community links: Discord servers, websites, and YouTube channels."""
     from repositories.community import CommunityRepository
+    from concurrent.futures import ThreadPoolExecutor
     from services.discord_icons import add_icons
+    from services.link_previews import add_previews
     repo = CommunityRepository()
-    return jsonify({
-        "discord_servers": add_icons(repo.get_discord_servers()),
-        "websites": repo.get_websites(),
-    })
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        servers = pool.submit(add_icons, repo.get_discord_servers())
+        websites = pool.submit(add_previews, repo.get_websites())
+        return jsonify({
+            "discord_servers": servers.result(),
+            "websites": websites.result(),
+        })
 
 
 @misc_bp.route("/community", methods=["POST"])

@@ -701,7 +701,9 @@ export default function Nav() {
                 >
                   {user.username}
                 </Link>
-                <SidebarLink to="/store/orders" label="My orders" location={location} onClick={close} />
+                {(STORE_LIVE || user.is_store_admin || user.is_store_staff) && (
+                  <SidebarLink to="/store/orders" label="My orders" location={location} onClick={close} />
+                )}
                 <a
                   href="/api/logout"
                   className="block px-4 py-3 text-text-muted hover:bg-accent-red/10 hover:text-accent-red transition-colors text-sm"
@@ -848,9 +850,11 @@ function UserMenu({ user }) {
           <Link role="menuitem" to={`/player/${user.user_id}`} className={itemCls} onClick={close}>
             My profile
           </Link>
-          <Link role="menuitem" to="/store/orders" className={itemCls} onClick={close}>
-            My orders
-          </Link>
+          {(STORE_LIVE || user.is_store_admin || user.is_store_staff) && (
+            <Link role="menuitem" to="/store/orders" className={itemCls} onClick={close}>
+              My orders
+            </Link>
+          )}
           {(user.is_store_admin || user.is_store_staff) && (
             <Link role="menuitem" to="/admin/store" className={itemCls} onClick={close}>
               Store Admin

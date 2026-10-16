@@ -6,6 +6,35 @@ import Spinner from '@/components/ui/Spinner'
 import AddCommunityModal from '@/components/community/AddCommunityModal'
 import usePageTitle from '@/hooks/usePageTitle'
 
+// Discord's own server icon, or the server's initials (like Discord shows)
+// when it has no icon or the image fails to load.
+function ServerIcon({ server }) {
+  const [failed, setFailed] = useState(false)
+  if (server.icon_url && !failed) {
+    return (
+      <img
+        src={server.icon_url}
+        alt=""
+        className="w-12 h-12 rounded-full shrink-0 bg-bg-raised object-cover"
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+    )
+  }
+  const initials = (server.name || '?')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 3)
+    .toUpperCase()
+  return (
+    <div className="w-12 h-12 rounded-full shrink-0 bg-bg-raised border border-border flex items-center justify-center text-sm font-semibold text-text-muted" aria-hidden="true">
+      {initials}
+    </div>
+  )
+}
+
 export default function Community() {
   usePageTitle('Community Links')
   const { user } = useAuth()
@@ -144,13 +173,16 @@ export default function Community() {
                 {filteredServers.map((server) => (
                   <div key={server.id || server.name} className="bg-bg-surface border border-border rounded-lg p-4">
                     <div className="flex items-start justify-between gap-2">
-                      <div>
-                        {server.state && (
-                          <span className="text-xs bg-secondary/20 text-secondary px-2 py-0.5 rounded mb-2 inline-block">
-                            {server.state}
-                          </span>
-                        )}
-                        <h3 className="font-semibold text-text-primary mb-1">{server.name}</h3>
+                      <div className="flex items-start gap-3 min-w-0">
+                        <ServerIcon server={server} />
+                        <div className="min-w-0">
+                          {server.state && (
+                            <span className="text-xs bg-secondary/20 text-secondary px-2 py-0.5 rounded mb-2 inline-block">
+                              {server.state}
+                            </span>
+                          )}
+                          <h3 className="font-semibold text-text-primary mb-1">{server.name}</h3>
+                        </div>
                       </div>
                       {user?.is_admin && (
                         <button

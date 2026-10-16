@@ -99,9 +99,10 @@ def event_spotlight():
 def community():
     """Get community links: Discord servers, websites, and YouTube channels."""
     from repositories.community import CommunityRepository
+    from services.discord_icons import add_icons
     repo = CommunityRepository()
     return jsonify({
-        "discord_servers": repo.get_discord_servers(),
+        "discord_servers": add_icons(repo.get_discord_servers()),
         "websites": repo.get_websites(),
     })
 

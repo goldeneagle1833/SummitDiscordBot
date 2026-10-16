@@ -16,5 +16,3 @@ export const getArchivedLeaderboard = (eventId) =>
   get(String(eventId).startsWith('season_')
     ? `/api/leaderboard/archived/season/${eventId}`
     : `/api/leaderboard/archived/${eventId}`)
-export const browseSeasons = (q) =>
-  get(q ? `/api/seasons/browse?q=${encodeURIComponent(q)}` : '/api/seasons/browse')

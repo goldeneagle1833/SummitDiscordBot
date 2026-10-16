@@ -194,12 +194,6 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.analytics.heartbeat",
     "api.analytics.active_banners",
 
-    # -- Seasons (public browse) --
-    "api.seasons.browse_seasons",
-    "api.seasons.get_player_seasons",
-    "api.seasons.get_season",
-    "api.seasons.get_season_members",
-
     # -- Match reporting (auth checked internally) --
     "api.match_reporting.submit_match_report",
     "api.match_reporting.confirm_match_report",

@@ -21,7 +21,6 @@ import EditDeckModal from '@/components/player/EditDeckModal'
 import AdminControls from '@/components/player/AdminControls'
 import EloHistory from '@/components/player/EloHistory'
 import AvatarEloHistory from '@/components/player/AvatarEloHistory'
-import PlayerSeasons from '@/components/player/PlayerSeasons'
 import PostseasonSection from '@/components/player/PostseasonSection'
 import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
 import BlockListModal from '@/components/player/BlockListModal'
@@ -178,8 +177,6 @@ const [editDeck, setEditDeck] = useState(null)
           onNameChange={handleNameChange}
         />
       )}
-
-      {data.is_owner && <PlayerSeasons playerId={playerId} isOwner={data.is_owner} />}
 
       <PlayerHeader
         data={data}

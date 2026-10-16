@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { recordGame, submitMatchReport, searchOpponents, listAllAvatars, getPlayerSeasons } from '@/api/games'
+import { recordGame, submitMatchReport, searchOpponents, listAllAvatars } from '@/api/games'
 import { DECK_URL_PLACEHOLDER } from '@/utils/deckLinks'
 
 export default function ReportGameModal({ playerId, onClose, onReported, initialLifeSubmitter, initialLifeOpponent }) {
@@ -19,8 +19,6 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
   const [selectedOpponent, setSelectedOpponent] = useState(null)
   const [lifeSubmitter, setLifeSubmitter] = useState(initialLifeSubmitter != null ? String(initialLifeSubmitter) : '')
   const [lifeOpponent, setLifeOpponent] = useState(initialLifeOpponent != null ? String(initialLifeOpponent) : '')
-  const [seasons, setSeasons] = useState([])
-  const [selectedSeason, setSelectedSeason] = useState(null)
   const searchTimer = useRef(null)
 
   // Solo fields
@@ -31,7 +29,6 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
 
   useEffect(() => {
     listAllAvatars().then(setAvatars).catch(() => {})
-    getPlayerSeasons(playerId).then((d) => setSeasons(d.seasons || [])).catch(() => {})
   }, [playerId])
 
   useEffect(() => {
@@ -60,7 +57,7 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
     setDeckUrl(''); setResult(null); setWentFirst(null)
     setOpponentQuery(''); setSelectedOpponent(null); setOpponentResults([])
     setLifeSubmitter(''); setLifeOpponent('')
-    setSelectedSeason(null); setOpponentAvatar('')
+    setOpponentAvatar('')
     setMatchTime(''); setMatchComment('')
     setError(null); setSuccess(null)
   }
@@ -102,7 +99,6 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
           final_life_submitter: lifeSubmitter ? parseInt(lifeSubmitter) : 0,
           final_life_opponent: lifeOpponent ? parseInt(lifeOpponent) : 0,
           match_type: mode,
-          season_id: selectedSeason?.season_id || undefined,
           match_comment: matchComment.trim() || undefined,
         })
         setSuccess('Match report submitted! Awaiting opponent confirmation.')
@@ -226,23 +222,6 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
                   className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm resize-none"
                 />
               </div>
-
-              {/* Season */}
-              {seasons.length > 0 && (
-                <div className="mb-4">
-                  <label className="text-xs text-text-muted block mb-1">Season (optional)</label>
-                  <select
-                    value={selectedSeason?.season_id || ''}
-                    onChange={(e) => setSelectedSeason(seasons.find((s) => String(s.season_id) === e.target.value) || null)}
-                    className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm"
-                  >
-                    <option value="">None</option>
-                    {seasons.map((s) => (
-                      <option key={s.season_id} value={s.season_id}>{s.title}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </>
           ) : (
             <>

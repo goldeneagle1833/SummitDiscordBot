@@ -7,7 +7,6 @@ vi.mock('@/api/leaderboard', () => ({
   getLimitedLeaderboard: vi.fn(),
   getEvents: vi.fn(),
   getArchivedLeaderboard: vi.fn(),
-  browseSeasons: vi.fn(),
 }))
 
 vi.mock('@/api/brackets', () => ({
@@ -19,7 +18,6 @@ import {
   getLimitedLeaderboard,
   getEvents,
   getArchivedLeaderboard,
-  browseSeasons,
 } from '@/api/leaderboard'
 import Leaderboard from '../Leaderboard'
 
@@ -86,7 +84,6 @@ describe('Leaderboard page', () => {
     getLimitedLeaderboard.mockRejectedValue(new Error('no limited season'))
     getEvents.mockResolvedValue({ events: [SEASON_8, SEASON_7, GOTHIC], active_event: SEASON_8 })
     getArchivedLeaderboard.mockResolvedValue(ARCHIVED)
-    browseSeasons.mockResolvedValue({ seasons: [] })
   })
 
   it('opens on the live event with every board in the sidebar', async () => {
@@ -103,7 +100,7 @@ describe('Leaderboard page', () => {
     expect(nav.getByRole('button', { name: /Season 7/ })).toHaveTextContent('48 players · 312 matches')
     expect(nav.getByRole('button', { name: /Season 7/ })).toHaveTextContent('duckworthy_')
     expect(nav.getByRole('button', { name: /Gothic Season 1/ })).toHaveTextContent('ranked by wins')
-    expect(nav.getByRole('button', { name: /Season leaderboards/ })).toBeInTheDocument()
+    expect(nav.queryByRole('button', { name: /Season leaderboards/ })).not.toBeInTheDocument()
   })
 
   it('shows a past event with its summary, records and ELO when picked', async () => {
@@ -138,10 +135,9 @@ describe('Leaderboard page', () => {
 
   it('switches boards from the phone picker', async () => {
     await renderPage()
-    await userEvent.selectOptions(screen.getByLabelText('Leaderboard'), 'seasons')
+    await userEvent.selectOptions(screen.getByLabelText('Leaderboard'), 'lifetime')
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Season Leaderboards' })).toBeInTheDocument()
-    expect(browseSeasons).toHaveBeenCalled()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Lifetime ELO Leaderboard' })).toBeInTheDocument()
   })
 
   it('labels a wins-ranked season and keeps it in the sidebar', async () => {

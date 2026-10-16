@@ -32,7 +32,6 @@ function lazyPage(load) {
 // Phase 3: Core data pages
 const Leaderboard = lazyPage(() => import('@/pages/Leaderboard'))
 const LimitedLeaderboard = lazyPage(() => import('@/pages/LimitedLeaderboard'))
-const Season = lazyPage(() => import('@/pages/Season'))
 const Player = lazyPage(() => import('@/pages/Player'))
 const DeckStats = lazyPage(() => import('@/pages/DeckStats'))
 const PlayerAvatar = lazyPage(() => import('@/pages/PlayerAvatar'))
@@ -196,7 +195,7 @@ const router = createBrowserRouter([
       { path: '/elo/limited', element: <LimitedLeaderboard /> },
       { path: '/elo/global', element: <Leaderboard /> },
       { path: '/elo/server/:serverId', element: <Leaderboard /> },
-      { path: '/season/:seasonId', element: <Season /> },
+      { path: '/season/:seasonId', element: <Navigate to="/elo" replace /> },
       { path: '/player/:playerId', element: <Player /> },
       { path: '/match-history', element: <Matches /> },
       { path: '/deck-stats/:playerId', element: <DeckStats /> },

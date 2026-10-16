@@ -185,7 +185,6 @@ def submit_match_report():
     final_life_submitter = data.get("final_life_submitter")
     final_life_opponent = data.get("final_life_opponent")
     match_type = data.get("match_type", "ranked")  # Default to ranked if not provided
-    season_id = data.get("season_id")  # Optional season to count match toward
     match_comment = data.get("match_comment", "")  # Optional match notes
 
     try:
@@ -203,7 +202,6 @@ def submit_match_report():
             final_life_submitter=final_life_submitter,
             final_life_opponent=final_life_opponent,
             match_type=match_type,
-            season_id=season_id,
             match_comment=match_comment,
         )
 

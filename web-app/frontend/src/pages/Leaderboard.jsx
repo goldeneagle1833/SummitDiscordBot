@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import LeaderboardTable from '@/components/leaderboard/LeaderboardTable'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
@@ -8,7 +8,6 @@ import {
   getLimitedLeaderboard,
   getEvents,
   getArchivedLeaderboard,
-  browseSeasons,
 } from '@/api/leaderboard'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -17,7 +16,6 @@ import usePageTitle from '@/hooks/usePageTitle'
 const CURRENT = 'current'
 const LIFETIME = 'lifetime'
 const LIMITED = 'limited'
-const SEASONS = 'seasons'
 const eventKey = (eventId) => `event:${eventId}`
 
 function formatDate(value) {
@@ -301,71 +299,6 @@ function ArchivedEventBoard({ event }) {
   )
 }
 
-// ── Season Search Section ─────────────────────────────────────
-
-function SeasonSearch() {
-  const [query, setQuery] = useState('')
-  const [seasons, setSeasons] = useState([])
-  const [timer, setTimer] = useState(null)
-
-  const fetchSeasons = useCallback((q) => {
-    browseSeasons(q)
-      .then((data) => setSeasons(data.seasons || []))
-      .catch(() => setSeasons([]))
-  }, [])
-
-  useEffect(() => { fetchSeasons('') }, [fetchSeasons])
-
-  const handleInput = (val) => {
-    setQuery(val)
-    if (timer) clearTimeout(timer)
-    setTimer(setTimeout(() => fetchSeasons(val.trim()), 300))
-  }
-
-  return (
-    <section>
-      <BoardHeader title="Season Leaderboards" meta="Search for user-created seasons" />
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => handleInput(e.target.value)}
-        placeholder="Search seasons by name..."
-        className="w-full bg-bg-surface border border-border rounded px-3 py-2 text-sm mb-4"
-      />
-      {seasons.length === 0 ? (
-        <p className="text-text-muted text-center py-4">No seasons found</p>
-      ) : (
-        <div className="space-y-2">
-          {seasons.slice(-3).map((s) => {
-            const memberText = s.max_members ? `${s.member_count}/${s.max_members} members` : `${s.member_count} members`
-            let statusLabel = 'Active'
-            if (s.status === 'ended') statusLabel = 'Ended'
-            else if (s.start_date > new Date().toISOString().slice(0, 10)) statusLabel = 'Upcoming'
-
-            return (
-              <Link
-                key={s.season_id}
-                to={`/season/${s.season_id}`}
-                className="block bg-bg-surface border border-border rounded-soft p-3 hover:border-primary/50 transition-colors"
-              >
-                <div className="flex justify-between items-center mb-1">
-                  <span className="font-medium text-sm">{s.title}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded ${s.status === 'ended' ? 'bg-red-900/30 text-red-400' : 'bg-green-900/30 text-green-400'}`}>
-                    {statusLabel}
-                  </span>
-                </div>
-                <div className="text-xs text-text-muted">
-                  {s.start_date} &mdash; {s.end_date} &middot; {memberText}{s.region ? ` · ${s.region}` : ''} &middot; by {s.creator_name}
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-      )}
-    </section>
-  )
-}
-
 // ── Main Leaderboard Page ─────────────────────────────────────
 
 function pastEventSummary(ev) {
@@ -455,7 +388,6 @@ export default function Leaderboard() {
         })),
       })
     }
-    result.push({ label: 'Community', items: [{ key: SEASONS, title: 'Season leaderboards', meta: 'User-created seasons' }] })
     return result
   }, [eventInfo, eventLeaderboard, lifetimeData, limitedData, pastEvents])
 
@@ -490,7 +422,6 @@ export default function Leaderboard() {
           {selected === LIFETIME && <LifetimeBoard lifetimeData={lifetimeData} elos={elos} />}
           {selected === LIMITED && limitedData && <LimitedBoard limitedData={limitedData} />}
           {selectedEvent && <ArchivedEventBoard key={selectedEvent.event_id} event={selectedEvent} />}
-          {selected === SEASONS && <SeasonSearch />}
         </div>
       </div>
     </div>

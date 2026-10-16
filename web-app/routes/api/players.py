@@ -980,24 +980,6 @@ def search_players():
         return jsonify({"players": []})
 
 
-def _main_avatar_name(deck_json):
-    """The deck's main avatar (type "Avatar", not a sideboard avatar), or None."""
-    if not deck_json or deck_json == "{}":
-        return None
-    try:
-        deck_data = json.loads(deck_json)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    avatar_list = deck_data.get("avatar") if isinstance(deck_data, dict) else None
-    if not avatar_list:
-        return None
-    for av in avatar_list:
-        if isinstance(av, dict) and av.get("type") == "Avatar" and av.get("name"):
-            return av["name"]
-    first = avatar_list[0]
-    return first.get("name") if isinstance(first, dict) and first.get("name") else None
-
-
 def _profile_picture_url(profile):
     """Discord or Google profile picture for a stored profile, else None."""
     if not profile or not profile.get("avatar"):
@@ -1848,70 +1830,30 @@ def player_api(player_id):
     external_repo = ExternalMatchRepository()
     external_matches_raw = external_repo.get_player_matches(str(player_id_normalized))
 
-    # One record per game: which avatar the player was on, which avatar they
-    # faced, when, and the ELO it moved. Only the main avatar counts (type
-    # "Avatar"), never sideboard avatars, so Imposter decks count as Imposter.
-    # Ranked games only, so the Avatars tab agrees with the record in the header.
+    # One record per game in the Ranked Match History table (same rows, same
+    # avatar reading), so the Avatars and Matchups tabs only show it differently.
+    # Casual, solo-reported and external games have their own lists and stay out.
     avatar_games = []
-    for row in all_rows:
+    # Avatar-mode events rate the avatar entry, so use the change the table shows
+    history_avatar_changes = get_player_avatar_changes(player_id_normalized, MATCH_RECORDS_DB_PATH)
+    for row in rows:
         if _is_casual_row(row):
             continue
         did_win = row[0]
         winner_json = row[13] if len(row) > 13 else None
         loser_json = row[14] if len(row) > 14 else None
-
-        deck_json = winner_json if did_win else loser_json
-        if not deck_json or deck_json == "{}":
-            deck_json = row[2]
-        own_avatar = _main_avatar_name(deck_json)
-
-        opponent_name = row[5] if did_win else row[4]
-        opponent_id = row[11] if did_win else row[10] if len(row) > 10 else None
-        opponent_avatar = _main_avatar_name(loser_json if did_win else winner_json)
-        if not opponent_avatar and opponent_name and opponent_id == 0:
-            if "Opponent (" in opponent_name:
-                start_i = opponent_name.find("(") + 1
-                end_i = opponent_name.find(")")
-                if start_i > 0 and end_i > start_i:
-                    opponent_avatar = opponent_name[start_i:end_i].strip() or None
-            else:
-                opponent_avatar = opponent_name
-
+        own_avatar, _ = _extract_deck_info(winner_json if did_win else loser_json)
+        opponent_avatar, _ = _extract_deck_info(loser_json if did_win else winner_json)
         elo_change = (row[7] if did_win else row[8]) if len(row) > 8 else None
+        avatar_change = history_avatar_changes.get((str(row[6]), str(row[10]), str(row[11])))
+        if avatar_change is not None:
+            elo_change = avatar_change[0] if did_win else avatar_change[1]
         avatar_games.append({
             "did_win": bool(did_win),
             "own": own_avatar,
             "opponent": opponent_avatar,
             "timestamp": str(row[6]) if row[6] else None,
             "elo_change": elo_change if isinstance(elo_change, (int, float)) else None,
-        })
-
-    # External matches feed avatar stats too, but only those inside the period
-    # being viewed (and after a Fresh Start), like every other game.
-    def _in_period(timestamp):
-        ts = str(timestamp or "")[:19].replace("T", " ")
-        if not ts:
-            return event_start_date is None and event_end_date is None and not reset_cutoff
-        if event_filter != "lifetime" and not (event_start_date or event_end_date):
-            return False  # a period we can't date: keep externals out
-        if event_start_date and ts < str(event_start_date)[:19].replace("T", " "):
-            return False
-        if event_end_date and ts > str(event_end_date)[:19].replace("T", " "):
-            return False
-        if reset_cutoff and ts < str(reset_cutoff)[:19].replace("T", " "):
-            return False
-        return True
-
-    for em in external_matches_raw:
-        if not _in_period(em.get("timestamp")):
-            continue
-        did_win = str(em["winner_id"]) == str(player_id_normalized)
-        avatar_games.append({
-            "did_win": did_win,
-            "own": _main_avatar_name(em.get("json_deck_data_winner") if did_win else em.get("json_deck_data_loser")),
-            "opponent": _main_avatar_name(em.get("json_deck_data_loser") if did_win else em.get("json_deck_data_winner")),
-            "timestamp": str(em["timestamp"]) if em.get("timestamp") else None,
-            "elo_change": None,
         })
 
     # Newest first, so each avatar's form reads left to right from the latest game
@@ -2194,7 +2136,7 @@ def player_api(player_id):
         return False if len(row) > 24 and row[24] is not None else None
 
     # Avatar-mode events rate the avatar entry, so its change is the one to show
-    avatar_changes = get_player_avatar_changes(player_id_normalized, MATCH_RECORDS_DB_PATH)
+    avatar_changes = history_avatar_changes
 
     def _build_match_entry(row):
         """Convert a raw DB row into a match history dict."""

@@ -114,8 +114,8 @@ def test_only_the_owner_can_hide_avatars(client, avatar_games, match_db):
     assert client.put("/api/player/100/hidden-avatars", json={"avatars": "Druid"}).status_code == 400
 
 
-def test_avatars_tab_counts_only_ranked_games_in_the_period(client, avatar_games, match_db, elo_db, monkeypatch):
-    """A casual game, or an external game from an earlier season, must not add avatars."""
+def test_avatars_tab_uses_the_ranked_match_history_games(client, avatar_games, match_db, elo_db, monkeypatch):
+    """Same games as the Ranked Match History table: no casual or external games."""
     conn = sqlite3.connect(str(elo_db))
     conn.execute("INSERT INTO events (event_name, start_date, is_active) VALUES ('Now', '2026-10-01 00:00:00', 1)")
     conn.commit()
@@ -147,8 +147,8 @@ def test_avatars_tab_counts_only_ranked_games_in_the_period(client, avatar_games
     current = client.get("/api/player/100?event=current").get_json()
     perf = {a["name"]: a for a in current["avatar_performance"]}
     assert "Necromancer" not in perf and "Savior" not in perf
-    assert perf["Witch"]["wins"] == 2  # the ranked win plus the external one this season
+    assert perf["Witch"]["wins"] == 1  # only the ranked game from the match history table
 
     lifetime = client.get("/api/player/100").get_json()
     names = {a["name"] for a in lifetime["avatar_performance"]}
-    assert "Savior" in names and "Necromancer" not in names
+    assert names == {"Witch", "Druid"}  # external and casual games have their own lists

@@ -61,3 +61,54 @@ def test_matchups_per_avatar_stay_private(client, avatar_games):
     data = client.get("/api/player/100").get_json()
     assert data["avatar_matchups_by_avatar"] == {}
     assert data["avatar_matchups"] == []
+
+
+def _profile(match_db, user_id="100"):
+    conn = sqlite3.connect(str(match_db))
+    conn.execute(
+        "INSERT INTO user_profiles (user_id, provider, display_name, first_login_at, last_login_at)"
+        " VALUES (?, 'discord', 'A', 'now', 'now')",
+        (user_id,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _open_avatar_sections(match_db):
+    from repositories.user_profiles import UserProfileRepository
+    UserProfileRepository(match_db).set_profile_visibility(
+        "100", {"avatar_performance": True, "avatar_matchups": True}
+    )
+
+
+def test_owner_hides_an_avatar_without_deleting_it(client, avatar_games, match_db):
+    _profile(match_db)
+    _open_avatar_sections(match_db)
+    with client.session_transaction() as sess:
+        sess["user_id"] = "100"
+    resp = client.put("/api/player/100/hidden-avatars", json={"avatars": ["Druid"]})
+    assert resp.status_code == 200 and resp.get_json()["avatars"] == ["Druid"]
+
+    # The owner still gets it, flagged, so they can show it again
+    owner = client.get("/api/player/100").get_json()
+    perf = {a["name"]: a for a in owner["avatar_performance"]}
+    assert perf["Druid"]["hidden"] is True and perf["Witch"]["hidden"] is False
+
+    # Visitors don't see it at all, and the games still count
+    with client.session_transaction() as sess:
+        sess["user_id"] = "200"
+    visitor = client.get("/api/player/100").get_json()
+    assert [a["name"] for a in visitor["avatar_performance"]] == ["Witch"]
+    assert "Druid" not in visitor["avatar_matchups_by_avatar"]
+    assert visitor["wins"] + visitor["losses"] == 3
+
+
+def test_only_the_owner_can_hide_avatars(client, avatar_games, match_db):
+    _profile(match_db)
+    assert client.put("/api/player/100/hidden-avatars", json={"avatars": ["Druid"]}).status_code == 401
+    with client.session_transaction() as sess:
+        sess["user_id"] = "200"
+    assert client.put("/api/player/100/hidden-avatars", json={"avatars": ["Druid"]}).status_code == 403
+    with client.session_transaction() as sess:
+        sess["user_id"] = "100"
+    assert client.put("/api/player/100/hidden-avatars", json={"avatars": "Druid"}).status_code == 400

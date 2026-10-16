@@ -272,7 +272,18 @@ export default function Player() {
       )}
 
       {activeTab === 'avatars' && (
-        <AvatarPerformance avatars={data.avatar_performance} playerId={playerId} />
+        <AvatarPerformance
+          avatars={data.avatar_performance}
+          playerId={playerId}
+          canEdit={Boolean(data.is_owner)}
+          onHiddenChange={(names) => {
+            const hidden = new Set(names)
+            setData((d) => d && {
+              ...d,
+              avatar_performance: d.avatar_performance.map((a) => ({ ...a, hidden: hidden.has(a.name) })),
+            })
+          }}
+        />
       )}
 
       {activeTab === 'matchups' && (
@@ -281,7 +292,7 @@ export default function Player() {
             <AvatarMatchups
               matchups={data.avatar_matchups}
               byAvatar={data.avatar_matchups_by_avatar}
-              myAvatars={(data.avatar_performance || []).map((a) => a.name)}
+              myAvatars={data.avatar_performance?.length ? data.avatar_performance.filter((a) => !a.hidden).map((a) => a.name) : null}
             />
           )}
           {sectionVisible('elo_brackets') && <EloBrackets brackets={data.elo_vs_brackets} />}

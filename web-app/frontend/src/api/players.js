@@ -1,4 +1,4 @@
-import { get, post, del } from './client'
+import { get, post, put, del } from './client'
 
 export const getPlayer = (id, { event, source, page, perPage, casualPage, externalPage } = {}) => {
   const params = new URLSearchParams()
@@ -34,3 +34,6 @@ export const getPlayerCardStats = (id, { event } = {}) => {
   const qs = params.toString()
   return get(`/api/player/${id}/card-stats${qs ? '?' + qs : ''}`)
 }
+
+/** Hide avatars from the player's own profile. Their games are kept. */
+export const setHiddenAvatars = (id, avatars) => put(`/api/player/${id}/hidden-avatars`, { avatars })

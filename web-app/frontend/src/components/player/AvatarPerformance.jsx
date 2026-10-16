@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import AvatarArtCard, { useAvatarArt } from './AvatarArtCard'
 import { getWinRateColor } from '@/utils/winRateColor'
+import { setHiddenAvatars } from '@/api/players'
 
 const SORTS = {
   games: { label: 'Most played', fn: (a, b) => b.wins + b.losses - (a.wins + a.losses) },
@@ -48,23 +50,44 @@ function Highlight({ label, avatar, detail }) {
  * The Avatars tab: one art card per avatar the player has been on, showing how
  * it is doing for them next to how it does for everyone.
  */
-export default function AvatarPerformance({ avatars, playerId }) {
+export default function AvatarPerformance({ avatars, playerId, canEdit = false, onHiddenChange }) {
   const { imageFiles, community } = useAvatarArt()
   const [sort, setSort] = useState('games')
-  const sorted = useMemo(() => [...(avatars || [])].sort(SORTS[sort].fn), [avatars, sort])
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(null)
+  const shown = useMemo(() => (avatars || []).filter((a) => !a.hidden), [avatars])
+  const hidden = useMemo(() => (avatars || []).filter((a) => a.hidden), [avatars])
+  const sorted = useMemo(() => [...shown].sort(SORTS[sort].fn), [shown, sort])
 
   if (!avatars?.length) return null
 
+  const saveHidden = async (names) => {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const res = await setHiddenAvatars(playerId, names)
+      onHiddenChange?.(res.avatars)
+    } catch (err) {
+      setSaveError(err.message || 'Could not save')
+    } finally {
+      setSaving(false)
+    }
+  }
+  const hiddenNames = hidden.map((a) => a.name)
+  const hide = (name) => saveHidden([...hiddenNames, name])
+  const unhide = (name) => saveHidden(hiddenNames.filter((n) => n !== name))
+
   const games = (a) => a.wins + a.losses
-  const mostPlayed = [...avatars].sort(SORTS.games.fn)[0]
-  const qualified = avatars.filter((a) => games(a) >= 5)
+  const showEventElo = shown.some((av) => av.event_elo != null)
+  const mostPlayed = [...shown].sort(SORTS.games.fn)[0]
+  const qualified = shown.filter((a) => games(a) >= 5)
   const best = [...qualified].sort(SORTS.win_rate.fn)[0]
-  const recent = [...avatars].sort(SORTS.recent.fn)[0]
+  const recent = [...shown].sort(SORTS.recent.fn)[0]
 
   return (
     <div className="space-y-6">
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <Highlight label="Avatars played" avatar={avatars.length} />
+        <Highlight label="Avatars played" avatar={shown.length} />
         <Highlight label="Most played" avatar={mostPlayed?.name} detail={mostPlayed && `${games(mostPlayed)} games`} />
         <Highlight label="Best win rate (5+ games)" avatar={best?.name} detail={best && `${best.win_rate}% · ${best.wins}-${best.losses}`} />
         <Highlight label="Last played" avatar={recent?.last_played ? recent.name : null} detail={shortDate(recent?.last_played)} />
@@ -88,7 +111,18 @@ export default function AvatarPerformance({ avatars, playerId }) {
           const everyone = community[av.name]
           const diff = everyone?.win_rate != null && total > 0 ? Math.round((av.win_rate - everyone.win_rate) * 10) / 10 : null
           return (
-            <li key={av.name}>
+            <li key={av.name} className="relative">
+              {canEdit && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => hide(av.name)}
+                  aria-label={`Hide ${av.name} from my profile`}
+                  className="absolute bottom-3 right-3 z-10 h-9 px-3 rounded-lg border border-white/20 bg-black/60 text-xs text-gray-200 hover:border-secondary hover:text-secondary disabled:opacity-50"
+                >
+                  Hide
+                </button>
+              )}
               <AvatarArtCard
                 name={av.name}
                 imageFiles={imageFiles}
@@ -142,6 +176,69 @@ export default function AvatarPerformance({ avatars, playerId }) {
           )
         })}
       </ul>
+      {canEdit && (hidden.length > 0 || saveError) && (
+        <section className="bg-bg-surface border border-border rounded-xl p-5">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">Hidden from your profile</h2>
+          <p className="text-xs text-text-muted mt-1">
+            Only you and admins can see these. Their games still count everywhere else, and nothing is deleted.
+          </p>
+          {saveError && <p className="text-sm text-accent-red mt-2">{saveError}</p>}
+          <ul className="flex flex-wrap gap-2 mt-3">
+            {hidden.map((av) => (
+              <li key={av.name} className="inline-flex items-center gap-3 pl-3 pr-1 py-1 rounded-full bg-bg-raised border border-border text-sm">
+                <span className="text-text-primary">{av.name}</span>
+                <span className="text-text-muted tabular-nums">{av.wins}-{av.losses}</span>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => unhide(av.name)}
+                  aria-label={`Show ${av.name} on my profile`}
+                  className="h-8 px-3 rounded-full text-xs font-semibold text-secondary hover:bg-bg-surface disabled:opacity-50"
+                >
+                  Show
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="bg-bg-surface border border-border rounded-xl overflow-hidden">
+        <h2 className="px-5 pt-4 text-xs font-bold uppercase tracking-wider text-text-muted">All avatars</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wider text-text-muted">
+                <th className="py-3 px-5 font-bold">Avatar</th>
+                <th className="py-3 px-3 font-bold">Record</th>
+                <th className="py-3 px-3 font-bold">Win Rate</th>
+                <th className="py-3 px-3 font-bold">Games</th>
+                {showEventElo && <th className="py-3 px-3 font-bold">Event ELO</th>}
+                {showEventElo && <th className="py-3 px-3 font-bold">Rank</th>}
+                <th className="py-3 px-5 font-bold">Last played</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((av) => (
+                <tr key={av.name} className="border-t border-border/60">
+                  <td className="py-2.5 px-5">
+                    <Link to={`/player/${playerId}/avatar/${encodeURIComponent(av.name)}`} className="font-semibold text-secondary hover:underline">
+                      {av.name}
+                    </Link>
+                  </td>
+                  <td className="py-2.5 px-3 tabular-nums">{av.wins}W / {av.losses}L</td>
+                  <td className="py-2.5 px-3 tabular-nums font-bold" style={{ color: getWinRateColor(av.win_rate) }}>{av.win_rate}%</td>
+                  <td className="py-2.5 px-3 tabular-nums text-text-muted">{games(av)}</td>
+                  {showEventElo && <td className="py-2.5 px-3 tabular-nums">{av.event_elo ?? '-'}</td>}
+                  {showEventElo && <td className="py-2.5 px-3 tabular-nums">{av.event_rank ? `#${av.event_rank}` : '-'}</td>}
+                  <td className="py-2.5 px-5 text-text-muted">{shortDate(av.last_played) ?? '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <p className="text-xs text-text-muted">
         &ldquo;Everyone&rdquo; is the win rate of every reported game on that avatar, and the number in brackets is how far you are above or below it. The squares are your last 10 games, newest first.
       </p>

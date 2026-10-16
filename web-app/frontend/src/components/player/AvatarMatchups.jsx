@@ -31,10 +31,10 @@ function MatchupList({ title, rows, empty }) {
  * The Matchups tab: how the player does against each opposing avatar, for all
  * their avatars together or for one avatar they were on.
  */
-export default function AvatarMatchups({ matchups, byAvatar = {}, myAvatars = [] }) {
+export default function AvatarMatchups({ matchups, byAvatar = {}, myAvatars = null }) {
   const { imageFiles } = useAvatarArt()
   const [playingAs, setPlayingAs] = useState('all')
-  const options = (myAvatars.length ? myAvatars : Object.keys(byAvatar)).filter((name) => byAvatar[name]?.length)
+  const options = (myAvatars ?? Object.keys(byAvatar)).filter((name) => byAvatar[name]?.length)
   const rows = useMemo(
     () => (playingAs === 'all' ? matchups : byAvatar[playingAs]) || [],
     [playingAs, matchups, byAvatar],
@@ -89,6 +89,32 @@ export default function AvatarMatchups({ matchups, byAvatar = {}, myAvatars = []
           </li>
         ))}
       </ul>
+      <section className="bg-bg-surface border border-border rounded-xl overflow-hidden">
+        <h2 className="px-5 pt-4 text-xs font-bold uppercase tracking-wider text-text-muted">All matchups</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wider text-text-muted">
+                <th className="py-3 px-5 font-bold">Opponent</th>
+                <th className="py-3 px-3 font-bold">Record</th>
+                <th className="py-3 px-3 font-bold">Win Rate</th>
+                <th className="py-3 px-5 font-bold">Games</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((m) => (
+                <tr key={m.opponent_avatar} className="border-t border-border/60">
+                  <td className="py-2.5 px-5 font-semibold text-text-primary">{m.opponent_avatar}</td>
+                  <td className="py-2.5 px-3 tabular-nums">{m.wins}W / {m.losses}L</td>
+                  <td className="py-2.5 px-3 tabular-nums font-bold" style={{ color: getWinRateColor(m.win_rate) }}>{m.win_rate}%</td>
+                  <td className="py-2.5 px-5 tabular-nums text-text-muted">{m.total_games}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <p className="text-xs text-text-muted">
         {total} games against {rows.length} avatars. Best and toughest need {MIN_GAMES}+ games.
       </p>

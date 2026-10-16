@@ -66,6 +66,7 @@ class UserProfileRepository:
             'custom_display_name': 'TEXT',
             'profile_public_sections': 'TEXT',
             'nav_preferences': 'TEXT',
+            'hidden_avatars': 'TEXT',
             'profile_reset_at': 'TEXT',
             'manually_added_by': 'TEXT',
             'manually_added_at': 'TEXT',
@@ -607,6 +608,42 @@ class UserProfileRepository:
         cur.execute(
             "UPDATE user_profiles SET nav_preferences = ? WHERE user_id = ?",
             (json.dumps(labels), str(user_id)),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return updated
+
+    @staticmethod
+    def _both_ids(user_id) -> tuple[str, str]:
+        """A player id as stored for Discord and for Google sign-ins."""
+        bare = str(user_id).removeprefix("google_")
+        return bare, f"google_{bare}"
+
+    def get_hidden_avatars(self, user_id: str) -> list[str]:
+        """Avatars the player chose to hide from their profile (data is kept)."""
+        conn = self._get_connection()
+        row = conn.execute(
+            "SELECT hidden_avatars FROM user_profiles"
+            " WHERE user_id IN (?, ?) AND hidden_avatars IS NOT NULL LIMIT 1",
+            self._both_ids(user_id),
+        ).fetchone()
+        conn.close()
+        if row and row[0]:
+            try:
+                value = json.loads(row[0])
+                return [str(v) for v in value] if isinstance(value, list) else []
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return []
+
+    def set_hidden_avatars(self, user_id: str, avatars: list[str]) -> bool:
+        """Save the avatars a player hides from their profile."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_profiles SET hidden_avatars = ? WHERE user_id IN (?, ?)",
+            (json.dumps(sorted(set(avatars))), *self._both_ids(user_id)),
         )
         conn.commit()
         updated = cur.rowcount > 0

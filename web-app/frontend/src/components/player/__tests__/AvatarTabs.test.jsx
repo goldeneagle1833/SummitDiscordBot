@@ -2,6 +2,10 @@ import { describe, it, expect, vi } from 'vitest'
 import { screen, renderWithRouter, within } from '@/test/test-utils'
 import userEvent from '@testing-library/user-event'
 
+vi.mock('@/api/players', () => ({
+  setHiddenAvatars: vi.fn((id, avatars) => Promise.resolve({ success: true, avatars })),
+}))
+
 vi.mock('@/api/cards', () => ({
   getAvatarImageFiles: vi.fn(() => Promise.resolve([])),
   getAvatars: vi.fn(() => Promise.resolve([{ name: 'Witch', win_rate: 50 }])),
@@ -9,6 +13,7 @@ vi.mock('@/api/cards', () => ({
 
 import AvatarPerformance from '../AvatarPerformance'
 import AvatarMatchups from '../AvatarMatchups'
+import { setHiddenAvatars } from '@/api/players'
 
 describe('Avatars tab', () => {
   it('shows a card per avatar with record, form and the gap to everyone', async () => {
@@ -21,12 +26,38 @@ describe('Avatars tab', () => {
         ]}
       />,
     )
-    const cards = screen.getAllByRole('listitem')
+    const cards = within(screen.getAllByRole('list')[0]).getAllByRole('listitem')
     expect(cards).toHaveLength(2)
     expect(within(cards[0]).getByText('6W · 2L')).toBeInTheDocument()
     expect(within(cards[0]).getByLabelText(/Last 3 games/)).toBeInTheDocument()
     expect(await within(cards[0]).findByText('(+25)')).toBeInTheDocument()
     expect(within(cards[0]).getByRole('link')).toHaveAttribute('href', '/player/1/avatar/Witch')
+  })
+})
+
+describe('hiding avatars', () => {
+  const avatars = [
+    { name: 'Witch', wins: 6, losses: 2, win_rate: 75, form: [], hidden: false },
+    { name: 'Druid', wins: 1, losses: 3, win_rate: 25, form: [], hidden: true },
+  ]
+
+  it('lets the owner hide and show avatars without touching the games', async () => {
+    const onHiddenChange = vi.fn()
+    renderWithRouter(<AvatarPerformance playerId="1" avatars={avatars} canEdit onHiddenChange={onHiddenChange} />)
+    expect(screen.queryByText('vs Druid')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /hidden from your profile/i })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Hide Witch from my profile' }))
+    expect(setHiddenAvatars).toHaveBeenLastCalledWith('1', ['Druid', 'Witch'])
+    expect(onHiddenChange).toHaveBeenLastCalledWith(['Druid', 'Witch'])
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show Druid on my profile' }))
+    expect(setHiddenAvatars).toHaveBeenLastCalledWith('1', [])
+  })
+
+  it('shows no hide controls to visitors', () => {
+    renderWithRouter(<AvatarPerformance playerId="1" avatars={avatars.filter((a) => !a.hidden)} />)
+    expect(screen.queryByRole('button', { name: /hide/i })).not.toBeInTheDocument()
   })
 })
 
@@ -44,9 +75,11 @@ describe('Matchups tab', () => {
     renderWithRouter(<AvatarMatchups matchups={overall} byAvatar={byAvatar} myAvatars={['Witch', 'Druid']} />)
     expect(screen.getByText('vs Geomancer')).toBeInTheDocument()
     expect(screen.getByText('vs Sparkmage')).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Sparkmage' })).toBeInTheDocument() // full list at the bottom
 
     await userEvent.selectOptions(screen.getByLabelText('Playing as'), 'Witch')
     expect(screen.getByText('vs Geomancer')).toBeInTheDocument()
     expect(screen.queryByText('vs Sparkmage')).not.toBeInTheDocument()
+    expect(screen.queryByRole('cell', { name: 'Sparkmage' })).not.toBeInTheDocument()
   })
 })

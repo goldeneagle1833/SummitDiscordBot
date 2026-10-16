@@ -2599,6 +2599,22 @@ def player_api(player_id):
     admin = is_admin()
     show_lifetime = admin or is_owner
 
+    # Avatars the player hid from their profile: gone for visitors, flagged for
+    # the owner and admins so they can show them again. Nothing is deleted.
+    try:
+        hidden_avatars = set(UserProfileRepository().get_hidden_avatars(player_id_normalized))
+    except Exception:
+        hidden_avatars = set()
+    if hidden_avatars:
+        if is_owner:
+            for perf in avatar_performance:
+                perf["hidden"] = perf["name"] in hidden_avatars
+        else:
+            avatar_performance = [p for p in avatar_performance if p["name"] not in hidden_avatars]
+            avatar_matchups_by_avatar = {
+                k: v for k, v in avatar_matchups_by_avatar.items() if k not in hidden_avatars
+            }
+
     def _section_visible(section_key):
         """Return True if the section should be shown to the current viewer."""
         if is_owner:
@@ -2822,6 +2838,28 @@ def set_profile_visibility(player_id):
     profile_repo.set_profile_visibility(str(player_id), data["sections"])
     updated = profile_repo.get_profile_visibility(str(player_id))
     return jsonify({"success": True, "sections": updated})
+
+
+@players_bp.route("/player/<player_id>/hidden-avatars", methods=["PUT"])
+def set_hidden_avatars(player_id):
+    """Hide avatars from the player's own profile (owner or admin). Data is kept."""
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+    viewer = str(logged_in_user_id).removeprefix("google_")
+    player_id_normalized = str(player_id).removeprefix("google_")
+    if viewer != player_id_normalized and not is_admin():
+        return jsonify({"error": "You can only change your own profile"}), 403
+
+    data = request.get_json(silent=True) or {}
+    avatars = data.get("avatars")
+    if not isinstance(avatars, list) or not all(isinstance(a, str) for a in avatars):
+        return jsonify({"error": "avatars must be a list of names"}), 400
+
+    repo = UserProfileRepository()
+    if not repo.set_hidden_avatars(player_id_normalized, avatars):
+        return jsonify({"error": "Profile not found"}), 404
+    return jsonify({"success": True, "avatars": repo.get_hidden_avatars(player_id_normalized)})
 
 
 @players_bp.route("/player/<player_id>/card-stats")

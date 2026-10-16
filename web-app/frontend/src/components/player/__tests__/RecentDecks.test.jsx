@@ -1,7 +1,20 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
 import RecentDecks from '../RecentDecks'
+import { getDeckLinkPreviews } from '@/api/community'
+
+vi.mock('@/api/community', () => ({
+  getDeckLinkPreviews: vi.fn(() =>
+    Promise.resolve({
+      previews: {
+        'https://curiosa.io/decks/abc123': {
+          title: 'Earth/Fire by Bruce', description: 'A deck', image: 'https://curiosa.io/og.png', site_name: 'Curiosa',
+        },
+      },
+    }),
+  ),
+}))
 
 const baseDeck = {
   url: 'https://curiosa.io/decks/abc123',
@@ -49,5 +62,19 @@ describe('RecentDecks', () => {
 
     expect(screen.getByText('Earth/Fire')).toBeInTheDocument()
     expect(screen.queryByText(/^ELO:/)).not.toBeInTheDocument()
+  })
+
+  it('shows a link preview for the deck when deck links are visible', async () => {
+    renderWithRouter(<RecentDecks decks={[baseDeck]} playerId="1" showLinks open />)
+    const title = await screen.findByText('Earth/Fire by Bruce')
+    expect(title.closest('a')).toHaveAttribute('href', 'https://curiosa.io/decks/abc123')
+    expect(getDeckLinkPreviews).toHaveBeenCalledWith(['https://curiosa.io/decks/abc123'])
+  })
+
+  it('shows no preview, and fetches none, when deck links are private', () => {
+    getDeckLinkPreviews.mockClear()
+    renderWithRouter(<RecentDecks decks={[baseDeck]} playerId="1" open />)
+    expect(screen.queryByText('Earth/Fire by Bruce')).not.toBeInTheDocument()
+    expect(getDeckLinkPreviews).not.toHaveBeenCalled()
   })
 })

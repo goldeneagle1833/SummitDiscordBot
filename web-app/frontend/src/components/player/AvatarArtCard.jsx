@@ -4,16 +4,26 @@ import { getAvatars, getAvatarImageFiles } from '@/api/cards'
 import { getAvatarImagePath } from '@/utils/avatarBadges'
 
 /**
- * Avatar art and community win rates, shared by the Avatars and Matchups tabs.
+ * Avatar art and community win rates for a period ('lifetime', 'current' or an
+ * event id), shared by the Avatars and Matchups tabs.
  * Both requests are optional: cards fall back to a plain panel without art.
  */
-export function useAvatarArt() {
+export function useAvatarArt(period = 'lifetime') {
   const [imageFiles, setImageFiles] = useState([])
   const [community, setCommunity] = useState({})
   useEffect(() => {
     let active = true
     getAvatarImageFiles().then((files) => active && setImageFiles(files || [])).catch(() => {})
-    getAvatars({ source: 'discord' })
+    return () => {
+      active = false
+    }
+  }, [])
+  useEffect(() => {
+    let active = true
+    setCommunity({})
+    const params = { source: 'discord' }
+    if (period && period !== 'lifetime') params.event = period
+    getAvatars(params)
       .then((list) => {
         if (!active) return
         const map = {}
@@ -24,7 +34,7 @@ export function useAvatarArt() {
     return () => {
       active = false
     }
-  }, [])
+  }, [period])
   return { imageFiles, community }
 }
 

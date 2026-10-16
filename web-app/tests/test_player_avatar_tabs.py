@@ -118,6 +118,8 @@ def test_avatars_tab_uses_the_ranked_match_history_games(client, avatar_games, m
     """Same games as the Ranked Match History table: no casual or external games."""
     conn = sqlite3.connect(str(elo_db))
     conn.execute("INSERT INTO events (event_name, start_date, is_active) VALUES ('Now', '2026-10-01 00:00:00', 1)")
+    conn.execute("ALTER TABLE overall_standings ADD COLUMN elo INTEGER")  # live schema column
+    conn.execute("INSERT INTO overall_standings (user_id, user_display_name, elo) VALUES ('200', 'B', 1550)")
     conn.commit()
     conn.close()
     conn = sqlite3.connect(str(match_db))
@@ -152,3 +154,11 @@ def test_avatars_tab_uses_the_ranked_match_history_games(client, avatar_games, m
     lifetime = client.get("/api/player/100").get_json()
     names = {a["name"] for a in lifetime["avatar_performance"]}
     assert names == {"Witch", "Druid"}  # external and casual games have their own lists
+
+    # The External matches list follows the period too; Lifetime shows them all
+    assert [m["timestamp"] for m in current["external_matches"]] == ["2026-10-05 12:00:00"]
+    assert len(lifetime["external_matches"]) == 2
+
+    # Win rate vs opponent ELO counts the ranked table's games only, not the casual one
+    assert sum(b["wins"] + b["losses"] for b in current["elo_vs_brackets"]) == 3  # no casual game
+    assert sum(b["wins"] + b["losses"] for b in lifetime["elo_vs_brackets"]) == 3

@@ -275,6 +275,8 @@ export default function Player() {
         <AvatarPerformance
           avatars={data.avatar_performance}
           playerId={playerId}
+          period={eventFilter}
+          isAdmin={Boolean(isAdmin)}
           canEdit={Boolean(data.is_owner)}
           onHiddenChange={(names) => {
             const hidden = new Set(names)

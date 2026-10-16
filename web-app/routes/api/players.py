@@ -1830,6 +1830,27 @@ def player_api(player_id):
     external_repo = ExternalMatchRepository()
     external_matches_raw = external_repo.get_player_matches(str(player_id_normalized))
 
+    # External matches follow the period picker like every other list: only
+    # games dated inside the selected period (and after any Fresh Start).
+    def _norm_ts(value):
+        return str(value or "")[:19].replace("T", " ")
+
+    def _external_in_period(em):
+        ts = _norm_ts(em.get("timestamp"))
+        if event_filter != "lifetime" and not (event_start_date or event_end_date):
+            return False  # a period we can't date
+        if (event_start_date or event_end_date or reset_cutoff) and not ts:
+            return False
+        if event_start_date and ts < _norm_ts(event_start_date):
+            return False
+        if event_end_date and ts > _norm_ts(event_end_date):
+            return False
+        if reset_cutoff and ts < _norm_ts(reset_cutoff):
+            return False
+        return True
+
+    external_matches_raw = [em for em in external_matches_raw if _external_in_period(em)]
+
     # One record per game in the Ranked Match History table (same rows, same
     # avatar reading), so the Avatars and Matchups tabs only show it differently.
     # Casual, solo-reported and external games have their own lists and stay out.
@@ -1955,7 +1976,8 @@ def player_api(player_id):
         elo_conn = sqlite3.connect(str(ELO_DB_PATH))
         elo_cur = elo_conn.cursor()
 
-        for row in all_rows:
+        # Ranked games only, the same ones as the Ranked Match History table
+        for row in (r for r in rows if not _is_casual_row(r)):
             did_win = row[0]
             opponent_id = str(row[11]) if did_win else str(row[10])
             winner_elo_change = row[7] if row[7] else 0

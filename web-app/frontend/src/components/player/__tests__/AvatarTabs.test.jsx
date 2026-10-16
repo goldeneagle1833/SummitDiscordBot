@@ -14,6 +14,7 @@ vi.mock('@/api/cards', () => ({
 import AvatarPerformance from '../AvatarPerformance'
 import AvatarMatchups from '../AvatarMatchups'
 import { setHiddenAvatars } from '@/api/players'
+import { getAvatars } from '@/api/cards'
 
 describe('Avatars tab', () => {
   it('shows a card per avatar with record, form and the gap to everyone', async () => {
@@ -32,6 +33,22 @@ describe('Avatars tab', () => {
     expect(within(cards[0]).getByLabelText(/Last 3 games/)).toBeInTheDocument()
     expect(await within(cards[0]).findByText('(+25)')).toBeInTheDocument()
     expect(within(cards[0]).getByRole('link')).toHaveAttribute('href', '/player/1/avatar/Witch')
+  })
+})
+
+describe('Everyone win rate follows the period', () => {
+  const avatars = [{ name: 'Witch', wins: 6, losses: 2, win_rate: 75, form: [] }]
+
+  it('uses the same past event as the profile', async () => {
+    renderWithRouter(<AvatarPerformance playerId="1" avatars={avatars} period="12" />)
+    expect(await screen.findByText(/^Everyone 50%/)).toBeInTheDocument()
+    expect(getAvatars).toHaveBeenLastCalledWith({ source: 'discord', event: '12' })
+  })
+
+  it('says all events when the running event is private to admins', async () => {
+    renderWithRouter(<AvatarPerformance playerId="1" avatars={avatars} period="current" />)
+    expect(await screen.findByText(/Everyone \(all events\) 50%/)).toBeInTheDocument()
+    expect(getAvatars).toHaveBeenLastCalledWith({ source: 'discord' })
   })
 })
 

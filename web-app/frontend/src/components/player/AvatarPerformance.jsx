@@ -50,8 +50,12 @@ function Highlight({ label, avatar, detail }) {
  * The Avatars tab: one art card per avatar the player has been on, showing how
  * it is doing for them next to how it does for everyone.
  */
-export default function AvatarPerformance({ avatars, playerId, canEdit = false, onHiddenChange }) {
-  const { imageFiles, community } = useAvatarArt()
+export default function AvatarPerformance({ avatars, playerId, period = 'lifetime', isAdmin = false, canEdit = false, onHiddenChange }) {
+  // The site only shares the running event's avatar stats with admins, so
+  // everyone else compares against all events, and the label says so.
+  const communityPeriod = period === 'current' && !isAdmin ? 'lifetime' : period
+  const { imageFiles, community } = useAvatarArt(communityPeriod)
+  const everyoneLabel = communityPeriod === period ? 'Everyone' : 'Everyone (all events)'
   const [sort, setSort] = useState('games')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
@@ -156,7 +160,7 @@ export default function AvatarPerformance({ avatars, playerId, canEdit = false, 
                     <div className="text-right text-sm">
                       {diff != null && (
                         <div className="text-gray-300">
-                          Everyone {everyone.win_rate}%{' '}
+                          {everyoneLabel} {everyone.win_rate}%{' '}
                           <span className={diff > 0 ? 'text-secondary font-semibold' : ''}>
                             ({diff > 0 ? '+' : ''}{diff})
                           </span>
@@ -240,7 +244,7 @@ export default function AvatarPerformance({ avatars, playerId, canEdit = false, 
       </section>
 
       <p className="text-xs text-text-muted">
-        &ldquo;Everyone&rdquo; is the win rate of every reported game on that avatar, and the number in brackets is how far you are above or below it. The squares are your last 10 games, newest first.
+        &ldquo;Everyone&rdquo; is the win rate of every reported game on that avatar in this period, and the number in brackets is how far you are above or below it. The squares are your last 10 games, newest first.
       </p>
     </div>
   )

@@ -1,11 +1,7 @@
 import SeriesMap from './SeriesMap'
+import { STATUS_COLORS } from './statusColors'
 
-export const STATUS_COLORS = {
-  pending: '#fbbf24',
-  pre_approved: '#60a5fa',
-  approved: '#34d399',
-  rejected: '#f87171',
-}
+export { STATUS_COLORS }
 
 /**
  * Pin map of Explorer applications, coloured by review status. Applications

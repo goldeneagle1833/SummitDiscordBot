@@ -138,9 +138,42 @@ describe('ExplorerApplications admin page', () => {
     renderWithRouter(<ExplorerApplications />)
     await screen.findByText('Ruben Sanchez')
 
-    await user.selectOptions(screen.getByLabelText('Filter by status'), 'approved')
+    await user.selectOptions(screen.getByLabelText('Filter by status'), 'pending')
+    expect(screen.getByText('Ruben Sanchez')).toBeInTheDocument()
 
-    await waitFor(() => expect(getApplications).toHaveBeenLastCalledWith('approved'))
+    await user.selectOptions(screen.getByLabelText('Filter by status'), 'approved')
+    expect(screen.queryByText('Ruben Sanchez')).not.toBeInTheDocument()
+    expect(screen.getByText('No applications match these filters.')).toBeInTheDocument()
+  })
+
+  it('shows review metrics across every application', async () => {
+    renderWithRouter(<ExplorerApplications />)
+    const metrics = await screen.findByRole('region', { name: 'Application metrics' })
+    expect(within(metrics).getByText('Applications received').nextSibling).toHaveTextContent('2')
+    expect(within(metrics).getByText('includes 1 admin-added candidate')).toBeInTheDocument()
+    expect(within(metrics).getByText('Fewer than 3 votes').nextSibling).toHaveTextContent('2')
+    expect(within(metrics).getByRole('button', { name: 'Pending: 100%, 2 applications' })).toBeInTheDocument()
+    expect(within(metrics).getByRole('button', { name: 'Approved: 0%, 0 applications' })).toBeInTheDocument()
+  })
+
+  it('filters to applications with fewer than 3 votes', async () => {
+    getApplications.mockResolvedValue({
+      applications: [application, unmapped, { ...application, id: 3, first_name: 'Voted', vote_count: 3 }],
+    })
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerApplications />)
+    expect(await screen.findByText('Voted Sanchez')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Fewer than 3 votes/ }))
+    expect(screen.queryByText('Voted Sanchez')).not.toBeInTheDocument()
+    expect(screen.getByText('Ruben Sanchez')).toBeInTheDocument()
+    expect(screen.getByText('Kevin Rodriguez')).toBeInTheDocument()
+  })
+
+  it('no longer shows the Community Series events map controls', async () => {
+    renderWithRouter(<ExplorerApplications />)
+    await screen.findByText('Ruben Sanchez')
+    expect(screen.queryByText('Community Series events map')).not.toBeInTheDocument()
   })
 
   it('opens the detail dialog with the full application', async () => {

@@ -19,7 +19,7 @@ import {
 // Leaflet pulls in a sizeable bundle and needs a real DOM, so keep it out of
 // the main chunk.
 const ApplicationsMap = lazy(() => import('@/components/explorer/ApplicationsMap'))
-import EventsMapToggle from '@/components/explorer/EventsMapToggle'
+import { STATUS_COLORS } from '@/components/explorer/statusColors'
 import LgsAttendance from '@/components/explorer/LgsAttendance'
 
 const STATUS_OPTIONS = [
@@ -51,6 +51,95 @@ function statusLabel(status) {
 }
 
 const DECIDED = ['approved', 'rejected']
+
+// Applications with fewer votes than this still need Council attention.
+const VOTE_TARGET = 3
+
+function percent(count, total) {
+  return total ? Math.round((count / total) * 100) : 0
+}
+
+/**
+ * At-a-glance review progress, counted across every application whatever
+ * the filters show. The tiles double as quick filters.
+ */
+function ApplicationMetrics({ applications, statusFilter, onStatusFilter, fewVotes, onFewVotes }) {
+  const total = applications.length
+  const candidates = applications.filter((a) => a.source === 'admin_added').length
+  const needVotes = applications.filter((a) => (a.vote_count || 0) < VOTE_TARGET).length
+  const tile = 'bg-bg-raised border rounded-lg p-4 text-left transition-colors'
+
+  return (
+    <section aria-label="Application metrics" className="space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button
+          onClick={() => { onStatusFilter(''); onFewVotes(false) }}
+          className={`${tile} ${!statusFilter && !fewVotes ? 'border-secondary/60' : 'border-border hover:border-secondary'}`}
+        >
+          <div className="text-xs text-text-muted">Applications received</div>
+          <div className="text-3xl font-display text-secondary">{total}</div>
+          {candidates > 0 && (
+            <div className="text-xs text-text-muted">
+              includes {candidates} admin-added candidate{candidates === 1 ? '' : 's'}
+            </div>
+          )}
+        </button>
+        <button
+          onClick={() => onFewVotes(!fewVotes)}
+          aria-pressed={fewVotes}
+          className={`${tile} ${fewVotes ? 'border-amber-400/60 bg-amber-400/5' : 'border-border hover:border-secondary'}`}
+        >
+          <div className="text-xs text-text-muted">Fewer than {VOTE_TARGET} votes</div>
+          <div className="text-3xl font-display text-amber-300">{needVotes}</div>
+          <div className="text-xs text-text-muted">
+            {fewVotes ? 'Showing only these. Click to show all.' : 'Click to show only these'}
+          </div>
+        </button>
+      </div>
+
+      <div className="bg-bg-raised border border-border rounded-lg p-4 space-y-3">
+        <div className="text-xs text-text-muted">Status</div>
+        <div className="flex h-2.5 rounded-full overflow-hidden bg-bg-surface" aria-hidden="true">
+          {STATUS_OPTIONS.map((o) => {
+            const count = applications.filter((a) => a.status === o.value).length
+            return count ? (
+              <div
+                key={o.value}
+                style={{ width: `${(count / total) * 100}%`, backgroundColor: STATUS_COLORS[o.value] }}
+              />
+            ) : null
+          })}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {STATUS_OPTIONS.map((o) => {
+            const count = applications.filter((a) => a.status === o.value).length
+            const active = statusFilter === o.value
+            return (
+              <button
+                key={o.value}
+                onClick={() => onStatusFilter(active ? '' : o.value)}
+                aria-pressed={active}
+                aria-label={`${o.label}: ${percent(count, total)}%, ${count} application${count === 1 ? '' : 's'}`}
+                className={`rounded border px-3 py-2 text-left transition-colors ${
+                  active ? STATUS_STYLES[o.value] : 'border-border hover:border-secondary'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 text-xs text-text-muted">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_COLORS[o.value] }} />
+                  {o.label}
+                </div>
+                <div className="text-lg text-text-primary font-medium">
+                  {percent(count, total)}%{' '}
+                  <span className="text-xs text-text-muted font-normal">({count})</span>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </section>
+  )
+}
 
 // Status changes stay with the Council until someone publishes them.
 function isUnpublished(application) {
@@ -543,6 +632,7 @@ export default function ExplorerApplications() {
   const { user } = useAuth()
   const [applications, setApplications] = useState([])
   const [statusFilter, setStatusFilter] = useState('')
+  const [fewVotes, setFewVotes] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
@@ -553,7 +643,9 @@ export default function ExplorerApplications() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await getApplications(statusFilter || undefined)
+      // Fetch everything so the metrics count every application; the
+      // filters apply on this page.
+      const data = await getApplications()
       setApplications(data.applications || [])
       setError(null)
     } catch (err) {
@@ -565,11 +657,15 @@ export default function ExplorerApplications() {
     getPublishPreview()
       .then((data) => setPreview(data.pending))
       .catch(() => setPreview(null))
-  }, [statusFilter])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
-  const unmapped = applications.filter((a) => a.latitude == null).length
+  const shown = applications.filter((a) =>
+    (!statusFilter || a.status === statusFilter)
+    && (!fewVotes || (a.vote_count || 0) < VOTE_TARGET)
+  )
+  const unmapped = shown.filter((a) => a.latitude == null).length
 
   return (
     <div className="max-w-content mx-auto px-4 py-8 space-y-6">
@@ -628,11 +724,19 @@ export default function ExplorerApplications() {
         </div>
       )}
 
-      <EventsMapToggle />
+      {!loading && applications.length > 0 && (
+        <ApplicationMetrics
+          applications={applications}
+          statusFilter={statusFilter}
+          onStatusFilter={setStatusFilter}
+          fewVotes={fewVotes}
+          onFewVotes={setFewVotes}
+        />
+      )}
 
       <Suspense fallback={<div className="h-80 rounded-lg border border-border bg-bg-raised" />}>
         <ApplicationsMap
-          applications={applications}
+          applications={shown}
           onSelect={(application) => setSelectedId(application.id)}
         />
       </Suspense>
@@ -647,9 +751,11 @@ export default function ExplorerApplications() {
         <p className="text-sm text-text-muted">Loading applications…</p>
       ) : applications.length === 0 ? (
         <p className="text-sm text-text-muted">No applications yet.</p>
+      ) : shown.length === 0 ? (
+        <p className="text-sm text-text-muted">No applications match these filters.</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {applications.map((application) => (
+          {shown.map((application) => (
             <ApplicationCard
               key={application.id}
               application={application}

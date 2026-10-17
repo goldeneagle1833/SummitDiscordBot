@@ -117,15 +117,11 @@ describe('ExplorerApplications admin page', () => {
     expect(screen.getByText('Unscored')).toBeInTheDocument()
   })
 
-  it('passes applications to the map and flags the unmapped ones', async () => {
+  it('does not show the applications map', async () => {
     renderWithRouter(<ExplorerApplications />)
-    // The map mounts before the fetch resolves, so wait for the loaded list.
-    await waitFor(() =>
-      expect(screen.getByTestId('map')).toHaveTextContent('2 pins available')
-    )
-    expect(
-      screen.getByText(/1 application could not be placed on the map/)
-    ).toBeInTheDocument()
+    await screen.findByText('Ruben Sanchez')
+    expect(screen.queryByTestId('map')).not.toBeInTheDocument()
+    expect(screen.queryByText('Not on the map')).not.toBeInTheDocument()
   })
 
   it('marks hand-added candidates', async () => {

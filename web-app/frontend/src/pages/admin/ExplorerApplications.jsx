@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
 import {
@@ -16,9 +16,6 @@ import {
   EXPORT_CSV_URL,
 } from '@/api/explorerApplications'
 
-// Leaflet pulls in a sizeable bundle and needs a real DOM, so keep it out of
-// the main chunk.
-const ApplicationsMap = lazy(() => import('@/components/explorer/ApplicationsMap'))
 import { STATUS_COLORS } from '@/components/explorer/statusColors'
 import LgsAttendance from '@/components/explorer/LgsAttendance'
 
@@ -305,9 +302,6 @@ function ApplicationCard({ application, onOpen }) {
 
       {application.source === 'admin_added' && (
         <div className="text-xs text-text-muted italic">Added by {application.created_by || 'an admin'}</div>
-      )}
-      {application.latitude == null && (
-        <div className="text-xs text-amber-400">Not on the map</div>
       )}
     </button>
   )
@@ -665,7 +659,6 @@ export default function ExplorerApplications() {
     (!statusFilter || a.status === statusFilter)
     && (!fewVotes || (a.vote_count || 0) < VOTE_TARGET)
   )
-  const unmapped = shown.filter((a) => a.latitude == null).length
 
   return (
     <div className="max-w-content mx-auto px-4 py-8 space-y-6">
@@ -732,19 +725,6 @@ export default function ExplorerApplications() {
           fewVotes={fewVotes}
           onFewVotes={setFewVotes}
         />
-      )}
-
-      <Suspense fallback={<div className="h-80 rounded-lg border border-border bg-bg-raised" />}>
-        <ApplicationsMap
-          applications={shown}
-          onSelect={(application) => setSelectedId(application.id)}
-        />
-      </Suspense>
-      {unmapped > 0 && (
-        <p className="text-xs text-text-muted">
-          {unmapped} application{unmapped === 1 ? '' : 's'} could not be placed on the map.
-          Open one and use &ldquo;Find on map&rdquo; to retry.
-        </p>
       )}
 
       {loading ? (

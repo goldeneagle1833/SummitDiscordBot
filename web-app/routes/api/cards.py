@@ -192,100 +192,21 @@ def get_live_popular_cards():
         logger.error(f"Error loading card pool: {e}")
         return jsonify({"error": "Failed to load card data"}), 500
 
-    all_decks = []
-    conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
-    cur = conn.cursor()
-
-    use_new_columns = True
-    all_rows = []
-
-    # Build source filter clause
-    if source_filter == "discord":
-        where_clause = "AND (source = 'Discord' OR source IS NULL)"
-    elif source_filter == "web":
-        where_clause = "AND source != 'Discord' AND source IS NOT NULL"
-    else:
-        where_clause = ""
-
-    # Query current match_records
-    try:
-        cur.execute(f"""
-            SELECT json_deck_data_winner, json_deck_data_loser
-            FROM match_records
-            WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
-               OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
-            {where_clause}
-        """)
-        all_rows.extend(cur.fetchall())
-    except sqlite3.OperationalError:
-        use_new_columns = False
-        cur.execute(f"""
-            SELECT json_deck_data
-            FROM match_records
-            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
-            {where_clause}
-        """)
-        all_rows.extend(cur.fetchall())
-
-    # Also query match_records_archive for lifetime stats
-    if use_new_columns:
-        try:
-            cur.execute(f"""
-                SELECT json_deck_data_winner, json_deck_data_loser
-                FROM match_records_archive
-                WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
-                {where_clause}
-            """)
-            all_rows.extend(cur.fetchall())
-        except sqlite3.OperationalError:
-            pass  # Archive table may not exist
-
-    rows = all_rows
-
-    if use_new_columns:
-        for row in rows:
-            for deck_str in [row[0], row[1]]:
-                if deck_str and deck_str not in ("", "{}"):
-                    try:
-                        all_decks.append(json.loads(deck_str))
-                    except json.JSONDecodeError:
-                        pass
-    else:
-        for row in rows:
-            if row[0]:
-                try:
-                    all_decks.append(json.loads(row[0]))
-                except json.JSONDecodeError:
-                    pass
-
-    # Also get solo match reports
-    try:
-        cur.execute(f"""
-            SELECT json_deck_data
-            FROM solo_match_reports
-            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
-            {where_clause}
-        """)
-        for row in cur.fetchall():
-            if row[0]:
-                try:
-                    all_decks.append(json.loads(row[0]))
-                except json.JSONDecodeError:
-                    pass
-    except sqlite3.OperationalError:
-        pass
-
-    conn.close()
-
-    if not all_decks:
-        return jsonify([])
-
+    # Tally each deck as its row streams past. This used to parse every deck
+    # into one list first, which held ~3 GB on the full archive.
     card_stats = {}
-    total_decks = len(all_decks)
+    total_decks = 0
     sections = ["avatar", "spellbook", "atlas", "sideboard"]
 
-    for deck in all_decks:
+    def tally(deck_str):
+        nonlocal total_decks
+        if not deck_str or deck_str in ("", "{}"):
+            return
+        try:
+            deck = json.loads(deck_str)
+        except json.JSONDecodeError:
+            return
+        total_decks += 1
         if isinstance(deck, list) and len(deck) > 0:
             deck = deck[0]
 
@@ -307,6 +228,76 @@ def get_live_popular_cards():
                 if card_name not in cards_in_deck:
                     card_stats[card_name]["decks_with_card"] += 1
                     cards_in_deck.add(card_name)
+
+    conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    cur = conn.cursor()
+
+    use_new_columns = True
+
+    # Build source filter clause
+    if source_filter == "discord":
+        where_clause = "AND (source = 'Discord' OR source IS NULL)"
+    elif source_filter == "web":
+        where_clause = "AND source != 'Discord' AND source IS NOT NULL"
+    else:
+        where_clause = ""
+
+    # Query current match_records
+    try:
+        cur.execute(f"""
+            SELECT json_deck_data_winner, json_deck_data_loser
+            FROM match_records
+            WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+               OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
+            {where_clause}
+        """)
+        for row in cur:
+            tally(row[0])
+            tally(row[1])
+    except sqlite3.OperationalError:
+        use_new_columns = False
+        cur.execute(f"""
+            SELECT json_deck_data
+            FROM match_records
+            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
+            {where_clause}
+        """)
+        for row in cur:
+            tally(row[0])
+
+    # Also query match_records_archive for lifetime stats
+    if use_new_columns:
+        try:
+            cur.execute(f"""
+                SELECT json_deck_data_winner, json_deck_data_loser
+                FROM match_records_archive
+                WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
+                {where_clause}
+            """)
+            for row in cur:
+                tally(row[0])
+                tally(row[1])
+        except sqlite3.OperationalError:
+            pass  # Archive table may not exist
+
+    # Also get solo match reports
+    try:
+        cur.execute(f"""
+            SELECT json_deck_data
+            FROM solo_match_reports
+            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
+            {where_clause}
+        """)
+        for row in cur:
+            tally(row[0])
+    except sqlite3.OperationalError:
+        pass
+
+    conn.close()
+
+    if not total_decks:
+        return jsonify([])
 
     card_list = []
     for name, stats in card_stats.items():
@@ -816,7 +807,9 @@ def get_card_stats(card_name):
         for table in ("match_records", "match_records_archive"):
             try:
                 cur.execute(f"SELECT json_deck_data_winner, json_deck_data_loser FROM {table} WHERE {deck_where}")
-                for row in cur.fetchall():
+                # Stream: each row holds two full decks (~38 KB), so fetchall()
+                # held a whole table of them in memory at once.
+                for row in cur:
                     process_deck(row[0], is_winner=True)
                     process_deck(row[1], is_winner=False)
             except sqlite3.OperationalError:

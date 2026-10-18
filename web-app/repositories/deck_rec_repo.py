@@ -234,7 +234,7 @@ class DeckRecRepository:
                 seen_ids[deck.deck_id] = deck
 
         # 3. Match records — community decks, lower priority
-        match_decks, outcomes = self._load_match_decks()
+        match_decks, outcomes = self._load_match_decks(skip_ids=seen_ids.keys())
         for deck in match_decks:
             if deck.deck_id and deck.deck_id not in seen_ids:
                 seen_ids[deck.deck_id] = deck
@@ -339,7 +339,7 @@ class DeckRecRepository:
         "losser": ("json_deck_data_loser",  "curiosa_url_loser",  "losser_display_name"),
     }
 
-    def _load_match_decks(self) -> tuple[list[DeckRecord], MatchOutcomeIndex]:
+    def _load_match_decks(self, skip_ids=()) -> tuple[list[DeckRecord], MatchOutcomeIndex]:
         """Query match_records and match_records_archive for community decks.
 
         Returns both the deck corpus and the win/loss index for those same rows.
@@ -349,6 +349,10 @@ class DeckRecRepository:
         """
         decks: list[DeckRecord] = []
         outcomes = MatchOutcomeIndex()
+        # Only the first record per deck_id is built, and none for skip_ids:
+        # the same deck is played in many matches, and a record for every
+        # match side held far more than the final corpus during a build.
+        built_ids = set(skip_ids)
 
         if not self._db_path.exists():
             logger.warning("match_records.db not found: %s", self._db_path)
@@ -381,10 +385,16 @@ class DeckRecRepository:
                         # decks with no Curiosa link that never become records.
                         outcomes.add(card_names, is_win=(side == "winner"))
 
+                        _json_col, url_col, _name_col = self._MATCH_SIDE_COLS[side]
+                        url = (row[url_col] if url_col in row.keys() else None) or ""
+                        if self._extract_deck_id(url) in built_ids:
+                            continue
+
                         deck = self._build_match_deck(
                             row, side, deck_data, card_names, card_quantities
                         )
                         if deck:
+                            built_ids.add(deck.deck_id)
                             decks.append(deck)
 
             conn.close()

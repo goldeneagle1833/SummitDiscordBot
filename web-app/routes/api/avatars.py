@@ -16,6 +16,7 @@ from services.elo_gap import pre_match_sql
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS, AVATAR_IMAGES_DIR
 from utils.formatting import generate_pseudonym
 from utils.auth import is_admin
+from utils.deck_sql import AVATAR_DECKS, avatar_name as _avatar_name_sql
 
 logger = logging.getLogger(__name__)
 
@@ -276,11 +277,11 @@ def _collect_discord_rows(cur, event_filter):
     if event_filter in ("all", "current"):
         # Query current match_records (Discord-only to avoid double-counting with external)
         try:
-            cur.execute("""
-                SELECT json_deck_data_winner, json_deck_data_loser
+            cur.execute(f"""
+                SELECT {AVATAR_DECKS}
                 FROM match_records
-                WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))
+                WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
                   AND (source = 'Discord' OR source IS NULL)
             """)
             all_rows.extend(cur.fetchall())
@@ -302,11 +303,11 @@ def _collect_discord_rows(cur, event_filter):
     # Query archive for "all" or specific past event
     if event_filter == "all" and use_new_columns:
         try:
-            cur.execute("""
-                SELECT json_deck_data_winner, json_deck_data_loser
+            cur.execute(f"""
+                SELECT {AVATAR_DECKS}
                 FROM match_records_archive
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
@@ -320,7 +321,7 @@ def _collect_discord_rows(cur, event_filter):
                               " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))")
                 try:
                     cur.execute(f"""
-                        SELECT json_deck_data_winner, json_deck_data_loser
+                        SELECT {AVATAR_DECKS}
                         FROM match_records
                         WHERE {deck_where}
                           AND (source = 'Discord' OR source IS NULL)
@@ -331,7 +332,7 @@ def _collect_discord_rows(cur, event_filter):
                     pass
                 try:
                     cur.execute(f"""
-                        SELECT json_deck_data_winner, json_deck_data_loser
+                        SELECT {AVATAR_DECKS}
                         FROM match_records_archive
                         WHERE {deck_where}
                           AND timestamp >= ? AND timestamp <= ?
@@ -342,12 +343,12 @@ def _collect_discord_rows(cur, event_filter):
         else:
             # Specific past event - query archive by event_id
             try:
-                cur.execute("""
-                    SELECT json_deck_data_winner, json_deck_data_loser
+                cur.execute(f"""
+                    SELECT {AVATAR_DECKS}
                     FROM match_records_archive
                     WHERE event_id = ?
-                      AND ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                        OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))
+                      AND ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                        OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
                 """, (int(event_filter),))
                 all_rows.extend(cur.fetchall())
             except (sqlite3.OperationalError, ValueError):
@@ -382,7 +383,7 @@ def _collect_external_rows(cur, source_filter, event_start=None, event_end=None)
             where_parts.append("timestamp <= ?")
             params.append(event_end)
 
-        query = f"SELECT json_deck_data_winner, json_deck_data_loser FROM match_records WHERE {' AND '.join(where_parts)}"
+        query = f"SELECT {AVATAR_DECKS} FROM match_records WHERE {' AND '.join(where_parts)}"
         cur.execute(query, params)
         rows = cur.fetchall()
     except sqlite3.OperationalError as e:
@@ -405,7 +406,7 @@ def _collect_external_rows(cur, source_filter, event_start=None, event_end=None)
             ext_where.append("timestamp <= ?")
             ext_params.append(event_end)
 
-        query = f"SELECT json_deck_data_winner, json_deck_data_loser FROM external_matches WHERE {' AND '.join(ext_where)}"
+        query = f"SELECT {AVATAR_DECKS} FROM external_matches WHERE {' AND '.join(ext_where)}"
         cur.execute(query, ext_params)
         rows += cur.fetchall()
     except sqlite3.OperationalError:
@@ -420,27 +421,11 @@ def _deck_avatar_columns(cur):
     Avatar stats only need each deck's avatar, but the deck columns hold the
     whole card list (~15 KB each). Pulling every deck into Python took over
     ten seconds and ~1 GB per request. SQLite cuts each deck down to
-    {"avatar": [...]} instead, which _extract_avatar_from_deck reads exactly
-    like a full deck. Falls back to the full columns if SQLite has no JSON
-    functions.
+    {"avatar": [...]} instead (see utils/deck_sql.py), which
+    _extract_avatar_from_deck reads exactly like a full deck.
     """
-    global _sqlite_has_json
-    if _sqlite_has_json is None:
-        try:
-            cur.execute("SELECT json_object('a', json_extract('{\"a\": 1}', '$.a'))")
-            cur.fetchone()
-            _sqlite_has_json = True
-        except sqlite3.OperationalError:
-            _sqlite_has_json = False
-    if not _sqlite_has_json:
-        return "json_deck_data_winner, json_deck_data_loser"
-    return ", ".join(
-        f"CASE WHEN json_valid({col}) THEN json_object('avatar', json_extract({col}, '$.avatar')) END"
-        for col in ("json_deck_data_winner", "json_deck_data_loser")
-    )
+    return AVATAR_DECKS
 
-
-_sqlite_has_json = None
 
 # The Avatars page asks for the same match rows from several endpoints at once.
 # Rows are kept until match_records.db changes on disk, so repeat requests
@@ -463,13 +448,19 @@ def _match_db_signature():
 
 
 def _cached_rows(key, build):
-    key = (key, _match_db_signature())
+    signature = _match_db_signature()
+    key = (key, signature)
     with _rows_cache_lock:
         hit = _rows_cache.get(key)
     if hit is not None:
         return hit
     value = build()
     with _rows_cache_lock:
+        # Every match the bot records changes the signature, so entries from
+        # before it can never be hit again. Drop them rather than letting up
+        # to 16 dead copies of the match archive sit in memory.
+        for stale in [k for k in _rows_cache if k[1] != signature]:
+            del _rows_cache[stale]
         if len(_rows_cache) >= _ROWS_CACHE_SIZE:
             _rows_cache.pop(next(iter(_rows_cache)))
         _rows_cache[key] = value
@@ -1046,8 +1037,7 @@ def get_avatar(avatar_name):
                             loser_elo_change,
                             first_player,
                             match_time,
-                            json_deck_data_winner,
-                            json_deck_data_loser,
+                            {AVATAR_DECKS},
                             curiosa_url_winner,
                             curiosa_url_loser,
                             rowid as match_id,
@@ -1096,8 +1086,7 @@ def get_avatar(avatar_name):
                                 loser_elo_change,
                                 first_player,
                                 match_time,
-                                json_deck_data_winner,
-                                json_deck_data_loser,
+                                {AVATAR_DECKS},
                                 curiosa_url_winner,
                                 curiosa_url_loser,
                                 rowid as match_id,
@@ -1118,7 +1107,7 @@ def get_avatar(avatar_name):
                         # Season date-range filter - query both tables by timestamp
                         start_date, end_date = _get_event_date_range(event_filter)
                         if start_date and end_date:
-                            select_cols = """
+                            select_cols = f"""
                                 winner_id,
                                 winner_display_name,
                                 losser_id,
@@ -1128,8 +1117,7 @@ def get_avatar(avatar_name):
                                 loser_elo_change,
                                 first_player,
                                 match_time,
-                                json_deck_data_winner,
-                                json_deck_data_loser,
+                                {AVATAR_DECKS},
                                 curiosa_url_winner,
                                 curiosa_url_loser,
                                 rowid as match_id,
@@ -1160,8 +1148,7 @@ def get_avatar(avatar_name):
                                         loser_elo_change,
                                         first_player,
                                         match_time,
-                                        json_deck_data_winner,
-                                        json_deck_data_loser,
+                                        {AVATAR_DECKS},
                                         curiosa_url_winner,
                                         curiosa_url_loser,
                                         rowid as match_id,
@@ -1192,8 +1179,7 @@ def get_avatar(avatar_name):
                                     loser_elo_change,
                                     first_player,
                                     match_time,
-                                    json_deck_data_winner,
-                                    json_deck_data_loser,
+                                    {AVATAR_DECKS},
                                     curiosa_url_winner,
                                     curiosa_url_loser,
                                     rowid as match_id,
@@ -1243,8 +1229,7 @@ def get_avatar(avatar_name):
                         loser_elo_change,
                         first_player,
                         match_time,
-                        json_deck_data_winner,
-                        json_deck_data_loser,
+                        {AVATAR_DECKS},
                         curiosa_url_winner,
                         curiosa_url_loser,
                         rowid as match_id,
@@ -1519,11 +1504,11 @@ def get_avatar_popularity(avatar_name):
         use_new_columns = True
 
         try:
-            cur.execute("""
-                SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+            cur.execute(f"""
+                SELECT {AVATAR_DECKS}, timestamp
                 FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError as e:
@@ -1543,11 +1528,11 @@ def get_avatar_popularity(avatar_name):
 
         if use_new_columns:
             try:
-                cur.execute("""
-                    SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+                cur.execute(f"""
+                    SELECT {AVATAR_DECKS}, timestamp
                     FROM match_records_archive
-                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
                 """)
                 all_rows.extend(cur.fetchall())
             except sqlite3.OperationalError:
@@ -1659,11 +1644,11 @@ def get_all_avatars_popularity():
         use_new_columns = True
 
         try:
-            cur.execute("""
-                SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+            cur.execute(f"""
+                SELECT {AVATAR_DECKS}, timestamp
                 FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
@@ -1681,11 +1666,11 @@ def get_all_avatars_popularity():
 
         if use_new_columns:
             try:
-                cur.execute("""
-                    SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+                cur.execute(f"""
+                    SELECT {AVATAR_DECKS}, timestamp
                     FROM match_records_archive
-                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
                 """)
                 all_rows.extend(cur.fetchall())
             except sqlite3.OperationalError:
@@ -2132,9 +2117,16 @@ def get_elo_breakdown_matches():
                     tbl_source_filter = source_filter
                     tbl_params = params
 
+                # Only rows where this avatar played leave SQLite; the rest
+                # would be ~38 KB of deck JSON each, only to be skipped below.
+                avatar_where = (
+                    f"(lower({_avatar_name_sql('json_deck_data_winner')}) = lower(?)"
+                    f" OR lower({_avatar_name_sql('json_deck_data_loser')}) = lower(?))"
+                )
                 cur.execute(
-                    f"SELECT {base_cols}, {extra_cols} FROM {table} WHERE {deck_where} AND {tbl_source_filter}",
-                    tbl_params,
+                    f"SELECT {base_cols}, {extra_cols} FROM {table}"
+                    f" WHERE {deck_where} AND {tbl_source_filter} AND {avatar_where}",
+                    [*tbl_params, avatar_name, avatar_name],
                 )
                 all_rows.extend(cur.fetchall())
             except sqlite3.OperationalError as e:
@@ -2245,14 +2237,20 @@ def get_avatar_deck_composition(avatar_name):
         all_rows = []
         use_new_columns = True
 
+        # Only this avatar's decks leave SQLite; the other side comes back NULL.
+        # Reading every full deck into Python cost ~600 MB per request.
+        w_name = _avatar_name_sql("json_deck_data_winner")
+        l_name = _avatar_name_sql("json_deck_data_loser")
+        avatar_decks_sql = f"""
+            SELECT CASE WHEN {w_name} = :avatar THEN json_deck_data_winner END,
+                   CASE WHEN {l_name} = :avatar THEN json_deck_data_loser END
+            FROM {{table}}
+            WHERE {w_name} = :avatar OR {l_name} = :avatar
+        """
+
         # Query current match_records
         try:
-            cur.execute("""
-                SELECT json_deck_data_winner, json_deck_data_loser
-                FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
-            """)
+            cur.execute(avatar_decks_sql.format(table="match_records"), {"avatar": avatar_name})
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
             cur.execute("""
@@ -2266,12 +2264,7 @@ def get_avatar_deck_composition(avatar_name):
         # Also query match_records_archive for lifetime stats
         if use_new_columns:
             try:
-                cur.execute("""
-                    SELECT json_deck_data_winner, json_deck_data_loser
-                    FROM match_records_archive
-                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
-                """)
+                cur.execute(avatar_decks_sql.format(table="match_records_archive"), {"avatar": avatar_name})
                 all_rows.extend(cur.fetchall())
             except sqlite3.OperationalError:
                 pass  # Archive table may not exist
@@ -2638,11 +2631,11 @@ def list_all_avatars():
 
         # Query current match_records
         try:
-            cur.execute("""
-                SELECT json_deck_data_winner, json_deck_data_loser
+            cur.execute(f"""
+                SELECT {AVATAR_DECKS}
                 FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
@@ -2657,11 +2650,11 @@ def list_all_avatars():
         # Also query match_records_archive for lifetime stats
         if use_new_columns:
             try:
-                cur.execute("""
-                    SELECT json_deck_data_winner, json_deck_data_loser
+                cur.execute(f"""
+                    SELECT {AVATAR_DECKS}
                     FROM match_records_archive
-                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
                 """)
                 all_rows.extend(cur.fetchall())
             except sqlite3.OperationalError:

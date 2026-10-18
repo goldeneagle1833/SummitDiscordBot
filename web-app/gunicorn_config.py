@@ -18,6 +18,13 @@ worker_connections = 1000
 timeout = 120
 keepalive = 5
 
+# Recycle each worker after a few thousand requests. Python rarely hands freed
+# memory back to the OS, so a worker's RSS only ever ratchets up to the biggest
+# request it has served; recycling resets it on our schedule instead of the
+# OOM killer's. Jitter keeps both workers from restarting together.
+max_requests = 2000
+max_requests_jitter = 400
+
 # Logging
 errorlog = "/var/log/summit-web/error.log"
 accesslog = "/var/log/summit-web/access.log"

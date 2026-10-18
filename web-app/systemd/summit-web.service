@@ -12,6 +12,10 @@ WorkingDirectory=/root/Summit/SummitDiscordBot/web-app
 # Load environment variables from the shared .env file
 EnvironmentFile=/root/Summit/SummitDiscordBot/discord-bot/.env
 
+# Fewer malloc arenas: the cache-building background threads otherwise each
+# get their own arena, which fragments and keeps worker RSS high.
+Environment="MALLOC_ARENA_MAX=2"
+
 # Set PATH to ensure gunicorn is found
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 

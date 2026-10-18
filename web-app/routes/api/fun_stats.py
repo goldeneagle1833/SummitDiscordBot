@@ -9,6 +9,7 @@ from flask import Blueprint, jsonify, request
 
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS
 from utils.auth import is_admin
+from utils.deck_sql import avatar_only
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +219,12 @@ def _query_table(cur, table, columns, where_parts, params, rows, col_keys):
         available = {r[1] for r in cur.fetchall()}
 
         # Build SELECT list — NULL for missing columns
-        safe_cols = [col if col in available else "NULL" for col in col_keys]
+        # Fun stats only read each deck's avatar, so SQLite trims the decks
+        # (full rows cost ~1.3 GB in Python on the whole archive).
+        safe_cols = [
+            (avatar_only(col) if col.startswith("json_deck_data") else col) if col in available else "NULL"
+            for col in col_keys
+        ]
         col_str = ", ".join(safe_cols)
 
         # Filter WHERE clauses that reference missing columns.
@@ -247,7 +253,7 @@ def _query_table(cur, table, columns, where_parts, params, rows, col_keys):
 
         where_clause = " AND ".join(safe_where) if safe_where else "1=1"
         cur.execute(f"SELECT {col_str} FROM {table} WHERE {where_clause}", safe_params)
-        for row in cur.fetchall():
+        for row in cur:
             rows.append(dict(zip(col_keys, row)))
     except sqlite3.OperationalError as e:
         logger.warning(f"Could not query {table}: {e}")

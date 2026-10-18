@@ -187,3 +187,15 @@ class TestCurioEditor:
             from utils.auth import is_curio_editor, is_admin
             assert is_admin() is False
             assert is_curio_editor() is True
+
+
+class TestOldLoginUrl:
+    def test_redirects_to_react_login(self, client):
+        resp = client.get("/auth/login")
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/login")
+
+    def test_keeps_safe_next(self, client):
+        resp = client.get("/auth/login?next=/store")
+        assert resp.status_code == 302
+        assert "/login?next=" in resp.headers["Location"]

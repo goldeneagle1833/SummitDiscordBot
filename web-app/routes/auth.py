@@ -6,7 +6,7 @@ import secrets
 from urllib.parse import urlencode, urlparse
 
 import requests
-from flask import Blueprint, redirect, url_for, session, request, render_template
+from flask import Blueprint, redirect, url_for, session, request
 
 from webapp_config import (
     DISCORD_CLIENT_ID,
@@ -73,11 +73,12 @@ def _validate_oauth_state() -> bool:
 
 @auth_bp.route("/login")
 def login():
-    """Display login selection page."""
+    """Old login URL; the login page now lives in the React app at /login."""
     next_url = _safe_redirect_url(request.args.get("next"))
     if next_url:
         session["next_url"] = next_url
-    return render_template("pages/login.html")
+        return redirect("/login?" + urlencode({"next": next_url}))
+    return redirect("/login")
 
 
 @auth_bp.route("/discord")

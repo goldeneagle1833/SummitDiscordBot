@@ -178,3 +178,17 @@ def test_matrix_uses_rating_before_the_game(matrix, match_db):
     assert (cell["wins"], cell["losses"]) == (10, 0)
     # The 11 games without stored ratings keep today's brackets
     assert _row(data, 1600)["overall"]["total"] == 11
+
+
+# --- Per-avatar ELO breakdown / matrix (regression: 500 UnboundLocalError) ---
+
+def test_avatar_elo_breakdown_loads(matrix):
+    resp = matrix.get("/api/avatars/elo-breakdown?source=discord")
+    assert resp.status_code == 200
+    assert "avatars" in resp.get_json()
+
+
+def test_avatar_elo_matrix_loads(matrix):
+    resp = matrix.get("/api/avatar/Sparkmage/elo-matrix?source=discord")
+    assert resp.status_code == 200
+    assert resp.get_json()["avatar_name"] == "Sparkmage"

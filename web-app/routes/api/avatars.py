@@ -1852,17 +1852,10 @@ def get_avatar_elo_matrix(avatar_name):
         if not winner_id or not loser_id:
             continue
 
-        # Rating before the game when the record stores it, else today's rating
-        winner_pre, loser_pre = (row[7], row[8]) if len(row) > 8 else (None, None)
-        if winner_pre is not None and loser_pre is not None:
-            winner_elo, loser_elo = winner_pre, loser_pre
-            pre_match_games += 1
-        else:
-            winner_elo = elo_lookup.get(winner_id)
-            loser_elo = elo_lookup.get(loser_id)
-            if winner_elo is None or loser_elo is None:
-                continue
-        counted_games += 1
+        winner_elo = elo_lookup.get(winner_id)
+        loser_elo = elo_lookup.get(loser_id)
+        if winner_elo is None or loser_elo is None:
+            continue
 
         winner_bracket = elo_bracket(winner_elo)
         loser_bracket = elo_bracket(loser_elo)
@@ -1982,17 +1975,10 @@ def get_avatars_elo_breakdown():
         if not winner_id or not loser_id:
             continue
 
-        # Rating before the game when the record stores it, else today's rating
-        winner_pre, loser_pre = (row[7], row[8]) if len(row) > 8 else (None, None)
-        if winner_pre is not None and loser_pre is not None:
-            winner_elo, loser_elo = winner_pre, loser_pre
-            pre_match_games += 1
-        else:
-            winner_elo = elo_lookup.get(winner_id)
-            loser_elo = elo_lookup.get(loser_id)
-            if winner_elo is None or loser_elo is None:
-                continue
-        counted_games += 1
+        winner_elo = elo_lookup.get(winner_id)
+        loser_elo = elo_lookup.get(loser_id)
+        if winner_elo is None or loser_elo is None:
+            continue
 
         winner_bracket = elo_bracket(winner_elo)
         loser_bracket = elo_bracket(loser_elo)

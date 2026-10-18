@@ -526,6 +526,83 @@ export function avgEloGap(rows, days, now = new Date()) {
   return { games, avg: games ? Math.round(total / games) : null }
 }
 
+/** Change from `previous` to `current` as { diff, pct } (pct null when there was nothing before). */
+export function volumeChange(current, previous) {
+  const diff = current - previous
+  return { diff, pct: previous ? Math.round((diff / previous) * 100) : null }
+}
+
+function ChangeCell({ current, previous }) {
+  const { diff, pct } = volumeChange(current, previous)
+  const color = diff > 0 ? 'text-green-400' : diff < 0 ? 'text-red-400' : 'text-text-muted'
+  const sign = diff > 0 ? '+' : ''
+  return (
+    <td className={`py-1 pl-2 text-right whitespace-nowrap ${color}`}>
+      {sign}{diff.toLocaleString()}
+      <span className="text-xs ml-1">{pct != null ? `(${sign}${pct}%)` : diff ? '(new)' : ''}</span>
+    </td>
+  )
+}
+
+const VOLUME_WINDOWS = [
+  { key: 'day', title: 'Last 24 hours', current: 'Last 24h', previous: 'Day before' },
+  { key: 'week', title: 'Last 7 days', current: 'Last 7d', previous: 'Prior 7d' },
+]
+
+function VolumeTable({ types, data, win }) {
+  const total = side => types.reduce((n, t) => n + (data[side][t.key] || 0), 0)
+  // Hide game types with no games in either window, so the table stays short.
+  const rows = types.filter(t => data.current[t.key] || data.previous[t.key])
+  return (
+    <div>
+      <h4 className="text-xs font-semibold mb-2">{win.title} vs the {win.key === 'day' ? '24 hours' : '7 days'} before</h4>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-text-muted text-xs text-left border-b border-border">
+            <th className="py-1 pr-2 font-semibold">Game type</th>
+            <th className="py-1 px-2 text-right font-semibold">{win.current}</th>
+            <th className="py-1 px-2 text-right font-semibold">{win.previous}</th>
+            <th className="py-1 pl-2 text-right font-semibold">Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(t => (
+            <tr key={t.key} className="border-b border-border/50">
+              <td className="py-1 pr-2">{t.label}</td>
+              <td className="py-1 px-2 text-right">{(data.current[t.key] || 0).toLocaleString()}</td>
+              <td className="py-1 px-2 text-right">{(data.previous[t.key] || 0).toLocaleString()}</td>
+              <ChangeCell current={data.current[t.key] || 0} previous={data.previous[t.key] || 0} />
+            </tr>
+          ))}
+          <tr className="font-semibold">
+            <td className="py-1 pr-2">Total</td>
+            <td className="py-1 px-2 text-right">{total('current').toLocaleString()}</td>
+            <td className="py-1 px-2 text-right">{total('previous').toLocaleString()}</td>
+            <ChangeCell current={total('current')} previous={total('previous')} />
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function MatchVolumeCard({ volume }) {
+  if (!volume) return null
+  return (
+    <div className="bg-bg-raised border border-border rounded-lg p-4">
+      <h3 className="text-sm font-semibold mb-1">Games at a Glance</h3>
+      <p className="text-xs text-text-muted mb-3">
+        Games by type compared with the period before. Fixed windows, not the date range above.
+      </p>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {VOLUME_WINDOWS.map(win => (
+          <VolumeTable key={win.key} types={volume.types} data={volume.windows[win.key]} win={win} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function MatchesTab({ days, stats }) {
   const { summary, games_over_time, heatmap, activity_hours, elo_gaps } = stats
   const eloGap = useMemo(() => avgEloGap(elo_gaps, days), [elo_gaps, days])
@@ -539,6 +616,8 @@ function MatchesTab({ days, stats }) {
 
   return (
     <div className="space-y-6">
+      <MatchVolumeCard volume={stats.match_volume} />
+
       <TileGroup title="Match totals (all time)">
         <StatTile label="Total Matches" value={summary.total_matches?.toLocaleString()} />
         <StatTile label="Online Matches" value={summary.total_bot_matches?.toLocaleString()} />

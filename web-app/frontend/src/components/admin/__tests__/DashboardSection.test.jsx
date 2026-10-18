@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, fireEvent } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
-import DashboardSection, { weeksInRange, activityGrid, avgEloGap } from '../DashboardSection'
+import DashboardSection, { weeksInRange, activityGrid, avgEloGap, volumeChange } from '../DashboardSection'
 
 vi.mock('@/api/client', () => ({ get: vi.fn() }))
 
@@ -36,6 +36,13 @@ const DASHBOARD = {
   avg_games_per_player: [],
   dominance: {},
   heatmap: [],
+  match_volume: {
+    types: [{ key: 'ranked', label: 'Ranked' }, { key: 'casual', label: 'Casual' }, { key: 'rumble', label: 'Rumble' }],
+    windows: {
+      day: { current: { ranked: 12, casual: 3, rumble: 0 }, previous: { ranked: 10, casual: 0, rumble: 0 } },
+      week: { current: { ranked: 80, casual: 20, rumble: 0 }, previous: { ranked: 100, casual: 25, rumble: 0 } },
+    },
+  },
 }
 
 function mockApi() {
@@ -89,6 +96,16 @@ describe('DashboardSection', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Players' }))
     expect(await screen.findByText('Total Players (all time)')).toBeInTheDocument()
     expect(screen.getByText('321')).toBeInTheDocument()
+  })
+
+  it('compares games by type with the period before', async () => {
+    renderWithRouter(<DashboardSection />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Matches' }))
+    expect(await screen.findByText('Games at a Glance')).toBeInTheDocument()
+    expect(screen.getByText('(+20%)')).toBeInTheDocument() // ranked 10 -> 12
+    expect(screen.getByText('(new)')).toBeInTheDocument() // casual 0 -> 3
+    expect(screen.getAllByText('(-20%)')).toHaveLength(3) // week ranked, casual and total
+    expect(screen.queryByText('Rumble')).not.toBeInTheDocument() // no games either side
   })
 
   it('remembers the tab and range', async () => {
@@ -159,5 +176,16 @@ describe('avgEloGap', () => {
 
   it('has no average without games', () => {
     expect(avgEloGap([], 30, now)).toEqual({ games: 0, avg: null })
+  })
+})
+
+describe('volumeChange', () => {
+  it('gives the difference and percent', () => {
+    expect(volumeChange(15, 10)).toEqual({ diff: 5, pct: 50 })
+    expect(volumeChange(5, 10)).toEqual({ diff: -5, pct: -50 })
+  })
+
+  it('has no percent when there was nothing before', () => {
+    expect(volumeChange(3, 0)).toEqual({ diff: 3, pct: null })
   })
 })

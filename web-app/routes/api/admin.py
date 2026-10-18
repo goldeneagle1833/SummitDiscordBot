@@ -11,6 +11,7 @@ from flask import Blueprint, jsonify, request, session
 
 from services.activity_hours import activity_by_hour
 from services.elo_gap import elo_gap_by_day
+from services.match_volume import match_volume
 from services.admin import AdminService
 from repositories.audit import AuditRepository
 from repositories.avatar_image_settings import AvatarImageSettingsRepository
@@ -483,6 +484,9 @@ def dashboard_stats():
         # --- Average ELO gap between the two players (online games, per day) ---
         elo_gaps = elo_gap_by_day(cur, online_tables)
 
+        # --- Games by type: last 24h / 7 days vs the window before ---
+        volume = match_volume(cur, existing_tables)
+
         # --- Top player dominance (W-L records, win rate, streaks) ---
         # Get per-player wins
         cur.execute(f"""
@@ -730,6 +734,7 @@ def dashboard_stats():
             "heatmap": heatmap,
             "activity_hours": activity_hours,
             "elo_gaps": elo_gaps,
+            "match_volume": volume,
             "dominance": dominance,
             "avg_games_per_player": avg_games_per_player,
             "summary": {

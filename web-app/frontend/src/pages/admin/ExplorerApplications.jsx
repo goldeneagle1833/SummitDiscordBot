@@ -129,6 +129,12 @@ function ApplicationMetrics({ applications, statusFilter, onStatusFilter, fewVot
                   {percent(count, total)}%{' '}
                   <span className="text-xs text-text-muted font-normal">({count})</span>
                 </div>
+                <div className="mt-1.5 h-1.5 rounded-full bg-bg-surface overflow-hidden" aria-hidden="true">
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${percent(count, total)}%`, backgroundColor: STATUS_COLORS[o.value] }}
+                  />
+                </div>
               </button>
             )
           })}

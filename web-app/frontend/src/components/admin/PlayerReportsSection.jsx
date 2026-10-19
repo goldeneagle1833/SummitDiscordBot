@@ -94,6 +94,9 @@ export default function PlayerReportsSection() {
                       {e.match_type && (
                         <div className="text-xs mt-1 opacity-70 capitalize">{e.match_type} match</div>
                       )}
+                      {e.source === 'sorcery-online' && (
+                        <div className="text-xs mt-1 opacity-70">via Sorcery Online</div>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-text-muted max-w-[280px]">
                       {e.details ? (

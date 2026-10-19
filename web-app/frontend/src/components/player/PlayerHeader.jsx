@@ -87,6 +87,28 @@ function SettingsMenu({ items }) {
 }
 
 /**
+ * A best postseason finish, constructed or Limited ("Limited Champion").
+ * Hovering names the brackets it was earned in. Opens the Postseason tab.
+ */
+function PostseasonBadge({ label, entries = [], onClick }) {
+  const where = entries.filter((e) => e.label === label).map((e) => e.name)
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={where.length ? `${label}: ${where.join(', ')}` : undefined}
+      className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-bg-raised border border-secondary/40 text-sm hover:border-secondary"
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" className="text-secondary" aria-hidden="true">
+        <path d="M2 19 L12 5 L22 19 Z" /><path d="M10 19 v-5 h4 v5" />
+      </svg>
+      <strong className="text-secondary">{label}</strong>
+      <span className="text-text-muted">Postseason</span>
+    </button>
+  )
+}
+
+/**
  * The profile's hero card: name, avatar ratings, postseason badge, the
  * headline ELO / rank / record, the period picker and the owner's actions.
  */
@@ -126,17 +148,14 @@ export default function PlayerHeader({
               </ul>
             )}
             {marks?.best_label && (
-              <button
-                type="button"
+              <PostseasonBadge label={marks.best_label} entries={marks.entries} onClick={onPostseason} />
+            )}
+            {marks?.limited_best_label && (
+              <PostseasonBadge
+                label={marks.limited_best_label}
+                entries={marks.entries}
                 onClick={onPostseason}
-                className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-bg-raised border border-secondary/40 text-sm hover:border-secondary"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" className="text-secondary" aria-hidden="true">
-                  <path d="M2 19 L12 5 L22 19 Z" /><path d="M10 19 v-5 h4 v5" />
-                </svg>
-                <strong className="text-secondary">{marks.best_label}</strong>
-                <span className="text-text-muted">Postseason</span>
-              </button>
+              />
             )}
           </div>
         </div>

@@ -16,6 +16,7 @@ import time
 from datetime import datetime
 from urllib.parse import urlparse
 
+import repositories.limited_repo as limited_repo
 from repositories.brackets import BracketRepository
 from repositories.elo import EloRepository
 from repositories.events import EventRepository
@@ -30,20 +31,47 @@ from services.bracket_builder import (
 )
 from services.curiosa import CuriosaService
 from services.leaderboard import LeaderboardService, unique_players
-from services.sorcery_online_table import TableUnavailable, provision_match_table
+from services.sorcery_online_table import (
+    LIMITED_BRACKET_QUEUE_TYPE,
+    TableUnavailable,
+    provision_match_table,
+)
 from services.ticket_holders import ticket_holder_ids
 from utils.card_images import attach_images
+from utils.draftsorcery import fetch_draftsorcery_deck, is_draftsorcery_url
 
 logger = logging.getLogger(__name__)
 
-SEED_SOURCES = ("ticket_holders", "overall", "manual")
+SEED_SOURCES = ("ticket_holders", "overall", "limited", "manual")
+# The season top cut is constructed; a Limited season gets its own top 8.
+FORMATS = ("constructed", "limited")
 PUBLIC_SITE_URL = "https://sorcererssummit.com"
 # Bracket games are history, not season games, so they are logged here.
 ARCHIVE_TABLE = "match_records_archive"
+# Limited bracket games are filed with the Limited season they followed.
+LIMITED_ARCHIVE_TABLE = "limited_match_records_archive"
+# Same K as the Limited queue.
+LIMITED_K = 32
 
 
 class BracketError(Exception):
     """A bracket action that cannot be carried out."""
+
+
+def is_limited(bracket: dict | None) -> bool:
+    return (bracket or {}).get("format") == "limited"
+
+
+def _limited_elo(player_elo, opponent_elo, did_win, k=LIMITED_K):
+    """Standard ELO, as the Limited queue calculates it."""
+    expected = 1 / (1 + 10 ** ((opponent_elo - player_elo) / 400))
+    return round(player_elo + k * ((1 if did_win else 0) - expected))
+
+
+def _limited_user_id(user_id):
+    """limited_elo keys players by their Discord id as a number."""
+    user_id = str(user_id or "")
+    return int(user_id) if user_id.isdigit() else user_id
 
 
 def slugify(name: str) -> str:
@@ -110,7 +138,12 @@ class BracketService:
         Mirrors the bot's leaderboard message: current-event ELO, restricted to
         players who actually played this event, best first. In an Avatar-mode
         event each player is seeded once, at their best avatar entry.
+
+        The "limited" source is the Limited season ladder instead.
         """
+        if source == "limited":
+            return self._limited_seed_pool()
+
         data = self._leaderboard.get_event_leaderboard()
         standings = data.get("leaderboard") or []
         elo_key = "event_elo"
@@ -149,6 +182,28 @@ class BracketService:
             "ticket_filter_applied": bool(holders) and source == "ticket_holders",
         }
 
+    def _limited_seed_pool(self) -> dict:
+        """The Limited season ladder, best first. No ticket needed."""
+        ladder = limited_repo.get_limited_season_ladder()
+        names = self._site_names([p["user_id"] for p in ladder["players"]])
+        players = [
+            {
+                "user_id": p["user_id"],
+                "display_name": names.get(p["user_id"]) or p["display_name"],
+                "elo": p["elo"],
+                "games": (p.get("wins") or 0) + (p.get("losses") or 0),
+                "is_ticket_holder": False,
+                "avatar": None,
+            }
+            for p in ladder["players"]
+        ]
+        return {
+            "event": {"event_name": ladder["event_name"]} if ladder["event_name"] else None,
+            "players": players,
+            "ticket_roster_size": 0,
+            "ticket_filter_applied": False,
+        }
+
     # -- Draft management -----------------------------------------
 
     def create_bracket(
@@ -159,13 +214,20 @@ class BracketService:
         created_by: str | None = None,
         confirm_hours: int = 48,
         set_name: str | None = None,
+        format: str | None = None,
     ) -> dict:
-        """Create a draft bracket seeded with the top `size` players."""
+        """Create a draft bracket seeded with the top `size` players.
+
+        Seeding from the Limited ladder makes a Limited bracket.
+        """
         name = (name or "").strip()
         if not name:
             raise BracketError("A bracket needs a name")
         if source not in SEED_SOURCES:
             raise BracketError(f"Unknown seed source '{source}'")
+        format = format or ("limited" if source == "limited" else "constructed")
+        if format not in FORMATS:
+            raise BracketError(f"Unknown format '{format}'")
         try:
             size = int(size)
         except (TypeError, ValueError):
@@ -188,6 +250,7 @@ class BracketService:
                 "confirm_hours": confirm_hours,
                 "created_by": created_by,
                 "set_name": clean_set_name(set_name),
+                "format": format,
             }
         )
         if entrants:
@@ -805,11 +868,17 @@ class BracketService:
         if not deck_url:
             raise BracketError("A deck link is required")
 
-        raw = self._curiosa.fetch_deck_data(deck_url)
-        try:
-            deck = json.loads(raw)
-        except (TypeError, ValueError):
-            deck = {}
+        if is_draftsorcery_url(deck_url):
+            # Limited players draft on DraftSorcery; its decks have no name.
+            deck = fetch_draftsorcery_deck(deck_url) or {}
+            if deck:
+                deck["name"] = "DraftSorcery deck"
+        else:
+            raw = self._curiosa.fetch_deck_data(deck_url)
+            try:
+                deck = json.loads(raw)
+            except (TypeError, ValueError):
+                deck = {}
         if not deck:
             raise BracketError("Could not read that deck - check the link is a public deck")
 
@@ -948,14 +1017,21 @@ class BracketService:
     FINISH_LABELS = ((1, "Champion"), (2, "Finalist"), (4, "Top 4"), (8, "Top 8"))
 
     @staticmethod
-    def finish_label(placement: int | None) -> str | None:
-        """What a placement is called. Anything deeper simply made the cut."""
+    def finish_label(placement: int | None, format: str | None = None) -> str | None:
+        """What a placement is called. Anything deeper simply made the cut.
+
+        Limited finishes say so: "Limited Champion", "Limited Top 4".
+        """
         if not placement:
             return None
-        for limit, label in BracketService.FINISH_LABELS:
+        label = "Top cut"
+        for limit, name in BracketService.FINISH_LABELS:
             if placement <= limit:
-                return label
-        return "Top cut"
+                label = name
+                break
+        if format == "limited":
+            return f"Limited {label[0].upper()}{label[1:]}"
+        return label
 
     def placements(self, bracket_id: int) -> dict:
         """{seed: placement} for everyone whose run has ended.
@@ -988,13 +1064,18 @@ class BracketService:
         """Postseason honours per player, for showing beside their name.
 
         Only finished brackets count - a run that is still going has not been
-        placed yet.
+        placed yet. The name colour and yurts (wins, best) come from the
+        constructed top cut; Limited finishes are counted separately under
+        limited_wins / limited_best. Every finish of either kind is in
+        entries, with "finish" naming it without the Limited prefix.
         """
         marks = {}
         for bracket in self._repo.list_brackets(published_only=True):
             if bracket["status"] != "complete":
                 continue
 
+            limited = is_limited(bracket)
+            wins_key, best_key = ("limited_wins", "limited_best") if limited else ("wins", "best")
             placements = self.placements(bracket["bracket_id"])
             for entrant in self._repo.get_entrants(bracket["bracket_id"]):
                 user_id = str(entrant.get("user_id") or "")
@@ -1002,22 +1083,28 @@ class BracketService:
                 if not user_id or not placement:
                     continue
 
-                entry = marks.setdefault(user_id, {"wins": 0, "best": None, "entries": []})
+                entry = marks.setdefault(
+                    user_id,
+                    {"wins": 0, "best": None, "limited_wins": 0, "limited_best": None, "entries": []},
+                )
                 if placement == 1:
-                    entry["wins"] += 1
-                if entry["best"] is None or placement < entry["best"]:
-                    entry["best"] = placement
+                    entry[wins_key] += 1
+                if entry[best_key] is None or placement < entry[best_key]:
+                    entry[best_key] = placement
                 entry["entries"].append(
                     {
                         "slug": bracket["slug"],
                         "name": bracket["name"],
+                        "format": bracket.get("format") or "constructed",
                         "placement": placement,
-                        "label": self.finish_label(placement),
+                        "label": self.finish_label(placement, bracket.get("format")),
+                        "finish": self.finish_label(placement),
                     }
                 )
 
         for entry in marks.values():
             entry["best_label"] = self.finish_label(entry["best"])
+            entry["limited_best_label"] = self.finish_label(entry["limited_best"], "limited")
         return marks
 
     def get_player_postseason(self, user_id) -> list[dict]:
@@ -1056,11 +1143,13 @@ class BracketService:
                 {
                     "slug": bracket["slug"],
                     "name": bracket["name"],
+                    "format": bracket.get("format") or "constructed",
                     "status": bracket["status"],
                     "entrants": bracket["entrant_count"],
                     "seed": entrant["seed"],
                     "placement": placement,
-                    "label": self.finish_label(placement) or "Still in",
+                    "label": self.finish_label(placement, bracket.get("format")) or "Still in",
+                    "finish": self.finish_label(placement),
                     "wins": wins,
                     "losses": losses,
                     "played_at": bracket["published_at"] or bracket["created_at"],
@@ -1121,6 +1210,9 @@ class BracketService:
             raise BracketError("Bracket not found")
         if bracket["status"] != "complete":
             raise BracketError("Only a finished bracket can go on the Top 8 page")
+        if is_limited(bracket):
+            # The Top 8 page (and Deck Archetypes from it) is constructed only.
+            raise BracketError("Limited brackets don't go on the Top 8 page")
 
         entrants = self._repo.get_entrants(bracket_id)
         stored_decks = {d["seed"]: d for d in self._repo.get_decks(bracket_id)}
@@ -1178,6 +1270,8 @@ class BracketService:
 
     def _add_to_top8(self, bracket_id: int):
         """Publish to the Top 8 page as the final settles, without risking it."""
+        if is_limited(self._repo.get_bracket(bracket_id=bracket_id)):
+            return
         try:
             self.publish_to_top8(bracket_id)
         except Exception as e:
@@ -1297,9 +1391,13 @@ class BracketService:
             raise BracketError("Both players need a site account to open a table")
 
         try:
-            table = provision_match_table(
-                f"bracket-{bracket['bracket_id']}-m{match_no}", players
-            )
+            pairing_id = f"bracket-{bracket['bracket_id']}-m{match_no}"
+            if is_limited(bracket):
+                table = provision_match_table(
+                    pairing_id, players, queue_type=LIMITED_BRACKET_QUEUE_TYPE
+                )
+            else:
+                table = provision_match_table(pairing_id, players)
         except TableUnavailable as e:
             raise BracketError(str(e)) from e
 
@@ -1415,8 +1513,12 @@ class BracketService:
             },
         )
 
-        # Top cut games are history only: no ELO moves, on any ladder.
-        self._record_match(bracket, match)
+        if is_limited(bracket):
+            # Limited top cut games count toward Limited lifetime ELO.
+            self._record_limited_match(bracket, match)
+        else:
+            # Top cut games are history only: no ELO moves, on any ladder.
+            self._record_match(bracket, match)
 
         parent = advance_winner(match, matches)
         if parent:
@@ -1485,6 +1587,7 @@ class BracketService:
             return
         batch = {
             "bracket_name": bracket["name"],
+            "format": bracket.get("format") or "constructed",
             "bracket_url": pairings[0]["bracket_url"],
             "pairings": pairings,
         }
@@ -1517,6 +1620,7 @@ class BracketService:
         site = (os.environ.get("PUBLIC_SITE_URL") or PUBLIC_SITE_URL).rstrip("/")
         return {
             "bracket_name": bracket["name"],
+            "format": bracket.get("format") or "constructed",
             "round_title": match["round_title"],
             "match_no": match["match_no"],
             "first_round": match.get("round") == 1,
@@ -1529,6 +1633,9 @@ class BracketService:
 
     def _reverse_elo(self, bracket: dict, match: dict):
         try:
+            if is_limited(bracket):
+                self._reverse_limited_match(bracket, match)
+                return
             self._withdraw_match(bracket, match)
             self._refund_elo(bracket, match)
         except Exception as e:
@@ -1584,6 +1691,8 @@ class BracketService:
         """
         refunded = 0
         for bracket in self._repo.list_brackets(published_only=False):
+            if is_limited(bracket):
+                continue  # Limited bracket games are meant to be rated
             for match in self._repo.get_matches(bracket["bracket_id"]):
                 if not self._refund_elo(bracket, match):
                     continue
@@ -1613,6 +1722,8 @@ class BracketService:
         """
         moved = 0
         for bracket in self._repo.list_brackets(published_only=False):
+            if is_limited(bracket):
+                continue  # Filed in the Limited archive from the start
             for match in self._repo.get_matches(bracket["bracket_id"]):
                 row_id = match.get("match_record_id")
                 if not row_id or self._record_table(match) == ARCHIVE_TABLE:
@@ -1678,7 +1789,8 @@ class BracketService:
 
     @staticmethod
     def _match_comment(bracket: dict, match: dict) -> str:
-        return f"Top cut game - {bracket['name']} - {match['round_title']}"
+        kind = "Limited top cut game" if is_limited(bracket) else "Top cut game"
+        return f"{kind} - {bracket['name']} - {match['round_title']}"
 
     MATCH_SOURCE = "Bracket"
 
@@ -1746,6 +1858,130 @@ class BracketService:
                 "Bracket %s match %s: could not log the match, result still stands: %s",
                 bracket.get("slug"), match.get("match_no"), e,
             )
+
+    def _limited_event_id(self, bracket: dict) -> int:
+        """The Limited season a Limited bracket's games are filed under.
+
+        Same rule as the constructed archive: the season it was seeded from
+        once that has ended, otherwise the latest ended Limited season.
+        """
+        try:
+            events = limited_repo.get_limited_events()
+        except Exception as e:
+            logger.warning("Limited bracket archive: could not read seasons: %s", e)
+            events = []
+        named = next(
+            (e for e in events if e["event_name"] == bracket.get("elo_event_name")), None
+        )
+        if named and not named["is_active"]:
+            return named["event_id"]
+        ended = [e for e in events if not e["is_active"]]
+        if ended:
+            return max(ended, key=lambda e: (e["end_date"] or "", e["event_id"]))["event_id"]
+        if named:
+            return named["event_id"]
+        return events[0]["event_id"] if events else 0
+
+    def _record_limited_match(self, bracket: dict, match: dict):
+        """Rate a settled Limited bracket game and log it to Limited history.
+
+        Both players' lifetime Limited ELO moves, worked out from their
+        lifetime ratings with the Limited queue's K. Season Limited ELO is
+        left alone: the season is over. The game is filed in the Limited
+        archive under the season the bracket followed, with the change, so
+        undoing the result can give the points back.
+        """
+        try:
+            stored = self._repo.get_match(bracket["bracket_id"], match["match_no"])
+            winner_id = str(stored["winner_user_id"] or "")
+            if not winner_id:
+                return
+            on_p1 = winner_id == str(stored["p1_user_id"] or "")
+            loser_id = str((stored["p2_user_id"] if on_p1 else stored["p1_user_id"]) or "")
+            if not loser_id:
+                return
+            # Claimed first, so a result confirmed twice is only rated once.
+            if not self._repo.claim_elo_apply(bracket["bracket_id"], match["match_no"]):
+                return
+
+            names = self._site_names([winner_id, loser_id])
+            winner_name = names.get(winner_id) or (stored["p1_name"] if on_p1 else stored["p2_name"])
+            loser_name = names.get(loser_id) or (stored["p2_name"] if on_p1 else stored["p1_name"])
+
+            winner_key, loser_key = _limited_user_id(winner_id), _limited_user_id(loser_id)
+            winner_elo = limited_repo.get_limited_lifetime_elo(winner_key)
+            loser_elo = limited_repo.get_limited_lifetime_elo(loser_key)
+            winner_change = _limited_elo(winner_elo, loser_elo, True) - winner_elo
+            loser_change = _limited_elo(loser_elo, winner_elo, False) - loser_elo
+            limited_repo.adjust_limited_lifetime_elo(winner_key, winner_name, winner_change)
+            limited_repo.adjust_limited_lifetime_elo(loser_key, loser_name, loser_change)
+            self._repo.update_match(
+                bracket["bracket_id"],
+                match["match_no"],
+                {"winner_elo_change": winner_change, "loser_elo_change": loser_change},
+            )
+
+            decks = {d["seed"]: d for d in self._repo.get_decks(bracket["bracket_id"])}
+            winner_deck = decks.get(stored["p1_seed"] if on_p1 else stored["p2_seed"]) or {}
+            loser_deck = decks.get(stored["p2_seed"] if on_p1 else stored["p1_seed"]) or {}
+            row_id = limited_repo.insert_limited_archive_match(
+                self._limited_event_id(bracket),
+                {
+                    "reporter_id": stored.get("resolved_by"),
+                    "winner_id": winner_key,
+                    "winner_display_name": winner_name,
+                    "loser_id": loser_key,
+                    "loser_display_name": loser_name,
+                    "did_win": 1,
+                    "timestamp": datetime.now().isoformat(),
+                    "match_comment": self._match_comment(bracket, stored),
+                    "curiosa_url_winner": winner_deck.get("deck_url"),
+                    "curiosa_url_loser": loser_deck.get("deck_url"),
+                    "json_deck_data_winner": winner_deck.get("deck_json"),
+                    "json_deck_data_loser": loser_deck.get("deck_json"),
+                    "winner_elo_change": winner_change,
+                    "loser_elo_change": loser_change,
+                },
+            )
+            self._repo.update_match(
+                bracket["bracket_id"],
+                match["match_no"],
+                {"match_record_id": row_id, "match_record_table": LIMITED_ARCHIVE_TABLE},
+            )
+        except Exception as e:
+            logger.error(
+                "Limited bracket %s match %s: could not rate or log the match, result still stands: %s",
+                bracket.get("slug"), match.get("match_no"), e, exc_info=True,
+            )
+
+    def _reverse_limited_match(self, bracket: dict, match: dict):
+        """Undo a Limited bracket result: its history row and its ELO."""
+        stored = self._repo.get_match(bracket["bracket_id"], match["match_no"]) or match
+        row_id = stored.get("match_record_id")
+        if row_id:
+            limited_repo.delete_limited_archive_match(row_id)
+            self._repo.update_match(
+                bracket["bracket_id"],
+                match["match_no"],
+                {"match_record_id": None, "match_record_table": None},
+            )
+
+        winner_id = str(stored.get("winner_user_id") or "")
+        if not winner_id or not self._repo.claim_elo_refund(bracket["bracket_id"], match["match_no"]):
+            return
+        on_p1 = winner_id == str(stored["p1_user_id"] or "")
+        loser_id = str((stored["p2_user_id"] if on_p1 else stored["p1_user_id"]) or "")
+        for user_id, change in (
+            (winner_id, stored.get("winner_elo_change") or 0),
+            (loser_id, stored.get("loser_elo_change") or 0),
+        ):
+            if user_id and change:
+                limited_repo.adjust_limited_lifetime_elo(_limited_user_id(user_id), None, -change)
+        self._repo.update_match(
+            bracket["bracket_id"],
+            match["match_no"],
+            {"winner_elo_change": None, "loser_elo_change": None},
+        )
 
     def _withdraw_match(self, bracket: dict, match: dict):
         """Take the logged match back when its result is undone."""

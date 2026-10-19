@@ -148,7 +148,9 @@ function PlacementsCard({ marks, anchor }) {
           <li key={entry.slug} className="flex items-baseline justify-between gap-3">
             <span className="text-text-primary truncate">{entry.name}</span>
             <span
-              className={`shrink-0 font-medium ${FINISH_COLOURS[entry.label] || FINISH_COLOURS['Top cut']}`}
+              className={`shrink-0 font-medium ${
+                FINISH_COLOURS[entry.finish || entry.label] || FINISH_COLOURS['Top cut']
+              }`}
             >
               {entry.label}
             </span>
@@ -162,7 +164,9 @@ function PlacementsCard({ marks, anchor }) {
 
 /**
  * Wrap a player's name (usually their profile link) in their postseason
- * colour. Players with no finishes get their name back untouched.
+ * colour. The colour and yurts are the constructed top cut's; Limited
+ * finishes show in the hover list and on the profile's Limited badge.
+ * Players with no constructed finish get their name back untouched.
  */
 export default function PostseasonName({ playerId, children, yurtSize = 14, className = '' }) {
   const marks = useBracketMarks(playerId)

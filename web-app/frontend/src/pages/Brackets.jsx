@@ -1,19 +1,22 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { listBrackets, getMyBracketMatches } from '@/api/brackets'
 import Spinner from '@/components/ui/Spinner'
-import { pickActiveBracket } from '@/components/bracket/BracketSwitcher'
+import { formatOf, pickActiveBracket } from '@/components/bracket/BracketSwitcher'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
 import Bracket from './Bracket'
 
 /**
  * `/brackets` opens straight onto the event being played - or, between
- * events, the last one finished - with tabs to flip to any other.
+ * events, the last one finished - with tabs to flip to any other. That is
+ * the constructed top cut; `?format=limited` opens on the Limited one.
  */
 export default function Brackets() {
   usePageTitle('Season Top Cut')
   const { user } = useAuth()
+  const [params] = useSearchParams()
+  const wanted = params.get('format') === 'limited' ? 'limited' : 'constructed'
   const [brackets, setBrackets] = useState(null)
   const [myMatches, setMyMatches] = useState([])
   const [error, setError] = useState(null)
@@ -34,7 +37,8 @@ export default function Brackets() {
   if (error) return <p className="text-center text-accent-red py-12">{error}</p>
   if (!brackets) return <Spinner />
 
-  const active = pickActiveBracket(brackets)
+  const active =
+    pickActiveBracket(brackets.filter((b) => formatOf(b) === wanted)) || pickActiveBracket(brackets)
   if (!active) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-6">

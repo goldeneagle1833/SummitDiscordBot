@@ -16,6 +16,14 @@ export function pickActiveBracket(brackets = []) {
 
 const setKey = (bracket) => (bracket?.set_name || '').trim().toLowerCase()
 
+/** Constructed (the season top cut) or Limited (a Limited season's top 8). */
+export const formatOf = (bracket) => (bracket?.format === 'limited' ? 'limited' : 'constructed')
+
+export const FORMATS = [
+  { key: 'constructed', label: 'Constructed' },
+  { key: 'limited', label: 'Limited' },
+]
+
 /**
  * Brackets grouped by card set, in the order each set was last played (lists
  * come newest first). Brackets with no set land in "Other". Groups come from
@@ -45,9 +53,10 @@ const CHIP =
   'px-3 py-1 text-[11px] font-semibold uppercase tracking-wider border rounded-sm transition-colors'
 
 /**
- * Across the top of the bracket page: a filter by card set, then a tab per
- * bracket in that set, so a viewer can flip from the live top cut to an
- * older one without a detour through a list.
+ * Across the top of the bracket page: Constructed or Limited (once there is a
+ * Limited bracket), a filter by card set, then a tab per bracket in that set,
+ * so a viewer can flip from the live top cut to an older one without a
+ * detour through a list.
  */
 export default function BracketSwitcher({ brackets, currentSlug }) {
   const navigate = useNavigate()
@@ -55,14 +64,25 @@ export default function BracketSwitcher({ brackets, currentSlug }) {
 
   if (!brackets || brackets.length < 2) return null
 
-  const groups = groupBrackets(brackets)
   const current = brackets.find((b) => b.slug === currentSlug)
+  const currentFormat = formatOf(current)
+  const hasLimited = brackets.some((b) => formatOf(b) === 'limited')
+  const pool = hasLimited ? brackets.filter((b) => formatOf(b) === currentFormat) : brackets
+
+  const groups = groupBrackets(pool)
   const currentKey = setKey(current)
   const hasSets = groups.some((g) => g.key)
   const selectedKey = showAll || !hasSets ? null : currentKey
   const visible = selectedKey === null
-    ? brackets
-    : groups.find((g) => g.key === selectedKey)?.brackets || brackets
+    ? pool
+    : groups.find((g) => g.key === selectedKey)?.brackets || pool
+
+  function chooseFormat(format) {
+    setShowAll(false)
+    if (format === currentFormat) return
+    const target = pickActiveBracket(brackets.filter((b) => formatOf(b) === format))
+    if (target) navigate(`/brackets/${target.slug}`)
+  }
 
   function chooseSet(group) {
     setShowAll(false)
@@ -73,6 +93,36 @@ export default function BracketSwitcher({ brackets, currentSlug }) {
 
   return (
     <div className="space-y-3">
+      {hasLimited && (
+        <div role="group" aria-label="Format" className="inline-flex border border-border rounded-sm overflow-hidden">
+          {FORMATS.map((format) => {
+            const selected = format.key === currentFormat
+            const live = brackets.some((b) => formatOf(b) === format.key && b.status === 'published')
+            return (
+              <button
+                key={format.key}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => chooseFormat(format.key)}
+                className={`px-4 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors ${
+                  selected ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                {format.label}
+                {live && (
+                  <span
+                    aria-label="live"
+                    className={`inline-block w-1.5 h-1.5 ml-2 align-middle ${
+                      selected ? 'bg-black' : 'bg-accent-green'
+                    }`}
+                  />
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {hasSets && (
         <div role="group" aria-label="Filter by set" className="flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted mr-1">

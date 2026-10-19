@@ -17,6 +17,8 @@ from services.postseason import (
     bracket_name,
     create_draft_bracket,
     extract_end_time,
+    limited_bracket_name,
+    limited_top_cut,
     round_one_byes,
     seed_top_cut,
     select_top_cut,
@@ -329,3 +331,89 @@ async def test_ending_the_season_hands_out_the_top_cut_role():
     assert summary["top_cut_role"]["role_id"] == 77
     embed = LFGCog._season_end_embed(MagicMock(), summary, seeded, None, None)
     assert "<@&77>" in embed.description and "Top Cut channel" in embed.description
+
+
+# ── Limited season bracket ──
+
+
+def _limited_season(players):
+    """A Limited season in progress: [(user_id, name, season_elo, games)]."""
+    from repositories.limited_repo import create_limited_tables
+
+    create_limited_tables()
+    elo = sqlite3.connect("elo.db")
+    matches = sqlite3.connect("match_records.db")
+    for user_id, name, season_elo, games in players:
+        elo.execute(
+            "INSERT INTO limited_elo (user_id, user_display_name, elo, lifetime_elo) VALUES (?, ?, ?, 1500)",
+            (user_id, name, season_elo),
+        )
+        for _ in range(games):
+            matches.execute(
+                "INSERT INTO limited_match_records (winner_id, loser_id) VALUES (?, 5555)", (user_id,)
+            )
+    elo.commit()
+    matches.commit()
+    elo.close()
+    matches.close()
+
+
+def test_limited_top_cut_is_the_top_8_on_the_limited_ladder():
+    _limited_season(
+        [(i, f"L{i}", 1600 - i, 3) for i in range(1, 11)]
+        + [(99, "Idle", 1900, 0)]  # no games this season: not on the ladder
+    )
+
+    top = limited_top_cut()
+
+    assert [e.user_id for e in top] == list(range(1, 9))
+    assert top[0].event_elo == 1599 and top[0].games_played == 3
+
+
+def test_limited_bracket_names():
+    assert limited_bracket_name("Limited Season 3") == "Limited Season 3 Top 8"
+    assert limited_bracket_name("Fall Draft") == "Fall Draft Limited Top 8"
+
+
+def test_limited_draft_bracket_is_written_for_the_website():
+    _bracket_tables()  # the site hasn't added its format column yet
+    seeded = [_entry(uid, 1700 - uid) for uid in range(1, 9)]
+
+    bracket = create_draft_bracket("Limited Season 3", seeded, created_by=99, format="limited")
+
+    assert bracket["name"] == "Limited Season 3 Top 8"
+    conn = sqlite3.connect("match_records.db")
+    row = conn.execute(
+        "SELECT entrant_count, bracket_size, seeded_from, elo_event_name, format FROM brackets"
+    ).fetchone()
+    entrants = conn.execute(
+        "SELECT seed, user_id, is_ticket_holder FROM bracket_entrants ORDER BY seed"
+    ).fetchall()
+    conn.close()
+    assert row == (8, 8, "limited", "Limited Season 3", "limited")
+    assert [e[1] for e in entrants] == [str(i) for i in range(1, 9)]
+    assert all(e[2] == 0 for e in entrants)
+
+
+@pytest.mark.asyncio
+async def test_ending_a_limited_season_drafts_its_bracket():
+    _bracket_tables()
+    seeded = [_entry(uid, 1700 - uid) for uid in range(1, 9)]
+    cog = MagicMock()
+    cog._assign_top_cut_role = AsyncMock()
+
+    drafted = await LFGCog._draft_limited_bracket(cog, "Limited Season 3", seeded, created_by=1)
+
+    assert drafted["bracket"]["name"] == "Limited Season 3 Top 8"
+    assert drafted["error"] is None
+    # No Limited role configured, so nobody's roles change.
+    cog._assign_top_cut_role.assert_not_awaited()
+    text = LFGCog._limited_top_cut_text(drafted)
+    assert "<@1>" in text and "Limited Season 3 Top 8" in text
+
+
+@pytest.mark.asyncio
+async def test_a_limited_season_with_too_few_players_says_so():
+    drafted = await LFGCog._draft_limited_bracket(MagicMock(), "Limited Season 3", [_entry(1, 1600)])
+    assert drafted["bracket"] is None
+    assert "could not be drafted" in LFGCog._limited_top_cut_text(drafted)

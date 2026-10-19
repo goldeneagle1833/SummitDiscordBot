@@ -251,6 +251,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
           <p className="text-sm text-text-muted tabular-nums">
             {entrants.length} players
             {bracket.elo_event_name ? ` · seeded from ${bracket.elo_event_name}` : ''}
+            {bracket.format === 'limited' ? ' · games count toward lifetime Limited ELO' : ''}
             {bracketHidden
               ? ' · waiting on decklists'
               : bracket.status === 'complete'
@@ -297,7 +298,9 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
             <span className="w-14 h-14 rounded-sm bg-bg-elevated" />
           )}
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-muted">Champion</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-muted">
+              {bracket.format === 'limited' ? 'Limited Champion' : 'Champion'}
+            </p>
             <p className="text-2xl font-semibold text-amber-400 leading-tight">
               {champion.user_id ? (
                 <Link to={`/player/${champion.user_id}`} className="hover:underline">
@@ -309,7 +312,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
             </p>
             <p className="text-sm text-text-muted">Seed {champion.seed}</p>
           </div>
-          {(bracket.event_folder || (isAdmin && bracket.status === 'complete')) && (
+          {(bracket.event_folder || (isAdmin && bracket.status === 'complete' && bracket.format !== 'limited')) && (
             <div className="ml-auto flex flex-col items-end gap-1 text-sm">
               {bracket.event_folder && (
                 <Link
@@ -376,7 +379,13 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
         />
       )}
 
-      <DeckPanel slug={slug} roster={decks} isAdmin={isAdmin} onChanged={loadDecks} />
+      <DeckPanel
+        slug={slug}
+        roster={decks}
+        isAdmin={isAdmin}
+        onChanged={loadDecks}
+        limited={bracket.format === 'limited'}
+      />
 
       {reporting && (
         <ReportModal

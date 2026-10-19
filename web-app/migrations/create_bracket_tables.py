@@ -182,6 +182,14 @@ def create_bracket_tables(db_path=None):
             "UPDATE brackets SET set_name = 'Gothic' WHERE LOWER(name) LIKE '%gothic%'"
         )
 
+    # Which game a bracket is for: the constructed season top cut, or the
+    # Limited season's top 8. Every bracket before Limited ones existed was
+    # constructed.
+    if "format" not in bracket_columns:
+        cursor.execute(
+            "ALTER TABLE brackets ADD COLUMN format TEXT NOT NULL DEFAULT 'constructed'"
+        )
+
     conn.commit()
     conn.close()
     logger.info("Bracket tables ensured")

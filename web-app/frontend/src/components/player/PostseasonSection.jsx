@@ -92,7 +92,7 @@ export default function PostseasonSection({ playerId }) {
                   </Link>
                   <span
                     className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-                      GOLD_LABELS.has(entry.label)
+                      GOLD_LABELS.has(entry.finish || entry.label)
                         ? 'border-secondary/50 text-secondary'
                         : 'border-border text-text-muted'
                     }`}

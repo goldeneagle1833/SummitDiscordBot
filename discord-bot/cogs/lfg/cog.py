@@ -93,13 +93,17 @@ from services.avatar_mode import (
 )
 from services.ranked_eligibility import MIN_GAMES_FOR_RANKED, ranked_block_message
 from services.postseason import (
+    DEFAULT_LIMITED_TOP_CUT_CHANNEL_ID,
     DEFAULT_TOP_CUT_ROLE_ID,
+    LIMITED_TOP_CUT_SIZE,
     TOP_CUT_LADDER_SEEDS,
     TOP_CUT_SIZE,
     bracket_name,
     create_draft_bracket,
     extract_end_time,
     final_ladder,
+    limited_bracket_name,
+    limited_top_cut,
     round_one_byes,
     seed_top_cut,
     select_top_cut,
@@ -717,8 +721,11 @@ class LFGCog(commands.Cog):
                 holders.add(user_id)
         return holders
 
-    async def _assign_top_cut_role(self, qualifier_ids) -> dict:
+    async def _assign_top_cut_role(self, qualifier_ids, role_id=None, label="Top Cut") -> dict:
         """Hand the Top Cut role to this season's qualifiers.
+
+        ``role_id`` picks another role (the Limited top cut's); by default it
+        is the Top Cut role.
 
         Last season's holders lose the role first, so the Top Cut channel only
         ever holds the current top cut. Returns counts (and any failures) for
@@ -729,16 +736,16 @@ class LFGCog(commands.Cog):
         if not qualifier_ids:
             return result
 
-        role_id = getattr(config, "TOP_CUT_ROLE_ID", None) or DEFAULT_TOP_CUT_ROLE_ID
+        role_id = role_id or getattr(config, "TOP_CUT_ROLE_ID", None) or DEFAULT_TOP_CUT_ROLE_ID
         guild = self.bot.get_guild(config.GUILD_ID)
         role = guild.get_role(role_id) if guild else None
         if role is None:
-            result["error"] = f"Top Cut role {role_id} was not found in the server."
+            result["error"] = f"{label} role {role_id} was not found in the server."
             logger.error(result["error"])
             return result
         result["role_id"] = role.id
 
-        reason = "Season ended: Top Cut role moved to the new qualifiers"
+        reason = f"Season ended: {label} role moved to the new qualifiers"
         holders_before = list(role.members)
         for member in holders_before:
             if member.id in qualifier_ids:
@@ -749,7 +756,7 @@ class LFGCog(commands.Cog):
                 result["removed"] += 1
             except discord.HTTPException as e:
                 result["failed"].append(member.id)
-                logger.error(f"Could not remove the Top Cut role from {member.id}: {e}")
+                logger.error(f"Could not remove the {label} role from {member.id}: {e}")
 
         for user_id in qualifier_ids - {member.id for member in holders_before}:
             member = guild.get_member(user_id)
@@ -760,7 +767,7 @@ class LFGCog(commands.Cog):
                 result["added"] += 1
             except discord.HTTPException as e:
                 result["failed"].append(user_id)
-                logger.error(f"Could not give the Top Cut role to {user_id}: {e}")
+                logger.error(f"Could not give the {label} role to {user_id}: {e}")
         return result
 
     async def _end_season_with_top_cut(self, active_event, created_by=None):
@@ -803,6 +810,82 @@ class LFGCog(commands.Cog):
                 bracket_error = str(e)
                 logger.error(f"Could not draft the postseason bracket: {e}", exc_info=True)
         return summary, seeded, bracket, bracket_error
+
+    async def _draft_limited_bracket(self, season_name, seeded, created_by=None) -> dict:
+        """Draft the Limited season's top 8 bracket once its season is archived.
+
+        ``seeded`` is the Limited ladder's top 8, read before archiving.
+        Hands out config.LIMITED_TOP_CUT_ROLE_ID when one is set. Returns
+        {season_name, seeded, bracket, error, role}.
+        """
+        out = {"season_name": season_name, "seeded": seeded, "bracket": None, "error": None, "role": None}
+        role_id = getattr(config, "LIMITED_TOP_CUT_ROLE_ID", None)
+        if role_id and seeded:
+            try:
+                out["role"] = await self._assign_top_cut_role(
+                    (e.user_id for e in seeded), role_id=role_id, label="Limited Top 8"
+                )
+            except Exception as e:
+                out["role"] = {"error": str(e)}
+                logger.error(f"Limited Top 8 role update failed: {e}", exc_info=True)
+
+        if len(seeded) < 2:
+            out["error"] = "fewer than 2 players played Limited this season"
+            return out
+        try:
+            out["bracket"] = create_draft_bracket(
+                season_name, seeded, created_by=created_by, format="limited"
+            )
+        except Exception as e:
+            out["error"] = str(e)
+            logger.error(f"Could not draft the Limited bracket: {e}", exc_info=True)
+        return out
+
+    @staticmethod
+    def _limited_top_cut_text(drafted) -> str:
+        """The Limited top 8 and what happened to its bracket, for embeds."""
+        seeded = drafted["seeded"]
+        if not seeded:
+            return "Nobody played Limited this season, so there is no Limited top 8."
+        lines = [
+            f"`{seed:>2}` <@{entry.user_id}> — {entry.event_elo}"
+            for seed, entry in enumerate(seeded, start=1)
+        ]
+        if drafted["bracket"]:
+            lines.append(
+                f"\nThe **{drafted['bracket']['name']}** has been drafted. It goes live on the "
+                "website once the admins have reviewed and published it."
+            )
+        else:
+            lines.append(
+                f"\nThe **{limited_bracket_name(drafted['season_name'])}** could not be drafted "
+                f"automatically ({drafted['error']}); an admin can set it up on the website."
+            )
+        role_id = (drafted.get("role") or {}).get("role_id")
+        if role_id:
+            lines.append(f"Qualifiers now have the <@&{role_id}> role.")
+        return "\n".join(lines)
+
+    async def _announce_limited_top_cut(self, drafted):
+        """Post the Limited top 8 in the Limited top 8 channel."""
+        if not drafted["seeded"]:
+            return
+        channel_id = getattr(config, "LIMITED_TOP_CUT_CHANNEL_ID", None) or DEFAULT_LIMITED_TOP_CUT_CHANNEL_ID
+        channel = self.bot.get_channel(int(channel_id))
+        if not channel:
+            logger.warning("Limited top 8 channel %s not found; Limited top cut not posted", channel_id)
+            return
+        try:
+            await channel.send(
+                embed=discord.Embed(
+                    title=f"🏁 {drafted['season_name']}: Limited Top {LIMITED_TOP_CUT_SIZE}",
+                    description=self._limited_top_cut_text(drafted),
+                    color=discord.Color.orange(),
+                ),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except Exception as e:
+            logger.error(f"Could not post the Limited top cut: {e}", exc_info=True)
 
     def _season_end_embed(self, summary, seeded, bracket, bracket_error) -> discord.Embed:
         """The public season-end message: final numbers and the seeded top cut."""
@@ -4266,8 +4349,17 @@ class LFGCog(commands.Cog):
                 import time
                 event_id = -int(time.time())
 
+            # The ending season's top 8 has to be read before it is archived
+            limited_seeded = limited_top_cut() if active_limited else []
+
             # Archive current limited data (also ends the active limited event)
             limited_summary = archive_limited_for_event(event_id, season_name)
+
+            drafted = None
+            if active_limited:
+                drafted = await self._draft_limited_bracket(
+                    active_limited["event_name"], limited_seeded, created_by=ctx.author.id
+                )
 
             # Reset limited ELO and start a new limited event
             reset_limited_for_new_event(season_name)
@@ -4295,6 +4387,13 @@ class LFGCog(commands.Cog):
                     inline=False,
                 )
 
+            if drafted:
+                embed.add_field(
+                    name=f"Limited Top {LIMITED_TOP_CUT_SIZE}: {drafted['season_name']}",
+                    value=self._limited_top_cut_text(drafted)[:1024],
+                    inline=False,
+                )
+
             embed.add_field(
                 name="New Season",
                 value="All limited ELO ratings have been reset to 1500.\nConstructed season is unaffected.",
@@ -4303,6 +4402,8 @@ class LFGCog(commands.Cog):
 
             embed.set_footer(text=f"Started by {ctx.author.display_name}")
             await ctx.send(embed=embed)
+            if drafted:
+                await self._announce_limited_top_cut(drafted)
 
             log_admin_action(
                 ctx.author.id,
@@ -4354,7 +4455,12 @@ class LFGCog(commands.Cog):
 
             event_id = active_limited["event_id"]
             event_name = active_limited["event_name"]
+            # The top 8 has to be read before the season is archived
+            limited_seeded = limited_top_cut()
             limited_summary = archive_limited_for_event(event_id, event_name)
+            drafted = await self._draft_limited_bracket(
+                event_name, limited_seeded, created_by=ctx.author.id
+            )
 
             limited_top_str = (
                 "\n".join(
@@ -4377,6 +4483,11 @@ class LFGCog(commands.Cog):
                 inline=False,
             )
             embed.add_field(
+                name=f"Limited Top {LIMITED_TOP_CUT_SIZE}",
+                value=self._limited_top_cut_text(drafted)[:1024],
+                inline=False,
+            )
+            embed.add_field(
                 name="What's Next?",
                 value=(
                     "No limited season is currently active.\n"
@@ -4386,6 +4497,7 @@ class LFGCog(commands.Cog):
             )
             embed.set_footer(text=f"Ended by {ctx.author.display_name}")
             await ctx.send(embed=embed)
+            await self._announce_limited_top_cut(drafted)
 
             log_admin_action(
                 ctx.author.id,

@@ -96,7 +96,7 @@ function DeckDetail({ slug, seed }) {
   )
 }
 
-function SubmitForm({ slug, seed, isAdmin, onDone }) {
+function SubmitForm({ slug, seed, isAdmin, onDone, limited = false }) {
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -126,7 +126,7 @@ function SubmitForm({ slug, seed, isAdmin, onDone }) {
         className={`${INPUT} py-1 flex-1 min-w-[16rem]`}
         value={url}
         onChange={(e) => setUrl(e.target.value)}
-        placeholder="Paste your deck link"
+        placeholder={limited ? 'Paste your DraftSorcery deck link' : 'Paste your deck link'}
         aria-label={isAdmin ? `Deck link for seed ${seed}` : 'Your deck link'}
         required
       />
@@ -148,7 +148,7 @@ function SubmitForm({ slug, seed, isAdmin, onDone }) {
  * A deck is hidden from everyone but its owner (and admins) until that player
  * is knocked out, so nobody can scout an opponent they have still to play.
  */
-export default function DeckPanel({ slug, roster, isAdmin = false, onChanged }) {
+export default function DeckPanel({ slug, roster, isAdmin = false, onChanged, limited = false }) {
   const [open, setOpen] = useState(null)
   const [adding, setAdding] = useState(null)
 
@@ -174,7 +174,7 @@ export default function DeckPanel({ slug, roster, isAdmin = false, onChanged }) 
               ? 'Your deck is saved. Only you can see it until you are knocked out.'
               : 'Submit your decklist. Only you can see it until you are knocked out.'}
           </p>
-          <SubmitForm slug={slug} onDone={onChanged} />
+          <SubmitForm slug={slug} onDone={onChanged} limited={limited} />
         </div>
       )}
 
@@ -278,7 +278,9 @@ export default function DeckPanel({ slug, roster, isAdmin = false, onChanged }) 
                           rel="noopener noreferrer"
                           className="text-secondary hover:underline"
                         >
-                          Open the live deck on Curiosa
+                          {player.deck_url.includes('draftsorcery.com')
+                            ? 'Open the deck on DraftSorcery'
+                            : 'Open the live deck on Curiosa'}
                         </a>
                       </>
                     )}

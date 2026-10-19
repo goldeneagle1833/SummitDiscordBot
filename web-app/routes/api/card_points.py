@@ -3,7 +3,6 @@
 import json
 import logging
 
-import requests as http_requests
 from flask import Blueprint, jsonify, request
 
 from repositories.card_catalog import CardCatalogRepository
@@ -11,6 +10,7 @@ from repositories.card_points import CardPointsRepository
 from services.curiosa import CuriosaService
 from utils.auth import require_admin, require_card_points_admin
 from utils.card_images import card_image_key, get_card_image_map
+from utils.draftsorcery import fetch_draftsorcery_deck, is_draftsorcery_url
 
 logger = logging.getLogger(__name__)
 
@@ -155,68 +155,12 @@ def get_card_points_history():
 
 def _is_draftsorcery_url(url: str) -> bool:
     """Check if a URL is from draftsorcery.com."""
-    return "draftsorcery.com" in url.lower()
+    return is_draftsorcery_url(url)
 
 
 def _fetch_draftsorcery_deck(url: str) -> dict | None:
-    """Fetch and normalize a deck from DraftSorcery API.
-
-    Returns deck data in the same format as Curiosa (with avatar, spellbook, atlas, sideboard sections)
-    or None on failure.
-    """
-    from urllib.parse import urlparse, parse_qs
-
-    parsed = urlparse(url)
-    params = parse_qs(parsed.query)
-    deck_code = params.get("deck", [None])[0]
-    if not deck_code:
-        return None
-
-    try:
-        response = http_requests.get(
-            f"https://draftsorcery.com/api/decks/{deck_code}",
-            timeout=30,
-        )
-        if response.status_code != 200:
-            logger.warning(f"DraftSorcery API returned status {response.status_code}")
-            return None
-
-        data = response.json()
-    except (http_requests.exceptions.RequestException, json.JSONDecodeError) as e:
-        logger.warning(f"DraftSorcery API request failed: {e}")
-        return None
-
-    # board entries have full card metadata; fall back to deck.cards
-    deck_cards = data.get("board") or data.get("deck", {}).get("cards", [])
-    if not deck_cards:
-        return None
-
-    # Count card occurrences and group by type
-    card_counts = {}
-    for entry in deck_cards:
-        card_info = entry.get("card", {})
-        name = card_info.get("name", "")
-        card_type = (card_info.get("type") or "").lower()
-        if not name:
-            continue
-        if name not in card_counts:
-            card_counts[name] = {"name": name, "quantity": 0, "type": card_type}
-        card_counts[name]["quantity"] += 1
-
-    # Map to Curiosa-style sections
-    avatar = []
-    spellbook = []
-    atlas = []
-    for info in card_counts.values():
-        entry = {"name": info["name"], "quantity": info["quantity"]}
-        if info["type"] == "avatar":
-            avatar.append(entry)
-        elif info["type"] == "site":
-            atlas.append(entry)
-        else:
-            spellbook.append(entry)
-
-    return {"avatar": avatar, "spellbook": spellbook, "atlas": atlas, "sideboard": []}
+    """Fetch and normalize a deck from DraftSorcery API."""
+    return fetch_draftsorcery_deck(url)
 
 
 @card_points_bp.route("/check-deck", methods=["POST"])

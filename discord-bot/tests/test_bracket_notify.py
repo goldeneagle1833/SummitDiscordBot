@@ -182,3 +182,17 @@ def test_no_matching_channel_is_none():
     bot.get_guild.return_value = guild
 
     assert find_top_cut_channel(bot, 1, None) is None
+
+
+def test_limited_pairings_say_they_count_toward_limited_elo():
+    payload = {**_payload(), "format": "limited"}
+    dm = build_pairing_embed(payload, payload["players"][0])
+    post = build_channel_embed({"pairings": [payload], "format": "limited"})
+
+    assert "lifetime Limited ELO" in dm.footer.text
+    assert "lifetime Limited ELO" in post.footer.text
+
+
+def test_constructed_pairings_still_say_no_elo():
+    payload = _payload()
+    assert build_pairing_embed(payload, payload["players"][0]).footer.text == "Top cut games do not affect ELO."

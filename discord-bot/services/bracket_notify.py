@@ -3,7 +3,8 @@
 The web app settles bracket results. When a bracket is published, or a
 result fills both seats of the next match, it posts the new pairings to the
 bot's loopback API. This module DMs each player who they play, in which
-round, and where to go, then posts the pairings in the Top Cut channel.
+round, and where to go, then posts the pairings in the Top Cut channel (the
+Limited top 8 channel for a Limited bracket).
 """
 
 import logging
@@ -20,6 +21,19 @@ def _mention(user_id, name) -> str:
         return f"<@{int(user_id)}> ({name})" if name else f"<@{int(user_id)}>"
     except (TypeError, ValueError):
         return name or "TBD"
+
+
+def is_limited(payload: dict) -> bool:
+    if payload.get("format") == "limited":
+        return True
+    return any(p.get("format") == "limited" for p in payload.get("pairings") or [])
+
+
+def elo_note(payload: dict) -> str:
+    """What a bracket game does to ELO, for the embed footers."""
+    if is_limited(payload):
+        return "Limited top cut games count toward lifetime Limited ELO."
+    return "Top cut games do not affect ELO."
 
 
 def build_pairing_embed(payload: dict, player: dict) -> discord.Embed:
@@ -64,7 +78,7 @@ def build_pairing_embed(payload: dict, player: dict) -> discord.Embed:
     )
     if bracket_url:
         embed.add_field(name="Bracket", value=bracket_url, inline=False)
-    embed.set_footer(text="Top cut games do not affect ELO.")
+    embed.set_footer(text=elo_note(payload))
     return embed
 
 
@@ -123,7 +137,7 @@ def build_channel_embed(payload: dict) -> discord.Embed | None:
             value=f"Decklists, Sorcery Online tables and result reporting: {bracket_url}",
             inline=False,
         )
-    embed.set_footer(text="Check your DMs for your match details. Top cut games do not affect ELO.")
+    embed.set_footer(text=f"Check your DMs for your match details. {elo_note(payload)}")
     return embed
 
 

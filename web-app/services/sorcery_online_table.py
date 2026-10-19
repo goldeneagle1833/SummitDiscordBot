@@ -30,6 +30,8 @@ REQUEST_TIMEOUT_S = (3, 15)
 QUEUE_TYPE = "testing"
 # Bracket games are ranked; the "Try this Deck" launcher stays casual.
 BRACKET_QUEUE_TYPE = "ranked"
+# Limited top cut games are played as Limited, with the drafted decks.
+LIMITED_BRACKET_QUEUE_TYPE = "limited"
 OPEN_SEAT_NAME = "Open Seat"
 # Sorcery Online reads a missing voiceType as voice but skips its voice
 # prompt, so every table says explicitly. "voice" matches the LFG queue's
@@ -167,13 +169,16 @@ def provision_deck_table(deck_url: str, *, display_name: str, player_id: str | N
     return DeckTable(game_url=game_url, invite_url=seats.pop(open_seat_id, None))
 
 
-def provision_match_table(pairing_id: str, players: list[dict]) -> dict:
+def provision_match_table(pairing_id: str, players: list[dict], queue_type: str = BRACKET_QUEUE_TYPE) -> dict:
     """Open a table for two named players, each with their own deck preloaded.
 
     ``players`` is two dicts of ``{user_id, display_name, deck_url}``. Returns
     ``{"seats": {user_id: seat_url}, "replay_url": str | None}``. Each seat url
     is that player's own, so handing a player the wrong link would sit them in
     the wrong chair.
+
+    ``queue_type`` is the kind of game Sorcery Online sets up: ranked for
+    the season top cut, limited for a Limited top cut.
 
     The replay url is stable and comes back with the table, but Sorcery Online
     only serves it once a game has actually been saved.
@@ -191,7 +196,7 @@ def provision_match_table(pairing_id: str, players: list[dict]) -> dict:
     payload = {
         "guildId": str(webapp_config.DISCORD_GUILD_ID),
         "pairingId": str(pairing_id)[:64],
-        "queueType": BRACKET_QUEUE_TYPE,
+        "queueType": queue_type,
         "voiceType": DEFAULT_VOICE_TYPE,
         # Spectators ask a player to let them in, and replays start private.
         "private": True,

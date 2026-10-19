@@ -41,8 +41,8 @@ class BracketRepository:
             INSERT INTO brackets (
                 slug, name, description, entrant_count, bracket_size, status,
                 seeded_from, elo_event_name, confirm_hours, created_by,
-                created_at, updated_at, set_name
-            ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
+                created_at, updated_at, set_name, format
+            ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data["slug"],
@@ -57,6 +57,7 @@ class BracketRepository:
                 now,
                 now,
                 data.get("set_name"),
+                data.get("format") or "constructed",
             ),
         )
         bracket_id = cur.lastrowid
@@ -420,6 +421,20 @@ class BracketRepository:
             " WHERE bracket_id = ? AND match_no = ?"
             " AND (pairing_announced IS NULL OR pairing_announced != ?)",
             (pairing, bracket_id, match_no, pairing),
+        )
+        claimed = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return claimed
+
+    def claim_elo_apply(self, bracket_id: int, match_no: int) -> bool:
+        """Mark a match's rating change as applied; True only for the first caller."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE bracket_matches SET elo_applied_at = ?"
+            " WHERE bracket_id = ? AND match_no = ? AND elo_applied_at IS NULL",
+            (datetime.now().isoformat(), bracket_id, match_no),
         )
         claimed = cur.rowcount > 0
         conn.commit()

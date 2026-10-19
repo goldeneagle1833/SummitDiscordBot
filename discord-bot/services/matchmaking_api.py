@@ -438,9 +438,10 @@ async def start_matchmaking_api(bot):
 
     async def bracket_match_notify(request):
         """DM the players of new bracket pairings and post them in Top Cut."""
-        from services.postseason import DEFAULT_TOP_CUT_CHANNEL_ID
+        from services.postseason import DEFAULT_LIMITED_TOP_CUT_CHANNEL_ID, DEFAULT_TOP_CUT_CHANNEL_ID
         from services.bracket_notify import (
             find_top_cut_channel,
+            is_limited,
             post_pairings,
             send_pairing_dms,
         )
@@ -454,14 +455,22 @@ async def start_matchmaking_api(bot):
 
         async def announce():
             try:
-                channel = find_top_cut_channel(
-                    bot,
-                    config.GUILD_ID,
-                    getattr(config, "TOP_CUT_CHANNEL_ID", None) or DEFAULT_TOP_CUT_CHANNEL_ID,
-                )
+                if is_limited(payload):
+                    channel_id = (
+                        getattr(config, "LIMITED_TOP_CUT_CHANNEL_ID", None)
+                        or DEFAULT_LIMITED_TOP_CUT_CHANNEL_ID
+                    )
+                    channel = bot.get_channel(int(channel_id))
+                else:
+                    channel = find_top_cut_channel(
+                        bot,
+                        config.GUILD_ID,
+                        getattr(config, "TOP_CUT_CHANNEL_ID", None) or DEFAULT_TOP_CUT_CHANNEL_ID,
+                    )
                 if channel is None:
                     logger.warning(
-                        "Bracket notify: Top Cut channel not found"
+                        "Bracket notify: %s channel not found",
+                        "Limited top 8" if is_limited(payload) else "Top Cut",
                     )
                 await post_pairings(bot, payload, channel)
                 await send_pairing_dms(bot, payload)

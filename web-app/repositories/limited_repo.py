@@ -11,17 +11,18 @@ import sqlite3
 import datetime
 import logging
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH
+import webapp_config
 
 logger = logging.getLogger(__name__)
 
 
+# Paths are read at call time so test fixtures can repoint the databases.
 def _match_conn():
-    return sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    return sqlite3.connect(str(webapp_config.MATCH_RECORDS_DB_PATH))
 
 
 def _elo_conn():
-    return sqlite3.connect(str(ELO_DB_PATH))
+    return sqlite3.connect(str(webapp_config.ELO_DB_PATH))
 
 
 def create_limited_tables():
@@ -896,3 +897,169 @@ def get_archived_limited_standings(event_id):
         })
     match_conn.close()
     return standings
+
+
+# --- Limited top cut brackets ---
+
+
+def create_limited_archive_tables():
+    """The bot's Limited archive tables, created here too if the site gets there first."""
+    conn = _elo_conn()
+    conn.execute("""CREATE TABLE IF NOT EXISTS limited_event_standings_archive (
+        archive_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
+        event_name TEXT,
+        user_id INTEGER NOT NULL,
+        user_display_name TEXT,
+        final_elo INTEGER,
+        final_rank INTEGER,
+        archived_at TEXT
+    )""")
+    conn.commit()
+    conn.close()
+
+    conn = _match_conn()
+    conn.execute("""CREATE TABLE IF NOT EXISTS limited_match_records_archive (
+        archive_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
+        original_match_id INTEGER,
+        reporter_id INTEGER,
+        winner_id INTEGER,
+        winner_display_name TEXT,
+        loser_id INTEGER,
+        loser_display_name TEXT,
+        did_win BOOLEAN,
+        timestamp TEXT,
+        first_player TEXT,
+        match_time INTEGER,
+        curiosa_url_winner TEXT,
+        curiosa_url_loser TEXT,
+        match_comment TEXT,
+        json_deck_data_winner TEXT,
+        json_deck_data_loser TEXT,
+        winner_elo_change INTEGER,
+        loser_elo_change INTEGER,
+        winner_went_first TEXT,
+        loser_went_first TEXT,
+        winner_run_id INTEGER,
+        loser_run_id INTEGER,
+        archived_at TEXT
+    )""")
+    conn.commit()
+    conn.close()
+
+
+def get_limited_events():
+    """Every Limited season, newest first."""
+    create_limited_tables()
+    conn = _elo_conn()
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT * FROM limited_events ORDER BY start_date DESC, event_id DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_limited_season_ladder():
+    """The Limited season ladder, best first: {event_name, players}.
+
+    While a season is being played that is the live season ELO of everyone
+    with a game this season, as the home page Limited leaderboard shows it.
+    Once the season has been archived the live tables are empty, so the
+    last archived season's final standings stand in.
+    """
+    create_limited_tables()
+    active = get_active_limited_event()
+
+    conn = _match_conn()
+    counts = {}
+    for winner_id, loser_id in conn.execute(
+        "SELECT winner_id, loser_id FROM limited_match_records"
+    ).fetchall():
+        counts.setdefault(str(winner_id), [0, 0])[0] += 1
+        counts.setdefault(str(loser_id), [0, 0])[1] += 1
+    conn.close()
+
+    if counts:
+        players = []
+        for standing in get_all_limited_standings():
+            record = counts.get(str(standing["user_id"]))
+            if not record:
+                continue
+            players.append({
+                "user_id": str(standing["user_id"]),
+                "display_name": standing["display_name"],
+                "elo": standing["elo"],
+                "wins": record[0],
+                "losses": record[1],
+            })
+        return {"event_name": active["event_name"] if active else None, "players": players}
+
+    archived = get_archived_limited_events()
+    if not archived:
+        return {"event_name": active["event_name"] if active else None, "players": []}
+    latest = archived[0]
+    players = [
+        {
+            "user_id": row["id"],
+            "display_name": row["name"],
+            "elo": row["elo"],
+            "wins": row["wins"],
+            "losses": row["losses"],
+        }
+        for row in get_archived_limited_standings(latest["event_id"])
+        if (row["wins"] or 0) + (row["losses"] or 0) > 0
+    ]
+    return {"event_name": latest["event_name"], "players": players}
+
+
+def adjust_limited_lifetime_elo(user_id, display_name, change):
+    """Move one player's lifetime Limited ELO by ``change``; season ELO is untouched."""
+    create_limited_tables()
+    conn = _elo_conn()
+    conn.execute(
+        """INSERT INTO limited_elo (user_id, user_display_name, elo, lifetime_elo)
+           VALUES (?, ?, 1500, ?)
+           ON CONFLICT(user_id) DO UPDATE SET lifetime_elo = lifetime_elo + ?""",
+        (user_id, display_name, 1500 + change, change),
+    )
+    conn.commit()
+    conn.close()
+
+
+def insert_limited_archive_match(event_id, fields):
+    """File a finished Limited game straight into the archive. Returns its archive_id."""
+    create_limited_archive_tables()
+    columns = ["event_id", "archived_at", *fields]
+    values = [event_id, datetime.datetime.now().isoformat(), *fields.values()]
+    conn = _match_conn()
+    cur = conn.execute(
+        f"INSERT INTO limited_match_records_archive ({', '.join(columns)})"
+        f" VALUES ({', '.join('?' for _ in columns)})",
+        values,
+    )
+    archive_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return archive_id
+
+
+def update_limited_archive_match(archive_id, fields):
+    create_limited_archive_tables()
+    conn = _match_conn()
+    conn.execute(
+        f"UPDATE limited_match_records_archive SET {', '.join(f'{k} = ?' for k in fields)}"
+        " WHERE archive_id = ?",
+        (*fields.values(), archive_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_limited_archive_match(archive_id):
+    create_limited_archive_tables()
+    conn = _match_conn()
+    conn.execute("DELETE FROM limited_match_records_archive WHERE archive_id = ?", (archive_id,))
+    conn.commit()
+    conn.close()

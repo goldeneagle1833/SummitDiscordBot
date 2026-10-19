@@ -8,6 +8,10 @@ A full 32 fills the bracket, so nobody gets a bye; byes only appear when
 fewer qualify, and then they go to the top seeds. The bracket stays a draft until an admin
 publishes it on the site.
 
+A Limited season gets its own bracket the same way: its top 8 on the Limited
+season ladder, seeded in ladder order, drafted when the Limited season is
+ended. No ticket is needed for Limited.
+
 The site's bracket tables live in match_records.db next to the bot's own
 tables, so the draft is written directly; the site builds the match tree when
 the draft is published.
@@ -19,7 +23,7 @@ import random
 import re
 import sqlite3
 
-from services.avatar_mode import get_event_ladder, unique_players
+from services.avatar_mode import LadderEntry, get_event_ladder, unique_players
 
 logger = logging.getLogger("discord_bot")
 
@@ -33,6 +37,12 @@ DEFAULT_TOP_CUT_ROLE_ID = 1342136670866374706
 # Where new bracket pairings are posted. config.TOP_CUT_CHANNEL_ID overrides it.
 DEFAULT_TOP_CUT_CHANNEL_ID = 1365487028115996692
 BRACKET_NAME_SUFFIX = "Post Season Bracket"
+
+LIMITED_TOP_CUT_SIZE = 8
+# Where Limited bracket pairings are posted. config.LIMITED_TOP_CUT_CHANNEL_ID
+# overrides it. config.LIMITED_TOP_CUT_ROLE_ID, when set, is handed to the
+# Limited top cut the way the Top Cut role is; there is no default role.
+DEFAULT_LIMITED_TOP_CUT_CHANNEL_ID = 1512866543648772166
 
 # <t:1794805140:F>, <t:1794805140>, or a bare unix timestamp
 _DISCORD_TIMESTAMP = re.compile(r"<t:(\d{9,11})(?::[a-zA-Z])?>")
@@ -59,6 +69,52 @@ def extract_end_time(text: str) -> tuple[int | None, str]:
 
 def bracket_name(event_name: str) -> str:
     return f"{event_name} {BRACKET_NAME_SUFFIX}"
+
+
+def limited_bracket_name(season_name: str) -> str:
+    """ "Limited Season 3" -> "Limited Season 3 Top 8"; "Fall" -> "Fall Limited Top 8"."""
+    season_name = (season_name or "").strip() or "Limited Season"
+    if "limited" in season_name.lower():
+        return f"{season_name} Top {LIMITED_TOP_CUT_SIZE}"
+    return f"{season_name} Limited Top {LIMITED_TOP_CUT_SIZE}"
+
+
+def limited_top_cut(size: int = LIMITED_TOP_CUT_SIZE, elo_db: str = "elo.db",
+                    match_db: str = "match_records.db") -> list:
+    """The Limited season's top ``size``, best first, read before it is archived.
+
+    The Limited season ladder: season Limited ELO of everyone with a Limited
+    game this season, as the site's Limited leaderboard shows it.
+    """
+    conn = sqlite3.connect(match_db)
+    try:
+        games = {}
+        for winner_id, loser_id in conn.execute(
+            "SELECT winner_id, loser_id FROM limited_match_records"
+        ):
+            games[int(winner_id)] = games.get(int(winner_id), 0) + 1
+            games[int(loser_id)] = games.get(int(loser_id), 0) + 1
+    except sqlite3.OperationalError:
+        games = {}
+    finally:
+        conn.close()
+
+    conn = sqlite3.connect(elo_db)
+    try:
+        rows = conn.execute(
+            "SELECT user_id, user_display_name, elo FROM limited_elo ORDER BY elo DESC, user_id"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    finally:
+        conn.close()
+
+    ladder = [
+        LadderEntry(int(user_id), name, elo, games[int(user_id)], None)
+        for user_id, name, elo in rows
+        if games.get(int(user_id))
+    ]
+    return ladder[:size]
 
 
 def select_top_cut(ladder, ticket_holder_ids, size: int = TOP_CUT_SIZE) -> list:
@@ -95,17 +151,33 @@ def round_one_byes(entrant_count: int) -> int:
     return _bracket_size_for(entrant_count) - entrant_count if entrant_count >= 2 else 0
 
 
-def create_draft_bracket(event_name: str, seeded, created_by=None, db_path: str = "match_records.db") -> dict:
+def create_draft_bracket(event_name: str, seeded, created_by=None, db_path: str = "match_records.db",
+                         format: str = "constructed") -> dict:
     """Write the seeded top cut as a draft bracket for the website.
 
-    ``seeded`` is the ladder entries in seeding order. Returns
+    ``seeded`` is the ladder entries in seeding order. ``format`` "limited"
+    drafts the Limited season's bracket instead. Returns
     {bracket_id, slug, name, entrant_count}. Raises PostseasonError when the
     site's bracket tables don't exist or fewer than two players qualified.
     """
+    limited = format == "limited"
     if len(seeded) < 2:
-        raise PostseasonError("A bracket needs at least 2 qualified ticket holders.")
+        raise PostseasonError(
+            "A bracket needs at least 2 players on the Limited ladder." if limited
+            else "A bracket needs at least 2 qualified ticket holders."
+        )
 
-    name = bracket_name(event_name)
+    if limited:
+        name = limited_bracket_name(event_name)
+        description = f"Top {len(seeded)} of the {event_name} Limited ladder, seeded by ladder rank."
+        seeded_from = "limited"
+    else:
+        name = bracket_name(event_name)
+        description = (
+            f"Top {len(seeded)} ticket holders of {event_name}. "
+            f"Seeds 1-{min(TOP_CUT_LADDER_SEEDS, len(seeded))} by ladder rank; the rest drawn at random."
+        )
+        seeded_from = "ticket_holders"
     now = datetime.datetime.now().isoformat()
     conn = sqlite3.connect(db_path)
     try:
@@ -130,25 +202,32 @@ def create_draft_bracket(event_name: str, seeded, created_by=None, db_path: str 
             """INSERT INTO brackets (
                    slug, name, description, entrant_count, bracket_size, status,
                    seeded_from, elo_event_name, confirm_hours, created_by, created_at, updated_at
-               ) VALUES (?, ?, ?, ?, ?, 'draft', 'ticket_holders', ?, 48, ?, ?, ?)""",
+               ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, 48, ?, ?, ?)""",
             (
-                slug, name,
-                f"Top {len(seeded)} ticket holders of {event_name}. "
-                f"Seeds 1-{min(TOP_CUT_LADDER_SEEDS, len(seeded))} by ladder rank; the rest drawn at random.",
-                len(seeded), _bracket_size_for(len(seeded)), event_name,
+                slug, name, description,
+                len(seeded), _bracket_size_for(len(seeded)), seeded_from, event_name,
                 str(created_by) if created_by else None, now, now,
             ),
         )
         bracket_id = cur.lastrowid
+        if limited:
+            # The site adds this column on startup; add it here too in case
+            # the bot gets there first.
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(brackets)")}
+            if "format" not in columns:
+                conn.execute(
+                    "ALTER TABLE brackets ADD COLUMN format TEXT NOT NULL DEFAULT 'constructed'"
+                )
+            conn.execute("UPDATE brackets SET format = 'limited' WHERE bracket_id = ?", (bracket_id,))
         conn.executemany(
             """INSERT INTO bracket_entrants
                    (bracket_id, seed, user_id, display_name, elo, games, is_ticket_holder)
-               VALUES (?, ?, ?, ?, ?, ?, 1)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             [
                 (
                     bracket_id, seed, str(entry.user_id),
                     entry.display_name or f"User#{entry.user_id}",
-                    entry.event_elo, entry.games_played,
+                    entry.event_elo, entry.games_played, 0 if limited else 1,
                 )
                 for seed, entry in enumerate(seeded, start=1)
             ],
@@ -160,7 +239,7 @@ def create_draft_bracket(event_name: str, seeded, created_by=None, db_path: str 
     finally:
         conn.close()
 
-    logger.info("Drafted postseason bracket %s (%s) with %d entrants", bracket_id, slug, len(seeded))
+    logger.info("Drafted %s bracket %s (%s) with %d entrants", format, bracket_id, slug, len(seeded))
     return {"bracket_id": bracket_id, "slug": slug, "name": name, "entrant_count": len(seeded)}
 
 

@@ -30,6 +30,7 @@ const LABEL = 'block text-xs uppercase tracking-wider text-text-muted mb-1'
 const SOURCES = [
   { value: 'ticket_holders', label: 'Ticket holders' },
   { value: 'overall', label: 'Everyone on the ladder' },
+  { value: 'limited', label: 'Limited season ladder (Limited bracket)' },
   { value: 'manual', label: 'Empty (add players myself)' },
 ]
 
@@ -170,7 +171,11 @@ function CreateForm({ onCreated, sets = [] }) {
             id="bracket-source"
             className={INPUT}
             value={form.source}
-            onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
+            onChange={(e) => {
+              const source = e.target.value
+              // A Limited season's bracket is its top 8.
+              setForm((f) => ({ ...f, source, ...(source === 'limited' ? { size: 8 } : {}) }))
+            }}
           >
             {SOURCES.map((source) => (
               <option key={source.value} value={source.value}>{source.label}</option>
@@ -182,7 +187,12 @@ function CreateForm({ onCreated, sets = [] }) {
       {pool && (
         <p className="text-xs text-text-muted">
           {pool.players.length} player{pool.players.length === 1 ? '' : 's'} available
-          {pool.event?.event_name ? ` from ${pool.event.event_name}` : ' (lifetime ELO)'}.
+          {pool.event?.event_name
+            ? ` from ${pool.event.event_name}`
+            : form.source === 'limited' ? '' : ' (lifetime ELO)'}.
+          {form.source === 'limited' && (
+            <> Makes a Limited bracket: its games count toward lifetime Limited ELO.</>
+          )}
           {form.source === 'ticket_holders' && !pool.ticket_filter_applied && (
             <>
               {' '}
@@ -545,6 +555,11 @@ function BracketRow({ bracket, onChanged, onGraphic, sets = [] }) {
         <div>
           <p className="font-medium">
             {bracket.name}
+            {bracket.format === 'limited' && (
+              <span className="ml-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider border border-secondary/50 text-secondary rounded-sm align-middle">
+                Limited
+              </span>
+            )}
             <span className="text-text-muted text-sm"> · {bracket.entrant_count} players</span>
           </p>
           <p className="text-xs text-text-muted">

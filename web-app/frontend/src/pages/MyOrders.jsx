@@ -22,6 +22,9 @@ function StatusBadge({ status }) {
   )
 }
 
+// Keep in sync with INVOICE_STATUSES in services/store_invoice.py
+const INVOICE_STATUSES = ['paid', 'shipped', 'delivered', 'refunded']
+
 function ContinuePayment({ order }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -141,6 +144,21 @@ function OrderCard({ order }) {
               </svg>
               <span className="text-text-muted">{order.tracking_carrier || 'Tracking'}:</span>
               <span className="font-mono text-text-primary">{order.tracking_number}</span>
+            </div>
+          )}
+
+          {INVOICE_STATUSES.includes(order.status) && (
+            <div className="border-t border-border/50 px-4 py-3 text-sm">
+              <a
+                href={`/api/store/orders/${encodeURIComponent(order.order_number)}/invoice.pdf`}
+                download
+                className="inline-flex items-center gap-2 text-primary hover:underline"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                </svg>
+                Download order confirmation (PDF)
+              </a>
             </div>
           )}
 

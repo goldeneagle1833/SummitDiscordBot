@@ -94,12 +94,13 @@ from services.avatar_mode import (
 from services.ranked_eligibility import MIN_GAMES_FOR_RANKED, ranked_block_message
 from services.postseason import (
     DEFAULT_TOP_CUT_ROLE_ID,
-    TOP_CUT_BYES,
+    TOP_CUT_LADDER_SEEDS,
     TOP_CUT_SIZE,
     bracket_name,
     create_draft_bracket,
     extract_end_time,
     final_ladder,
+    round_one_byes,
     seed_top_cut,
     select_top_cut,
 )
@@ -448,20 +449,21 @@ class LFGCog(commands.Cog):
                 # Overall Rankings (top 8 of all players)
                 overall_text = [format_row(idx, p) for idx, p in enumerate(player_data[:8], 1)]
 
-                # Ticket Holders section (top 24 players with the ticket holder role).
+                # Ticket Holders section (the top cut: top TOP_CUT_SIZE players with
+                # the ticket holder role).
                 # Top cut belongs to the player: each player appears once, at their
                 # best avatar entry, so a second entry never takes someone's slot.
                 from services.avatar_mode import unique_players
 
                 ticket_players = unique_players([p for p in player_data if p["has_ticket"]])
-                ticket_text = [format_row(idx, p) for idx, p in enumerate(ticket_players[:24], 1)]
+                ticket_text = [format_row(idx, p) for idx, p in enumerate(ticket_players[:TOP_CUT_SIZE], 1)]
 
                 # Free Play section (top 8 from non-ticket holders)
                 free_players = unique_players([p for p in player_data if not p["has_ticket"]])
                 free_text = [format_row(idx, p) for idx, p in enumerate(free_players[:8], 1)]
 
                 # One description instead of fields: the 4096-char description
-                # limit fits all 24 ticket rows without splitting them up.
+                # limit fits all 32 ticket rows without splitting them up.
                 embed.description = "\n\n".join([
                     section("Overall Rankings", overall_text, "No players ranked yet."),
                     section("Ticket Holders", ticket_text, "No ticket holders ranked yet."),
@@ -764,9 +766,9 @@ class LFGCog(commands.Cog):
     async def _end_season_with_top_cut(self, active_event, created_by=None):
         """End the season, take the top cut and draft its postseason bracket.
 
-        Top cut is the first 24 unique ticket holders on the final ladder.
-        Seeds 1-8 keep ladder order (they get the round-one byes); seeds 9-24
-        are drawn at random. The bracket is left as a draft for an admin to
+        Top cut is the first 32 unique ticket holders on the final ladder.
+        Seeds 1-8 keep ladder order; seeds 9-32 are drawn at random. A full
+        32 fills the bracket, so byes only appear when fewer qualify. The bracket is left as a draft for an admin to
         publish on the website.
 
         Returns (summary, seeded_entries, bracket_or_None, bracket_error_or_None).
@@ -814,18 +816,21 @@ class LFGCog(commands.Cog):
             f"{summary['total_matches']} matches, {summary['total_players']} ranked players."
         ]
         if seeded:
-            byes = seeded[:TOP_CUT_BYES]
-            rest = seeded[TOP_CUT_BYES:]
+            top = seeded[:TOP_CUT_LADDER_SEEDS]
+            rest = seeded[TOP_CUT_LADDER_SEEDS:]
             parts.append(
                 f"**Top cut: the top {len(seeded)} ticket holders**\n"
-                f"__Seeds 1–{len(byes)} (round one bye)__\n"
-                + "\n".join(line(seed, entry) for seed, entry in enumerate(byes, start=1))
+                f"__Seeds 1–{len(top)} (by ladder rank)__\n"
+                + "\n".join(line(seed, entry) for seed, entry in enumerate(top, start=1))
             )
             if rest:
                 parts.append(
-                    f"__Seeds {TOP_CUT_BYES + 1}–{len(seeded)} (random draw for round one)__\n"
-                    + "\n".join(line(seed, entry) for seed, entry in enumerate(rest, start=TOP_CUT_BYES + 1))
+                    f"__Seeds {TOP_CUT_LADDER_SEEDS + 1}–{len(seeded)} (random draw)__\n"
+                    + "\n".join(line(seed, entry) for seed, entry in enumerate(rest, start=TOP_CUT_LADDER_SEEDS + 1))
                 )
+            byes = round_one_byes(len(seeded))
+            if byes:
+                parts.append(f"Seeds 1–{byes} get a round one bye." if byes > 1 else "Seed 1 gets a round one bye.")
             role_id = (summary.get("top_cut_role") or {}).get("role_id")
             if role_id:
                 parts.append(f"Qualifiers now have the <@&{role_id}> role and access to the Top Cut channel.")
@@ -2927,7 +2932,7 @@ class LFGCog(commands.Cog):
         The mode is locked once the event starts.
 
         Add a Discord timestamp (e.g. <t:1794805140:F>) to end the season by
-        itself at that time. When it ends, the top 24 ticket holders make top
+        itself at that time. When it ends, the top 32 ticket holders make top
         cut and the postseason bracket is drafted on the website. Change it
         later with !set_event_end.
         """
@@ -3122,7 +3127,7 @@ class LFGCog(commands.Cog):
         End the current event without starting a new one.
         Archives standings and matches, then leaves no active event.
 
-        The top 24 ticket holders make top cut and the postseason bracket is
+        The top 32 ticket holders make top cut and the postseason bracket is
         drafted on the website, the same as when a season ends on schedule.
         """
         from utils.database import get_active_event
@@ -3181,10 +3186,13 @@ class LFGCog(commands.Cog):
             )
 
             if bracket:
+                count = bracket["entrant_count"]
+                byes = round_one_byes(count)
+                bye_text = f"; seeds 1–{byes} get a round-one bye" if byes else ""
                 bracket_text = (
-                    f"**{bracket['name']}** drafted with {bracket['entrant_count']} ticket holders "
-                    f"(seeds 1–{min(TOP_CUT_BYES, bracket['entrant_count'])} by ladder rank with a round-one bye, "
-                    "the rest drawn at random).\nReview and publish it on the website: Admin → Brackets."
+                    f"**{bracket['name']}** drafted with {count} ticket holders "
+                    f"(seeds 1–{min(TOP_CUT_LADDER_SEEDS, count)} by ladder rank, "
+                    f"the rest drawn at random{bye_text}).\nReview and publish it on the website: Admin → Brackets."
                 )
             elif seeded:
                 bracket_text = (

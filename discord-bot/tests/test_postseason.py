@@ -17,6 +17,7 @@ from services.postseason import (
     bracket_name,
     create_draft_bracket,
     extract_end_time,
+    round_one_byes,
     seed_top_cut,
     select_top_cut,
 )
@@ -66,7 +67,7 @@ def test_end_time_is_pulled_out_of_the_command(text, expected):
 # ── Top cut ──
 
 
-def test_top_cut_is_the_first_24_unique_ticket_holders():
+def test_top_cut_is_the_first_32_unique_ticket_holders():
     # Player 1 tops the ladder on two avatars; player 2 has no ticket
     ladder = [_entry(1, 1700, "Imposter"), _entry(1, 1690, "Witch"), _entry(2, 1680, "Seer")]
     ladder += [_entry(uid, 1700 - uid, "Druid") for uid in range(3, 40)]
@@ -74,21 +75,26 @@ def test_top_cut_is_the_first_24_unique_ticket_holders():
 
     cut = select_top_cut(ladder, holders)
 
-    assert len(cut) == 24
+    assert len(cut) == 32
     assert [e.user_id for e in cut[:3]] == [1, 3, 4]
     assert cut[0].avatar == "Imposter"  # their best entry
     assert 2 not in {e.user_id for e in cut}
-    assert len({e.user_id for e in cut}) == 24
+    assert len({e.user_id for e in cut}) == 32
 
 
 def test_top_8_keep_their_order_and_the_rest_are_drawn_at_random():
-    qualifiers = [_entry(uid, 2000 - uid) for uid in range(1, 25)]
+    qualifiers = [_entry(uid, 2000 - uid) for uid in range(1, 33)]
     seeded = seed_top_cut(qualifiers, rng=random.Random(4))
 
     assert [e.user_id for e in seeded[:8]] == list(range(1, 9))
     rest = [e.user_id for e in seeded[8:]]
-    assert sorted(rest) == list(range(9, 25))
-    assert rest != list(range(9, 25))
+    assert sorted(rest) == list(range(9, 33))
+    assert rest != list(range(9, 33))
+
+
+@pytest.mark.parametrize("count, byes", [(32, 0), (30, 2), (24, 8), (17, 15), (16, 0), (1, 0)])
+def test_byes_only_fill_empty_bracket_spots(count, byes):
+    assert round_one_byes(count) == byes
 
 
 def test_small_fields_are_all_byes_in_ladder_order():
@@ -101,7 +107,7 @@ def test_small_fields_are_all_byes_in_ladder_order():
 
 def test_draft_bracket_is_written_for_the_website():
     _bracket_tables()
-    seeded = [_entry(uid, 2000 - uid, "Imposter") for uid in range(1, 25)]
+    seeded = [_entry(uid, 2000 - uid, "Imposter") for uid in range(1, 33)]
 
     bracket = create_draft_bracket("Summit Gothic Season 7", seeded, created_by=99)
 
@@ -115,8 +121,8 @@ def test_draft_bracket_is_written_for_the_website():
         "SELECT seed, user_id, elo, is_ticket_holder FROM bracket_entrants ORDER BY seed"
     ).fetchall()
     conn.close()
-    assert row == ("draft", 24, 32, "ticket_holders", "Summit Gothic Season 7")
-    assert entrants[0] == (1, "1", 1999, 1) and len(entrants) == 24
+    assert row == ("draft", 32, 32, "ticket_holders", "Summit Gothic Season 7")
+    assert entrants[0] == (1, "1", 1999, 1) and len(entrants) == 32
 
 
 def test_a_second_bracket_with_the_same_name_gets_its_own_slug():
@@ -223,19 +229,24 @@ async def test_a_failed_scheduled_end_backs_off_instead_of_retrying_every_minute
     assert cog._season_end_retry_after > datetime.datetime.now()
 
 
-def test_season_end_message_lists_byes_and_the_random_draw():
-    seeded = [_entry(uid, 2000 - uid, "Imposter") for uid in range(1, 25)]
+def test_season_end_message_lists_ladder_seeds_and_the_random_draw():
+    seeded = [_entry(uid, 2000 - uid, "Imposter") for uid in range(1, 33)]
     summary = {"event_name": "Season 7", "total_matches": 412, "total_players": 60}
-    bracket = {"name": "Season 7 Post Season Bracket", "entrant_count": 24}
+    bracket = {"name": "Season 7 Post Season Bracket", "entrant_count": 32}
 
     embed = LFGCog._season_end_embed(MagicMock(), summary, seeded, bracket, None)
 
     assert "Season 7 has ended" in embed.title and "Leaderboard" not in embed.title
     text = embed.description
-    assert "Seeds 1–8 (round one bye)" in text and "Seeds 9–24 (random draw for round one)" in text
-    assert "<@1> (Imposter) — 1999" in text and "<@24>" in text
+    assert "Top cut: the top 32 ticket holders" in text
+    assert "Seeds 1–8 (by ladder rank)" in text and "Seeds 9–32 (random draw)" in text
+    assert "bye" not in text  # a full 32 fills the bracket
+    assert "<@1> (Imposter) — 1999" in text and "<@32>" in text
     assert "Season 7 Post Season Bracket" in text
     assert len(text) < 4096
+
+    short = LFGCog._season_end_embed(MagicMock(), summary, seeded[:28], bracket, None)
+    assert "Seeds 1–4 get a round one bye." in short.description
 
     empty = LFGCog._season_end_embed(MagicMock(), summary, [], None, "Fewer than 2 ticket holders qualified.")
     assert "no top cut" in empty.description

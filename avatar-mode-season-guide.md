@@ -196,15 +196,15 @@ avatar shown isn't the one you played.
   new one.
 - **When a season ends** (at its scheduled time, or with `!end_event`), the bot takes the
   top cut and drafts the postseason bracket:
-  - Top cut is the first **24 unique ticket holders** on the final ladder. A ticket holder
+  - Top cut is the first **32 unique ticket holders** on the final ladder. A ticket holder
     is anyone with a ticket role in Discord at that moment. The voice-game count is not
     applied.
   - The bracket is named `<season name> Post Season Bracket`. Seeds 1–8 are the top eight
-    in ladder order and get a round-one bye; seeds 9–24 are drawn at random and play round
-    one.
+    in ladder order; seeds 9–32 are drawn at random. A full 32 fills the bracket, so
+    nobody gets a bye; if fewer qualify, the top seeds get byes for the empty spots.
   - The bracket is created as a **draft**. Review it and press Publish on the website
     (Admin → Brackets) to make it public.
-  - The 24 qualifiers get the **Top Cut role**, which opens the Top Cut channel. Last
+  - The 32 qualifiers get the **Top Cut role**, which opens the Top Cut channel. Last
     season's top cut lose the role first. If nobody qualified, the role is left alone.
   - The bot posts the season result and the seeded top cut in the leaderboard channel.
   - Starting a new season while one is still running ends the old one **without** a top

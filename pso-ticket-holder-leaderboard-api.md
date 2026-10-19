@@ -21,7 +21,7 @@ X-API-Key: <your-api-key>
 
 | Parameter | Description                                                                          |
 |-----------|--------------------------------------------------------------------------------------|
-| `limit`   | Optional. Cap the `ticket_holders` list at this many players. The Discord embed shows 24. By default every ranked ticket holder is returned. |
+| `limit`   | Optional. Cap the `ticket_holders` list at this many players. The Discord embed shows 32. By default every ranked ticket holder is returned. |
 
 ### Response
 

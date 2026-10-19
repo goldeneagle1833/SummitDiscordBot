@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # The bot's embed shows this many in each section.
 OVERALL_SHOWN = 8
-TICKET_HOLDERS_SHOWN = 24
+TICKET_HOLDERS_SHOWN = 32
 FREE_PLAY_SHOWN = 8
 
 
@@ -34,7 +34,7 @@ class TicketLeaderboardService:
 
         Ranking mirrors the bot: current-event ELO restricted to players who
         have played this event, best first; lifetime ELO when no event is
-        running. `limit` caps the ticket-holder list (the channel shows 24);
+        running. `limit` caps the ticket-holder list (the channel shows 32);
         by default every ranked ticket holder is returned.
 
         In an Avatar-mode event the ladder has one entry per player and

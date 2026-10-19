@@ -1,10 +1,11 @@
 """Ending a season: the top cut and its postseason bracket.
 
-When a season ends, the top cut is the first 24 unique ticket holders on the
+When a season ends, the top cut is the first 32 unique ticket holders on the
 season ladder (in an Avatar-mode season each player counts once, at their
 best avatar). They become a draft bracket on the website, named after the
-season: seeds 1-8 keep their ladder order and get the first-round byes, and
-seeds 9-24 are drawn at random. The bracket stays a draft until an admin
+season: seeds 1-8 keep their ladder order and seeds 9-32 are drawn at random.
+A full 32 fills the bracket, so nobody gets a bye; byes only appear when
+fewer qualify, and then they go to the top seeds. The bracket stays a draft until an admin
 publishes it on the site.
 
 The site's bracket tables live in match_records.db next to the bot's own
@@ -22,8 +23,9 @@ from services.avatar_mode import get_event_ladder, unique_players
 
 logger = logging.getLogger("discord_bot")
 
-TOP_CUT_SIZE = 24
-TOP_CUT_BYES = 8
+TOP_CUT_SIZE = 32
+# Seeds kept in ladder order; everyone below them is drawn at random.
+TOP_CUT_LADDER_SEEDS = 8
 # The Discord role that opens the Top Cut channel. config.TOP_CUT_ROLE_ID
 # overrides it; the default is the Summit server's role, so the live config
 # file (which isn't in git) needs no change.
@@ -65,13 +67,13 @@ def select_top_cut(ladder, ticket_holder_ids, size: int = TOP_CUT_SIZE) -> list:
     return [entry for entry in unique_players(ladder) if int(entry.user_id) in holders][:size]
 
 
-def seed_top_cut(qualifiers, byes: int = TOP_CUT_BYES, rng=random) -> list:
-    """Seeding order: the top ``byes`` in ladder order, the rest shuffled.
+def seed_top_cut(qualifiers, ladder_seeds: int = TOP_CUT_LADDER_SEEDS, rng=random) -> list:
+    """Seeding order: the top ``ladder_seeds`` in ladder order, the rest shuffled.
 
-    The site's bracket gives its top seeds the first-round byes, so seeds
-    1-8 sit out round one and seeds 9-24 meet each other in a random draw.
+    Seeds 1-8 keep their ladder order, so seed 1 and seed 2 can't meet
+    before the final; seeds 9-32 are a random draw.
     """
-    top, rest = list(qualifiers[:byes]), list(qualifiers[byes:])
+    top, rest = list(qualifiers[:ladder_seeds]), list(qualifiers[ladder_seeds:])
     rng.shuffle(rest)
     return top + rest
 
@@ -86,6 +88,11 @@ def _bracket_size_for(entrant_count: int) -> int:
     while size < entrant_count:
         size *= 2
     return size
+
+
+def round_one_byes(entrant_count: int) -> int:
+    """How many top seeds sit out round one: the bracket's empty spots."""
+    return _bracket_size_for(entrant_count) - entrant_count if entrant_count >= 2 else 0
 
 
 def create_draft_bracket(event_name: str, seeded, created_by=None, db_path: str = "match_records.db") -> dict:
@@ -127,7 +134,7 @@ def create_draft_bracket(event_name: str, seeded, created_by=None, db_path: str 
             (
                 slug, name,
                 f"Top {len(seeded)} ticket holders of {event_name}. "
-                f"Seeds 1-{min(TOP_CUT_BYES, len(seeded))} by ladder rank; the rest drawn at random.",
+                f"Seeds 1-{min(TOP_CUT_LADDER_SEEDS, len(seeded))} by ladder rank; the rest drawn at random.",
                 len(seeded), _bracket_size_for(len(seeded)), event_name,
                 str(created_by) if created_by else None, now, now,
             ),

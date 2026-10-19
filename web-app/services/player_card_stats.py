@@ -18,8 +18,15 @@ def _bare(player_id) -> str:
     return text[7:] if text.startswith("google_") else text
 
 
-def load_player_games(db_path, player_id, start=None, end=None) -> list[tuple[bool, list[str]]]:
-    """Return ``(won, cards_played)`` for each decided PSO game the player has card data for."""
+QUEUE_FILTERS = ("all", "ranked", "casual")
+
+
+def load_player_games(db_path, player_id, start=None, end=None, queue="all") -> list[tuple[bool, list[str]]]:
+    """Return ``(won, cards_played)`` for each decided PSO game the player has card data for.
+
+    ``queue``: 'ranked' keeps only Ranked queue games, 'casual' every other
+    queue (Casual, Rumble, Limited), 'all' both.
+    """
     pid = _bare(player_id)
     where = [
         "outcome = 'decided'",
@@ -27,6 +34,10 @@ def load_player_games(db_path, player_id, start=None, end=None) -> list[tuple[bo
         "(CAST(winner_id AS TEXT) = ? OR CAST(loser_id AS TEXT) = ?)",
     ]
     params: list = [pid, pid]
+    if queue == "ranked":
+        where.append("queue_type = 'ranked'")
+    elif queue == "casual":
+        where.append("queue_type != 'ranked'")
     if start:
         where.append("created_at >= ?")
         params.append(start)

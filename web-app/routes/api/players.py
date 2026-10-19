@@ -2853,12 +2853,13 @@ def player_card_stats(player_id):
 
     Private by default: the owner and admins always see it, everyone else
     only when the player turned on the "card_stats" profile section.
-    Query parameters: event = 'lifetime' (default), 'current', or an event id.
+    Query parameters: event = 'lifetime' (default), 'current', or an event id;
+    queue = 'all' (default), 'ranked', or 'casual'.
     """
     from routes.api.cards import (
         _build_card_image_lookup, _find_card_image, _get_event_date_range, _load_card_elements,
     )
-    from services.player_card_stats import load_player_games, summarize
+    from services.player_card_stats import QUEUE_FILTERS, load_player_games, summarize
 
     player_id_normalized = str(player_id)
     if player_id_normalized.startswith("google_"):
@@ -2886,7 +2887,12 @@ def player_card_stats(player_id):
         if reset_at and (not start or str(reset_at) > str(start)):
             start = reset_at
 
-    result = summarize(load_player_games(MATCH_RECORDS_DB_PATH, player_id_normalized, start, end))
+    queue = request.args.get("queue", "all")
+    if queue not in QUEUE_FILTERS:
+        queue = "all"
+
+    result = summarize(load_player_games(MATCH_RECORDS_DB_PATH, player_id_normalized, start, end, queue))
+    result["queue"] = queue
     image_lookup = _build_card_image_lookup()
     elements = _load_card_elements()
     for card in result["cards"]:

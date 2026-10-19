@@ -3,6 +3,32 @@ import { getPlayerCardStats } from '@/api/players'
 import Spinner from '@/components/ui/Spinner'
 
 const MIN_GAMES_OPTIONS = [1, 3, 5, 10]
+const QUEUE_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'ranked', label: 'Ranked' },
+  { value: 'casual', label: 'Casual' },
+]
+
+function QueuePicker({ value, onChange }) {
+  return (
+    <div className="inline-flex rounded-lg border border-border bg-bg-raised p-0.5" role="radiogroup" aria-label="Games">
+      {QUEUE_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          role="radio"
+          aria-checked={opt.value === value}
+          onClick={() => onChange(opt.value)}
+          className={`px-3.5 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+            opt.value === value ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 function Tile({ value, label }) {
   return (
@@ -80,18 +106,19 @@ export default function CardStats({ playerId, eventFilter, isOwner, isPublic }) 
   const [query, setQuery] = useState('')
   const [minGames, setMinGames] = useState(3)
   const [sort, setSort] = useState('games')
+  const [queue, setQueue] = useState('all')
 
   useEffect(() => {
     let active = true
     setData(null)
     setError(null)
-    getPlayerCardStats(playerId, { event: eventFilter })
+    getPlayerCardStats(playerId, { event: eventFilter, queue })
       .then((d) => active && setData(d))
       .catch((err) => active && setError(err.message || 'Could not load card stats'))
     return () => {
       active = false
     }
-  }, [playerId, eventFilter])
+  }, [playerId, eventFilter, queue])
 
   const rows = useMemo(() => {
     if (!data) return []
@@ -101,14 +128,44 @@ export default function CardStats({ playerId, eventFilter, isOwner, isPublic }) 
     return [...list].sort((a, b) => key(b) - key(a) || a.name.localeCompare(b.name))
   }, [data, query, minGames, sort])
 
-  if (error) return <p className="text-sm text-text-muted py-6">{error}</p>
-  if (!data) return <Spinner className="py-12" />
+  const queueLabel = { ranked: 'Ranked ', casual: 'Casual ' }[queue] || ''
+  const header = (
+    <div className="flex flex-wrap items-center gap-3">
+      <p className="text-sm text-text-muted mr-auto">
+        {data?.games ? (
+          <>
+            From Sorcery Online {queueLabel}games: <strong className="text-text-primary tabular-nums">{data.games}</strong> games with card data
+            ({data.wins}-{data.losses}, {data.win_rate}%).
+          </>
+        ) : (
+          'From Sorcery Online games'
+        )}
+      </p>
+      <QueuePicker value={queue} onChange={setQueue} />
+      {isOwner && (
+        <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-bg-raised border border-border text-xs text-text-muted">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+          </svg>
+          {isPublic ? 'Public: anyone can see this tab' : 'Only you and admins can see this tab'}
+        </span>
+      )}
+    </div>
+  )
+
+  if (error) return <div className="space-y-6">{header}<p className="text-sm text-text-muted">{error}</p></div>
+  if (!data) return <div className="space-y-6">{header}<Spinner className="py-12" /></div>
 
   if (!data.games) {
     return (
-      <p className="text-sm text-text-muted py-6">
-        No Sorcery Online games with card data for this period yet. Cards show up here after games played through the PSO queue.
-      </p>
+      <div className="space-y-6">
+        {header}
+        <p className="text-sm text-text-muted">
+          {queue === 'all'
+            ? 'No Sorcery Online games with card data for this period yet. Cards show up here after games played through the PSO queue.'
+            : `No ${queueLabel.trim()} Sorcery Online games with card data for this period yet.`}
+        </p>
+      </div>
     )
   }
 
@@ -119,20 +176,7 @@ export default function CardStats({ playerId, eventFilter, isOwner, isPublic }) 
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-text-muted">
-          From Sorcery Online games: <strong className="text-text-primary tabular-nums">{data.games}</strong> games with card data
-          ({data.wins}-{data.losses}, {data.win_rate}%).
-        </p>
-        {isOwner && (
-          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-bg-raised border border-border text-xs text-text-muted">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
-            </svg>
-            {isPublic ? 'Public: anyone can see this tab' : 'Only you and admins can see this tab'}
-          </span>
-        )}
-      </div>
+      {header}
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <Tile value={data.unique_cards} label="Different cards played" />

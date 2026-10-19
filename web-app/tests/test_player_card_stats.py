@@ -80,3 +80,27 @@ def test_public_when_player_opts_in(client, match_db):
     UserProfileRepository(match_db).set_profile_visibility("1", {"card_stats": True})
     _as(client, "2")
     assert client.get("/api/player/1/card-stats").status_code == 200
+
+
+def test_queue_filter_splits_ranked_and_casual(client, match_db):
+    _seed_callbacks(match_db, GAMES)
+    conn = sqlite3.connect(str(match_db))
+    conn.execute(
+        "INSERT INTO sorcery_online_match_callbacks (queue_type, outcome, winner_id, loser_id, match_id, played_cards)"
+        " VALUES ('testing', 'decided', 1, 4, 'c', ?)",
+        (json.dumps({"1": ["Casual Card"], "4": ["Other"]}),),
+    )
+    conn.commit()
+    conn.close()
+    _as(client, "1")
+
+    def stats(queue):
+        return client.get(f"/api/player/1/card-stats?queue={queue}").get_json()
+
+    assert stats("all")["games"] == 4
+    ranked = stats("ranked")
+    assert ranked["games"] == 3 and ranked["queue"] == "ranked"
+    assert "Casual Card" not in {c["name"] for c in ranked["cards"]}
+    casual = stats("casual")
+    assert casual["games"] == 1 and {c["name"] for c in casual["cards"]} == {"Casual Card"}
+    assert stats("bogus")["queue"] == "all"

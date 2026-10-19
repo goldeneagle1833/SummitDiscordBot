@@ -691,6 +691,7 @@ function DeckStats({ cards }) {
     const typeCounts = {}
     const elementCounts = {}
     const rarityCounts = {}
+    let rarityTotal = 0
     const keywordCounts = {}
     const subtypeCounts = {}
     let totalMana = 0, manaCards = 0
@@ -724,9 +725,13 @@ function DeckStats({ cards }) {
         elementCounts[el] = (elementCounts[el] || 0) + qty
       })
 
-      // Rarity
-      const rarity = card.rarity || 'Unknown'
-      rarityCounts[rarity] = (rarityCounts[rarity] || 0) + qty
+      // Rarity - spells only, so courts and other atlas sites don't
+      // inflate the elite and unique counts
+      if (type !== 'Site' && type !== 'Avatar') {
+        const rarity = card.rarity || 'Unknown'
+        rarityCounts[rarity] = (rarityCounts[rarity] || 0) + qty
+        rarityTotal += qty
+      }
 
       // Keywords from rules text
       const rt = (card.rules_text || '').toLowerCase()
@@ -756,7 +761,7 @@ function DeckStats({ cards }) {
     }))
     const raritySegs = [...RARITIES, 'Unknown'].filter((r) => rarityCounts[r]).map((r) => ({
       label: r, count: rarityCounts[r],
-      pct: (rarityCounts[r] / total) * 100, color: RARITY_COLORS[r] || '#6b7280',
+      pct: rarityTotal ? (rarityCounts[r] / rarityTotal) * 100 : 0, color: RARITY_COLORS[r] || '#6b7280',
     }))
 
     // Sort keywords and subtypes by count desc
@@ -842,7 +847,7 @@ function DeckStats({ cards }) {
             )}
             {stats.raritySegs.length > 0 && (
               <div>
-                <div className="text-text-muted font-semibold uppercase tracking-wider text-[10px] mb-2">Rarity</div>
+                <div className="text-text-muted font-semibold uppercase tracking-wider text-[10px] mb-2">Spell Rarity</div>
                 <div className="space-y-1.5">
                   {stats.raritySegs.map((s) => (
                     <div key={s.label} className="flex items-center gap-2 text-xs">

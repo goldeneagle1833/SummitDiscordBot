@@ -506,6 +506,7 @@ const QUEUE_FILTERS = [
   { key: 'shipped', label: 'Shipped' },
   { key: 'delivered', label: 'Delivered' },
   { key: 'pending_payment', label: 'Awaiting payment' },
+  { key: 'refunded', label: 'Refunded' },
   { key: '', label: 'All' },
 ]
 
@@ -551,6 +552,20 @@ function OrderRow({ order, onChanged, showStorefront = false }) {
       setError(e.message)
       setBusy(false)
     }
+  }
+
+  // Paid orders, plus orders cancelled after the buyer paid
+  const canRefund = ['paid', 'shipped', 'delivered'].includes(order.status)
+    || (order.status === 'cancelled' && order.paid_at)
+  const markRefunded = () => {
+    const ok = window.confirm(
+      `Mark ${order.order_number} as refunded?\n\n`
+      + 'This only updates the order here. It does not send money back: '
+      + 'refund the payment in the Stripe dashboard first.'
+      + '\n\nThe buyer gets a message that their order was refunded.'
+      + (order.status === 'paid' ? '\n\nThe items go back into stock.' : ''),
+    )
+    if (ok) setStatus('refunded')
   }
 
   return (
@@ -642,9 +657,13 @@ function OrderRow({ order, onChanged, showStorefront = false }) {
               Mark delivered
             </button>
           )}
-          {(order.status === 'paid' || order.status === 'pending_payment') && (
-            <button onClick={() => setStatus('cancelled')} disabled={busy} className="text-accent-red hover:underline ml-4">
-              Cancel order{order.status === 'pending_payment' ? ' (restocks items)' : ''}
+          {canRefund && (
+            <button
+              onClick={markRefunded}
+              disabled={busy}
+              className={`text-accent-red hover:underline ${order.status === 'shipped' ? 'ml-4' : ''}`}
+            >
+              Mark refunded
             </button>
           )}
           {error && <p className="text-accent-red">{error}</p>}

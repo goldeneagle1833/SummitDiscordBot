@@ -145,6 +145,23 @@ class StoreNotificationService:
             notif_body,
         )
 
+    def notify_order_refunded(self, order: dict) -> None:
+        total = _fmt_money(order["total_cents"], order.get("currency") or "USD")
+        subject = f"{STORE_NAME}: order {order['order_number']} refunded"
+        body = (
+            f"Your order {order['order_number']} has been refunded ({total}).\n\n"
+            f"The money goes back to the card you paid with. Banks usually "
+            f"show it within 5-10 business days."
+        )
+        self._notify_buyer(order, subject, body)
+
+        # In-app web notification
+        self.repo.create_web_notification(
+            order["user_id"], "order_refunded",
+            f"Order {order['order_number']} refunded",
+            f"{total} is on its way back to your card.",
+        )
+
     # ------------------------------------------------------------------
     # Routing (for non-receipt notifications like shipping)
     # ------------------------------------------------------------------

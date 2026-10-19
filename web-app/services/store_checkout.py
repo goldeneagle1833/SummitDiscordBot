@@ -417,7 +417,7 @@ class StoreCheckoutService:
         return enabled
 
     # ------------------------------------------------------------------
-    # Admin cancel
+    # Cancel (buyer backs out of an unpaid checkout)
     # ------------------------------------------------------------------
 
     def cancel_order(self, order: dict) -> bool:

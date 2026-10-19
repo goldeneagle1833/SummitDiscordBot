@@ -171,7 +171,7 @@ class StoreRepository:
                 CREATE TABLE IF NOT EXISTS web_notifications (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id TEXT NOT NULL,
-                    type TEXT NOT NULL,          -- order_paid | order_shipped
+                    type TEXT NOT NULL,          -- order_paid | order_shipped | order_refunded
                     title TEXT NOT NULL,
                     body TEXT NOT NULL,
                     dismissed INTEGER NOT NULL DEFAULT 0,
@@ -798,6 +798,49 @@ class StoreRepository:
                            updated_at = ? WHERE id = ?""",
                         (item["quantity"], now, item["product_id"]),
                     )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return True
+
+    def refund_order(self, order_id: int) -> bool:
+        """Mark a paid order as refunded (the money is returned in Stripe).
+
+        Paid but unshipped orders get their stock back; shipped or delivered
+        ones don't, since the items are gone. An order cancelled after the
+        buyer paid was already restocked, so it only changes status.
+        Returns False if the order was never paid or is already refunded.
+        """
+        now = self._now()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute(
+                    "SELECT status, paid_at FROM orders WHERE id = ?", (order_id,)
+                ).fetchone()
+                refundable = row is not None and (
+                    row["status"] in ("paid", "shipped", "delivered")
+                    or (row["status"] == "cancelled" and row["paid_at"])
+                )
+                if not refundable:
+                    conn.rollback()
+                    return False
+                conn.execute(
+                    "UPDATE orders SET status = 'refunded', updated_at = ? WHERE id = ?",
+                    (now, order_id),
+                )
+                if row["status"] == "paid":
+                    items = conn.execute(
+                        "SELECT product_id, quantity FROM order_items WHERE order_id = ?",
+                        (order_id,),
+                    ).fetchall()
+                    for item in items:
+                        conn.execute(
+                            """UPDATE products SET stock_quantity = stock_quantity + ?,
+                               updated_at = ? WHERE id = ?""",
+                            (item["quantity"], now, item["product_id"]),
+                        )
                 conn.commit()
             except Exception:
                 conn.rollback()

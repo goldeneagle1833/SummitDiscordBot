@@ -388,19 +388,23 @@ def admin_set_order_status(order_id: int):
         return _not_found("Order")
 
     if status == "cancelled":
-        try:
-            cancelled = StoreCheckoutService(repo).cancel_order(order)
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 409
-        except Exception:
-            logger.exception(f"Could not close Stripe session for order {order_id}")
+        # Admins don't cancel orders. Paid orders are refunded in
+        # Stripe and marked refunded; unpaid checkouts expire on their own.
+        return jsonify({
+            "error": "Orders can't be cancelled from Store Admin. "
+                     "Refund paid orders in Stripe, then mark them refunded."
+        }), 400
+    if status == "refunded":
+        # Records a refund done in Stripe; it does not move any money.
+        if not repo.refund_order(order_id):
             return jsonify({
-                "error": "Could not close the Stripe checkout session; order not cancelled"
-            }), 502
-        if not cancelled:
-            return jsonify({
-                "error": "Only unpaid or paid (unshipped) orders can be cancelled"
+                "error": "Only paid orders that aren't already refunded can be marked refunded"
             }), 409
+        try:
+            from services.store_notifications import StoreNotificationService
+            StoreNotificationService(repo).notify_order_refunded(repo.get_order(order_id))
+        except Exception:
+            logger.exception(f"Refunded notification failed for order {order_id}")
     else:
         try:
             if not repo.set_status(order_id, status):

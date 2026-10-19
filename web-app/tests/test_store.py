@@ -1116,83 +1116,67 @@ class TestStoreAdminRoutes:
             "/api/store/admin/orders/9999/ship", json={"tracking_number": "T"})
         assert resp.status_code == 404
 
-    def test_admin_cancel_restocks(self, store_admin_session, store_repo):
+    def test_admin_cancel_refused(self, store_admin_session, store_repo):
+        """Store Admin can't cancel orders; paid ones get marked refunded."""
+        pid = _seed_product(store_repo, stock_quantity=10)
+        pending = _seed_order(store_repo, product_id=pid)
+        paid = _seed_order(store_repo, product_id=pid)
+        store_repo.mark_paid(paid["id"])
+        for order, status in ((pending, "pending_payment"), (paid, "paid")):
+            resp = store_admin_session.post(
+                f"/api/store/admin/orders/{order['id']}/status",
+                json={"status": "cancelled"})
+            assert resp.status_code == 400
+            assert store_repo.get_order(order["id"])["status"] == status
+        assert store_repo.get_product(pid)["stock_quantity"] == 8
+
+    def test_admin_refund_paid_order_restocks(self, store_admin_session, store_repo):
         pid = _seed_product(store_repo, stock_quantity=10)
         order = _seed_order(store_repo, product_id=pid,
                             items=[{"product_id": pid, "quantity": 3}])
-        assert store_repo.get_product(pid)["stock_quantity"] == 7
-
-        resp = store_admin_session.post(
-            f"/api/store/admin/orders/{order['id']}/status",
-            json={"status": "cancelled"})
-        assert resp.status_code == 200
-        assert store_repo.get_product(pid)["stock_quantity"] == 10
-
-    def test_admin_cancel_twice_restocks_once(self, store_admin_session, store_repo):
-        pid = _seed_product(store_repo, stock_quantity=10)
-        order = _seed_order(store_repo, product_id=pid,
-                            items=[{"product_id": pid, "quantity": 3}])
+        store_repo.mark_paid(order["id"])
         url = f"/api/store/admin/orders/{order['id']}/status"
-        assert store_admin_session.post(url, json={"status": "cancelled"}).status_code == 200
-        assert store_admin_session.post(url, json={"status": "cancelled"}).status_code == 409
+        assert store_admin_session.post(url, json={"status": "refunded"}).status_code == 200
+        assert store_repo.get_order(order["id"])["status"] == "refunded"
+        assert store_repo.get_product(pid)["stock_quantity"] == 10
+        notes = store_repo.list_web_notifications(store_repo.get_order(order["id"])["user_id"])
+        assert any(n["type"] == "order_refunded" for n in notes)
+        # Second click changes nothing and doesn't restock again
+        assert store_admin_session.post(url, json={"status": "refunded"}).status_code == 409
         assert store_repo.get_product(pid)["stock_quantity"] == 10
 
-    def test_admin_cancel_shipped_order_refused(self, store_admin_session, store_repo):
+    def test_admin_refund_shipped_order_keeps_stock(self, store_admin_session, store_repo):
         pid = _seed_product(store_repo, stock_quantity=10)
         order = _seed_order(store_repo, product_id=pid)
         store_repo.mark_paid(order["id"])
         store_repo.mark_shipped(order["id"], "TRACK")
         resp = store_admin_session.post(
             f"/api/store/admin/orders/{order['id']}/status",
-            json={"status": "cancelled"})
-        assert resp.status_code == 409
-        assert store_repo.get_order(order["id"])["status"] == "shipped"
+            json={"status": "refunded"})
+        assert resp.status_code == 200
+        assert store_repo.get_order(order["id"])["status"] == "refunded"
         assert store_repo.get_product(pid)["stock_quantity"] == 9
 
-    def test_admin_cancel_unknown_order(self, store_admin_session, store_repo):
-        resp = store_admin_session.post(
-            "/api/store/admin/orders/9999/status", json={"status": "cancelled"})
-        assert resp.status_code == 404
-
-    @patch("services.store_checkout.stripe")
-    def test_admin_cancel_pending_expires_session(self, mock_stripe, store_admin_session, store_repo):
-        order = _seed_order(store_repo)
-        store_repo.attach_payment(order["id"], "stripe", "cs_admin")
-        resp = store_admin_session.post(
-            f"/api/store/admin/orders/{order['id']}/status",
-            json={"status": "cancelled"})
-        assert resp.status_code == 200
-        mock_stripe.checkout.Session.expire.assert_called_once_with("cs_admin")
-
-    @patch("services.store_checkout.stripe")
-    def test_admin_cancel_pending_but_buyer_paid(self, mock_stripe, store_admin_session, store_repo):
-        mock_stripe.StripeError = Exception
-        mock_stripe.checkout.Session.expire.side_effect = Exception("not open")
-        mock_stripe.checkout.Session.retrieve.return_value = MagicMock(status="complete")
+    def test_admin_refund_cancelled_after_payment(self, store_admin_session, store_repo):
         pid = _seed_product(store_repo, stock_quantity=10)
         order = _seed_order(store_repo, product_id=pid)
-        store_repo.attach_payment(order["id"], "stripe", "cs_paid")
-
+        store_repo.mark_paid(order["id"])
+        store_repo.cancel_order(order["id"])
         resp = store_admin_session.post(
             f"/api/store/admin/orders/{order['id']}/status",
-            json={"status": "cancelled"})
-        assert resp.status_code == 409
-        assert store_repo.get_order(order["id"])["status"] == "pending_payment"
-        assert store_repo.get_product(pid)["stock_quantity"] == 9
+            json={"status": "refunded"})
+        assert resp.status_code == 200
+        assert store_repo.get_order(order["id"])["status"] == "refunded"
+        assert store_repo.get_product(pid)["stock_quantity"] == 10
 
-    @patch("services.store_checkout.stripe")
-    def test_admin_cancel_pending_stripe_down(self, mock_stripe, store_admin_session, store_repo):
-        mock_stripe.StripeError = Exception
-        mock_stripe.checkout.Session.expire.side_effect = Exception("network")
-        mock_stripe.checkout.Session.retrieve.side_effect = Exception("network")
-        order = _seed_order(store_repo)
-        store_repo.attach_payment(order["id"], "stripe", "cs_x")
-
-        resp = store_admin_session.post(
-            f"/api/store/admin/orders/{order['id']}/status",
-            json={"status": "cancelled"})
-        assert resp.status_code == 502
-        assert store_repo.get_order(order["id"])["status"] == "pending_payment"
+    def test_admin_refund_unpaid_order_refused(self, store_admin_session, store_repo):
+        pid = _seed_product(store_repo, stock_quantity=10)
+        order = _seed_order(store_repo, product_id=pid)
+        url = f"/api/store/admin/orders/{order['id']}/status"
+        assert store_admin_session.post(url, json={"status": "refunded"}).status_code == 409
+        store_repo.cancel_order(order["id"])
+        assert store_admin_session.post(url, json={"status": "refunded"}).status_code == 409
+        assert store_repo.get_order(order["id"])["status"] == "cancelled"
 
     def test_admin_export_orders_csv(self, store_admin_session, store_repo):
         pid = _seed_product(store_repo, stock_quantity=10)

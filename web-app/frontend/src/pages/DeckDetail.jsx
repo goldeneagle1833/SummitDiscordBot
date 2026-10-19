@@ -6,6 +6,7 @@ import Spinner from '@/components/ui/Spinner'
 import CardImagePopup from '@/components/deck/CardImagePopup'
 import DeckVisualizer from '@/components/deck/DeckVisualizer'
 import TryDeckButton from '@/components/deck/TryDeckButton'
+import CardmarketButton from '@/components/deck/CardmarketButton'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const TCGPLAYER_IMPACT_LINK = 'https://partner.tcgplayer.com/c/5746741/1780961/21018'
@@ -302,6 +303,7 @@ export default function DeckDetail() {
                 Buy on TCGPlayer ↗
               </a>
             )}
+            <CardmarketButton cards={data.seed_cards} />
           </div>
         </div>
         {seed.primer && (

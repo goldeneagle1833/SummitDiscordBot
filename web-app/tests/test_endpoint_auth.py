@@ -24,6 +24,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # -- Status / health --
     "api.misc.status",
     "api.misc.recent_event",
+    "api.misc.visitor_region",  # country code from Cloudflare header only
     "api.misc.database_status",
     "api.monitoring.health",  # uptime checks; returns pass/fail only, no details
 

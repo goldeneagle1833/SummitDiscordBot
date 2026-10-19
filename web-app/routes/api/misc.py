@@ -74,6 +74,29 @@ def status():
     return jsonify({"status": "online", "message": "Summit Web App is running!"})
 
 
+# Countries Cardmarket serves (EU/EEA, UK, Switzerland and the rest of
+# geographic Europe it ships within). Used only to decide whether to show the
+# "Buy on Cardmarket" button.
+EUROPE_COUNTRIES = frozenset("""
+    AD AL AT AX BA BE BG CH CY CZ DE DK EE ES FI FO FR GB GG GI GR HR HU IE IM
+    IS IT JE LI LT LU LV MC MD ME MK MT NL NO PL PT RO RS SE SI SK SM UA VA XK
+""".split())
+
+
+@misc_bp.route("/visitor-region")
+def visitor_region():
+    """Visitor's country from Cloudflare's CF-IPCountry header.
+
+    country is null when the header is missing or unknown (local dev,
+    Tor, or IP geolocation turned off); the front end then falls back to
+    the browser's time zone.
+    """
+    country = (request.headers.get("CF-IPCountry") or "").strip().upper()
+    if len(country) != 2 or country in ("XX", "T1"):
+        return jsonify({"country": None, "europe": None})
+    return jsonify({"country": country, "europe": country in EUROPE_COUNTRIES})
+
+
 @misc_bp.route("/youtube-videos")
 def youtube_videos():
     """Get latest videos from community YouTube channels."""

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { fireEvent } from '@testing-library/react'
 import { screen, renderWithRouter, waitFor, within } from '@/test/test-utils'
 import AvatarTopPlayers from '../AvatarTopPlayers'
 import { getAvatarFilters, getAvatarTopPlayers } from '@/api/cards'
@@ -89,11 +90,29 @@ describe('AvatarTopPlayers season Elo', () => {
 
     expect(await screen.findByRole('heading', { name: 'Avatar of Air' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Season Elo' }).selected).toBe(true)
-    expect(screen.getByText('2 players rated on Avatar of Air this season')).toBeInTheDocument()
+    // Nobody on Air has the default 10 games yet
+    expect(screen.getByText('Nobody has 10+ games on Avatar of Air this season yet.')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '2' } })
+    expect(screen.getByText(/2 players with 2\+ games on Avatar of Air this season/)).toBeInTheDocument()
     const rows = screen.getAllByRole('row').slice(1)
     expect(within(rows[0]).getByRole('link', { name: 'Amy' })).toHaveAttribute('href', '/player/11')
     expect(within(rows[0]).getByText('1588')).toBeInTheDocument()
     expect(within(rows[1]).getByText('#2')).toBeInTheDocument()
+  })
+
+  it('drops players under Min Games and re-ranks the rest', async () => {
+    renderWithRouter(<AvatarTopPlayers />, {
+      route: '/avatars/top-players?avatar=Avatar%20of%20Air&event=current',
+    })
+    await screen.findByRole('heading', { name: 'Avatar of Air' })
+
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '5' } })
+    expect(screen.getByText(/1 player with 5\+ games on Avatar of Air this season \(2 rated\)/)).toBeInTheDocument()
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByRole('link', { name: 'Amy' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Ed' })).not.toBeInTheDocument()
   })
 
   it('switches back to Avatar Score', async () => {

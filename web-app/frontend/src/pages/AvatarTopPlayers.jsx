@@ -35,17 +35,22 @@ function sortPlayers(players, sortBy) {
   }
 }
 
-function SeasonEloTable({ avatar, entry }) {
+function SeasonEloTable({ avatar, entry, minGames }) {
   if (!entry) {
     return <p className="text-center text-text-muted py-10">No rated games on {avatar || 'this avatar'} this season yet.</p>
   }
+  // Players under the minimum drop off, and the rest are re-ranked from #1
+  const players = entry.entries
+    .filter((player) => player.games >= minGames)
+    .map((player, index) => ({ ...player, displayRank: index + 1 }))
   return (
     <section className="bg-bg-surface border border-border rounded-soft overflow-hidden">
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 p-4 border-b border-border">
         <div>
           <h2 className="text-xl font-display text-text-primary">{avatar}</h2>
           <p className="text-sm text-text-muted">
-            {entry.players} player{entry.players === 1 ? '' : 's'} rated on {avatar} this season
+            {players.length} player{players.length === 1 ? '' : 's'} with {minGames}+ game{minGames === 1 ? '' : 's'} on {avatar} this season
+            {players.length < entry.players && ` (${entry.players} rated)`}
           </p>
         </div>
         <Link to={`/avatar/${encodeURIComponent(avatar)}`} className="text-sm text-primary hover:underline">
@@ -65,11 +70,18 @@ function SeasonEloTable({ avatar, entry }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {entry.entries.map((player) => {
+            {players.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-3 py-8 text-center text-text-muted">
+                  Nobody has {minGames}+ games on {avatar} this season yet.
+                </td>
+              </tr>
+            )}
+            {players.map((player) => {
               const winRate = player.games ? Math.round((player.wins / player.games) * 1000) / 10 : 0
               return (
                 <tr key={player.user_id} className="hover:bg-bg-elevated transition-colors">
-                  <td className="px-3 py-3 font-semibold text-text-muted">#{player.rank}</td>
+                  <td className="px-3 py-3 font-semibold text-text-muted">#{player.displayRank}</td>
                   <td className="px-3 py-3">
                     <Link to={`/player/${player.user_id}`} className="text-primary hover:underline font-semibold">
                       {player.display_name}
@@ -211,7 +223,7 @@ export default function AvatarTopPlayers() {
         </h1>
         <p className="text-sm text-text-muted mt-1">
           {eloMode
-            ? 'Every player rated on an avatar this season, ranked by their season Elo on it.'
+            ? 'Players with the minimum games on an avatar this season, ranked by their season Elo on it.'
             : 'Pick an avatar to see its strongest pilots ranked by Avatar Score.'}
         </p>
       </section>
@@ -282,16 +294,14 @@ export default function AvatarTopPlayers() {
               max="100"
               value={minGames}
               onChange={(e) => setMinGames(Number(e.target.value) || 1)}
-              disabled={eloMode}
-              title={eloMode ? 'Season Elo lists every rated player' : undefined}
-              className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm disabled:opacity-50"
+              className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm"
             />
           </label>
         </div>
       </div>
 
       {eloMode ? (
-        <SeasonEloTable avatar={avatarName} entry={eloEntry} />
+        <SeasonEloTable avatar={avatarName} entry={eloEntry} minGames={minGames} />
       ) : loading ? (
         <Spinner className="py-20" />
       ) : !selected ? (

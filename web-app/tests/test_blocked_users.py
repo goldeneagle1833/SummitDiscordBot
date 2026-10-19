@@ -230,60 +230,51 @@ class TestPlayerReportsRoute:
 class TestPartnerBlocksRoutes:
     HEADERS = {"X-API-Key": "test-api-key-123"}
 
-    def _seed_user(self, match_db, user_id, display_name):
-        conn = sqlite3.connect(str(match_db))
-        conn.execute(
-            "INSERT INTO user_profiles (user_id, provider, display_name, first_login_at, last_login_at) VALUES (?, 'discord', ?, datetime('now'), datetime('now'))",
-            (user_id, display_name),
-        )
-        conn.commit()
-        conn.close()
+    def _body(self, **overrides):
+        body = {"user_id": "100", "blocked_user_id": "200", "reason": "Rude in chat"}
+        body.update(overrides)
+        return body
 
     def test_requires_api_key(self, client):
-        assert client.get("/api/blocks/100").status_code == 401
-        assert client.get("/api/blocks/check?user_a=1&user_b=2").status_code == 401
+        assert client.post("/api/blocks", json=self._body()).status_code == 401
+        assert client.delete("/api/blocks/100/200").status_code == 401
         bad = {"X-API-Key": "nope"}
-        assert client.get("/api/blocks/100", headers=bad).status_code == 401
+        assert client.post("/api/blocks", json=self._body(), headers=bad).status_code == 401
 
-    def test_player_blocks_both_directions(self, client, match_db):
-        self._seed_user(match_db, "200", "Bob")
-        repo = BlockedUsersRepository(db_path=match_db)
-        repo.block_user("100", "200", reason="secret")
-        repo.block_user("300", "100", reason="secret")
+    def test_add_block_lands_in_profile_list(self, client, match_db):
+        resp = client.post("/api/blocks", json=self._body(), headers=self.HEADERS)
+        assert resp.status_code == 201
+        assert resp.get_json() == {"success": True, "added": True}
 
-        resp = client.get("/api/blocks/100", headers=self.HEADERS)
+        blocked = BlockedUsersRepository(db_path=match_db).get_blocked_users("100")
+        assert blocked == [{"blocked_user_id": "200", "reason": "Rude in chat"}]
+
+    def test_add_block_twice(self, client):
+        client.post("/api/blocks", json=self._body(), headers=self.HEADERS)
+        resp = client.post("/api/blocks", json=self._body(), headers=self.HEADERS)
         assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["success"] is True
-        assert [e["user_id"] for e in data["blocked"]] == ["200"]
-        assert data["blocked"][0]["display_name"] == "Bob"
-        assert [e["user_id"] for e in data["blocked_by"]] == ["300"]
-        assert "secret" not in resp.get_data(as_text=True)
+        assert resp.get_json()["added"] is False
 
-    def test_player_blocks_matches_google_form(self, client, match_db):
-        repo = BlockedUsersRepository(db_path=match_db)
-        repo.block_user("google_100", "200", reason="x")
-        data = client.get("/api/blocks/100", headers=self.HEADERS).get_json()
-        assert [e["user_id"] for e in data["blocked"]] == ["200"]
-
-    def test_player_blocks_empty(self, client):
-        data = client.get("/api/blocks/999", headers=self.HEADERS).get_json()
-        assert data == {"success": True, "user_id": "999", "blocked": [], "blocked_by": []}
-
-    def test_check_pair(self, client, match_db):
-        BlockedUsersRepository(db_path=match_db).block_user("100", "200", reason="x")
-
-        data = client.get("/api/blocks/check?user_a=200&user_b=100", headers=self.HEADERS).get_json()
-        assert data["blocked"] is True
-        assert data["a_blocked_b"] is False
-        assert data["b_blocked_a"] is True
-
-        data = client.get("/api/blocks/check?user_a=100&user_b=300", headers=self.HEADERS).get_json()
-        assert data["blocked"] is False
-
-    def test_check_pair_missing_params(self, client):
-        resp = client.get("/api/blocks/check?user_a=100", headers=self.HEADERS)
+    def test_add_block_requires_reason(self, client):
+        resp = client.post("/api/blocks", json=self._body(reason=" "), headers=self.HEADERS)
         assert resp.status_code == 400
+
+    def test_add_block_self_rejected(self, client):
+        resp = client.post("/api/blocks", json=self._body(blocked_user_id="100"), headers=self.HEADERS)
+        assert resp.status_code == 400
+
+    def test_add_block_missing_ids(self, client):
+        resp = client.post("/api/blocks", json=self._body(user_id=""), headers=self.HEADERS)
+        assert resp.status_code == 400
+
+    def test_remove_block(self, client, match_db):
+        BlockedUsersRepository(db_path=match_db).block_user("100", "200", reason="x")
+        resp = client.delete("/api/blocks/100/200", headers=self.HEADERS)
+        assert resp.get_json() == {"success": True, "removed": True}
+        assert BlockedUsersRepository(db_path=match_db).get_blocked_users("100") == []
+
+        resp = client.delete("/api/blocks/100/200", headers=self.HEADERS)
+        assert resp.get_json()["removed"] is False
 
 
 class TestPartnerPlayerReports:

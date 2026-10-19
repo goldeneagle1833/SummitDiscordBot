@@ -12,6 +12,9 @@ import usePageTitle from '@/hooks/usePageTitle'
 import ShopifyApparel from '@/components/store/ShopifyApparel'
 import ImageLightbox from '@/components/store/ImageLightbox'
 
+// Shown when a storefront has no shipping note of its own
+const DEFAULT_SHIPPING_NOTE = 'Ships within the United States only.'
+
 function LoginPromptModal({ onClose }) {
   const returnUrl = encodeURIComponent(window.location.href)
 
@@ -252,7 +255,9 @@ export default function Store() {
           <LinkifiedText text={active.description} />
         </p>
       )}
-      <p className="text-xs text-text-muted mb-5">Ships within the United States only.</p>
+      <p className="text-xs text-text-muted mb-5 max-w-3xl whitespace-pre-line">
+        {active.shipping_note || DEFAULT_SHIPPING_NOTE}
+      </p>
 
       {notTakingOrders && (
         <p className="text-sm bg-secondary/10 border border-secondary/30 rounded-lg px-4 py-3 mb-5 max-w-3xl">

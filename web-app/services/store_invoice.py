@@ -161,7 +161,8 @@ def build_invoice_pdf(order: dict, storefront: dict | None) -> bytes:
     ]))
     story += [totals_table, Spacer(1, 0.4 * inch)]
 
-    story.append(_p("Thank you for your order. Ships within the United States only.", small))
+    note = (storefront or {}).get("shipping_note") or "Ships within the United States only."
+    story.append(_p(f"Thank you for your order. {note}", small))
 
     buf = BytesIO()
     doc = SimpleDocTemplate(

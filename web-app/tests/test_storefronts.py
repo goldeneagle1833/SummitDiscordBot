@@ -697,6 +697,19 @@ class TestStorefrontPaymentRoutes:
         assert res.status_code == 400
 
 
+    def test_full_admin_sets_shipping_note(self, full_admin, store_repo, client):
+        s = _make_shop(store_repo)
+        note = "LIMITED RUN PRE-ORDER. Shipping to US addresses only."
+        url = f"/api/store/admin/storefronts/{s['explorer']}"
+        assert full_admin.patch(url, json={"shipping_note": note}).status_code == 200
+        assert store_repo.get_storefront(s["explorer"])["shipping_note"] == note
+        store_repo.update_storefront(s["explorer"], is_active=1)
+        public = {sf["id"]: sf for sf in client.get("/api/store/storefronts").get_json()["storefronts"]}
+        assert public[s["explorer"]]["shipping_note"] == note
+        # Blank goes back to the standard line
+        assert full_admin.patch(url, json={"shipping_note": "  "}).status_code == 200
+        assert store_repo.get_storefront(s["explorer"])["shipping_note"] is None
+
 class TestDeleteStorefront:
     def test_full_admin_deletes_storefront_without_orders(self, full_admin, store_repo):
         sid = store_repo.create_storefront("vip", "VIP")
@@ -829,7 +842,7 @@ class TestOwnKeyStorefronts:
         StoreRepository(db_path=tmp_path / "store.db")
         repo = StoreRepository(db_path=tmp_path / "store.db")
         sf = repo.get_storefront_by_slug("explorer-series")
-        assert sf["name"] == "Explorer Series Store"
+        assert sf["name"] == "Explorer Series Art Prints"
         assert sf["stripe_key_env"] == KEY_ENV
         assert sf["is_active"] == 0
         assert repo.accepts_payments(sf)

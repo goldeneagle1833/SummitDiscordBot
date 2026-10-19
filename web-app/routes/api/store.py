@@ -967,7 +967,7 @@ def upload_product_image():
 # Storefronts
 # ----------------------------------------------------------------------
 
-PUBLIC_STOREFRONT_FIELDS = ("id", "slug", "name", "description", "sort_order")
+PUBLIC_STOREFRONT_FIELDS = ("id", "slug", "name", "description", "sort_order", "shipping_note")
 
 
 @store_bp.route("/store/storefronts", methods=["GET"])
@@ -1063,6 +1063,9 @@ def admin_update_storefront(storefront_id: int):
         fields["description"] = _clean_text(data, "description", 1000)
     if "contact_email" in data:
         fields["contact_email"] = _clean_text(data, "contact_email", 200) or None
+    if "shipping_note" in data:
+        # Blank falls back to the standard US-only line
+        fields["shipping_note"] = _clean_text(data, "shipping_note", 500) or None
     if "is_active" in data:
         fields["is_active"] = 1 if data["is_active"] in (1, True, "1", "true") else 0
     if "sort_order" in data:

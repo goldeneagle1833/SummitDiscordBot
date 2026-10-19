@@ -51,7 +51,7 @@ STRIPE_KEY_ENV_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*_STRIPE_SECRET_KEY$")
 # environment: (key variable, slug, name). Created hidden, so the tab only
 # goes live once a full admin shows it.
 KEY_STOREFRONTS = (
-    ("EXPLORER_STRIPE_SECRET_KEY", "explorer-series", "Explorer Series Store"),
+    ("EXPLORER_STRIPE_SECRET_KEY", "explorer-series", "Explorer Series Art Prints"),
 )
 
 
@@ -273,7 +273,8 @@ class StoreRepository:
             for column in ("stripe_account_id TEXT",
                            "stripe_charges_enabled INTEGER NOT NULL DEFAULT 0",
                            "shipping_cents INTEGER",
-                           "stripe_key_env TEXT"):
+                           "stripe_key_env TEXT",
+                           "shipping_note TEXT"):
                 try:
                     conn.execute(f"ALTER TABLE storefronts ADD COLUMN {column}")
                 except sqlite3.OperationalError:
@@ -1150,7 +1151,7 @@ class StoreRepository:
 
     def update_storefront(self, storefront_id: int, **fields) -> bool:
         allowed = {"name", "description", "contact_email", "sort_order", "is_active",
-                   "shipping_cents", "stripe_key_env"}
+                   "shipping_cents", "stripe_key_env", "shipping_note"}
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return False

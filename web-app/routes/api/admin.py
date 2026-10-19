@@ -1600,6 +1600,7 @@ def all_player_reports():
             "match_type": row["match_type"],
             "reasons": row["reasons"],
             "details": row["details"],
+            "source": row.get("source"),
             "created_at": row["created_at"],
         }
         for row in rows

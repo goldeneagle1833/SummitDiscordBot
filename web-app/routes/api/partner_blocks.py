@@ -1,9 +1,8 @@
 """Partner (Play Sorcery Online) endpoints for player blocks and reports.
 
-Players manage their block list on their Summit profile. The block endpoints
-let a partner server read those blocks so it can keep blocked players apart,
-the same way the Summit bot's matchmaking does. Read only; reasons are never
-shared.
+Players block others from their Summit profile. The block endpoints let a
+partner add or remove blocks on a player's behalf; they land in the same
+block list, so the Summit bot's matchmaking keeps the pair apart too.
 
 The report endpoint is the partner's version of the bot's Report Player
 button: reports land in the same admin list, tagged with their source.
@@ -14,9 +13,7 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from repositories.blocked_users_repo import BlockedUsersRepository
-from repositories.elo import EloRepository
 from repositories.player_reports_repo import REPORT_REASONS, PlayerReportsRepository
-from repositories.user_profiles import UserProfileRepository
 from utils.api_auth import require_integration_api_key
 
 logger = logging.getLogger(__name__)
@@ -24,6 +21,7 @@ logger = logging.getLogger(__name__)
 partner_blocks_bp = Blueprint("partner_blocks", __name__)
 
 MAX_ID_LENGTH = 64
+MAX_REASON_LENGTH = 200
 MAX_DETAILS_LENGTH = 1000
 MAX_NAME_LENGTH = 100
 REPORT_SOURCE = "sorcery-online"
@@ -36,70 +34,57 @@ def _clean_id(value) -> str | None:
     return user_id
 
 
-def _name_resolver():
-    profile_repo = UserProfileRepository()
-    elo_repo = EloRepository()
-    cache: dict[str, str] = {}
-
-    def resolve(uid: str) -> str:
-        if uid not in cache:
-            profile = profile_repo.get_by_user_id(uid)
-            if profile:
-                cache[uid] = profile["display_name"]
-            else:
-                cache[uid] = elo_repo.get_display_name(uid) or uid
-        return cache[uid]
-
-    return resolve
-
-
-@partner_blocks_bp.route("/blocks/check", methods=["GET"])
+@partner_blocks_bp.route("/blocks", methods=["POST"])
 @require_integration_api_key
-def check_block():
-    """Whether either of two players has blocked the other.
+def add_block():
+    """Add a player to another player's block list.
 
-    Query params: user_a, user_b (Discord user IDs).
+    Body: user_id (the blocker), blocked_user_id, reason (Discord user IDs).
+    Same rules as blocking from the Summit profile: a reason is required and
+    a player cannot block themselves.
     """
-    user_a = _clean_id(request.args.get("user_a"))
-    user_b = _clean_id(request.args.get("user_b"))
-    if not user_a or not user_b:
-        return jsonify({"success": False, "error": "user_a and user_b are required"}), 400
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "error": "Request body must be JSON"}), 400
+
+    user_id = _clean_id(data.get("user_id"))
+    blocked_user_id = _clean_id(data.get("blocked_user_id"))
+    if not user_id or not blocked_user_id:
+        return jsonify({"success": False, "error": "user_id and blocked_user_id are required"}), 400
+    if BlockedUsersRepository._stripped(user_id) == BlockedUsersRepository._stripped(blocked_user_id):
+        return jsonify({"success": False, "error": "A player cannot block themselves"}), 400
+
+    reason = str(data.get("reason") or "").strip()[:MAX_REASON_LENGTH]
+    if not reason:
+        return jsonify({"success": False, "error": "A reason is required when blocking a user"}), 400
 
     try:
-        result = BlockedUsersRepository().get_block_between(user_a, user_b)
+        added = BlockedUsersRepository().block_user(user_id, blocked_user_id, reason=reason)
     except Exception as e:
-        logger.error(f"Error checking block pair: {e}", exc_info=True)
-        return jsonify({"success": False, "error": "Could not check blocks"}), 500
+        logger.error(f"Error adding partner block: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "Could not save block"}), 500
 
-    return jsonify({
-        "success": True,
-        "user_a": user_a,
-        "user_b": user_b,
-        "blocked": result["a_blocked_b"] or result["b_blocked_a"],
-        "a_blocked_b": result["a_blocked_b"],
-        "b_blocked_a": result["b_blocked_a"],
-    })
+    logger.info("Partner block: %s blocked %s (added=%s)", user_id, blocked_user_id, added)
+    return jsonify({"success": True, "added": added}), 201 if added else 200
 
 
-@partner_blocks_bp.route("/blocks/<user_id>", methods=["GET"])
+@partner_blocks_bp.route("/blocks/<user_id>/<blocked_user_id>", methods=["DELETE"])
 @require_integration_api_key
-def get_player_blocks(user_id):
-    """Who a player has blocked, and who has blocked them."""
+def remove_block(user_id, blocked_user_id):
+    """Remove a player from another player's block list."""
     user_id = _clean_id(user_id)
-    if not user_id:
+    blocked_user_id = _clean_id(blocked_user_id)
+    if not user_id or not blocked_user_id:
         return jsonify({"success": False, "error": "Invalid user id"}), 400
 
     try:
-        blocks = BlockedUsersRepository().get_blocks_involving(user_id)
-        resolve = _name_resolver()
-        for section in ("blocked", "blocked_by"):
-            for entry in blocks[section]:
-                entry["display_name"] = resolve(entry["user_id"])
+        removed = BlockedUsersRepository().unblock_user(user_id, blocked_user_id)
     except Exception as e:
-        logger.error(f"Error fetching blocks for {user_id}: {e}", exc_info=True)
-        return jsonify({"success": False, "error": "Could not load blocks"}), 500
+        logger.error(f"Error removing partner block: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "Could not remove block"}), 500
 
-    return jsonify({"success": True, "user_id": user_id, **blocks})
+    logger.info("Partner unblock: %s unblocked %s (removed=%s)", user_id, blocked_user_id, removed)
+    return jsonify({"success": True, "removed": removed})
 
 
 @partner_blocks_bp.route("/player-reports", methods=["POST"])

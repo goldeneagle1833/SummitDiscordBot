@@ -1,16 +1,13 @@
 # Summit Player Block and Report API (for Play Sorcery Online)
 
 Players on sorcererssummit.com can block other players from their player profile
-(Profile → Block List). A block is one-way: player A blocks player B. The Summit bot's
-matchmaking keeps a pair apart if **either** player has blocked the other.
+(Profile → Block List). These endpoints let Play Sorcery Online do the same from inside
+PSO: add a player to someone's block list, or take them off it. A block added from PSO
+goes into the **same** Summit block list, so it shows on the player's Summit profile and
+the Summit Discord bot will no longer pair the two players.
 
-Endpoints 1 and 2 let Play Sorcery Online read those blocks so PSO can do the same.
-They are **read only**: blocking and unblocking still happen on the Summit profile.
-The private reason a player types when blocking is **never** returned.
-
-Endpoint 3 is PSO's version of the **Report Player** button on the Discord pairing
-message: a player reports their opponent, and the report goes to the same admin list as
-reports from Discord, marked "via Sorcery Online".
+PSO can also file **Report Player** reports, the same as the 🚩 button on the Discord
+pairing message (section 3).
 
 Base URL: `https://sorcererssummit.com`
 
@@ -35,101 +32,78 @@ A missing or wrong key returns `401`:
 All IDs are **Discord user IDs** as strings, e.g. `"123456789012345678"`, the same
 `discordUserId` Summit sends PSO when it opens a table.
 
-Players who only ever signed in to Summit with Google are stored as `google_<id>`.
-Passing either the bare ID or the `google_` form finds their blocks. IDs in responses are
-returned exactly as stored, so you may occasionally see a `google_…` ID in a list.
+Always send the blocking or reporting player's own ID from their PSO login, never an ID
+the player typed in.
 
 ---
 
-## 1. Check a pair: `GET /api/blocks/check`
+## 1. Block a player: `POST /api/blocks`
 
-The call to make before seating two players together.
+Adds `blocked_user_id` to `user_id`'s block list.
 
 ### Request
 
 ```
-GET https://sorcererssummit.com/api/blocks/check?user_a=123456789012345678&user_b=876543210987654321
+POST https://sorcererssummit.com/api/blocks
 X-API-Key: <your-api-key>
+Content-Type: application/json
 ```
-
-| Parameter | Required | Description                     |
-|-----------|----------|---------------------------------|
-| `user_a`  | yes      | Discord user ID of one player   |
-| `user_b`  | yes      | Discord user ID of the other    |
-
-### Response `200 OK`
 
 ```json
 {
-  "success": true,
-  "user_a": "123456789012345678",
-  "user_b": "876543210987654321",
-  "blocked": true,
-  "a_blocked_b": false,
-  "b_blocked_a": true
-}
-```
-
-| Field         | Description                                                       |
-|---------------|-------------------------------------------------------------------|
-| `blocked`     | `true` if either player has blocked the other. Do not pair them.  |
-| `a_blocked_b` | `user_a` has blocked `user_b`                                     |
-| `b_blocked_a` | `user_b` has blocked `user_a`                                     |
-
-Two players with no blocks return `"blocked": false` (not a 404).
-
----
-
-## 2. A player's block list: `GET /api/blocks/<user_id>`
-
-Everyone a player has blocked, and everyone who has blocked them. Useful for filtering a
-whole queue at once or caching per player.
-
-### Request
-
-```
-GET https://sorcererssummit.com/api/blocks/123456789012345678
-X-API-Key: <your-api-key>
-```
-
-### Response `200 OK`
-
-```json
-{
-  "success": true,
   "user_id": "123456789012345678",
-  "blocked": [
-    {
-      "user_id": "876543210987654321",
-      "display_name": "SomePlayer",
-      "created_at": "2026-10-02 18:41:07"
-    }
-  ],
-  "blocked_by": [
-    {
-      "user_id": "555555555555555555",
-      "display_name": "OtherPlayer",
-      "created_at": "2026-09-14 03:12:55"
-    }
-  ]
+  "blocked_user_id": "876543210987654321",
+  "reason": "Rude in chat"
 }
 ```
 
-| Field                     | Description                                                     |
-|---------------------------|-----------------------------------------------------------------|
-| `blocked`                 | Players this player has blocked, newest first                  |
-| `blocked_by`              | Players who have blocked this player, newest first             |
-| `[].user_id`              | Discord user ID (Google-only accounts as `google_<id>`)          |
-| `[].display_name`         | Name the Summit site shows; falls back to the ID if unknown     |
-| `[].created_at`           | When the block was made, UTC, `YYYY-MM-DD HH:MM:SS`             |
+| Field             | Required | Description                                                       |
+|-------------------|----------|-------------------------------------------------------------------|
+| `user_id`         | yes      | Discord user ID of the player doing the blocking                  |
+| `blocked_user_id` | yes      | Discord user ID of the player being blocked                       |
+| `reason`          | yes      | Why they're blocking (max 200 chars, longer is cut). Required, the same as on the Summit profile. Admins can see it; the blocked player never does. |
 
-A player with no blocks returns `200` with both lists empty.
+### Response
 
-To decide whether two players can be paired from this endpoint, check **both** lists:
-the pair is blocked if the other player appears in `blocked` **or** `blocked_by`.
+`201 Created` when the block is new:
 
-**Privacy:** `blocked_by` tells you who blocked a player. Use it only to keep players
-apart; never show a player who has blocked them.
+```json
+{ "success": true, "added": true }
+```
+
+`200 OK` when that player was already blocked (nothing changes, the original reason is
+kept):
+
+```json
+{ "success": true, "added": false }
+```
+
+### What a block does
+
+- It is one-way (A blocks B), but Summit matchmaking treats it as mutual: if either player
+  has blocked the other, they are not paired. PSO should do the same.
+- It shows in the player's block list on their Summit profile, where they can also remove it.
+
+---
+
+## 2. Unblock a player: `DELETE /api/blocks/<user_id>/<blocked_user_id>`
+
+Takes `blocked_user_id` off `user_id`'s block list.
+
+### Request
+
+```
+DELETE https://sorcererssummit.com/api/blocks/123456789012345678/876543210987654321
+X-API-Key: <your-api-key>
+```
+
+### Response `200 OK`
+
+```json
+{ "success": true, "removed": true }
+```
+
+`"removed": false` means there was no such block (not an error).
 
 ---
 
@@ -205,24 +179,18 @@ not block anyone or change ratings. Admins review it.
 
 ## Errors
 
-| Status | When                                   | Body                                                                 |
-|--------|----------------------------------------|----------------------------------------------------------------------|
-| `400`  | `user_a` or `user_b` missing           | `{"success": false, "error": "user_a and user_b are required"}`      |
-| `400`  | User ID empty or over 64 characters    | `{"success": false, "error": "Invalid user id"}`                     |
-| `400`  | Report: body not JSON                  | `{"success": false, "error": "Request body must be JSON"}`           |
-| `400`  | Report: `reporter_id` or `reported_id` missing | `{"success": false, "error": "reporter_id and reported_id are required"}` |
-| `400`  | Report: reporter and reported are the same | `{"success": false, "error": "A player cannot report themselves"}` |
-| `400`  | Report: unknown reason code            | `{"success": false, "error": "Unknown reasons: rude", "allowed_reasons": ["voice_refused", "..."]}` |
-| `400`  | Report: no reasons and no details      | `{"success": false, "error": "Give at least one reason or some details"}` |
-| `400`  | Report: `details` over 1000 characters | `{"success": false, "error": "details must be 1000 characters or fewer"}` |
-| `400`  | Report: `pairing_id` not a number      | `{"success": false, "error": "pairing_id must be an integer"}`       |
-| `401`  | Missing or wrong API key (any endpoint) | `{"success": false, "error": "Invalid API key"}`                    |
-| `500`  | Server error                           | `{"success": false, "error": "Could not check blocks"}` (or `"Could not load blocks"`, `"Could not save report"`) |
-
-## Notes
-
-- Blocks take effect immediately; there is no caching on Summit's side. If PSO caches the
-  per-player list, keep it short (a few minutes) so new blocks and unblocks show up quickly.
-- Blocking is directional on Summit, but for matchmaking treat it as mutual.
-- There is no endpoint for PSO to add or remove blocks. Players manage them on their Summit
-  profile. Ask Summit if PSO needs write access.
+| Status | When                                            | Body                                                                 |
+|--------|-------------------------------------------------|----------------------------------------------------------------------|
+| `400`  | Body not JSON                                   | `{"success": false, "error": "Request body must be JSON"}`           |
+| `400`  | Block: `user_id` or `blocked_user_id` missing   | `{"success": false, "error": "user_id and blocked_user_id are required"}` |
+| `400`  | Block: player blocking themselves               | `{"success": false, "error": "A player cannot block themselves"}`    |
+| `400`  | Block: no reason                                | `{"success": false, "error": "A reason is required when blocking a user"}` |
+| `400`  | Unblock: ID empty or over 64 characters         | `{"success": false, "error": "Invalid user id"}`                     |
+| `400`  | Report: `reporter_id` or `reported_id` missing  | `{"success": false, "error": "reporter_id and reported_id are required"}` |
+| `400`  | Report: reporter and reported are the same      | `{"success": false, "error": "A player cannot report themselves"}`   |
+| `400`  | Report: unknown reason code                     | `{"success": false, "error": "Unknown reasons: rude", "allowed_reasons": ["voice_refused", "..."]}` |
+| `400`  | Report: no reasons and no details               | `{"success": false, "error": "Give at least one reason or some details"}` |
+| `400`  | Report: `details` over 1000 characters          | `{"success": false, "error": "details must be 1000 characters or fewer"}` |
+| `400`  | Report: `pairing_id` not a number               | `{"success": false, "error": "pairing_id must be an integer"}`       |
+| `401`  | Missing or wrong API key (any endpoint)         | `{"success": false, "error": "Invalid API key"}`                     |
+| `500`  | Server error                                    | `{"success": false, "error": "Could not save block"}` (or `"Could not remove block"`, `"Could not save report"`) |

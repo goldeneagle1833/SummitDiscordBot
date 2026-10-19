@@ -222,3 +222,65 @@ class TestPlayerReportsRoute:
         assert entry["reported_name"] == "Opponent"
         assert entry["reasons"] == ["voice_refused", "left_early"]
         assert entry["details"] == "Left at 3 life"
+
+
+# ── Partner (PSO) read API ──────────────────────────────────
+
+
+class TestPartnerBlocksRoutes:
+    HEADERS = {"X-API-Key": "test-api-key-123"}
+
+    def _seed_user(self, match_db, user_id, display_name):
+        conn = sqlite3.connect(str(match_db))
+        conn.execute(
+            "INSERT INTO user_profiles (user_id, provider, display_name, first_login_at, last_login_at) VALUES (?, 'discord', ?, datetime('now'), datetime('now'))",
+            (user_id, display_name),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_requires_api_key(self, client):
+        assert client.get("/api/blocks/100").status_code == 401
+        assert client.get("/api/blocks/check?user_a=1&user_b=2").status_code == 401
+        bad = {"X-API-Key": "nope"}
+        assert client.get("/api/blocks/100", headers=bad).status_code == 401
+
+    def test_player_blocks_both_directions(self, client, match_db):
+        self._seed_user(match_db, "200", "Bob")
+        repo = BlockedUsersRepository(db_path=match_db)
+        repo.block_user("100", "200", reason="secret")
+        repo.block_user("300", "100", reason="secret")
+
+        resp = client.get("/api/blocks/100", headers=self.HEADERS)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert [e["user_id"] for e in data["blocked"]] == ["200"]
+        assert data["blocked"][0]["display_name"] == "Bob"
+        assert [e["user_id"] for e in data["blocked_by"]] == ["300"]
+        assert "secret" not in resp.get_data(as_text=True)
+
+    def test_player_blocks_matches_google_form(self, client, match_db):
+        repo = BlockedUsersRepository(db_path=match_db)
+        repo.block_user("google_100", "200", reason="x")
+        data = client.get("/api/blocks/100", headers=self.HEADERS).get_json()
+        assert [e["user_id"] for e in data["blocked"]] == ["200"]
+
+    def test_player_blocks_empty(self, client):
+        data = client.get("/api/blocks/999", headers=self.HEADERS).get_json()
+        assert data == {"success": True, "user_id": "999", "blocked": [], "blocked_by": []}
+
+    def test_check_pair(self, client, match_db):
+        BlockedUsersRepository(db_path=match_db).block_user("100", "200", reason="x")
+
+        data = client.get("/api/blocks/check?user_a=200&user_b=100", headers=self.HEADERS).get_json()
+        assert data["blocked"] is True
+        assert data["a_blocked_b"] is False
+        assert data["b_blocked_a"] is True
+
+        data = client.get("/api/blocks/check?user_a=100&user_b=300", headers=self.HEADERS).get_json()
+        assert data["blocked"] is False
+
+    def test_check_pair_missing_params(self, client):
+        resp = client.get("/api/blocks/check?user_a=100", headers=self.HEADERS)
+        assert resp.status_code == 400

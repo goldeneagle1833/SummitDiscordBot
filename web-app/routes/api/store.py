@@ -674,6 +674,29 @@ def my_orders():
     return jsonify({"orders": result})
 
 
+@store_bp.route("/store/orders/<order_number>/invoice.pdf", methods=["GET"])
+@require_auth
+def my_order_invoice(order_number: str):
+    """Buyer downloads a PDF confirmation of one of their paid orders."""
+    from io import BytesIO
+    from services.store_invoice import INVOICE_STATUSES, build_invoice_pdf
+
+    user_id = str(session.get("user_id", 0))
+    repo = _repo()
+    order = repo.get_order_by_number(order_number)
+    if not order or str(order["user_id"]) != user_id:
+        return jsonify({"error": "Order not found"}), 404
+    if order["status"] not in INVOICE_STATUSES:
+        return jsonify({"error": "The confirmation is available once the order is paid"}), 409
+
+    storefront = repo.get_storefront(order["storefront_id"]) if order.get("storefront_id") else None
+    pdf = build_invoice_pdf(order, storefront)
+    return send_file(
+        BytesIO(pdf), mimetype="application/pdf", as_attachment=True,
+        download_name=f"order-{order['order_number']}.pdf",
+    )
+
+
 @store_bp.route("/store/orders/<order_number>/pay", methods=["POST"])
 @require_auth
 def continue_my_payment(order_number: str):

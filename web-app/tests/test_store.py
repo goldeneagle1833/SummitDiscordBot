@@ -1482,3 +1482,39 @@ class TestStoreWebhookRoute:
         assert second.status_code == 200
         assert second.get_json()["handled"] is True
         assert store_repo.get_order(order["id"])["status"] == "paid"
+
+
+class TestOrderInvoice:
+    """Buyer downloads a PDF confirmation from My Orders."""
+
+    def _url(self, order):
+        return f"/api/store/orders/{order['order_number']}/invoice.pdf"
+
+    def test_paid_order_pdf(self, buyer_session, store_repo):
+        pid = _seed_product(store_repo)
+        order = _seed_order(store_repo, product_id=pid, user_id="buyer_1")
+        store_repo.mark_paid(order["id"])
+        resp = buyer_session.get(self._url(order))
+        assert resp.status_code == 200
+        assert resp.mimetype == "application/pdf"
+        assert resp.data.startswith(b"%PDF")
+        assert order["order_number"] in resp.headers["Content-Disposition"]
+
+    def test_unpaid_order_refused(self, buyer_session, store_repo):
+        order = _seed_order(store_repo, product_id=_seed_product(store_repo),
+                            user_id="buyer_1")
+        assert buyer_session.get(self._url(order)).status_code == 409
+
+    def test_other_users_order_hidden(self, buyer_session, store_repo):
+        order = _seed_order(store_repo, product_id=_seed_product(store_repo),
+                            user_id="someone-else")
+        store_repo.mark_paid(order["id"])
+        assert buyer_session.get(self._url(order)).status_code == 404
+
+    def test_refunded_invoice_builds(self, store_repo):
+        from services.store_invoice import build_invoice_pdf
+        order = _seed_order(store_repo, product_id=_seed_product(store_repo))
+        full = store_repo.get_order(order["id"])
+        full["status"] = "refunded"
+        full["paid_at"] = "2026-10-18T14:00:00"
+        assert build_invoice_pdf(full, {"name": "Summit Store"}).startswith(b"%PDF")

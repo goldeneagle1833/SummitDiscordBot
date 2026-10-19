@@ -1089,7 +1089,7 @@ function StorefrontEditor({ storefront, keyEnvs = [], onSaved }) {
         <input className={inputCls} aria-label={`${storefront.name} name`} value={form.name} onChange={set('name')} />
         <input className={inputCls} aria-label={`${storefront.name} contact email`} placeholder="Contact email for buyers" value={form.contact_email} onChange={set('contact_email')} />
         <textarea className={`${inputCls} sm:col-span-2`} aria-label={`${storefront.name} description`} placeholder="Short description shown under the tab" rows={2} value={form.description} onChange={set('description')} />
-        <textarea className={`${inputCls} sm:col-span-2`} aria-label={`${storefront.name} shipping note`} placeholder="Shipping note (blank shows: Ships within the United States only.)" rows={2} value={form.shipping_note} onChange={set('shipping_note')} />
+        <textarea className={`${inputCls} sm:col-span-2`} aria-label={`${storefront.name} shipping note`} placeholder="Shipping note shown under the US shipping only banner (optional)" rows={2} value={form.shipping_note} onChange={set('shipping_note')} />
         {!storefront.uses_summit_stripe && (
           <label className="text-sm text-text-muted flex items-center gap-2">
             Flat shipping $

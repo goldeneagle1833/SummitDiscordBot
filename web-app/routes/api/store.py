@@ -1064,7 +1064,7 @@ def admin_update_storefront(storefront_id: int):
     if "contact_email" in data:
         fields["contact_email"] = _clean_text(data, "contact_email", 200) or None
     if "shipping_note" in data:
-        # Blank falls back to the standard US-only line
+        # Shown under the US shipping only banner; blank shows nothing extra
         fields["shipping_note"] = _clean_text(data, "shipping_note", 500) or None
     if "is_active" in data:
         fields["is_active"] = 1 if data["is_active"] in (1, True, "1", "true") else 0

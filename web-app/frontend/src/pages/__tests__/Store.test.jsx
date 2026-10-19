@@ -229,11 +229,23 @@ describe('Store storefront tabs', () => {
     expect(screen.getByRole('tab', { name: /Summit Store/ })).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByRole('heading', { name: 'Apparel' })).toBeInTheDocument()
     expect(screen.queryByText('Fire Token')).not.toBeInTheDocument()
-    expect(screen.queryByText('Ships within the United States only.')).not.toBeInTheDocument()
+    expect(screen.queryByText(/US shipping only/)).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('tab', { name: /Summit Store/ }))
     expect(screen.getByText('Fire Token')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Apparel' })).not.toBeInTheDocument()
+  })
+
+  it('highlights US shipping only on every storefront, with its own note', async () => {
+    getStorefronts.mockResolvedValue({
+      storefronts: [SUMMIT, { ...EXPLORER, shipping_note: 'LIMITED RUN PRE-ORDER' }],
+    })
+    renderStore()
+    expect(await screen.findByText(/US shipping only/)).toBeInTheDocument()
+    expect(screen.queryByText('LIMITED RUN PRE-ORDER')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: /Explorer Store/ }))
+    expect(screen.getByText(/US shipping only/)).toBeInTheDocument()
+    expect(screen.getByText('LIMITED RUN PRE-ORDER')).toBeInTheDocument()
   })
 
   it('opens the tab named in the link', async () => {

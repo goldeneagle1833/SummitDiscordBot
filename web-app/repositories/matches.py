@@ -533,11 +533,22 @@ class MatchRepository:
         ``{"queues": {"ranked": {"voice", "no_voice"}, "testing": {...}, ...},
            "days": [{"date": "YYYY-MM-DD", "ranked": {...}, "testing": {...}, ...}]}``
 
+        Each queue split also carries ``voice_elo_sum``/``voice_elo_players`` (and the
+        ``no_voice_`` pair): the summed pre-match lifetime ELO of the players in those
+        games and how many player ratings went into it, so any range or queue mix can
+        be averaged. Pre-match is the stored after-rating minus the change; players
+        missing either are left out of the average.
+
         Only matches that came from a queue pairing are counted (pairing_id is set),
         so games recorded before voice tracking started aren't miscounted as no-voice.
         """
+        def split():
+            return {"voice": 0, "no_voice": 0,
+                    "voice_elo_sum": 0, "voice_elo_players": 0,
+                    "no_voice_elo_sum": 0, "no_voice_elo_players": 0}
+
         def empty():
-            return {queue: {"voice": 0, "no_voice": 0} for queue in self.VOICE_QUEUE_TYPES}
+            return {queue: split() for queue in self.VOICE_QUEUE_TYPES}
 
         totals = empty()
         days = {}
@@ -545,12 +556,24 @@ class MatchRepository:
         try:
             cur = conn.cursor()
             cur.execute("PRAGMA table_info(match_records)")
-            if not {"voice", "pairing_id"} <= {row[1] for row in cur.fetchall()}:
+            columns = {row[1] for row in cur.fetchall()}
+            if not {"voice", "pairing_id"} <= columns:
                 return {"queues": totals, "days": []}
+            rating_cols = {f"{side}_lifetime_elo_{part}"
+                           for side in ("winner", "loser") for part in ("after", "change")}
+            if rating_cols <= columns:
+                winner_pre = ("CASE WHEN winner_lifetime_elo_after IS NOT NULL AND winner_lifetime_elo_change IS NOT NULL"
+                              " THEN winner_lifetime_elo_after - winner_lifetime_elo_change END")
+                loser_pre = ("CASE WHEN loser_lifetime_elo_after IS NOT NULL AND loser_lifetime_elo_change IS NOT NULL"
+                             " THEN loser_lifetime_elo_after - loser_lifetime_elo_change END")
+                elo_select = (f"COALESCE(SUM({winner_pre}), 0) + COALESCE(SUM({loser_pre}), 0),"
+                              f" COUNT({winner_pre}) + COUNT({loser_pre})")
+            else:
+                elo_select = "0, 0"
             placeholders = ", ".join("?" for _ in self.VOICE_QUEUE_TYPES)
             cur.execute(
                 f"""
-                SELECT date(timestamp) AS day, match_type, voice, COUNT(*)
+                SELECT date(timestamp) AS day, match_type, voice, COUNT(*), {elo_select}
                 FROM match_records
                 WHERE pairing_id IS NOT NULL AND match_type IN ({placeholders}) {self._NOT_SEASON}
                 GROUP BY day, match_type, voice
@@ -558,10 +581,12 @@ class MatchRepository:
                 """,
                 self.VOICE_QUEUE_TYPES,
             )
-            for day, match_type, voice, count in cur.fetchall():
+            for day, match_type, voice, count, elo_sum, elo_players in cur.fetchall():
                 key = "voice" if voice else "no_voice"
-                totals[match_type][key] += int(count)
-                days.setdefault(day, empty())[match_type][key] += int(count)
+                for bucket in (totals[match_type], days.setdefault(day, empty())[match_type]):
+                    bucket[key] += int(count)
+                    bucket[f"{key}_elo_sum"] += int(elo_sum or 0)
+                    bucket[f"{key}_elo_players"] += int(elo_players or 0)
         finally:
             conn.close()
         return {

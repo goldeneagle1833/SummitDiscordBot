@@ -309,18 +309,54 @@ class TestAdminRoutes:
 
         assert resp.status_code == 200
         data = resp.get_json()
+
+        def counts(split):
+            return {"voice": split["voice"], "no_voice": split["no_voice"]}
+
         quiet = {"voice": 0, "no_voice": 0}
-        assert data["queues"] == {
+        assert {q: counts(c) for q, c in data["queues"].items()} == {
             "ranked": {"voice": 1, "no_voice": 1},
             "testing": {"voice": 0, "no_voice": 1},
             "limited": quiet,
         }
-        assert data["days"] == [
+        assert [{k: v if k == "date" else counts(v) for k, v in day.items()} for day in data["days"]] == [
             {"date": "2026-09-21", "limited": quiet,
              "ranked": {"voice": 1, "no_voice": 0}, "testing": quiet},
             {"date": "2026-09-22", "limited": quiet,
              "ranked": {"voice": 0, "no_voice": 1}, "testing": {"voice": 0, "no_voice": 1}},
         ]
+
+    def test_voice_stats_sums_pre_match_lifetime_elo(self, admin_session, match_db):
+        seed_matches(match_db, [
+            {"winner_id": "1", "loser_id": "2", "timestamp": "2026-09-21 12:00:00"},
+            {"winner_id": "3", "loser_id": "4", "timestamp": "2026-09-21 13:00:00"},
+            {"winner_id": "5", "loser_id": "6", "timestamp": "2026-09-21 14:00:00"},
+        ])
+        MatchRepository._columns_ensured = False
+        MatchRepository(db_path=match_db)
+        conn = sqlite3.connect(str(match_db))
+        conn.execute("ALTER TABLE match_records ADD COLUMN pairing_id INTEGER")
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(match_records)")}
+        for col in ("winner_lifetime_elo_change", "loser_lifetime_elo_change"):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE match_records ADD COLUMN {col} INTEGER")
+        conn.execute("UPDATE match_records SET pairing_id = rowid")
+        conn.execute("UPDATE match_records SET voice = 1 WHERE rowid = 1")
+        # Pre-match: voice game 1210 and 1190; no-voice game 1010 and 990;
+        # the third game's loser has no stored change, so only its winner counts.
+        conn.execute("""UPDATE match_records SET winner_lifetime_elo_after = 1220, winner_lifetime_elo_change = 10,
+                        loser_lifetime_elo_after = 1180, loser_lifetime_elo_change = -10 WHERE rowid = 1""")
+        conn.execute("""UPDATE match_records SET winner_lifetime_elo_after = 1020, winner_lifetime_elo_change = 10,
+                        loser_lifetime_elo_after = 980, loser_lifetime_elo_change = -10 WHERE rowid = 2""")
+        conn.execute("""UPDATE match_records SET winner_lifetime_elo_after = 1110, winner_lifetime_elo_change = 10,
+                        loser_lifetime_elo_after = 1000, loser_lifetime_elo_change = NULL WHERE rowid = 3""")
+        conn.commit()
+        conn.close()
+
+        ranked = admin_session.get("/api/admin/voice-stats").get_json()["queues"]["ranked"]
+
+        assert (ranked["voice_elo_sum"], ranked["voice_elo_players"]) == (2400, 2)
+        assert (ranked["no_voice_elo_sum"], ranked["no_voice_elo_players"]) == (3100, 3)
 
     def test_database_status(self, admin_session):
         resp = admin_session.get("/api/debug/database-status")

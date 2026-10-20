@@ -228,7 +228,9 @@ class TestMatchRepository:
         ])
         MatchRepository._columns_ensured = False
         repo = MatchRepository(db_path=match_db)
-        empty = {q: {"voice": 0, "no_voice": 0} for q in ("ranked", "testing", "limited")}
+        zero = {"voice": 0, "no_voice": 0, "voice_elo_sum": 0, "voice_elo_players": 0,
+                "no_voice_elo_sum": 0, "no_voice_elo_players": 0}
+        empty = {q: zero for q in ("ranked", "testing", "limited")}
         assert repo.get_voice_match_stats() == {"queues": empty, "days": []}  # no pairing_id yet
 
         conn = sqlite3.connect(match_db)
@@ -240,8 +242,8 @@ class TestMatchRepository:
         conn.close()
 
         queues = repo.get_voice_match_stats()["queues"]
-        assert queues["ranked"] == {"voice": 1, "no_voice": 0}
-        assert queues["testing"] == {"voice": 0, "no_voice": 1}
+        assert {k: queues["ranked"][k] for k in ("voice", "no_voice")} == {"voice": 1, "no_voice": 0}
+        assert {k: queues["testing"][k] for k in ("voice", "no_voice")} == {"voice": 0, "no_voice": 1}
 
     def test_ensure_columns_idempotent(self, match_db):
         """Calling _ensure_columns twice shouldn't raise."""

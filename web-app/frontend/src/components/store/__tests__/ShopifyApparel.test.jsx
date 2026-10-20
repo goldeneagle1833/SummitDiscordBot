@@ -12,7 +12,7 @@ describe('ShopifyApparel', () => {
     window.ShopifyBuy = { buildClient, UI: { onReady: vi.fn(() => Promise.resolve({ createComponent, closeCart: vi.fn() })) } }
 
     render(<ShopifyApparel />)
-    expect(screen.getByRole('heading', { name: 'Apparel' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Explorer Apparel' })).toBeInTheDocument()
     expect(screen.getByText(/separate from\s+the other store tabs/)).toBeInTheDocument()
     await waitFor(() => expect(createComponent).toHaveBeenCalled())
     expect(buildClient).toHaveBeenCalledWith({ domain: '3d97a8-fb.myshopify.com', storefrontAccessToken: '787e2ef44b98115a0a846c1b274faeee' })
@@ -67,5 +67,23 @@ describe('ShopifyApparel', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(screen.getByTestId('shopify-apparel')).toBeInTheDocument()
     expect(screen.queryByText(/couldn.t load/)).not.toBeInTheDocument()
+  })
+
+  it('folds each listing\'s description into Details and Size chart under its card', async () => {
+    const createComponent = vi.fn((type, config) => {
+      config.options.product.events.afterInit({
+        model: {
+          id: `gid://shopify/Product/${config.id}`,
+          descriptionHtml: '<ul><li>Soft cotton</li><li><h4>Product measurements</h4><table><tr><td>Chest</td><td>19</td></tr></table></li></ul>',
+        },
+      })
+      return Promise.resolve()
+    })
+    window.ShopifyBuy = { buildClient: vi.fn(), UI: { onReady: vi.fn(() => Promise.resolve({ createComponent })) } }
+
+    render(<ShopifyApparel />)
+    await waitFor(() => expect(screen.getAllByText('Details')).toHaveLength(5))
+    expect(screen.getAllByText('Size chart')).toHaveLength(5)
+    expect(BUY_BUTTON_OPTIONS.product.contents.description).toBe(false)
   })
 })

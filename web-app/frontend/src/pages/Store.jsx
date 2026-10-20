@@ -140,8 +140,9 @@ export default function Store() {
   const [error, setError] = useState(null)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
 
-  // Apparel is its own tab: Shopify's cart and checkout, not one of our storefronts
-  const showApparel = params.get('tab') === 'apparel'
+  // Explorer Apparel is its own tab: Shopify's cart and checkout, not one of
+  // our storefronts. ?tab=apparel is the older link to it
+  const showApparel = ['explorer-apparel', 'apparel'].includes(params.get('tab'))
   const active =
     storefronts.find((s) => s.slug === params.get('storefront')) || storefronts[0]
   // Each storefront has its own cart, because each one checks out separately
@@ -235,14 +236,14 @@ export default function Store() {
           type="button"
           role="tab"
           aria-selected={showApparel}
-          onClick={() => setParams({ tab: 'apparel' })}
+          onClick={() => setParams({ tab: 'explorer-apparel' })}
           className={`py-3 -mb-px border-b-2 text-sm font-semibold whitespace-nowrap transition-colors ${
             showApparel
               ? 'border-secondary text-secondary'
               : 'border-transparent text-text-muted hover:text-text'
           }`}
         >
-          Apparel
+          Explorer Apparel
         </button>
       </div>
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatMoney } from '@/api/store'
+import { splitDescription } from './apparelDetails'
 
 /**
  * Explorer Series apparel, sold through the Explorer team's Shopify store.
@@ -90,7 +91,8 @@ export const BUY_BUTTON_OPTIONS = {
     buttonDestination: 'cart',
     layout: 'vertical',
     width: '100%',
-    contents: { img: false, imgWithCarousel: true, button: false, buttonWithQuantity: true, description: true },
+    // The description shows under each card in fold-out sections instead
+    contents: { img: false, imgWithCarousel: true, button: false, buttonWithQuantity: true, description: false },
     text: { button: 'Add to cart' },
     googleFonts: ['Figtree'],
   },
@@ -143,7 +145,7 @@ export const BUY_BUTTON_OPTIONS = {
       discountAmount: lineItemText,
     },
     text: {
-      title: 'Apparel cart',
+      title: 'Explorer Apparel cart',
       total: 'Subtotal',
       notice: 'Checkout is on the Explorer Series Shopify store.',
       button: 'Checkout on Shopify',
@@ -196,6 +198,15 @@ const onCart = (c) => {
 }
 const CART_EVENTS = { afterInit: onCart, afterRender: onCart }
 
+// Hands each listing's description to the card it belongs to
+let detailsListener = null
+const PRODUCT_EVENTS = {
+  afterInit: (p) => {
+    const id = String(p?.model?.id || '').split('/').pop()
+    if (id) detailsListener?.(id, p.model.descriptionHtml || p.model.description || '')
+  },
+}
+
 function openCartNow() {
   if (typeof shopifyCart?.open === 'function') shopifyCart.open()
   else if (typeof shopifyCart?.toggleVisibility === 'function') shopifyCart.toggleVisibility(true)
@@ -239,10 +250,29 @@ export function cartSummary(cart) {
   return { count, subtotalCents: Math.round(parseFloat(amount || 0) * 100) }
 }
 
+function Fold({ title, html, plain = false }) {
+  if (!html) return null
+  return (
+    <details className="group border-t border-border">
+      <summary className="flex items-center justify-between py-3 cursor-pointer list-none text-sm font-semibold text-text-primary hover:text-secondary [&::-webkit-details-marker]:hidden">
+        {title}
+        <svg className="transition-transform group-open:rotate-180" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </summary>
+      <div
+        className={`pb-3 text-sm text-text-muted space-y-2 overflow-x-auto ${plain ? '[&_ul]:list-none [&_ol]:list-none' : '[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5'} [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h4]:font-semibold [&_h5]:font-semibold [&_h6]:font-semibold [&_strong]:text-text [&_table]:w-full [&_table]:text-xs [&_th]:text-left [&_th]:font-semibold [&_th]:text-text [&_th]:px-1.5 [&_th]:py-1 [&_td]:px-1.5 [&_td]:py-1 [&_tr]:border-b [&_tr]:border-border/60`}
+        // Cleaned to plain formatting tags with no attributes (apparelDetails.js)
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </details>
+  )
+}
+
 export default function ShopifyApparel() {
   const node = useRef(null)
+  const slots = useRef({})
   const [failed, setFailed] = useState(false)
   const [cart, setCart] = useState({ count: 0, subtotalCents: 0 })
+  const [details, setDetails] = useState({}) // { productId: { details, sizeChart } }
 
   useEffect(() => {
     let cancelled = false
@@ -252,21 +282,22 @@ export default function ShopifyApparel() {
         const client = ShopifyBuy.buildClient(SHOP)
         return ShopifyBuy.UI.onReady(client).then((shopifyUi) => {
           if (cancelled || !node.current) return
-          node.current.innerHTML = ''
           // Shopify's floating cart tab is hidden (index.css); our bar below
           // shows the cart instead and opens Shopify's cart for checkout
           cartListener = (c) => setCart(cartSummary(c))
+          detailsListener = (id, html) => setDetails((d) => ({ ...d, [id]: splitDescription(html) }))
           // Every listing shares Shopify's one cart
           const drawn = PRODUCT_IDS.map((id) => {
-            const card = document.createElement('div')
-            card.className = 'bg-bg-surface border border-border rounded-lg p-4'
-            node.current.appendChild(card)
+            const slot = slots.current[id]
+            if (!slot) return null
+            slot.innerHTML = ''
             return shopifyUi.createComponent('product', {
               id,
-              node: card,
+              node: slot,
               moneyFormat: '%24%7B%7Bamount%7D%7D',
               options: {
                 ...BUY_BUTTON_OPTIONS,
+                product: { ...BUY_BUTTON_OPTIONS.product, events: PRODUCT_EVENTS },
                 cart: {
                   ...BUY_BUTTON_OPTIONS.cart,
                   events: CART_EVENTS,
@@ -285,23 +316,24 @@ export default function ShopifyApparel() {
         })
       })
       .catch(() => { if (!cancelled) setFailed(true) })
-    const current = node.current
+    const current = slots.current
     return () => {
       cancelled = true
       cartListener = null
+      detailsListener = null
       closeShopifyCart()
-      if (current) current.innerHTML = ''
+      Object.values(current).forEach((slot) => { if (slot) slot.innerHTML = '' })
     }
   }, [])
 
   return (
     <section aria-labelledby="apparel-heading">
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-        <h2 id="apparel-heading" className="text-2xl font-display text-secondary">Apparel</h2>
-        <span className="text-xs uppercase tracking-wider text-text-muted">Explorer Series apparel</span>
+        <h2 id="apparel-heading" className="text-2xl font-display text-secondary">Explorer Apparel</h2>
+        <span className="text-xs uppercase tracking-wider text-text-muted">Explorer Series</span>
       </div>
       <p className="text-sm text-text-muted mb-6 max-w-3xl">
-        Apparel has its own cart and checks out on the Explorer Series Shopify store, separate from
+        Explorer Apparel has its own cart and checks out on the Explorer Series Shopify store, separate from
         the other store tabs. Add your jersey name in the apparel cart&apos;s note before checking out.
       </p>
       {failed ? (
@@ -309,13 +341,25 @@ export default function ShopifyApparel() {
           The apparel shop couldn&apos;t load right now. Please refresh the page to try again.
         </p>
       ) : (
-        <div ref={node} data-testid="shopify-apparel" className="min-h-[120px] grid gap-5 sm:grid-cols-2 lg:grid-cols-3" />
+        <div ref={node} data-testid="shopify-apparel" className="min-h-[120px] grid gap-5 sm:grid-cols-2 lg:grid-cols-3 items-start">
+          {PRODUCT_IDS.map((id) => (
+            <div key={id} className="bg-bg-surface border border-border rounded-lg p-4">
+              <div ref={(el) => { slots.current[id] = el }} />
+              {(details[id]?.details || details[id]?.sizeChart) && (
+                <div className="mt-2">
+                  <Fold title="Details" html={details[id].details} />
+                  <Fold title="Size chart" html={details[id].sizeChart} plain />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
 
       {cart.count > 0 && (
         <div className="sticky bottom-4 mt-8 bg-bg-elevated border border-secondary/30 rounded-lg p-4 flex items-center justify-between gap-3 shadow-harsh">
           <div className="text-sm">
-            <span className="block text-xs text-text-muted mb-0.5">Apparel cart</span>
+            <span className="block text-xs text-text-muted mb-0.5">Explorer Apparel cart</span>
             <span className="font-medium text-text-primary">
               {cart.count} {cart.count === 1 ? 'item' : 'items'}
             </span>

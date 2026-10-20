@@ -15,8 +15,15 @@ const SHOP = {
   // Shopify's public, read-only Storefront key, made to be embedded in pages
   storefrontAccessToken: '787e2ef44b98115a0a846c1b274faeee',
 }
-// Explorer Series TShirt 1 (the collection's other listing is a duplicate)
-export const PRODUCT_ID = '9685424210159'
+// The Explorer team's apparel listings, in the order Bruce sent their
+// Buy Button codes (2026-10-19). Prices, colors and photos come from Shopify.
+export const PRODUCT_IDS = [
+  '9692531622127',
+  '9692532900079',
+  '9692534046959',
+  '9692534276335',
+  '9692535161071',
+]
 
 const C = {
   text: '#f0f6fc',
@@ -60,11 +67,11 @@ export const BUY_BUTTON_OPTIONS = {
         '@media (min-width: 601px)': {
           'max-width': '100%',
           'margin-left': '0',
-          'margin-bottom': '40px',
+          'margin-bottom': '0',
         },
         'text-align': 'left',
       },
-      title: { 'font-family': FONT, 'font-size': '22px', 'font-weight': '600', color: C.text },
+      title: { 'font-family': FONT, 'font-size': '18px', 'font-weight': '600', color: C.text },
       price: { 'font-family': FONT, 'font-size': '16px', 'font-weight': '600', color: C.gold },
       compareAt: { 'font-family': FONT, 'font-size': '14px', color: C.muted },
       unitPrice: { 'font-family': FONT, 'font-size': '14px', color: C.muted },
@@ -76,7 +83,7 @@ export const BUY_BUTTON_OPTIONS = {
       buttonWithQuantity: { quantityInput },
     },
     buttonDestination: 'cart',
-    layout: 'horizontal',
+    layout: 'vertical',
     width: '100%',
     contents: { img: false, imgWithCarousel: true, button: false, buttonWithQuantity: true, description: true },
     text: { button: 'Add to cart' },
@@ -243,21 +250,27 @@ export default function ShopifyApparel() {
           // Shopify's floating cart tab is hidden (index.css); our bar below
           // shows the cart instead and opens Shopify's cart for checkout
           cartListener = (c) => setCart(cartSummary(c))
-          const drawn = shopifyUi.createComponent('product', {
-            id: PRODUCT_ID,
-            node: node.current,
-            moneyFormat: '%24%7B%7Bamount%7D%7D',
-            options: {
-              ...BUY_BUTTON_OPTIONS,
-              cart: {
-                ...BUY_BUTTON_OPTIONS.cart,
-                events: CART_EVENTS,
+          // Every listing shares Shopify's one cart
+          const drawn = PRODUCT_IDS.map((id) => {
+            const card = document.createElement('div')
+            card.className = 'bg-bg-surface border border-border rounded-lg p-4'
+            node.current.appendChild(card)
+            return shopifyUi.createComponent('product', {
+              id,
+              node: card,
+              moneyFormat: '%24%7B%7Bamount%7D%7D',
+              options: {
+                ...BUY_BUTTON_OPTIONS,
+                cart: {
+                  ...BUY_BUTTON_OPTIONS.cart,
+                  events: CART_EVENTS,
+                },
               },
-            },
+            })
           })
           // Shopify's hosted build doesn't always return a promise here, and
-          // nothing after drawing may hide a shirt that's already showing
-          Promise.resolve(drawn)
+          // nothing after drawing may hide a listing that's already showing
+          Promise.all(drawn.map((d) => Promise.resolve(d).catch(() => null)))
             .then(() => {
               // Coming back to the tab: the cart already exists, so no event fires
               if (!cancelled && shopifyCart?.model) setCart(cartSummary(shopifyCart))
@@ -279,7 +292,7 @@ export default function ShopifyApparel() {
     <section aria-labelledby="apparel-heading">
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
         <h2 id="apparel-heading" className="text-2xl font-display text-secondary">Apparel</h2>
-        <span className="text-xs uppercase tracking-wider text-text-muted">Explorer Series shirts</span>
+        <span className="text-xs uppercase tracking-wider text-text-muted">Explorer Series apparel</span>
       </div>
       <p className="text-sm text-text-muted mb-6 max-w-3xl">
         Apparel has its own cart and checks out on the Explorer Series Shopify store, separate from
@@ -290,7 +303,7 @@ export default function ShopifyApparel() {
           The apparel shop couldn&apos;t load right now. Please refresh the page to try again.
         </p>
       ) : (
-        <div ref={node} data-testid="shopify-apparel" className="min-h-[120px]" />
+        <div ref={node} data-testid="shopify-apparel" className="min-h-[120px] grid gap-5 sm:grid-cols-2 lg:grid-cols-3" />
       )}
 
       {cart.count > 0 && (

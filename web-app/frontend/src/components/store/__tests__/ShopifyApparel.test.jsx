@@ -6,7 +6,7 @@ import ShopifyApparel, { BUY_BUTTON_OPTIONS, cartSummary } from '../ShopifyAppar
 describe('ShopifyApparel', () => {
   afterEach(() => { delete window.ShopifyBuy })
 
-  it('draws the one Shopify shirt listing in our styling with its own checkout', async () => {
+  it('draws each Shopify apparel listing in its own card in our styling with its own checkout', async () => {
     const createComponent = vi.fn(() => Promise.resolve())
     const buildClient = vi.fn(() => 'client')
     window.ShopifyBuy = { buildClient, UI: { onReady: vi.fn(() => Promise.resolve({ createComponent, closeCart: vi.fn() })) } }
@@ -16,10 +16,13 @@ describe('ShopifyApparel', () => {
     expect(screen.getByText(/separate from\s+the other store tabs/)).toBeInTheDocument()
     await waitFor(() => expect(createComponent).toHaveBeenCalled())
     expect(buildClient).toHaveBeenCalledWith({ domain: '3d97a8-fb.myshopify.com', storefrontAccessToken: '787e2ef44b98115a0a846c1b274faeee' })
-    const [type, config] = createComponent.mock.calls[0]
-    expect(type).toBe('product')
-    expect(config.id).toBe('9685424210159')
-    expect(config.node).toBe(screen.getByTestId('shopify-apparel'))
+    expect(createComponent.mock.calls.map(([, c]) => c.id)).toEqual([
+      '9692531622127', '9692532900079', '9692534046959', '9692534276335', '9692535161071',
+    ])
+    createComponent.mock.calls.forEach(([type, config]) => {
+      expect(type).toBe('product')
+      expect(screen.getByTestId('shopify-apparel').contains(config.node)).toBe(true)
+    })
   })
 
   it('keeps the jersey name note in the Shopify cart', () => {

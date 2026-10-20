@@ -149,12 +149,23 @@ GET https://sorcererssummit.com/api/leaderboard/avatars?limit=10
 |-----------|--------------------------------------------------------------------|
 | `avatar`  | Optional. Only this avatar (case-insensitive, e.g. `imposter`).     |
 | `limit`   | Optional. Cap each avatar's list at this many entries.              |
+| `rank_by` | Optional. `avatar_score` (default) or `elo`. See below.             |
+| `min_games` | Optional, used with `avatar_score`. Entries with fewer games than this rank after the rest (default `10`). |
+
+Each avatar's list is ranked by **Avatar Score** by default, the same score the Summit's
+Top Players by Avatar page uses, so the #1 entry is the Summit's Top Player for that
+avatar. Avatar Score rewards a strong win rate over a real number of games (a Wilson
+lower bound on win rate plus a small bonus for games played), and entries under
+`min_games` games rank after everyone who has played enough. Pass `rank_by=elo` to get
+the season Elo order instead.
 
 ```json
 {
   "success": true,
   "event": { "event_id": 9, "event_name": "Season 9", "start_date": "...", "elo_mode": "avatar" },
   "elo_mode": "avatar",
+  "rank_by": "avatar_score",
+  "min_games": 10,
   "avatars": [
     {
       "avatar": "Imposter",
@@ -166,6 +177,7 @@ GET https://sorcererssummit.com/api/leaderboard/avatars?limit=10
           "user_id": "123456789012345678",
           "display_name": "Bruce",
           "elo": 1688,
+          "avatar_score": 712,
           "games": 24,
           "wins": 16,
           "losses": 8,
@@ -182,10 +194,12 @@ GET https://sorcererssummit.com/api/leaderboard/avatars?limit=10
 |------------------|-----------------------------------------------------------------------------|
 | `avatars`        | One block per avatar played this season, in alphabetical order              |
 | `[].players`     | How many players have a rated entry on that avatar (before `limit` applies) |
-| `[].entries`     | That avatar's players, best first                                           |
-| `[].entries[].rank`         | Position among players of that avatar (1 = best)                 |
+| `rank_by` / `min_games` | The ranking used for this response                                |
+| `[].entries`     | That avatar's players, best first (by `rank_by`)                            |
+| `[].entries[].rank`         | Position among players of that avatar (1 = best, by `rank_by`)   |
 | `[].entries[].overall_rank` | Position of that entry on the full season ladder                 |
 | `[].entries[].elo`          | The player's season Elo **on that avatar**                       |
+| `[].entries[].avatar_score` | The player's Avatar Score on that avatar this season             |
 | `[].entries[].games/wins/losses` | That avatar's record this season                            |
 | `[].entries[].voice_games`  | The player's voice games this season (all avatars)               |
 

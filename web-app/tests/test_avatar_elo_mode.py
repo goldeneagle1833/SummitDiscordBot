@@ -310,3 +310,42 @@ def test_event_leaderboard_counts_the_seasons_ranked_games(client, avatar_db):
     data = client.get("/api/leaderboard/event").get_json()
 
     assert data["total_games"] == 2
+
+
+def test_avatar_leaderboards_rank_by_avatar_score_by_default(client, avatar_db):
+    elo_db, match_db = avatar_db
+    _seed_entries(elo_db, [
+        ("1", "Imposter", "Alice", 1600, 9),
+        ("3", "Imposter", "Cara", 1540, 12),
+        ("4", "Imposter", "Dan", 1520, 2),
+    ])
+    # Alice: 9-0 (one game short of the minimum), Cara: 10-2, Dan: 0-2
+    for _ in range(9):
+        _seed_avatar_match(match_db, "1", "Imposter", "9", "Witch", w_after=1600, l_after=1400)
+    for _ in range(10):
+        _seed_avatar_match(match_db, "3", "Imposter", "9", "Witch", w_after=1540, l_after=1400)
+    for _ in range(2):
+        _seed_avatar_match(match_db, "9", "Witch", "3", "Imposter", w_after=1400, l_after=1540)
+        _seed_avatar_match(match_db, "9", "Witch", "4", "Imposter", w_after=1400, l_after=1520)
+
+    data = client.get("/api/leaderboard/avatars?avatar=imposter").get_json()
+    assert data["rank_by"] == "avatar_score" and data["min_games"] == 10
+    entries = data["avatars"][0]["entries"]
+    assert [(e["rank"], e["user_id"], e["games"]) for e in entries] == [
+        (1, "3", 12), (2, "1", 9), (3, "4", 2),
+    ]
+    # Alice's 9-0 outscores Cara's 10-2, but only Cara has 10 games
+    assert entries[1]["avatar_score"] > entries[0]["avatar_score"] > entries[2]["avatar_score"]
+
+    elo = client.get("/api/leaderboard/avatars?avatar=imposter&rank_by=elo").get_json()
+    assert elo["rank_by"] == "elo"
+    assert [(e["rank"], e["overall_rank"], e["user_id"]) for e in elo["avatars"][0]["entries"]] == [
+        (1, 1, "1"), (2, 2, "3"), (3, 3, "4"),
+    ]
+
+    # A lower minimum lets the unbeaten 9-0 entry compete on score alone
+    low = client.get("/api/leaderboard/avatars?avatar=imposter&min_games=1").get_json()
+    assert [e["user_id"] for e in low["avatars"][0]["entries"]] == ["1", "3", "4"]
+
+    assert client.get("/api/leaderboard/avatars?rank_by=wins").status_code == 400
+    assert client.get("/api/leaderboard/avatars?min_games=0").status_code == 400

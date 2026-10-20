@@ -46,19 +46,19 @@ def get_avatar_leaderboards():
     Public, like /leaderboard/event. Query params:
         avatar: only this avatar (case-insensitive)
         limit: cap each avatar's list
-        rank_by: "avatar_score" (default, like the Top Players page) or "elo"
-        min_games: with avatar_score, entries with fewer games rank after
-            the rest (default 10, like the Top Players page)
+        rank_by: "elo" (default) or "avatar_score" (like the Top Players page)
+        min_games: entries with fewer games rank after the rest (default 10,
+            like the Top Players page; 0 turns it off)
     """
     limit = request.args.get("limit", type=int)
     if limit is not None and limit < 1:
         return jsonify({"success": False, "error": "limit must be a positive integer"}), 400
-    rank_by = (request.args.get("rank_by") or "avatar_score").strip().lower()
+    rank_by = (request.args.get("rank_by") or "elo").strip().lower()
     if rank_by not in ("avatar_score", "elo"):
         return jsonify({"success": False, "error": "rank_by must be avatar_score or elo"}), 400
     min_games = request.args.get("min_games", 10, type=int)
-    if min_games < 1:
-        return jsonify({"success": False, "error": "min_games must be a positive integer"}), 400
+    if min_games < 0:
+        return jsonify({"success": False, "error": "min_games must be 0 or more"}), 400
     try:
         data = LeaderboardService().get_avatar_leaderboards(
             avatar=request.args.get("avatar"), limit=limit, rank_by=rank_by, min_games=min_games

@@ -149,22 +149,21 @@ GET https://sorcererssummit.com/api/leaderboard/avatars?limit=10
 |-----------|--------------------------------------------------------------------|
 | `avatar`  | Optional. Only this avatar (case-insensitive, e.g. `imposter`).     |
 | `limit`   | Optional. Cap each avatar's list at this many entries.              |
-| `rank_by` | Optional. `avatar_score` (default) or `elo`. See below.             |
-| `min_games` | Optional, used with `avatar_score`. Entries with fewer games than this rank after the rest (default `10`). |
+| `rank_by` | Optional. `elo` (default) or `avatar_score`. See below.             |
+| `min_games` | Optional. Entries with fewer games than this rank after the rest (default `10`; `0` turns it off). |
 
-Each avatar's list is ranked by **Avatar Score** by default, the same score the Summit's
-Top Players by Avatar page uses, so the #1 entry is the Summit's Top Player for that
-avatar. Avatar Score rewards a strong win rate over a real number of games (a Wilson
-lower bound on win rate plus a small bonus for games played), and entries under
-`min_games` games rank after everyone who has played enough. Pass `rank_by=elo` to get
-the season Elo order instead.
+Each avatar's list is ranked by season Elo by default, with entries under `min_games`
+games ranked after everyone who has played enough, so the #1 entry has a real sample.
+Pass `rank_by=avatar_score` to rank by **Avatar Score** instead, the same score the
+Summit's Top Players by Avatar page uses (a Wilson lower bound on win rate plus a small
+bonus for games played). The game minimum applies to both.
 
 ```json
 {
   "success": true,
   "event": { "event_id": 9, "event_name": "Season 9", "start_date": "...", "elo_mode": "avatar" },
   "elo_mode": "avatar",
-  "rank_by": "avatar_score",
+  "rank_by": "elo",
   "min_games": 10,
   "avatars": [
     {

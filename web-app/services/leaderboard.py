@@ -112,6 +112,13 @@ class LeaderboardService:
             )
         return rows
 
+    def _season_games(self, active_event, avatar_only=False) -> int:
+        """Ranked games played so far in the running event."""
+        event_start = (active_event or {}).get("start_date")
+        if not event_start:
+            return 0
+        return self._match_repo.count_season_games(event_start, avatar_only=avatar_only)
+
     def get_event_leaderboard(self) -> dict:
         """Get event leaderboard with active event info and season records.
 
@@ -123,6 +130,7 @@ class LeaderboardService:
             return {
                 "event": active_event,
                 "leaderboard": self._avatar_event_rows(active_event),
+                "total_games": self._season_games(active_event, avatar_only=True),
                 "voice_requirement": voice_requirement(),
             }
         standings = self._elo_repo.get_event_standings()
@@ -157,6 +165,7 @@ class LeaderboardService:
         return {
             "event": active_event,
             "leaderboard": leaderboard_data,
+            "total_games": self._season_games(active_event),
             "voice_requirement": voice_requirement(),
         }
 

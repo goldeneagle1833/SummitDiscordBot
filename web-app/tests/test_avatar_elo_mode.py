@@ -299,3 +299,14 @@ def test_avatar_leaderboards_are_empty_in_player_mode(client, elo_db):
     _start_event(elo_db, mode="player")
     data = client.get("/api/leaderboard/avatars").get_json()
     assert data["elo_mode"] == "player" and data["avatars"] == []
+
+
+def test_event_leaderboard_counts_the_seasons_ranked_games(client, avatar_db):
+    elo_db, match_db = avatar_db
+    _seed_entries(elo_db, [("1", "Imposter", "Alice", 1530, 2), ("2", "Witch", "Bob", 1470, 2)])
+    _seed_avatar_match(match_db, "1", "Imposter", "2", "Witch", w_after=1516, l_after=1484)
+    _seed_avatar_match(match_db, "1", "Imposter", "2", "Witch", w_after=1530, l_after=1470)
+
+    data = client.get("/api/leaderboard/event").get_json()
+
+    assert data["total_games"] == 2

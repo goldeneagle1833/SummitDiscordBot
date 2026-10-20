@@ -422,7 +422,7 @@ export function PromoCarousel() {
 
 // ── Stat Bar ──────────────────────────────────────────────────
 
-function StatBar({ leaderboard, eloKey = 'event_elo' }) {
+function StatBar({ leaderboard, totalGames, eloKey = 'event_elo' }) {
   if (!leaderboard.length) return null
   const total = leaderboard.length
   // Avatar-mode seasons list one row per player and avatar; count people once
@@ -430,10 +430,11 @@ function StatBar({ leaderboard, eloKey = 'event_elo' }) {
   const top = leaderboard[0][eloKey]
   const avg = Math.round(leaderboard.reduce((s, p) => s + (p[eloKey] || 0), 0) / total)
   const stats = [['Players', players]]
+  if (typeof totalGames === 'number') stats.push(['Ranked Games', totalGames])
   if (total !== players) stats.push(['Avatar Entries', total])
   stats.push(['Top ELO', top], ['Avg ELO', avg])
   return (
-    <div className="flex flex-wrap gap-x-9 gap-y-3">
+    <div className="grid grid-cols-3 gap-x-6 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-9">
       {stats.map(([label, val]) => (
         <div key={label}>
           <div className="text-lg font-bold text-secondary">{val}</div>
@@ -936,7 +937,7 @@ export default function Home() {
           ) : (
             <>
               <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
-                <StatBar leaderboard={leaderboard} />
+                <StatBar leaderboard={leaderboard} totalGames={eventData.total_games} />
                 {(avatarMode || endsText) && (
                   <p className="max-w-lg text-[13px] leading-relaxed text-text-muted md:text-right">
                     {avatarMode && (filtered

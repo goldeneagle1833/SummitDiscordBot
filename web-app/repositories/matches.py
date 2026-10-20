@@ -463,6 +463,33 @@ class MatchRepository:
         finally:
             conn.close()
 
+    def count_season_games(self, event_start: str, avatar_only: bool = False) -> int:
+        """Ranked games since the event started (bracket and testing games excluded).
+
+        ``avatar_only`` counts only games that carry avatars, i.e. the games
+        rated on an Avatar-mode ladder.
+        """
+        conn = self._get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(match_records)")
+            columns = {row[1] for row in cur.fetchall()}
+            if not columns:
+                return 0
+            if avatar_only and "winner_avatar" not in columns:
+                return 0
+            filters = " AND winner_avatar IS NOT NULL " if avatar_only else ""
+            if "match_type" in columns:
+                # Testing-queue games sit in the same table but are not ranked
+                filters += " AND (match_type IS NULL OR match_type = 'ranked') "
+            cur.execute(
+                f"SELECT COUNT(*) FROM match_records WHERE timestamp >= ? {filters} {self._NOT_SEASON}",
+                (event_start,),
+            )
+            return int(cur.fetchone()[0])
+        finally:
+            conn.close()
+
     def get_season_avatar_records(self, event_start: str) -> dict[tuple[str, str], dict[str, int]]:
         """Win/loss per (player, avatar) since the event started (Avatar-mode events).
 

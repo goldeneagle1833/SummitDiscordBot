@@ -24,7 +24,12 @@ const inputCls =
 
 const EMPTY_PRODUCT = {
   sku: '', name: '', description: '', price: '', stock_quantity: '', max_per_user_monthly: '', images: [], framing: {},
+  product_type: 'physical', discord_role_id: '',
 }
+
+// Discord role products (e.g. a season ticket) are Summit Store only
+const SUMMIT_SLUG = 'summit'
+const ROLE_ID_PATTERN = /^\d{17,20}$/
 
 function productToForm(p) {
   return {
@@ -36,6 +41,8 @@ function productToForm(p) {
     max_per_user_monthly: p.max_per_user_monthly == null ? '' : String(p.max_per_user_monthly),
     images: p.images?.length ? [...p.images] : p.image_url ? [p.image_url] : [],
     framing: { ...(p.image_framing || {}) },
+    product_type: p.product_type || 'physical',
+    discord_role_id: p.discord_role_id || '',
   }
 }
 
@@ -79,7 +86,7 @@ function uploadBatches(files) {
 
 // Shared by "Add product" and the inline editor. `initial` is a product row
 // when editing, null when adding.
-function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStorefrontId = null }) {
+function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStorefrontId = null, canSellRoles = false }) {
   const editing = Boolean(initial)
   const [storefrontId, setStorefrontId] = useState(defaultStorefrontId ?? storefronts[0]?.id ?? '')
   const [form, setForm] = useState(() => (initial ? productToForm(initial) : EMPTY_PRODUCT))
@@ -91,6 +98,11 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
   const fileInputId = editing ? `product-image-file-${initial.id}` : 'product-image-file'
 
   const set = (f) => (e) => setForm((x) => ({ ...x, [f]: e.target.value }))
+  const summitId = storefronts.find((sf) => sf.slug === SUMMIT_SLUG)?.id
+  const productStorefrontId = editing ? initial.storefront_id : storefrontId
+  const isRole = form.product_type === 'discord_role'
+  // Full admins pick the type on Summit products; anyone else just sees it
+  const showType = (canSellRoles && productStorefrontId != null && productStorefrontId === summitId) || isRole
   const setImages = (fn) => setForm((x) => ({ ...x, images: fn(x.images) }))
   // Which image the framing preview is adjusting
   const [framingUrl, setFramingUrl] = useState(null)
@@ -162,7 +174,17 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
       setError('Monthly limit must be a positive number, or blank for no limit')
       return
     }
+    const roleId = form.discord_role_id.trim()
+    if (isRole && !ROLE_ID_PATTERN.test(roleId)) {
+      setError('Enter the Discord role ID (17 to 20 digits)')
+      return
+    }
     const payload = {
+      // Type fields only when it is (or was) a Discord role product
+      ...(canSellRoles && (isRole || initial?.product_type === 'discord_role') ? {
+        product_type: form.product_type,
+        discord_role_id: isRole ? roleId : null,
+      } : {}),
       sku: form.sku.trim(),
       name: form.name.trim(),
       description: form.description.trim(),
@@ -214,6 +236,45 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
               <option key={sf.id} value={sf.id}>{sf.name}</option>
             ))}
           </select>
+        )}
+        {showType && (
+          <div className="sm:col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs text-text-muted">
+              Product type
+              <select
+                className={inputCls}
+                aria-label="Product type"
+                value={form.product_type}
+                disabled={!canSellRoles}
+                onChange={set('product_type')}
+              >
+                <option value="physical">Physical item (shipped)</option>
+                <option value="discord_role">Discord role (e.g. season ticket)</option>
+              </select>
+            </label>
+            {isRole && (
+              <label className="flex flex-col gap-1 text-xs text-text-muted">
+                Discord role ID
+                <input
+                  className={`${inputCls} font-mono`}
+                  placeholder="e.g. 1234567890123456789"
+                  aria-label="Discord role ID"
+                  inputMode="numeric"
+                  value={form.discord_role_id}
+                  disabled={!canSellRoles}
+                  onChange={set('discord_role_id')}
+                />
+              </label>
+            )}
+            {isRole && (
+              <p className="sm:col-span-2 text-xs text-text-muted">
+                Only shoppers signed in with Discord see this product, one per order, with no shipping.
+                When the order is paid, the Summit bot gives the buyer this role; marking the order refunded takes it back.
+                To get the ID, turn on Developer Mode in Discord, then right-click the role in Server Settings, Roles, and pick Copy Role ID.
+                The bot's own role has to sit above this role.
+              </p>
+            )}
+          </div>
         )}
         <input className={inputCls} placeholder="SKU (e.g. TOK-FIRE)" aria-label="SKU" value={form.sku} onChange={set('sku')} />
         <input className={inputCls} placeholder="Name" aria-label="Name" value={form.name} onChange={set('name')} />
@@ -345,7 +406,7 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
   )
 }
 
-function ProductsPanel({ storefrontId, storefronts }) {
+function ProductsPanel({ storefrontId, storefronts, canSellRoles = false }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -389,6 +450,8 @@ function ProductsPanel({ storefrontId, storefronts }) {
         <ProductForm
           key={editing.id}
           initial={editing}
+          storefronts={storefronts}
+          canSellRoles={canSellRoles}
           onCancel={() => setEditing(null)}
           onSaved={() => {
             setEditing(null)
@@ -402,6 +465,7 @@ function ProductsPanel({ storefrontId, storefronts }) {
           onSaved={load}
           storefronts={storefronts}
           defaultStorefrontId={storefrontId}
+          canSellRoles={canSellRoles}
         />
       )}
 
@@ -446,6 +510,11 @@ function ProductsPanel({ storefrontId, storefronts }) {
                   <td className="py-2 px-3 font-mono text-xs">{p.sku}</td>
                   <td className="py-2 px-3">
                     {p.name}
+                    {p.product_type === 'discord_role' && (
+                      <span className="ml-2 text-[10px] font-medium uppercase tracking-wide bg-[#5865F2]/20 text-[#8f99f7] px-1.5 py-0.5 rounded">
+                        Discord role
+                      </span>
+                    )}
                     {storefrontId == null && storefronts.length > 1 && (
                       <span className="block text-xs text-text-muted">{storefrontName(p.storefront_id)}</span>
                     )}
@@ -1546,7 +1615,7 @@ export default function StoreAdmin() {
         <OrdersPanel key={`orders-${storefrontId ?? 'all'}`} storefrontId={storefrontId} showStorefront={storefrontId == null} />
       )}
       {current === 'products' && (
-        <ProductsPanel key={`products-${storefrontId ?? 'all'}`} storefrontId={storefrontId} storefronts={productStorefronts} />
+        <ProductsPanel key={`products-${storefrontId ?? 'all'}`} storefrontId={storefrontId} storefronts={productStorefronts} canSellRoles={full} />
       )}
       {current === 'team' && (
         selected

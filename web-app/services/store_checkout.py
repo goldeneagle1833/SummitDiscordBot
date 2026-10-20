@@ -130,9 +130,13 @@ class StoreCheckoutService:
         storefront = self._storefront_for_items(items)
         if storefront and not self.repo.accepts_payments(storefront):
             raise ValueError(f"{storefront['name']} isn't taking orders yet")
-        shipping_options, shipping_cents = self._shipping_plan(
-            storefront, discord_roles
-        )
+        if self._items_are_digital(items):
+            # Only Discord roles: nothing to ship, no address to collect
+            shipping_options, shipping_cents = None, 0
+        else:
+            shipping_options, shipping_cents = self._shipping_plan(
+                storefront, discord_roles
+            )
 
         order = self.repo.create_order(
             user_id=user_id,
@@ -292,6 +296,8 @@ class StoreCheckoutService:
                 }
             )
 
+        digital = self.repo.order_is_digital(full_order)
+
         # The success/cancel pages clear or keep this storefront's cart only
         sf = f"&storefront={storefront.get('slug', '')}" if storefront else ""
         number = full_order["order_number"]
@@ -308,14 +314,30 @@ class StoreCheckoutService:
             "success_url": _site_url(f"/store/success?order={number}{sf}"),
             "cancel_url": _site_url(f"/store/cancelled?order={number}{sf}"),
             "expires_at": int(time.time()) + CHECKOUT_EXPIRES_MINUTES * 60,
-            # Always collect a shipping address, US only
-            "shipping_address_collection": {"allowed_countries": SHIP_COUNTRIES},
         }
-        if shipping_options:
-            session_params["shipping_options"] = shipping_options
+        if not digital:
+            # Collect a shipping address, US only. Orders of only Discord
+            # roles have nothing to ship.
+            session_params["shipping_address_collection"] = {
+                "allowed_countries": SHIP_COUNTRIES
+            }
+            if shipping_options:
+                session_params["shipping_options"] = shipping_options
 
         return stripe.checkout.Session.create(
             **session_params, **self._stripe_kwargs(storefront)
+        )
+
+    def _items_are_digital(self, items: list[dict]) -> bool:
+        """True when every cart item is a Discord role product."""
+        products = []
+        for item in items:
+            try:
+                products.append(self.repo.get_product(int(item.get("product_id"))))
+            except (TypeError, ValueError):
+                return False
+        return bool(products) and all(
+            p and self.repo.is_role_product(p) for p in products
         )
 
     def _storefront_for_items(self, items: list[dict]) -> dict | None:
@@ -606,6 +628,17 @@ class StoreCheckoutService:
                 f"order={order['order_number']} amount={amount}",
             )
             logger.info(f"Order paid: {order['order_number']}")
+            paid_order = self.repo.get_order(order["id"])
+            try:
+                from services.store_roles import queue_role_grants
+                queue_role_grants(self.repo, paid_order)
+                if self.repo.order_is_digital(paid_order):
+                    # Nothing to ship: the bot hands over the role
+                    self.repo.set_status(order["id"], "delivered")
+            except Exception:
+                logger.exception(
+                    f"Discord role grant enqueue failed for {order['order_number']}"
+                )
             try:
                 from services.store_notifications import StoreNotificationService
                 StoreNotificationService(self.repo).notify_order_paid(

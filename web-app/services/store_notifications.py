@@ -50,6 +50,16 @@ class StoreNotificationService:
             f"  {i['quantity']}x {i['product_name']}" for i in items
         )
         total = _fmt_money(order["total_cents"], order["currency"])
+        digital = self.repo.order_is_digital(order)
+        next_step = (
+            "Your Discord role is added to your account in the Summit server "
+            "within a minute or two." if digital
+            else "We'll send tracking when it ships."
+        )
+        ship_to = (
+            "Discord role, nothing to ship" if digital
+            else f"Ship to: {order.get('ship_city', '')}, {order.get('ship_state', '')}"
+        )
 
         # Admin ping (recipient resolved by the bot from its config)
         self.repo.enqueue_notification(
@@ -57,7 +67,7 @@ class StoreNotificationService:
             f"New paid order {order['order_number']}",
             f"**{order['username']}** ({order['user_id']}) — {total}\n"
             f"{item_lines}\n"
-            f"Ship to: {order.get('ship_city', '')}, {order.get('ship_state', '')}",
+            f"{ship_to}",
         )
 
         self._notify_storefront_team(order, total, item_lines)
@@ -66,7 +76,7 @@ class StoreNotificationService:
         self.repo.create_web_notification(
             order["user_id"], "order_paid",
             f"Order {order['order_number']} confirmed",
-            f"Your order for {total} has been confirmed. We'll send tracking when it ships.",
+            f"Your order for {total} has been confirmed. {next_step}",
         )
 
         # Discord DM for Discord users
@@ -75,7 +85,7 @@ class StoreNotificationService:
             dm_body = (
                 f"Thanks for your order, {order.get('ship_name') or order['username']}!\n\n"
                 f"Order {order['order_number']} — {total}\n{item_lines}\n\n"
-                f"We'll send tracking as soon as it ships."
+                f"{next_step}"
             )
             self.repo.enqueue_notification(
                 order["id"], "discord_dm", str(order["user_id"]),
@@ -110,13 +120,17 @@ class StoreNotificationService:
         name = storefront.get("name") or STORE_NAME
         link = (f"{PUBLIC_SITE_URL.rstrip('/')}/admin/store"
                 f"?storefront={storefront_id}")
+        ship_to = (
+            "Discord role, nothing to ship" if self.repo.order_is_digital(order)
+            else f"Ship to: {order.get('ship_city') or '?'}, {order.get('ship_state') or '?'}"
+        )
         for user_id in self.repo.sale_alert_recipients(storefront_id):
             self.repo.enqueue_notification(
                 order["id"], "discord_dm", user_id,
                 f"New sale in {name}: {total}",
                 f"Order {order['order_number']} from **{order['username']}**\n"
                 f"{item_lines}\n"
-                f"Ship to: {order.get('ship_city') or '?'}, {order.get('ship_state') or '?'}\n\n"
+                f"{ship_to}\n\n"
                 f"Open the order queue: {link}\n"
                 f"Turn these messages off in Store Admin.",
             )
@@ -280,10 +294,16 @@ def _build_receipt_plain(order: dict) -> str:
             lines.append(f"  {order['ship_country']}")
         lines.append("")
 
-    lines.append("We'll send tracking as soon as your order ships.")
+    lines.append(_receipt_next_step(order))
     lines.append("")
     lines.append(f"View your orders: {PUBLIC_SITE_URL.rstrip('/')}/store/orders")
     return "\n".join(lines)
+
+
+def _receipt_next_step(order: dict) -> str:
+    if StoreRepository.order_is_digital(order):
+        return "Your Discord role is added to your account in the Summit server."
+    return "We'll send tracking as soon as your order ships."
 
 
 def _build_receipt_html(order: dict) -> str:
@@ -437,7 +457,7 @@ def _build_receipt_html(order: dict) -> str:
 
     <!-- Footer -->
     <div style="text-align:center;margin-top:24px;font-size:13px;color:#777">
-      <p style="margin:0 0 12px">We'll send tracking as soon as your order ships.</p>
+      <p style="margin:0 0 12px">{_receipt_next_step(order)}</p>
       <a href="{site}/store/orders"
          style="color:#d4a843;text-decoration:none;font-weight:600">View your orders</a>
     </div>

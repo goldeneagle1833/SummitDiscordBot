@@ -82,6 +82,7 @@ export default function StoreCheckout() {
               quantity: cart[p.id],
               name: p.name,
               price_cents: p.price_cents,
+              is_role: p.product_type === 'discord_role',
             })),
         )
       }),
@@ -105,6 +106,7 @@ export default function StoreCheckout() {
   if (items.length === 0) return <Navigate to={storeUrl} replace />
 
   const subtotal = items.reduce((s, i) => s + i.price_cents * i.quantity, 0)
+  const digitalOnly = items.every((i) => i.is_role)
 
   const isValidEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
 
@@ -163,9 +165,11 @@ export default function StoreCheckout() {
             <span className="text-secondary font-semibold">{formatMoney(subtotal)}</span>
           </div>
           <p className="text-xs text-text-muted mt-2">
-            {freeShipping
-              ? 'Free shipping \u2014 thank you for your support!'
-              : 'Shipping calculated at payment'}
+            {digitalOnly
+              ? 'No shipping. The Summit bot adds your Discord role after payment.'
+              : freeShipping
+                ? 'Free shipping \u2014 thank you for your support!'
+                : 'Shipping calculated at payment'}
           </p>
         </div>
       </div>

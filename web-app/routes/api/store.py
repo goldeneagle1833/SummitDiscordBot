@@ -28,6 +28,10 @@ logger = logging.getLogger(__name__)
 
 store_bp = Blueprint("store", __name__)
 
+# A Discord role product hands out a server role, so only full store admins
+# may create one or change which role it gives
+ROLE_PRODUCT_ADMINS_ONLY = "Only full store admins can set up Discord role products"
+
 # Orders above this total can't be marked shipped without a tracking number
 TRACKING_REQUIRED_OVER_CENTS = 5000
 
@@ -106,6 +110,20 @@ def list_products():
     repo = _repo()
     products = repo.list_products(include_inactive=False)
 
+    # Discord role products (e.g. season tickets) are given to the buyer's
+    # Discord account, so only people signed in with Discord see them.
+    signed_in_with_discord = (
+        session.get("user_id") is not None
+        and session.get("auth_provider", "discord") == "discord"
+    )
+    if not signed_in_with_discord:
+        products = [p for p in products if not repo.is_role_product(p)]
+    roles_held = {str(r) for r in session.get("discord_roles") or []}
+    for p in products:
+        if repo.is_role_product(p):
+            # Roles as of their last sign-in; the bot adds it again harmlessly
+            p["has_role"] = p.get("discord_role_id") in roles_held
+
     # Logged-in buyers also get what's left of each monthly limit, so the
     # storefront can cap quantities instead of failing at checkout.
     user_id = session.get("user_id")
@@ -152,6 +170,8 @@ def admin_create_product():
         return jsonify({"error": "storefront_id must be an integer"}), 400
     if not _can(storefront_id, "products"):
         return jsonify({"error": "You can't add products to that storefront"}), 403
+    if data.get("product_type") == "discord_role" and not is_store_admin():
+        return jsonify({"error": ROLE_PRODUCT_ADMINS_ONLY}), 403
 
     required = ("sku", "name", "price_cents")
     missing = [f for f in required if not data.get(f) and data.get(f) != 0]
@@ -186,6 +206,8 @@ def admin_create_product():
             images=data.get("images"),
             storefront_id=storefront_id,
             image_framing=data.get("image_framing"),
+            product_type=data.get("product_type"),
+            discord_role_id=data.get("discord_role_id"),
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -243,6 +265,10 @@ def _validate_product_patch(data: dict) -> tuple[dict, str | None]:
         fields["image_url"] = (data["image_url"] or "").strip() or None
     if "image_framing" in data:
         fields["image_framing"] = data["image_framing"]
+    if "product_type" in data:
+        fields["product_type"] = data["product_type"] or "physical"
+    if "discord_role_id" in data:
+        fields["discord_role_id"] = str(data["discord_role_id"] or "").strip() or None
     return fields, None
 
 
@@ -262,6 +288,14 @@ def admin_update_product(product_id: int):
     if ("storefront_id" in fields and fields["storefront_id"] != product["storefront_id"]
             and not is_store_admin()):
         return jsonify({"error": "Only full store admins can move products"}), 403
+    changes_role = (
+        fields.get("product_type", product.get("product_type") or "physical")
+        != (product.get("product_type") or "physical")
+        or ("discord_role_id" in fields
+            and fields["discord_role_id"] != product.get("discord_role_id"))
+    )
+    if changes_role and not is_store_admin():
+        return jsonify({"error": ROLE_PRODUCT_ADMINS_ONLY}), 403
     try:
         updated = repo.update_product(product_id, **fields)
     except ValueError as e:
@@ -400,9 +434,15 @@ def admin_set_order_status(order_id: int):
             return jsonify({
                 "error": "Only paid orders that aren't already refunded can be marked refunded"
             }), 409
+        refunded = repo.get_order(order_id)
+        try:
+            from services.store_roles import queue_role_removals
+            queue_role_removals(repo, refunded)
+        except Exception:
+            logger.exception(f"Discord role removal enqueue failed for order {order_id}")
         try:
             from services.store_notifications import StoreNotificationService
-            StoreNotificationService(repo).notify_order_refunded(repo.get_order(order_id))
+            StoreNotificationService(repo).notify_order_refunded(refunded)
         except Exception:
             logger.exception(f"Refunded notification failed for order {order_id}")
     else:

@@ -46,8 +46,14 @@ export function cartCount(slug) {
 
 // Most of a product this buyer can put in the cart: stock, capped by what's
 // left of their monthly limit (only sent by the API for logged-in buyers).
+export function isRoleProduct(product) {
+  return product.product_type === 'discord_role'
+}
+
 export function maxQuantity(product) {
-  return Math.max(0, Math.min(product.stock_quantity, product.remaining_this_month ?? Infinity))
+  // A Discord role is one per order, and not for someone who already has it
+  const roleCap = isRoleProduct(product) ? (product.has_role ? 0 : 1) : Infinity
+  return Math.max(0, Math.min(product.stock_quantity, product.remaining_this_month ?? Infinity, roleCap))
 }
 
 // Drop products that are no longer for sale and clamp quantities to what can

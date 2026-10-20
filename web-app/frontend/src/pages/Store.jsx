@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { getProducts, getStorefronts, formatMoney } from '@/api/store'
 import useStoreCart, {
-  DEFAULT_STOREFRONT, cartCount, maxQuantity, reconcileCart,
+  DEFAULT_STOREFRONT, cartCount, isRoleProduct, maxQuantity, reconcileCart,
 } from '@/hooks/useStoreCart'
 import Spinner from '@/components/ui/Spinner'
 import FramedImage from '@/components/store/FramedImage'
@@ -184,6 +184,7 @@ export default function Store() {
   const cartItems = products.filter((p) => cart[p.id])
   const subtotal = cartItems.reduce((sum, p) => sum + p.price_cents * cart[p.id], 0)
   const totalQty = cartItems.reduce((n, p) => n + cart[p.id], 0)
+  const cartIsDigital = cartItems.length > 0 && cartItems.every(isRoleProduct)
 
   // Storefronts other than Summit can't check out until their Stripe is set up
   const notTakingOrders = active.accepts_payments === false
@@ -285,6 +286,8 @@ export default function Store() {
             const max = maxQuantity(p)
             const soldOut = p.stock_quantity === 0
             const limitReached = !soldOut && p.remaining_this_month === 0
+            const isRole = isRoleProduct(p)
+            const hasRole = isRole && p.has_role
             const lowStock = !soldOut && p.stock_quantity <= 5
             return (
               <div
@@ -298,6 +301,14 @@ export default function Store() {
                 <ProductGallery product={p} />
                 <div className="p-4 flex flex-col flex-1">
                   <h2 className="font-semibold text-text-primary">{p.name}</h2>
+                  {isRole && (
+                    <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-[#8f99f7]">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.6 1.3a18.3 18.3 0 0 0-5.6 0L8.6 3a19.7 19.7 0 0 0-4.9 1.4C.6 9 0 13.6.3 18.1a19.9 19.9 0 0 0 6 3l1.3-2a12.9 12.9 0 0 1-2-1l.5-.4a14.2 14.2 0 0 0 12.2 0l.5.4c-.6.4-1.3.7-2 1l1.3 2a19.8 19.8 0 0 0 6-3c.5-5.2-.8-9.7-3.8-13.7ZM8.5 15.3c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm7 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z" />
+                      </svg>
+                      Discord role · added to your account after payment, nothing shipped
+                    </p>
+                  )}
                   {p.description && (
                     <p className="text-sm text-text-muted mt-1 flex-1">{p.description}</p>
                   )}
@@ -308,6 +319,10 @@ export default function Store() {
                     {soldOut ? (
                       <span className="text-xs font-medium bg-accent-red/20 text-accent-red px-2.5 py-1 rounded-full">
                         Sold out
+                      </span>
+                    ) : hasRole ? (
+                      <span className="text-xs font-medium bg-[#5865F2]/20 text-[#8f99f7] px-2.5 py-1 rounded-full">
+                        You have this role
                       </span>
                     ) : limitReached ? (
                       <span className="text-xs font-medium bg-bg-elevated text-text-muted px-2.5 py-1 rounded-full">
@@ -368,7 +383,9 @@ export default function Store() {
             </span>
             {' '}&middot;{' '}
             <span className="text-secondary font-semibold">{formatMoney(subtotal)}</span>
-            <span className="text-text-muted ml-1.5 hidden sm:inline">+ shipping at checkout</span>
+            {!cartIsDigital && (
+              <span className="text-text-muted ml-1.5 hidden sm:inline">+ shipping at checkout</span>
+            )}
           </div>
           {notTakingOrders ? (
             <button

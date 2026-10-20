@@ -39,6 +39,28 @@ describe('Store page', () => {
     useAuth.mockReturnValue({ user: false, loading: false })
   })
 
+  it('sells a Discord role one per order, with no shipping', async () => {
+    useAuth.mockReturnValue({ user: { id: '1', auth_provider: 'discord' }, loading: false })
+    getProducts.mockResolvedValue({
+      products: [{ ...TOKEN, id: 9, name: 'Season 9 Ticket', product_type: 'discord_role', has_role: false }],
+    })
+    renderStore()
+    expect(await screen.findByText(/Discord role · added to your account after payment/)).toBeInTheDocument()
+    await userEvent.click(screen.getByLabelText('Add one Season 9 Ticket'))
+    expect(screen.getByLabelText('Add one Season 9 Ticket')).toBeDisabled()
+    expect(screen.queryByText('+ shipping at checkout')).not.toBeInTheDocument()
+  })
+
+  it('tells people who already hold the role', async () => {
+    useAuth.mockReturnValue({ user: { id: '1', auth_provider: 'discord' }, loading: false })
+    getProducts.mockResolvedValue({
+      products: [{ ...TOKEN, id: 9, name: 'Season 9 Ticket', product_type: 'discord_role', has_role: true }],
+    })
+    renderStore()
+    expect(await screen.findByText('You have this role')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Add one Season 9 Ticket')).not.toBeInTheDocument()
+  })
+
   it('shows a thumbnail strip for products with several images and switches the main image', async () => {
     getProducts.mockResolvedValue({
       products: [{ ...TOKEN, images: ['/one.png', '/two.png', '/three.png'] }],

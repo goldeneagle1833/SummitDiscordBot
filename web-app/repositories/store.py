@@ -38,6 +38,12 @@ STOREFRONT_ROLES = ("manager", "fulfillment")
 
 APPLICATION_STATUSES = ("pending", "approved", "declined")
 
+# physical: shipped to the buyer. discord_role: the Summit bot gives the
+# buyer a Discord role when the order is paid (Summit Store only), e.g. a
+# season ticket. Nothing to ship.
+PRODUCT_TYPES = ("physical", "discord_role")
+DISCORD_ID_PATTERN = re.compile(r"^\d{17,20}$")
+
 SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
 
 # A storefront can take payments with its own Stripe secret (or restricted)
@@ -244,6 +250,12 @@ class StoreRepository:
                 conn.execute("ALTER TABLE products ADD COLUMN image_framing TEXT")
             except sqlite3.OperationalError:
                 pass  # column already exists
+            for column in ("product_type TEXT NOT NULL DEFAULT 'physical'",
+                           "discord_role_id TEXT"):
+                try:
+                    conn.execute(f"ALTER TABLE products ADD COLUMN {column}")
+                except sqlite3.OperationalError:
+                    pass  # column already exists
             for table in ("products", "orders"):
                 try:
                     conn.execute(
@@ -409,6 +421,37 @@ class StoreRepository:
                 cleaned[url] = {"x": round(x, 1), "y": round(y, 1), "zoom": round(zoom, 2)}
         return cleaned
 
+    def clean_product_type(self, product_type, discord_role_id,
+                           storefront_id: int) -> tuple[str, str | None]:
+        """Validate a product's type and role. Returns (type, role id or None).
+
+        Discord role products only exist in the Summit Store, since the
+        Summit bot gives the role in the Summit server.
+        """
+        product_type = product_type or "physical"
+        if product_type not in PRODUCT_TYPES:
+            raise ValueError("product_type must be physical or discord_role")
+        if product_type == "physical":
+            return "physical", None
+        if storefront_id != self.default_storefront_id():
+            raise ValueError("Discord role products are only for the Summit Store")
+        role_id = str(discord_role_id or "").strip()
+        if not DISCORD_ID_PATTERN.match(role_id):
+            raise ValueError("Enter the Discord role ID (17 to 20 digits)")
+        return "discord_role", role_id
+
+    @staticmethod
+    def is_role_product(product: dict) -> bool:
+        return (product.get("product_type") or "physical") == "discord_role"
+
+    @staticmethod
+    def order_is_digital(order: dict) -> bool:
+        """True when every item is a Discord role, so there's nothing to ship."""
+        items = order.get("items") or []
+        return bool(items) and all(
+            (i.get("product_type") or "physical") == "discord_role" for i in items
+        )
+
     def list_products(self, include_inactive: bool = False,
                       storefront_ids: list[int] | None = None) -> list[dict]:
         """Products, optionally limited to some storefronts.
@@ -455,6 +498,8 @@ class StoreRepository:
         images: list[str] | None = None,
         storefront_id: int | None = None,
         image_framing: dict | None = None,
+        product_type: str | None = None,
+        discord_role_id: str | None = None,
     ) -> int:
         images = self._clean_images(images)
         if not images and image_url:
@@ -464,30 +509,41 @@ class StoreRepository:
             storefront_id = self.default_storefront_id()
         elif not self.get_storefront(storefront_id):
             raise ValueError("Unknown storefront")
+        product_type, discord_role_id = self.clean_product_type(
+            product_type, discord_role_id, storefront_id)
         now = self._now()
         with self._connect() as conn:
             cur = conn.execute(
                 """INSERT INTO products
                    (sku, name, description, price_cents, image_url, images,
                     image_framing, stock_quantity, max_per_user_monthly,
-                    storefront_id, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    storefront_id, product_type, discord_role_id,
+                    created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (sku, name, description, price_cents,
                  images[0] if images else None, json.dumps(images),
                  json.dumps(framing), stock_quantity, max_per_user_monthly,
-                 storefront_id, now, now),
+                 storefront_id, product_type, discord_role_id, now, now),
             )
             return cur.lastrowid
 
     def update_product(self, product_id: int, **fields) -> bool:
         allowed = {"sku", "name", "description", "price_cents", "image_url",
                    "stock_quantity", "is_active", "max_per_user_monthly", "images",
-                   "storefront_id", "image_framing"}
+                   "storefront_id", "image_framing", "product_type", "discord_role_id"}
         if "storefront_id" in fields and not self.get_storefront(fields["storefront_id"]):
             raise ValueError("Unknown storefront")
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return False
+        if {"product_type", "discord_role_id", "storefront_id"} & updates.keys():
+            # Check the type against where the product ends up
+            current = self.get_product(product_id) or {}
+            updates["product_type"], updates["discord_role_id"] = self.clean_product_type(
+                updates.get("product_type", current.get("product_type")),
+                updates.get("discord_role_id", current.get("discord_role_id")),
+                updates.get("storefront_id", current.get("storefront_id")),
+            )
         if "images" in updates:
             images = self._clean_images(updates["images"])
             updates["images"] = json.dumps(images)
@@ -580,6 +636,14 @@ class StoreRepository:
                     qty = int(item["quantity"])
                     if qty <= 0:
                         raise ValueError("Quantity must be positive")
+                    if row["product_type"] == "discord_role":
+                        # The bot gives the role to the buyer's Discord account
+                        if auth_provider != "discord" or str(user_id).startswith("google_"):
+                            raise ValueError(
+                                f"Sign in with Discord to buy {row['name']}"
+                            )
+                        if qty > 1:
+                            raise ValueError(f"You can only buy one {row['name']}")
                     # Enforce per-user monthly limit
                     cap = row["max_per_user_monthly"]
                     if cap is not None:
@@ -651,7 +715,8 @@ class StoreRepository:
             order = dict(row)
             order["items"] = [
                 dict(r) for r in conn.execute(
-                    """SELECT oi.*, p.image_url, p.sku
+                    """SELECT oi.*, p.image_url, p.sku, p.product_type,
+                              p.discord_role_id
                        FROM order_items oi
                        LEFT JOIN products p ON p.id = oi.product_id
                        WHERE oi.order_id = ?""",
@@ -1054,7 +1119,7 @@ class StoreRepository:
         with self._connect() as conn:
             rows = conn.execute(
                 f"""SELECT oi.order_id, oi.product_name, oi.unit_price_cents,
-                           oi.quantity, p.image_url
+                           oi.quantity, p.image_url, p.product_type
                     FROM order_items oi
                     LEFT JOIN products p ON p.id = oi.product_id
                     WHERE oi.order_id IN ({placeholders})

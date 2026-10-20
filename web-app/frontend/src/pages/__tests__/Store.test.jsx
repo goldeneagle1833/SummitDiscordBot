@@ -51,6 +51,18 @@ describe('Store page', () => {
     expect(screen.queryByText('+ shipping at checkout')).not.toBeInTheDocument()
   })
 
+  it('sells a bundle that ships and gives a role', async () => {
+    useAuth.mockReturnValue({ user: { id: '1', auth_provider: 'discord' }, loading: false })
+    getProducts.mockResolvedValue({
+      products: [{ ...TOKEN, id: 10, name: 'Ticket Bundle', product_type: 'bundle', has_role: false }],
+    })
+    renderStore()
+    expect(await screen.findByText(/Includes a Discord role/)).toBeInTheDocument()
+    await userEvent.click(screen.getByLabelText('Add one Ticket Bundle'))
+    expect(screen.getByLabelText('Add one Ticket Bundle')).toBeDisabled()
+    expect(screen.getByText('+ shipping at checkout')).toBeInTheDocument()
+  })
+
   it('tells people who already hold the role', async () => {
     useAuth.mockReturnValue({ user: { id: '1', auth_provider: 'discord' }, loading: false })
     getProducts.mockResolvedValue({

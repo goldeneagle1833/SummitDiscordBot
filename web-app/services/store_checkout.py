@@ -329,7 +329,7 @@ class StoreCheckoutService:
         )
 
     def _items_are_digital(self, items: list[dict]) -> bool:
-        """True when every cart item is a Discord role product."""
+        """True when every cart item is a role-only product (bundles ship)."""
         products = []
         for item in items:
             try:
@@ -337,7 +337,7 @@ class StoreCheckoutService:
             except (TypeError, ValueError):
                 return False
         return bool(products) and all(
-            p and self.repo.is_role_product(p) for p in products
+            p and p.get("product_type") == "discord_role" for p in products
         )
 
     def _storefront_for_items(self, items: list[dict]) -> dict | None:

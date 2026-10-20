@@ -40,8 +40,10 @@ APPLICATION_STATUSES = ("pending", "approved", "declined")
 
 # physical: shipped to the buyer. discord_role: the Summit bot gives the
 # buyer a Discord role when the order is paid (Summit Store only), e.g. a
-# season ticket. Nothing to ship.
-PRODUCT_TYPES = ("physical", "discord_role")
+# season ticket. Nothing to ship. bundle: shipped like a physical item and
+# also gives a role, e.g. a token pack plus a season ticket.
+PRODUCT_TYPES = ("physical", "discord_role", "bundle")
+ROLE_PRODUCT_TYPES = ("discord_role", "bundle")
 DISCORD_ID_PATTERN = re.compile(r"^\d{17,20}$")
 
 SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
@@ -430,7 +432,7 @@ class StoreRepository:
         """
         product_type = product_type or "physical"
         if product_type not in PRODUCT_TYPES:
-            raise ValueError("product_type must be physical or discord_role")
+            raise ValueError("product_type must be physical, discord_role or bundle")
         if product_type == "physical":
             return "physical", None
         if storefront_id != self.default_storefront_id():
@@ -438,11 +440,12 @@ class StoreRepository:
         role_id = str(discord_role_id or "").strip()
         if not DISCORD_ID_PATTERN.match(role_id):
             raise ValueError("Enter the Discord role ID (17 to 20 digits)")
-        return "discord_role", role_id
+        return product_type, role_id
 
     @staticmethod
     def is_role_product(product: dict) -> bool:
-        return (product.get("product_type") or "physical") == "discord_role"
+        """Whether buying it gives a Discord role (role only, or a bundle)."""
+        return (product.get("product_type") or "physical") in ROLE_PRODUCT_TYPES
 
     @staticmethod
     def order_is_digital(order: dict) -> bool:
@@ -636,7 +639,7 @@ class StoreRepository:
                     qty = int(item["quantity"])
                     if qty <= 0:
                         raise ValueError("Quantity must be positive")
-                    if row["product_type"] == "discord_role":
+                    if row["product_type"] in ROLE_PRODUCT_TYPES:
                         # The bot gives the role to the buyer's Discord account
                         if auth_provider != "discord" or str(user_id).startswith("google_"):
                             raise ValueError(

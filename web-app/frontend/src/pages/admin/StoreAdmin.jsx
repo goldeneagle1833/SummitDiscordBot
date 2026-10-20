@@ -100,7 +100,8 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
   const set = (f) => (e) => setForm((x) => ({ ...x, [f]: e.target.value }))
   const summitId = storefronts.find((sf) => sf.slug === SUMMIT_SLUG)?.id
   const productStorefrontId = editing ? initial.storefront_id : storefrontId
-  const isRole = form.product_type === 'discord_role'
+  // Role only, or a bundle that ships and also gives the role
+  const isRole = form.product_type === 'discord_role' || form.product_type === 'bundle'
   // Full admins pick the type on Summit products; anyone else just sees it
   const showType = (canSellRoles && productStorefrontId != null && productStorefrontId === summitId) || isRole
   const setImages = (fn) => setForm((x) => ({ ...x, images: fn(x.images) }))
@@ -181,7 +182,7 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
     }
     const payload = {
       // Type fields only when it is (or was) a Discord role product
-      ...(canSellRoles && (isRole || initial?.product_type === 'discord_role') ? {
+      ...(canSellRoles && (isRole || (initial?.product_type && initial.product_type !== 'physical')) ? {
         product_type: form.product_type,
         discord_role_id: isRole ? roleId : null,
       } : {}),
@@ -250,6 +251,7 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
               >
                 <option value="physical">Physical item (shipped)</option>
                 <option value="discord_role">Discord role (e.g. season ticket)</option>
+                <option value="bundle">Bundle: shipped item plus a Discord role</option>
               </select>
             </label>
             {isRole && (
@@ -268,7 +270,8 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
             )}
             {isRole && (
               <p className="sm:col-span-2 text-xs text-text-muted">
-                Only shoppers signed in with Discord see this product, one per order, with no shipping.
+                Only shoppers signed in with Discord see this product, one per order.
+                {form.product_type === 'bundle' ? ' It ships like any other item and also gives the role. ' : ' Nothing ships. '}
                 When the order is paid, the Summit bot gives the buyer this role; marking the order refunded takes it back.
                 To get the ID, turn on Developer Mode in Discord, then right-click the role in Server Settings, Roles, and pick Copy Role ID.
                 The bot's own role has to sit above this role.
@@ -510,9 +513,9 @@ function ProductsPanel({ storefrontId, storefronts, canSellRoles = false }) {
                   <td className="py-2 px-3 font-mono text-xs">{p.sku}</td>
                   <td className="py-2 px-3">
                     {p.name}
-                    {p.product_type === 'discord_role' && (
+                    {(p.product_type === 'discord_role' || p.product_type === 'bundle') && (
                       <span className="ml-2 text-[10px] font-medium uppercase tracking-wide bg-[#5865F2]/20 text-[#8f99f7] px-1.5 py-0.5 rounded">
-                        Discord role
+                        {p.product_type === 'bundle' ? 'Bundle + role' : 'Discord role'}
                       </span>
                     )}
                     {storefrontId == null && storefronts.length > 1 && (

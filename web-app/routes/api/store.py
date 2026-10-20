@@ -19,7 +19,7 @@ from flask import Blueprint, jsonify, redirect, request, send_file, session
 
 from repositories.store import (
     StoreRepository, ORDER_STATUSES, STORE_DB_PATH, STOREFRONT_ROLES, slugify,
-    DEFAULT_STOREFRONT_SLUG, STRIPE_KEY_ENV_PATTERN, available_stripe_key_envs,
+    DEFAULT_STOREFRONT_SLUG, ROLE_PRODUCT_TYPES, STRIPE_KEY_ENV_PATTERN, available_stripe_key_envs,
     webhook_secret_env,
 )
 from utils.store_auth import is_store_admin, require_store_admin
@@ -110,8 +110,8 @@ def list_products():
     repo = _repo()
     products = repo.list_products(include_inactive=False)
 
-    # Discord role products (e.g. season tickets) are given to the buyer's
-    # Discord account, so only people signed in with Discord see them.
+    # Discord role products and bundles (e.g. season tickets) give a role to
+    # the buyer's Discord account, so only people signed in with Discord see them.
     signed_in_with_discord = (
         session.get("user_id") is not None
         and session.get("auth_provider", "discord") == "discord"
@@ -170,7 +170,7 @@ def admin_create_product():
         return jsonify({"error": "storefront_id must be an integer"}), 400
     if not _can(storefront_id, "products"):
         return jsonify({"error": "You can't add products to that storefront"}), 403
-    if data.get("product_type") == "discord_role" and not is_store_admin():
+    if data.get("product_type") in ROLE_PRODUCT_TYPES and not is_store_admin():
         return jsonify({"error": ROLE_PRODUCT_ADMINS_ONLY}), 403
 
     required = ("sku", "name", "price_cents")

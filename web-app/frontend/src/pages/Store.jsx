@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { getProducts, getStorefronts, formatMoney } from '@/api/store'
 import useStoreCart, {
-  DEFAULT_STOREFRONT, cartCount, isRoleProduct, maxQuantity, reconcileCart,
+  DEFAULT_STOREFRONT, cartCount, isRoleOnly, isRoleProduct, maxQuantity, reconcileCart,
 } from '@/hooks/useStoreCart'
 import Spinner from '@/components/ui/Spinner'
 import FramedImage from '@/components/store/FramedImage'
@@ -184,7 +184,7 @@ export default function Store() {
   const cartItems = products.filter((p) => cart[p.id])
   const subtotal = cartItems.reduce((sum, p) => sum + p.price_cents * cart[p.id], 0)
   const totalQty = cartItems.reduce((n, p) => n + cart[p.id], 0)
-  const cartIsDigital = cartItems.length > 0 && cartItems.every(isRoleProduct)
+  const cartIsDigital = cartItems.length > 0 && cartItems.every(isRoleOnly)
 
   // Storefronts other than Summit can't check out until their Stripe is set up
   const notTakingOrders = active.accepts_payments === false
@@ -306,7 +306,9 @@ export default function Store() {
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                         <path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.6 1.3a18.3 18.3 0 0 0-5.6 0L8.6 3a19.7 19.7 0 0 0-4.9 1.4C.6 9 0 13.6.3 18.1a19.9 19.9 0 0 0 6 3l1.3-2a12.9 12.9 0 0 1-2-1l.5-.4a14.2 14.2 0 0 0 12.2 0l.5.4c-.6.4-1.3.7-2 1l1.3 2a19.8 19.8 0 0 0 6-3c.5-5.2-.8-9.7-3.8-13.7ZM8.5 15.3c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm7 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z" />
                       </svg>
-                      Discord role · added to your account after payment, nothing shipped
+                      {isRoleOnly(p)
+                        ? 'Discord role · added to your account after payment, nothing shipped'
+                        : 'Includes a Discord role · added after payment, the rest ships'}
                     </p>
                   )}
                   {p.description && (

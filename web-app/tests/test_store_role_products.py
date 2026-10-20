@@ -262,3 +262,54 @@ class TestRoleProductRoutes:
         assert resp.status_code == 200
         rows = store_repo.fetch_pending_notifications(("discord_role_remove",))
         assert [r["body"] for r in rows] == [ROLE_ID]
+
+
+class TestBundleProducts:
+    def _service(self, repo):
+        from services.store_checkout import StoreCheckoutService
+        return StoreCheckoutService(repo=repo)
+
+    def test_bundle_needs_role_and_summit(self, tmp_path):
+        repo = _repo(tmp_path)
+        with pytest.raises(ValueError, match="role ID"):
+            _ticket(repo, product_type="bundle", discord_role_id="")
+        other = repo.create_storefront("explorer", "Explorer")
+        with pytest.raises(ValueError, match="Summit Store"):
+            _ticket(repo, product_type="bundle", storefront_id=other)
+
+    def test_bundle_is_discord_only(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _ticket(repo, product_type="bundle")
+        with pytest.raises(ValueError, match="Sign in with Discord"):
+            _order(repo, pid, user_id="google_abc", auth_provider="google")
+
+    @patch("services.store_checkout.stripe")
+    @patch("services.store_checkout.STRIPE_SHIPPING_RATE_DOMESTIC", "shr_domestic")
+    def test_bundle_checkout_ships(self, mock_stripe, tmp_path):
+        mock_stripe.checkout.Session.create.return_value = MagicMock(id="cs_1", url="u")
+        repo = _repo(tmp_path)
+        pid = _ticket(repo, product_type="bundle")
+        self._service(repo).create_checkout(
+            user_id="111111111111111111", username="Buyer",
+            items=[{"product_id": pid, "quantity": 1}],
+        )
+        params = mock_stripe.checkout.Session.create.call_args.kwargs
+        assert params["shipping_address_collection"] == {"allowed_countries": ["US"]}
+        assert params["shipping_options"] == [{"shipping_rate": "shr_domestic"}]
+
+    def test_paid_bundle_gives_role_and_waits_to_ship(self, tmp_path):
+        repo = _repo(tmp_path)
+        order = _order(repo, _ticket(repo, product_type="bundle"), shipping_cents=599)
+        repo.attach_payment(order["id"], "stripe", "cs_role")
+        with patch("services.store_notifications.StoreNotificationService"):
+            self._service(repo).handle_event(_paid_event(repo, order))
+        assert repo.get_order(order["id"])["status"] == "paid"
+        rows = repo.fetch_pending_notifications(("discord_role_add",))
+        assert [r["body"] for r in rows] == [ROLE_ID]
+
+    def test_receipt_mentions_role_and_tracking(self, tmp_path):
+        from services.store_notifications import _receipt_next_step
+        repo = _repo(tmp_path)
+        order = repo.get_order(_order(repo, _ticket(repo, product_type="bundle"))["id"])
+        text = _receipt_next_step(order)
+        assert "Discord role" in text and "tracking" in text

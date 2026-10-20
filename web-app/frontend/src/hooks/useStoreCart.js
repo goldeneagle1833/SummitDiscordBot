@@ -46,7 +46,13 @@ export function cartCount(slug) {
 
 // Most of a product this buyer can put in the cart: stock, capped by what's
 // left of their monthly limit (only sent by the API for logged-in buyers).
+// Gives a Discord role: a role on its own, or a bundle that also ships
 export function isRoleProduct(product) {
+  return product.product_type === 'discord_role' || product.product_type === 'bundle'
+}
+
+// A role on its own, with nothing to ship
+export function isRoleOnly(product) {
   return product.product_type === 'discord_role'
 }
 

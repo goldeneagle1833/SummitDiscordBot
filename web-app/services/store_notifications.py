@@ -51,11 +51,7 @@ class StoreNotificationService:
         )
         total = _fmt_money(order["total_cents"], order["currency"])
         digital = self.repo.order_is_digital(order)
-        next_step = (
-            "Your Discord role is added to your account in the Summit server "
-            "within a minute or two." if digital
-            else "We'll send tracking when it ships."
-        )
+        next_step = _receipt_next_step(order)
         ship_to = (
             "Discord role, nothing to ship" if digital
             else f"Ship to: {order.get('ship_city', '')}, {order.get('ship_state', '')}"
@@ -301,9 +297,15 @@ def _build_receipt_plain(order: dict) -> str:
 
 
 def _receipt_next_step(order: dict) -> str:
+    role = ("Your Discord role is added to your account in the Summit server "
+            "within a minute or two.")
     if StoreRepository.order_is_digital(order):
-        return "Your Discord role is added to your account in the Summit server."
-    return "We'll send tracking as soon as your order ships."
+        return role
+    ship = "We'll send tracking as soon as your order ships."
+    if any(StoreRepository.is_role_product(i) for i in order.get("items") or []):
+        # A bundle: the role now, the rest in the mail
+        return f"{role} {ship}"
+    return ship
 
 
 def _build_receipt_html(order: dict) -> str:

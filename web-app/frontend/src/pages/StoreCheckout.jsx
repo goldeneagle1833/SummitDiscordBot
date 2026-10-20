@@ -82,7 +82,7 @@ export default function StoreCheckout() {
               quantity: cart[p.id],
               name: p.name,
               price_cents: p.price_cents,
-              is_role: p.product_type === 'discord_role',
+              role_only: p.product_type === 'discord_role',
             })),
         )
       }),
@@ -106,7 +106,7 @@ export default function StoreCheckout() {
   if (items.length === 0) return <Navigate to={storeUrl} replace />
 
   const subtotal = items.reduce((s, i) => s + i.price_cents * i.quantity, 0)
-  const digitalOnly = items.every((i) => i.is_role)
+  const digitalOnly = items.every((i) => i.role_only)
 
   const isValidEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
 

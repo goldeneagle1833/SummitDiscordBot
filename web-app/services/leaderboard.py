@@ -169,7 +169,13 @@ class LeaderboardService:
             "voice_requirement": voice_requirement(),
         }
 
-    def get_avatar_leaderboards(self, avatar: str | None = None, limit: int | None = None) -> dict:
+    def get_avatar_leaderboards(
+        self,
+        avatar: str | None = None,
+        limit: int | None = None,
+        rank_by: str = "elo",
+        min_games: int = 10,
+    ) -> dict:
         """The season ladder split per avatar (Avatar-mode events).
 
         One list per avatar, best entry first, each entry numbered within its
@@ -177,7 +183,14 @@ class LeaderboardService:
         events have no per-avatar ladder, so ``avatars`` is empty then.
         ``avatar`` narrows to one avatar (case-insensitive); ``limit`` caps
         each list.
+
+        ``rank_by`` orders each avatar's list: ``"elo"`` (default) is the season
+        Elo ladder order; ``"avatar_score"`` is the same Avatar Score the Top
+        Players page uses. Either way, entries with at least ``min_games`` games
+        rank ahead of the rest (``0`` turns the minimum off).
         """
+        from routes.api.avatars import calculate_avatar_score
+
         data = self.get_event_leaderboard()
         event = data["event"]
         groups: dict[str, list[dict]] = {}
@@ -185,17 +198,34 @@ class LeaderboardService:
             for overall_rank, row in enumerate(data["leaderboard"], 1):
                 groups.setdefault(row["avatar"], []).append(
                     {
-                        "rank": len(groups.get(row["avatar"], [])) + 1,
                         "overall_rank": overall_rank,
                         "user_id": row["id"],
                         "display_name": row["name"],
                         "elo": row["event_elo"],
+                        "avatar_score": calculate_avatar_score(row["wins"], row["losses"]),
                         "games": row["wins"] + row["losses"],
                         "wins": row["wins"],
                         "losses": row["losses"],
                         "voice_games": row["voice_games"],
                     }
                 )
+        for entries in groups.values():
+            if rank_by == "avatar_score":
+                # Stable sort: equal scores keep their Elo ladder order
+                entries.sort(
+                    key=lambda e: (
+                        e["games"] >= min_games,
+                        e["avatar_score"],
+                        e["wins"] / e["games"] if e["games"] else 0,
+                        e["wins"],
+                    ),
+                    reverse=True,
+                )
+            else:
+                # Stable sort: Elo ladder order within each side of the minimum
+                entries.sort(key=lambda e: e["games"] >= min_games, reverse=True)
+            for rank, entry in enumerate(entries, 1):
+                entry["rank"] = rank
         wanted = avatar.strip().casefold() if avatar else None
         avatars = [
             {
@@ -209,6 +239,8 @@ class LeaderboardService:
         return {
             "event": event,
             "elo_mode": (event or {}).get("elo_mode", "player"),
+            "rank_by": rank_by,
+            "min_games": min_games,
             "avatars": avatars,
             "voice_requirement": voice_requirement(),
         }

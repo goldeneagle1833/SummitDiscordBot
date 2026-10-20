@@ -335,26 +335,33 @@ const VOICE_FILTERS = [
 ]
 const VOICE_QUEUES = VOICE_FILTERS.filter(f => f.key !== 'all')
 
+// Game counts plus the summed pre-match lifetime ELO (and player count) behind each side's average.
+const VOICE_FIELDS = [
+  'voice', 'no_voice',
+  'voice_elo_sum', 'voice_elo_players', 'no_voice_elo_sum', 'no_voice_elo_players',
+]
+const emptySplit = () => Object.fromEntries(VOICE_FIELDS.map(k => [k, 0]))
+
+function addSplits(a, b) {
+  return Object.fromEntries(VOICE_FIELDS.map(k => [k, a[k] + (b?.[k] || 0)]))
+}
+
 function voiceSplit(counts, filter, acrossDays = false) {
   if (acrossDays) {
-    return counts.reduce((acc, day) => {
-      const c = voiceSplit(day, filter)
-      return { voice: acc.voice + c.voice, no_voice: acc.no_voice + c.no_voice }
-    }, { voice: 0, no_voice: 0 })
+    return counts.reduce((acc, day) => addSplits(acc, voiceSplit(day, filter)), emptySplit())
   }
   const queues = filter === 'all' ? VOICE_QUEUES.map(f => f.key) : [filter]
-  return queues.reduce(
-    (acc, q) => ({
-      voice: acc.voice + (counts?.[q]?.voice || 0),
-      no_voice: acc.no_voice + (counts?.[q]?.no_voice || 0),
-    }),
-    { voice: 0, no_voice: 0 },
-  )
+  return queues.reduce((acc, q) => addSplits(acc, counts?.[q]), emptySplit())
 }
 
 function voicePct({ voice, no_voice }) {
   const total = voice + no_voice
   return total ? `${Math.round((voice / total) * 100)}%` : '--'
+}
+
+function avgElo(split, side) {
+  const players = split[`${side}_elo_players`]
+  return players ? Math.round(split[`${side}_elo_sum`] / players).toLocaleString() : '--'
 }
 
 function dayLabel(date) {
@@ -395,6 +402,8 @@ export function VoiceStatsCard({ days = null }) {
     ...VOICE_QUEUES.map(f => [f.label, voiceSplit(totals, f.key)]),
     ['Total', voiceSplit(totals, 'all')],
   ]
+  const filterLabel = VOICE_FILTERS.find(f => f.key === filter)?.label
+  const selected = voiceSplit(totals, filter)
   const chartDays = inRange.map(day => ({
     label: dayLabel(day.date),
     ...voiceSplit(day, filter),
@@ -448,6 +457,18 @@ export function VoiceStatsCard({ days = null }) {
               <p className="text-text-muted text-sm">No queue games recorded yet.</p>
             )}
           </div>
+          <div>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            {[['voice', 'Voice', 'rgba(63,185,80,1)'], ['no_voice', 'No voice', 'rgba(255,255,255,0.75)']].map(([side, label, color]) => (
+              <div key={side} className="bg-bg-base border border-border rounded-lg p-2 text-center">
+                <div className="text-xl font-bold" style={{ color }}>{avgElo(selected, side)}</div>
+                <div className="text-xs text-text-muted mt-0.5 leading-tight">Avg Lifetime ELO, {label}</div>
+              </div>
+            ))}
+            <p className="col-span-2 text-[11px] text-text-muted leading-snug">
+              {filterLabel} queue games in range, each player's lifetime ELO going into the game.
+            </p>
+          </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-text-muted text-xs text-left border-b border-border">
@@ -468,6 +489,7 @@ export function VoiceStatsCard({ days = null }) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

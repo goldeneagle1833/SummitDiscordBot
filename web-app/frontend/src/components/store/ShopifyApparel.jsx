@@ -59,6 +59,10 @@ const quantityInput = {
   'border-color': C.line,
 }
 const lineItemText = { color: C.text }
+// Light behind the photos: product shots with a transparent background (a
+// dark shirt cut out of its photo) vanish on our dark cards otherwise, and
+// Shopify's carousel arrows are dark too
+const imgWrapper = { 'background-color': '#ffffff', 'border-radius': '8px', padding: '8px', 'margin-bottom': '16px' }
 
 export const BUY_BUTTON_OPTIONS = {
   product: {
@@ -76,6 +80,7 @@ export const BUY_BUTTON_OPTIONS = {
       compareAt: { 'font-family': FONT, 'font-size': '14px', color: C.muted },
       unitPrice: { 'font-family': FONT, 'font-size': '14px', color: C.muted },
       description: { 'font-family': FONT, 'font-size': '14px', color: C.muted },
+      imgWrapper,
       button,
       quantityInput,
       // Shopify's own sheet paints the box beside the button white with a
@@ -100,6 +105,7 @@ export const BUY_BUTTON_OPTIONS = {
       compareAt: { 'font-family': FONT, 'font-size': '15px', color: C.muted },
       unitPrice: { 'font-family': FONT, 'font-size': '15px', color: C.muted },
       description: { 'font-family': FONT, 'font-size': '14px', color: C.muted },
+      imgWrapper,
       button,
       quantityInput,
       buttonWithQuantity: { quantityInput },

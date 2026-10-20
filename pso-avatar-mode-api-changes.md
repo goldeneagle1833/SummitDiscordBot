@@ -177,7 +177,7 @@ the season Elo order instead.
           "user_id": "123456789012345678",
           "display_name": "Bruce",
           "elo": 1688,
-          "avatar_score": 712,
+          "avatar_score": 785,
           "games": 24,
           "wins": 16,
           "losses": 8,

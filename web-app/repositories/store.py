@@ -45,6 +45,9 @@ APPLICATION_STATUSES = ("pending", "approved", "declined")
 PRODUCT_TYPES = ("physical", "discord_role", "bundle")
 ROLE_PRODUCT_TYPES = ("discord_role", "bundle")
 DISCORD_ID_PATTERN = re.compile(r"^\d{17,20}$")
+# Stored instead of a role ID: give whichever season ticket is on sale
+# (services/ticket_roles.py), so one listing works every season
+CURRENT_SEASON_TICKET = "season_ticket"
 
 SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
 
@@ -258,6 +261,12 @@ class StoreRepository:
                     conn.execute(f"ALTER TABLE products ADD COLUMN {column}")
                 except sqlite3.OperationalError:
                     pass  # column already exists
+            try:
+                # The role the bot was asked to give for this item, so a
+                # refund takes back that role even after the season changed
+                conn.execute("ALTER TABLE order_items ADD COLUMN granted_role_id TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
             for table in ("products", "orders"):
                 try:
                     conn.execute(
@@ -438,9 +447,16 @@ class StoreRepository:
         if storefront_id != self.default_storefront_id():
             raise ValueError("Discord role products are only for the Summit Store")
         role_id = str(discord_role_id or "").strip()
+        if role_id == CURRENT_SEASON_TICKET:
+            return product_type, role_id
         if not DISCORD_ID_PATTERN.match(role_id):
             raise ValueError("Enter the Discord role ID (17 to 20 digits)")
         return product_type, role_id
+
+    def set_granted_role(self, order_item_id: int, role_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("UPDATE order_items SET granted_role_id = ? WHERE id = ?",
+                         (str(role_id), order_item_id))
 
     @staticmethod
     def is_role_product(product: dict) -> bool:

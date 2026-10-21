@@ -119,10 +119,11 @@ def list_products():
     if not signed_in_with_discord:
         products = [p for p in products if not repo.is_role_product(p)]
     roles_held = {str(r) for r in session.get("discord_roles") or []}
+    from services.store_roles import resolve_role_id
     for p in products:
         if repo.is_role_product(p):
             # Roles as of their last sign-in; the bot adds it again harmlessly
-            p["has_role"] = p.get("discord_role_id") in roles_held
+            p["has_role"] = resolve_role_id(p.get("discord_role_id")) in roles_held
 
     # Logged-in buyers also get what's left of each monthly limit, so the
     # storefront can cap quantities instead of failing at checkout.
@@ -633,7 +634,7 @@ from urllib.parse import quote as _quote  # noqa: E402
 
 import stripe  # noqa: E402
 from services.store_checkout import StoreCheckoutService, _site_url  # noqa: E402
-from webapp_config import FREE_SHIPPING_ROLE_IDS  # noqa: E402
+from services.store_checkout import free_shipping_role_ids  # noqa: E402
 
 
 @store_bp.route("/store/checkout", methods=["POST"])
@@ -912,7 +913,7 @@ def checkout_prefill():
     provider = session.get("auth_provider", "discord")
 
     discord_roles = session.get("discord_roles", [])
-    free_shipping = bool(FREE_SHIPPING_ROLE_IDS.intersection(discord_roles))
+    free_shipping = bool(free_shipping_role_ids().intersection(discord_roles))
 
     prefill = {
         "username": session.get("username"),
@@ -1042,9 +1043,16 @@ def admin_me():
                 "sale_alerts": alerts.get(s["id"]),
                 **_key_status(s),
             })
+    from services.ticket_roles import selling_ticket_role
+    ticket = selling_ticket_role() if full else None
     return jsonify({
         "is_full_admin": full,
         "storefronts": storefronts,
+        # What a "current season ticket" listing gives right now
+        "season_ticket_role": (
+            {"role_id": str(ticket["role_id"]), "name": ticket["name"],
+             "status": ticket["status"]} if ticket else None
+        ),
         "can_link_stripe": StoreCheckoutService.can_link_existing_account(),
         # Variable names only, never values: full admins pick one to give a
         # storefront its own Stripe key

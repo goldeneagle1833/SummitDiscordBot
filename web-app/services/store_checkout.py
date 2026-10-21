@@ -35,6 +35,7 @@ import os
 import stripe
 
 from repositories.store import StoreRepository, webhook_secret_env
+from services.ticket_roles import ticket_free_shipping_role_ids
 from webapp_config import FRONTEND_URL, FREE_SHIPPING_ROLE_IDS
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,11 @@ STRIPE_SHIPPING_RATE_INTERNATIONAL = os.environ.get("STRIPE_SHIPPING_RATE_INTERN
 STRIPE_SHIPPING_RATE_FREE = os.environ.get("STRIPE_SHIPPING_RATE_FREE", "")
 
 stripe.api_key = STRIPE_SECRET_KEY
+
+
+def free_shipping_role_ids() -> set[str]:
+    """Patreon and ticket roles from config, plus this and next season's ticket."""
+    return set(FREE_SHIPPING_ROLE_IDS) | ticket_free_shipping_role_ids()
 
 
 def _site_url(path: str) -> str:
@@ -241,7 +247,7 @@ class StoreCheckoutService:
         # own products only
         has_free_shipping = bool(
             not own_account
-            and discord_roles and FREE_SHIPPING_ROLE_IDS.intersection(discord_roles)
+            and discord_roles and free_shipping_role_ids().intersection(discord_roles)
         )
 
         # Shipping Rate objects live on Summit's account, so connected

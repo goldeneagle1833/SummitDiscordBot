@@ -22,6 +22,7 @@ import AdminControls from '@/components/player/AdminControls'
 import EloHistory from '@/components/player/EloHistory'
 import AvatarEloHistory from '@/components/player/AvatarEloHistory'
 import PostseasonSection from '@/components/player/PostseasonSection'
+import { AvatarHonoursSection, useAvatarHonours } from '@/components/player/AvatarHonours'
 import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
 import BlockListModal from '@/components/player/BlockListModal'
 import CardStats from '@/components/player/CardStats'
@@ -70,7 +71,8 @@ export default function Player() {
     setSearchParams(next, { replace: true })
   }
   const navigate = useNavigate()
-  const hasPostseason = Boolean(useBracketMarks(playerId)?.entries?.length)
+  const avatarHonours = useAvatarHonours(playerId)
+  const hasPostseason = Boolean(useBracketMarks(playerId)?.entries?.length) || avatarHonours.length > 0
 
   const fetchData = useCallback(
     (ev, pg, src, cpg, pp, epg) => {
@@ -360,7 +362,12 @@ export default function Player() {
         </div>
       )}
 
-      {activeTab === 'postseason' && <PostseasonSection playerId={playerId} />}
+      {activeTab === 'postseason' && (
+        <div className="space-y-8">
+          <AvatarHonoursSection honours={avatarHonours} />
+          <PostseasonSection playerId={playerId} />
+        </div>
+      )}
 
       {/* Modals */}
       {showReportModal && (

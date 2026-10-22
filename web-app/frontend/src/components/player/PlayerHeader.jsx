@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import PostseasonName, { useBracketMarks } from '@/components/player/BracketMarks'
+import { AvatarHonourBadge, useAvatarHonours } from '@/components/player/AvatarHonours'
 
 function initials(name) {
   const parts = String(name || '?').replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/)
@@ -117,6 +118,7 @@ export default function PlayerHeader({
   canSeeLifetime, onReport, settingsItems = [], onPostseason,
 }) {
   const marks = useBracketMarks(playerId)
+  const honours = useAvatarHonours(playerId)
   const wins = data.wins ?? 0
   const losses = data.losses ?? 0
 
@@ -157,6 +159,7 @@ export default function PlayerHeader({
                 onClick={onPostseason}
               />
             )}
+            <AvatarHonourBadge honours={honours} onClick={onPostseason} />
           </div>
         </div>
       </div>

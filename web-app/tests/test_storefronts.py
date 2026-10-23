@@ -98,6 +98,17 @@ class TestStorefrontRepository:
         assert skus == ["SUM-1"]
         assert len(repo.list_products(include_inactive=True)) == 2
 
+    def test_hidden_storefront_takes_no_orders(self, repo, shop):
+        repo.update_storefront(shop["explorer"], is_active=0)
+        stock = repo.get_product(shop["explorer_product"])["stock_quantity"]
+        with pytest.raises(ValueError, match="not available"):
+            repo.create_order(
+                user_id="buyer_1", username="Buyer",
+                items=[{"product_id": shop["explorer_product"], "quantity": 1}],
+                shipping_address=ADDRESS,
+            )
+        assert repo.get_product(shop["explorer_product"])["stock_quantity"] == stock
+
     def test_filter_orders_by_storefront(self, repo, shop):
         orders = repo.list_orders_filtered(storefront_ids=[shop["explorer"]])
         assert [o["id"] for o in orders] == [shop["explorer_order"]]

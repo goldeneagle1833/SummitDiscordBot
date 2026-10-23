@@ -564,7 +564,10 @@ class StoreRepository:
                 storefront_id = None
                 for item in items:
                     row = conn.execute(
-                        "SELECT * FROM products WHERE id = ? AND is_active = 1",
+                        # Hidden storefronts don't sell, even by direct API call
+                        "SELECT * FROM products WHERE id = ? AND is_active = 1"
+                        " AND storefront_id IN"
+                        " (SELECT id FROM storefronts WHERE is_active = 1)",
                         (item["product_id"],),
                     ).fetchone()
                     if row is None:

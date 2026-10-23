@@ -619,6 +619,19 @@ export default function Nav() {
               )
             )}
 
+            {/* Store sits on the top bar for everyone, after the other links;
+                it isn't a Customize option (Bruce, 2026-10-23) */}
+            {(STORE_LIVE || user?.is_store_admin) && (
+              <Link
+                to="/store"
+                className={`hidden md:inline-block whitespace-nowrap text-sm lg:text-base font-medium transition-colors ${
+                  location.pathname === '/store' ? 'text-secondary' : 'text-text hover:text-secondary'
+                }`}
+              >
+                Store
+              </Link>
+            )}
+
             <SocialLinks labels={['Discord', 'Patreon']} className="hidden lg:flex" />
 
             {/* Customize nav pencil icon - only when logged in */}
@@ -788,8 +801,11 @@ export default function Nav() {
 
           <SidebarHeading label="Community" />
           <SidebarLink to="/community" label="Community Links" location={location} onClick={close} />
+          {/* Phones only: from md up Store is on the top bar */}
           {(STORE_LIVE || user?.is_store_admin) && (
-            <SidebarLink to="/store" label="Store" location={location} onClick={close} />
+            <div className="md:hidden">
+              <SidebarLink to="/store" label="Store" location={location} onClick={close} />
+            </div>
           )}
           <SocialLinks className="px-2 pt-2" />
         </div>

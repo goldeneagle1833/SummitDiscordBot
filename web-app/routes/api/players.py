@@ -10,7 +10,7 @@ import re
 
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, VALID_API_KEYS, SEASON_FILTERS, VOICE_TRACKING_STARTED
 from services.match import MatchService
-from services.replays import viewable_replays
+from services.replays import own_backfilled_replays, viewable_replays
 from repositories.external_matches import ExternalMatchRepository
 from repositories.user_profiles import UserProfileRepository
 from repositories.blocked_users_repo import BlockedUsersRepository
@@ -194,6 +194,12 @@ def _attach_replays(entries: list[dict], player_id: str) -> None:
     for entry, ok in zip(with_replays, allowed):
         if ok:
             entry["replay_url"] = replays[entry["match_id"]]
+    # Older games only have the viewer's own replay, from the PSO backfill
+    missing = [e for e in entries if not e.get("replay_url")]
+    own = own_backfilled_replays(e["match_id"] for e in missing)
+    for entry in missing:
+        if own.get(entry["match_id"]):
+            entry["replay_url"] = own[entry["match_id"]]
 
 
 @players_bp.route("/deck-snapshot/<int:match_id>/<player_id>")

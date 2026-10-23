@@ -61,6 +61,8 @@ def _patch_db_paths(elo_db, match_db, tmp_path):
     repositories.audit.MATCH_RECORDS_DB_PATH = match_db
     repositories.blocked_users_repo.MATCH_RECORDS_DB_PATH = match_db
     repositories.player_reports_repo.MATCH_RECORDS_DB_PATH = match_db
+    import repositories.pso_game_lookups
+    repositories.pso_game_lookups.MATCH_RECORDS_DB_PATH = match_db
     # The player routes open the match DB directly, so without this a second
     # test in the same run keeps reading the first test's database.
     import routes.api.players

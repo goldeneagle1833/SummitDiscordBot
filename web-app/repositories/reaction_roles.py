@@ -46,6 +46,20 @@ class ReactionRolesRepository:
                 post_id INTEGER,
                 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
             );
+            CREATE TABLE IF NOT EXISTS reaction_role_guild_roles (
+                role_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                color INTEGER NOT NULL DEFAULT 0,
+                position INTEGER NOT NULL DEFAULT 0,
+                assignable INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+            );
+            CREATE TABLE IF NOT EXISTS reaction_role_guild_emojis (
+                emoji_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                animated INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+            );
             CREATE TABLE IF NOT EXISTS reaction_role_posts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 channel_id TEXT NOT NULL,
@@ -292,3 +306,25 @@ class ReactionRolesRepository:
         conn.commit()
         conn.close()
         return cur.rowcount > 0
+
+    # --- Server roles / custom emojis (snapshot the bot keeps current) ---
+
+    def get_discord_options(self) -> dict:
+        """Roles (highest first) and custom emojis, plus when the bot last saved them."""
+        conn = self._get_connection()
+        roles = conn.execute(
+            "SELECT role_id, name, color, position, assignable "
+            "FROM reaction_role_guild_roles ORDER BY position DESC"
+        ).fetchall()
+        emojis = conn.execute(
+            "SELECT emoji_id, name, animated FROM reaction_role_guild_emojis ORDER BY name COLLATE NOCASE"
+        ).fetchall()
+        updated = conn.execute(
+            "SELECT MAX(updated_at) FROM reaction_role_guild_roles"
+        ).fetchone()[0]
+        conn.close()
+        return {
+            "roles": [dict(r) for r in roles],
+            "emojis": [dict(e) for e in emojis],
+            "updated_at": updated,
+        }

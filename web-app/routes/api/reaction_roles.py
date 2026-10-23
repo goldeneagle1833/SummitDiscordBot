@@ -188,3 +188,20 @@ def delete_post(post_id):
     if not repo.delete_post(post_id):
         return jsonify({"success": False, "error": "Post not found"}), 404
     return jsonify({"success": True})
+
+
+@reaction_roles_bp.route("/discord-options", methods=["GET"])
+@require_admin
+def discord_options():
+    """Server roles and custom emojis for the Add Role pickers."""
+    repo = ReactionRolesRepository()
+    return jsonify({"success": True, **repo.get_discord_options()})
+
+
+@reaction_roles_bp.route("/discord-options/refresh", methods=["POST"])
+@require_admin
+def refresh_discord_options():
+    """Ask the bot to re-read roles and emojis from Discord (takes a few seconds)."""
+    repo = ReactionRolesRepository()
+    repo.enqueue("refresh_roles")
+    return jsonify({"success": True})

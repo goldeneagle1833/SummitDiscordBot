@@ -185,3 +185,28 @@ async def test_post_is_not_edited_when_nothing_changed(db):
     guild.get_role.return_value = SimpleNamespace(id=300, members=[1, 2, 3])
     await cog._update_post_embed(guild, message, row, mappings)
     assert "3 members" in message.edit.await_args.kwargs["embed"].description
+
+
+def test_guild_snapshot_saves_roles_and_emojis(db):
+    def role(i, name, assignable, default=False):
+        r = MagicMock(id=i, position=i)
+        r.name = name
+        r.color.value = 255
+        r.is_assignable.return_value = assignable
+        r.is_default.return_value = default
+        return r
+    emoji = MagicMock(id=77, animated=False)
+    emoji.name = "HATE"
+    guild = SimpleNamespace(
+        roles=[role(1, "@everyone", False, default=True), role(2, "Cove", True), role(3, "Mod", False)],
+        emojis=[emoji],
+    )
+    rr.save_guild_snapshot(guild)
+    rr.save_guild_snapshot(guild)  # replaces, never duplicates
+
+    conn = sqlite3.connect(db)
+    roles = conn.execute("SELECT role_id, name, assignable FROM reaction_role_guild_roles ORDER BY role_id").fetchall()
+    emojis = conn.execute("SELECT emoji_id, name FROM reaction_role_guild_emojis").fetchall()
+    conn.close()
+    assert roles == [("2", "Cove", 1), ("3", "Mod", 0)]
+    assert emojis == [("77", "HATE")]

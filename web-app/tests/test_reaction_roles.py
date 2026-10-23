@@ -153,3 +153,26 @@ def test_existing_table_gets_new_columns(tmp_path):
     repo = rr_repo.ReactionRolesRepository(path)
     msg = repo.get_message("2")
     assert msg["managed"] == 0 and msg["title"] == ""
+
+
+def test_discord_options_lists_roles_highest_first(admin_client, rr_db):
+    rr_repo.ReactionRolesRepository()
+    conn = sqlite3.connect(rr_db)
+    conn.executemany(
+        "INSERT INTO reaction_role_guild_roles (role_id, name, color, position, assignable) VALUES (?, ?, ?, ?, ?)",
+        [("1", "Low", 0, 1, 1), ("2", "High", 16711680, 9, 1), ("3", "Mod", 0, 20, 0)],
+    )
+    conn.execute("INSERT INTO reaction_role_guild_emojis (emoji_id, name) VALUES ('77', 'HATE')")
+    conn.commit()
+    conn.close()
+
+    data = admin_client.get("/api/reaction-roles/discord-options").get_json()
+    assert [r["name"] for r in data["roles"]] == ["Mod", "High", "Low"]
+    assert data["roles"][0]["assignable"] == 0
+    assert data["emojis"] == [{"emoji_id": "77", "name": "HATE", "animated": 0}]
+    assert data["updated_at"]
+
+
+def test_check_discord_queues_a_refresh(admin_client, rr_db):
+    assert admin_client.post("/api/reaction-roles/discord-options/refresh", json={}).status_code == 200
+    assert queue(rr_db) == [("refresh_roles", None, None, None)]

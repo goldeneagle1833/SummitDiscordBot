@@ -8,8 +8,11 @@ import {
   updateReactionRoleMessage,
   createReactionRolePost,
   deleteReactionRolePost,
+  getReactionRoleDiscordOptions,
+  refreshReactionRoleDiscordOptions,
 } from '@/api/admin'
 import Spinner from '@/components/ui/Spinner'
+import { RolePicker, ServerEmojiPicker, emojiUrl } from '@/components/admin/ReactionRolePickers'
 
 // Discord allows 20 different reactions on one message.
 const MAX_ROLES = 20
@@ -36,6 +39,11 @@ export default function ReactionRolesSection() {
   const [newRoleId, setNewRoleId] = useState('')
   const [newRoleName, setNewRoleName] = useState('')
   const [addMapError, setAddMapError] = useState(null)
+  const [manualEntry, setManualEntry] = useState(false)
+
+  // Server roles + custom emojis (the bot keeps this list current)
+  const [options, setOptions] = useState({ roles: [], emojis: [], updated_at: null })
+  const [refreshingOptions, setRefreshingOptions] = useState(false)
 
   // New bot post form
   const [showPost, setShowPost] = useState(false)
@@ -78,6 +86,26 @@ export default function ReactionRolesSection() {
     }, 4000)
     return () => clearTimeout(t)
   }, [hasPending, posts])
+
+  const loadOptions = useCallback(
+    () => getReactionRoleDiscordOptions()
+      .then(d => setOptions({ roles: d.roles ?? [], emojis: d.emojis ?? [], updated_at: d.updated_at ?? null }))
+      .catch(() => {}),
+    [],
+  )
+
+  // Ask the bot to re-read roles/emojis from Discord, then pick up its answer.
+  const checkDiscord = useCallback(async () => {
+    setRefreshingOptions(true)
+    try {
+      await refreshReactionRoleDiscordOptions()
+      await new Promise(r => setTimeout(r, 6000))
+    } catch {
+      // Fall through and show whatever list is already saved.
+    }
+    await loadOptions()
+    setRefreshingOptions(false)
+  }, [loadOptions])
 
   const handleCreatePost = async (e) => {
     e.preventDefault()
@@ -167,7 +195,7 @@ export default function ReactionRolesSection() {
     e.preventDefault()
     setAddMapError(null)
     if (!newEmoji.trim() || !newRoleId.trim()) {
-      setAddMapError('Emoji and Role ID are required')
+      setAddMapError('Pick an emoji and a role')
       return
     }
     try {
@@ -387,7 +415,12 @@ export default function ReactionRolesSection() {
                   disabled={(msg.mappings?.length ?? 0) >= MAX_ROLES && addingTo !== msg.message_id}
                   title={(msg.mappings?.length ?? 0) >= MAX_ROLES ? 'Discord allows 20 reactions per message' : undefined}
                   onClick={() => {
-                    setAddingTo(addingTo === msg.message_id ? null : msg.message_id)
+                    const opening = addingTo !== msg.message_id
+                    setAddingTo(opening ? msg.message_id : null)
+                    if (opening) {
+                      loadOptions()
+                      checkDiscord()
+                    }
                     setAddMapError(null)
                     setNewEmoji('')
                     setNewEmojiId('')
@@ -443,6 +476,27 @@ export default function ReactionRolesSection() {
             {/* Add mapping form */}
             {addingTo === msg.message_id && (
               <form onSubmit={handleAddMapping} className="px-4 py-3 border-b border-border bg-bg-elevated/30 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-text-muted">
+                  <span>
+                    {refreshingOptions
+                      ? 'Checking Discord for new roles and emojis…'
+                      : options.updated_at
+                        ? `Role list from Discord, updated ${options.updated_at} UTC`
+                        : 'The bot has not sent the role list yet.'}
+                  </span>
+                  <div className="flex gap-3">
+                    <button type="button" onClick={checkDiscord} disabled={refreshingOptions} className="hover:text-text-primary disabled:opacity-50">
+                      ↻ Check Discord again
+                    </button>
+                    {options.roles.length > 0 && (
+                      <button type="button" onClick={() => setManualEntry(m => !m)} className="hover:text-text-primary">
+                        {manualEntry ? 'Pick from list' : 'Enter IDs by hand'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {manualEntry || options.roles.length === 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-xs text-text-muted mb-1">Emoji</label>
@@ -451,7 +505,7 @@ export default function ReactionRolesSection() {
                       value={newEmoji}
                       onChange={e => setNewEmoji(e.target.value)}
                       placeholder="Paste emoji or type name (e.g. volcano)"
-                      className="w-full px-3 py-1.5 text-sm bg-bg-primary border border-border rounded focus:border-secondary outline-none"
+                      className={inputClass}
                     />
                   </div>
                   <div>
@@ -461,7 +515,7 @@ export default function ReactionRolesSection() {
                       value={newEmojiId}
                       onChange={e => setNewEmojiId(e.target.value)}
                       placeholder="For custom Discord emojis"
-                      className="w-full px-3 py-1.5 text-sm bg-bg-primary border border-border rounded focus:border-secondary outline-none"
+                      className={inputClass}
                     />
                   </div>
                   <div>
@@ -471,7 +525,7 @@ export default function ReactionRolesSection() {
                       value={newRoleId}
                       onChange={e => setNewRoleId(e.target.value)}
                       placeholder="Discord role ID"
-                      className="w-full px-3 py-1.5 text-sm bg-bg-primary border border-border rounded focus:border-secondary outline-none"
+                      className={inputClass}
                     />
                   </div>
                   <div>
@@ -481,16 +535,65 @@ export default function ReactionRolesSection() {
                       value={newRoleName}
                       onChange={e => setNewRoleName(e.target.value)}
                       placeholder="e.g. Archimago Cabal"
-                      className="w-full px-3 py-1.5 text-sm bg-bg-primary border border-border rounded focus:border-secondary outline-none"
+                      className={inputClass}
                     />
                   </div>
                 </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="block text-xs text-text-muted">Emoji</label>
+                      {newEmojiId ? (
+                        <div className="flex items-center gap-2 px-3 py-1.5 text-sm bg-bg-primary border border-secondary rounded">
+                          <img
+                            src={emojiUrl(newEmojiId, options.emojis.find(e => e.emoji_id === newEmojiId)?.animated)}
+                            alt={newEmoji}
+                            className="w-6 h-6 object-contain"
+                          />
+                          <span className="text-text-primary">:{newEmoji}:</span>
+                          <button
+                            type="button"
+                            onClick={() => { setNewEmoji(''); setNewEmojiId('') }}
+                            className="ml-auto text-xs text-text-muted hover:text-text-primary"
+                          >
+                            Change
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <input
+                            type="text"
+                            value={newEmoji}
+                            onChange={e => setNewEmoji(e.target.value)}
+                            placeholder="Paste a normal emoji (e.g. 🌊) or type its name"
+                            className={inputClass}
+                          />
+                          <p className="text-xs text-text-muted">…or pick one of the server's own emojis:</p>
+                          <ServerEmojiPicker
+                            emojis={options.emojis}
+                            value={newEmojiId}
+                            onChange={e => { setNewEmoji(e.name); setNewEmojiId(e.emoji_id) }}
+                          />
+                        </>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <label className="block text-xs text-text-muted">Role</label>
+                      <RolePicker
+                        roles={options.roles}
+                        usedRoleIds={new Set((msg.mappings ?? []).map(m => m.role_id))}
+                        value={newRoleId}
+                        onChange={r => { setNewRoleId(r?.role_id ?? ''); setNewRoleName(r?.name ?? '') }}
+                      />
+                    </div>
+                  </div>
+                )}
                 {addMapError && <p className="text-xs text-accent-red">{addMapError}</p>}
                 <button
                   type="submit"
                   className="px-4 py-1.5 text-sm bg-secondary text-white rounded hover:bg-secondary/80 transition-colors"
                 >
-                  Add Mapping
+                  Add Role to Message
                 </button>
               </form>
             )}
@@ -511,8 +614,14 @@ export default function ReactionRolesSection() {
                     {msg.mappings.map(m => (
                       <tr key={m.id} className="border-b border-border/50 last:border-b-0 hover:bg-bg-elevated/50">
                         <td className="px-4 py-2">
-                          <span className="text-lg mr-2">{m.emoji}</span>
-                          {m.emoji_id && <span className="text-xs text-text-muted font-mono">(custom: {m.emoji_id})</span>}
+                          {m.emoji_id ? (
+                            <span className="inline-flex items-center gap-2">
+                              <img src={emojiUrl(m.emoji_id)} alt={m.emoji} title={`:${m.emoji}:`} className="w-6 h-6 object-contain" />
+                              <span className="text-xs text-text-muted">:{m.emoji}:</span>
+                            </span>
+                          ) : (
+                            <span className="text-lg">{m.emoji}</span>
+                          )}
                         </td>
                         <td className="px-4 py-2 text-text-primary">{m.role_name || '-'}</td>
                         <td className="px-4 py-2 text-text-muted font-mono text-xs">{m.role_id}</td>

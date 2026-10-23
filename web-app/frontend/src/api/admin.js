@@ -65,6 +65,8 @@ export const createReactionRolePost = (channelId, title, body) =>
   post('/api/reaction-roles/posts', { channel_id: channelId, title, body })
 export const deleteReactionRolePost = (postId) =>
   del(`/api/reaction-roles/posts/${postId}`)
+export const getReactionRoleDiscordOptions = () => get('/api/reaction-roles/discord-options')
+export const refreshReactionRoleDiscordOptions = () => post('/api/reaction-roles/discord-options/refresh', {})
 
 // Monitoring dashboard (requests, outbound services, resources, errors)
 export const getMonitoring = (hours = 24) => get(`/api/admin/monitoring?hours=${hours}`)

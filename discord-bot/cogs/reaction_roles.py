@@ -93,6 +93,20 @@ def _ensure_tables():
             post_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
         );
+        CREATE TABLE IF NOT EXISTS reaction_role_guild_roles (
+            role_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            color INTEGER NOT NULL DEFAULT 0,
+            position INTEGER NOT NULL DEFAULT 0,
+            assignable INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+        );
+        CREATE TABLE IF NOT EXISTS reaction_role_guild_emojis (
+            emoji_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            animated INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+        );
         CREATE TABLE IF NOT EXISTS reaction_role_posts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             channel_id TEXT NOT NULL,
@@ -183,6 +197,31 @@ def _load_managed_ids() -> set[int]:
     ).fetchall()
     conn.close()
     return {int(r[0]) for r in rows}
+
+
+def save_guild_snapshot(guild: discord.Guild):
+    """Store the server's roles and custom emojis so the admin page can list them."""
+    roles = [
+        (str(r.id), r.name, r.color.value, r.position, 1 if r.is_assignable() else 0)
+        for r in guild.roles if not r.is_default()
+    ]
+    emojis = [(str(e.id), e.name, 1 if e.animated else 0) for e in guild.emojis]
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("DELETE FROM reaction_role_guild_roles")
+        conn.executemany(
+            "INSERT INTO reaction_role_guild_roles (role_id, name, color, position, assignable) "
+            "VALUES (?, ?, ?, ?, ?)",
+            roles,
+        )
+        conn.execute("DELETE FROM reaction_role_guild_emojis")
+        conn.executemany(
+            "INSERT INTO reaction_role_guild_emojis (emoji_id, name, animated) VALUES (?, ?, ?)",
+            emojis,
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _take_queue() -> list[dict]:
@@ -364,6 +403,8 @@ class ReactionRolesCog(commands.Cog):
                     await self._clear_own_reactions(guild, int(job["channel_id"]), int(job["message_id"]))
                 elif action == "delete_post":
                     await self._delete_post(guild, int(job["channel_id"]), int(job["message_id"]))
+                elif action == "refresh_roles":
+                    save_guild_snapshot(guild)
             except Exception:
                 logger.exception("ReactionRoles: job %s failed", job)
 
@@ -389,7 +430,40 @@ class ReactionRolesCog(commands.Cog):
             self._refresh_mappings.start()
         if not self._process_queue.is_running():
             self._process_queue.start()
+        self._save_snapshot()
         await self._sync_reaction_roles()
+
+    # ------------------------------------------------------------------
+    # Role / emoji list for the admin page
+    # ------------------------------------------------------------------
+    def _save_snapshot(self):
+        guild = self.bot.get_guild(config.GUILD_ID)
+        if guild is None:
+            return
+        try:
+            save_guild_snapshot(guild)
+        except sqlite3.Error:
+            logger.exception("ReactionRoles: could not save role list")
+
+    @commands.Cog.listener()
+    async def on_guild_role_create(self, role: discord.Role):
+        if role.guild.id == config.GUILD_ID:
+            self._save_snapshot()
+
+    @commands.Cog.listener()
+    async def on_guild_role_delete(self, role: discord.Role):
+        if role.guild.id == config.GUILD_ID:
+            self._save_snapshot()
+
+    @commands.Cog.listener()
+    async def on_guild_role_update(self, before: discord.Role, after: discord.Role):
+        if after.guild.id == config.GUILD_ID:
+            self._save_snapshot()
+
+    @commands.Cog.listener()
+    async def on_guild_emojis_update(self, guild: discord.Guild, before, after):
+        if guild.id == config.GUILD_ID:
+            self._save_snapshot()
 
     async def _sync_reaction_roles(self):
         guild = self.bot.get_guild(config.GUILD_ID)

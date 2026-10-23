@@ -107,7 +107,9 @@ How the top three are picked: only **Avatar-mode seasons** give out avatar honou
 only they have a separate Elo ladder for each avatar (the same ladder as
 `GET /api/leaderboard/avatars`). When the season ends, each avatar's ladder is ranked by
 final season Elo and the first three entries with at least **10 games** on that avatar earn
-Top, 2nd and 3rd. An avatar where fewer than three players reached 10 games gives out fewer
+Top, 2nd and 3rd. Each player counts only on their highest-ranked avatar that season
+(their best entry with 10+ games); their other avatar entries step aside and the next
+player moves up, so a player holds at most one avatar honour per season. An avatar where fewer than three players reached 10 games gives out fewer
 honours. Player-mode seasons (every season before Avatar mode) have none.
 
 Honours appear as soon as the season is archived and stay fixed after that. The running

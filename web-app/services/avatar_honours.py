@@ -4,7 +4,8 @@ An Avatar-mode season rates every player/avatar pair on its own Elo ladder
 (event_avatar_standings). Those entries stay in place when the season is
 archived, so once it ends, the first three entries on each avatar with at
 least 10 games earn "Gothic Season 9 Top Imposter", "... 2nd Imposter" and
-"... 3rd Imposter". Player-mode seasons have no per-avatar ladder and earn
+"... 3rd Imposter". Each player counts only on their highest-ranked avatar
+(10+ games) that season, so they hold at most one honour per season. Player-mode seasons have no per-avatar ladder and earn
 none.
 
 Nothing is stored: like the bracket marks, honours are read from the data
@@ -106,16 +107,22 @@ def _custom_names() -> dict:
 
 
 def _season_honours(season: dict, names: dict) -> list[dict]:
-    """Top three per avatar on the season's ladder (event Elo, 10+ games)."""
+    """Top three per avatar on the season's ladder (event Elo, 10+ games).
+
+    A player counts once per season, on their highest-ranked avatar: their
+    other avatar entries step aside, so the next player on that avatar moves up.
+    """
     records = _season_records(season["id"])
     ladders = {}
+    placed = set()
     # Already best first: event Elo, then games played
     for entry in EloRepository(webapp_config.ELO_DB_PATH).get_avatar_standings(season["id"]):
         user_id = str(entry["user_id"])
         record = records.get((user_id, entry["avatar"]))
         games = entry["games_played"]
-        if games < HONOUR_MIN_GAMES:
+        if games < HONOUR_MIN_GAMES or user_id in placed:
             continue
+        placed.add(user_id)
         ladders.setdefault(entry["avatar"], []).append(
             {
                 "player_id": user_id,

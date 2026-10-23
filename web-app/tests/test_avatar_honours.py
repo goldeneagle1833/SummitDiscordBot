@@ -178,3 +178,21 @@ def test_bracket_season_names():
     assert bracket_season({"name": "Gothic Season 6 Postseason Bracket"}) == "Gothic Season 6"
     assert bracket_season({"name": "Season 8 Limited Top 8"}) == "Season 8"
     assert bracket_season({"name": "X", "elo_event_name": "Gothic Season 8"}) == "Gothic Season 8"
+
+
+def test_player_counts_only_on_their_highest_ranked_avatar(patched, elo_db, match_db):
+    from services.avatar_honours import get_honours_by_player
+
+    _add_event(elo_db, 9, "Gothic Season 9")
+    _add_entry(elo_db, 9, A, "Imposter", 1750, 20)   # Ann's best entry
+    _add_entry(elo_db, 9, A, "Seer", 1700, 15)       # steps aside
+    _add_entry(elo_db, 9, A, "Druid", 1800, 4)       # higher, but under 10 games
+    _add_entry(elo_db, 9, B, "Seer", 1650, 12)
+    _add_entry(elo_db, 9, C, "Seer", 1600, 12)
+    _add_entry(elo_db, 9, D, "Seer", 1550, 12)
+
+    honours = get_honours_by_player()
+    assert [h["title"] for h in honours["1"]] == ["Gothic Season 9 Top Imposter"]
+    assert honours["2"][0]["label"] == "Top Seer"
+    assert honours["3"][0]["label"] == "2nd Seer"
+    assert honours["4"][0]["label"] == "3rd Seer"

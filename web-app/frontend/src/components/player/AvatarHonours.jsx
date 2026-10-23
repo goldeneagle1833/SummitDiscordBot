@@ -151,7 +151,7 @@ export function AvatarHonoursSection({ honours = [] }) {
         ))}
       </ul>
       <p className="text-xs text-text-muted">
-        The top three on each avatar's season Elo ladder (Avatar-mode seasons, 10+ games), set when the season ends.
+        The top three on each avatar's season Elo ladder (Avatar-mode seasons, 10+ games, each player on their best avatar only), set when the season ends.
       </p>
     </section>
   )

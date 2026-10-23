@@ -116,8 +116,9 @@ def add_mapping():
     if not message_id or not emoji or not role_id:
         return jsonify({"success": False, "error": "message_id, emoji, and role_id are required"}), 400
 
-    # Normalize emoji: convert names like ":volcano:" or "volcano" to the Unicode character
-    if emoji.isascii():
+    # Normalize emoji: convert names like ":volcano:" or "volcano" to the Unicode character.
+    # Custom server emojis keep their own name (e.g. "dagger" must not become "†").
+    if not emoji_id and emoji.isascii():
         name = emoji.strip(":").strip()
         if name:
             try:

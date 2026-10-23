@@ -176,3 +176,11 @@ def test_discord_options_lists_roles_highest_first(admin_client, rr_db):
 def test_check_discord_queues_a_refresh(admin_client, rr_db):
     assert admin_client.post("/api/reaction-roles/discord-options/refresh", json={}).status_code == 200
     assert queue(rr_db) == [("refresh_roles", None, None, None)]
+
+
+def test_custom_emoji_name_is_not_turned_into_a_symbol(admin_client):
+    track(admin_client)
+    resp = admin_client.post("/api/reaction-roles/mappings", json={
+        "message_id": "200", "emoji": "dagger", "emoji_id": "152", "role_id": "300",
+    })
+    assert resp.get_json()["mapping"]["emoji"] == "dagger"

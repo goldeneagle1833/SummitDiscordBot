@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import sqlite3
 
 import discord
@@ -289,7 +290,7 @@ def _get_mapping_rows(message_id: int) -> list[dict]:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT emoji, emoji_id, role_id, role_name FROM reaction_role_mappings "
+        "SELECT message_id, emoji, emoji_id, role_id, role_name FROM reaction_role_mappings "
         "WHERE message_id = ? ORDER BY id",
         (str(message_id),),
     ).fetchall()
@@ -297,11 +298,52 @@ def _get_mapping_rows(message_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+_CUSTOM_EMOJI_NAME = re.compile(r"[A-Za-z0-9_]{2,32}")
+
+
 def _emoji_text(mapping: dict) -> str:
     """Emoji as it should appear in message text / be added as a reaction."""
+    if mapping.get("emoji_text"):
+        return mapping["emoji_text"]
     if mapping["emoji_id"]:
-        return f"<:{mapping['emoji']}:{mapping['emoji_id']}>"
+        # Discord only renders <:name:id> when name looks like an emoji name;
+        # the id is what matters, so fall back to a placeholder name.
+        name = mapping["emoji"]
+        if not _CUSTOM_EMOJI_NAME.fullmatch(name or ""):
+            name = "emoji"
+        return f"<:{name}:{mapping['emoji_id']}>"
     return mapping["emoji"]
+
+
+def _resolve_custom_emojis(guild: discord.Guild, mappings: list[dict]) -> list[dict]:
+    """Use the server's real emoji (name, animated) for custom emoji mappings.
+
+    Also repairs a stored name that doesn't match the emoji in Discord.
+    """
+    fixes = []
+    for m in mappings:
+        if not m["emoji_id"]:
+            continue
+        emoji = guild.get_emoji(int(m["emoji_id"]))
+        if emoji is None:
+            continue
+        m["emoji_text"] = str(emoji)
+        if m["emoji"] != emoji.name:
+            fixes.append((emoji.name, m["message_id"], m["emoji_id"]))
+            m["emoji"] = emoji.name
+    if fixes:
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            conn.executemany(
+                "UPDATE reaction_role_mappings SET emoji = ? WHERE message_id = ? AND emoji_id = ?",
+                fixes,
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            logger.warning("ReactionRoles: could not rename emoji mappings %s", fixes)
+        finally:
+            conn.close()
+    return mappings
 
 
 def build_role_embed(
@@ -431,6 +473,8 @@ class ReactionRolesCog(commands.Cog):
         if not self._process_queue.is_running():
             self._process_queue.start()
         self._save_snapshot()
+        # Re-render bot posts after a restart (counts may have moved while offline).
+        self._dirty_posts |= self._managed
         await self._sync_reaction_roles()
 
     # ------------------------------------------------------------------
@@ -497,7 +541,7 @@ class ReactionRolesCog(commands.Cog):
         message = await self._fetch_message(guild, int(row["channel_id"]), message_id)
         if message is None:
             return
-        mappings = _get_mapping_rows(message_id)
+        mappings = _resolve_custom_emojis(guild, _get_mapping_rows(message_id))
 
         if row["managed"]:
             await self._update_post_embed(guild, message, row, mappings)
@@ -551,7 +595,8 @@ class ReactionRolesCog(commands.Cog):
             return
         message = await self._fetch_message(guild, int(row["channel_id"]), message_id)
         if message is not None:
-            await self._update_post_embed(guild, message, row, _get_mapping_rows(message_id))
+            mappings = _resolve_custom_emojis(guild, _get_mapping_rows(message_id))
+            await self._update_post_embed(guild, message, row, mappings)
 
     def _mark_posts_for_roles(self, role_ids: set[int]):
         """Queue a count refresh for bot posts that list any of these roles."""

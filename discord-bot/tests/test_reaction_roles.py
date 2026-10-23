@@ -210,3 +210,23 @@ def test_guild_snapshot_saves_roles_and_emojis(db):
     conn.close()
     assert roles == [("2", "Cove", 1), ("3", "Mod", 0)]
     assert emojis == [("77", "HATE")]
+
+
+def test_custom_emoji_with_bad_name_still_renders():
+    assert rr._emoji_text({"emoji": "ð", "emoji_id": "152"}) == "<:emoji:152>"
+    assert rr._emoji_text({"emoji": "AoE", "emoji_id": "152"}) == "<:AoE:152>"
+
+
+def test_resolve_uses_server_emoji_and_repairs_stored_name(db):
+    _track(db)
+    _map(db, "ð", "300", emoji_id="152")
+    _map(db, "🌊", "301")
+    emoji = MagicMock()
+    emoji.name = "AoE"
+    emoji.__str__.return_value = "<a:AoE:152>"
+    guild = MagicMock()
+    guild.get_emoji.return_value = emoji
+
+    mappings = rr._resolve_custom_emojis(guild, rr._get_mapping_rows(200))
+    assert [rr._emoji_text(m) for m in mappings] == ["<a:AoE:152>", "🌊"]
+    assert [m["emoji"] for m in rr._get_mapping_rows(200)] == ["AoE", "🌊"]

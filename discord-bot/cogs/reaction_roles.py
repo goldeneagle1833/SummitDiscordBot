@@ -175,6 +175,16 @@ def _load_channel_map() -> dict[int, int]:
     return {int(r["message_id"]): int(r["channel_id"]) for r in rows}
 
 
+def _load_managed_ids() -> set[int]:
+    """Message IDs the bot posted itself (their role list shows member counts)."""
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT message_id FROM reaction_role_messages WHERE managed = 1"
+    ).fetchall()
+    conn.close()
+    return {int(r[0]) for r in rows}
+
+
 def _take_queue() -> list[dict]:
     """Return and remove all jobs the web app has queued for the bot."""
     conn = sqlite3.connect(DB_PATH)
@@ -255,9 +265,21 @@ def _emoji_text(mapping: dict) -> str:
     return mapping["emoji"]
 
 
-def build_role_embed(title: str, body: str, mappings: list[dict]) -> discord.Embed:
-    """Embed for a bot-posted role message: title, text, then one line per role."""
-    lines = [f"{_emoji_text(m)}  <@&{m['role_id']}>" for m in mappings]
+def build_role_embed(
+    title: str, body: str, mappings: list[dict], counts: dict[int, int] | None = None,
+) -> discord.Embed:
+    """Embed for a bot-posted role message: title, text, then one line per role.
+
+    counts maps role_id -> members holding the role (shown after each role).
+    """
+    counts = counts or {}
+    lines = []
+    for m in mappings:
+        line = f"{_emoji_text(m)}  <@&{m['role_id']}>"
+        count = counts.get(int(m["role_id"]))
+        if count is not None:
+            line += f" · {count} member{'' if count == 1 else 's'}"
+        lines.append(line)
     parts = [p for p in (body, "\n".join(lines)) if p]
     if not lines:
         parts.append("*Roles coming soon.*")
@@ -286,11 +308,15 @@ class ReactionRolesCog(commands.Cog):
         _seed_if_empty()
         self._role_map = _load_role_map()
         self._channel_map = _load_channel_map()
+        self._managed = _load_managed_ids()
+        # Bot posts whose member counts need refreshing (done by _process_queue).
+        self._dirty_posts: set[int] = set()
 
     def _reload(self):
         """Reload mappings from database."""
         self._role_map = _load_role_map()
         self._channel_map = _load_channel_map()
+        self._managed = _load_managed_ids()
 
     def cog_unload(self):
         self._refresh_mappings.cancel()
@@ -310,9 +336,10 @@ class ReactionRolesCog(commands.Cog):
         except sqlite3.Error:
             logger.exception("ReactionRoles: could not read job queue")
             return
-        if not jobs:
+        if not jobs and not self._dirty_posts:
             return
-        self._reload()
+        if jobs:
+            self._reload()
         guild = self.bot.get_guild(config.GUILD_ID)
         if guild is None:
             logger.warning("ReactionRoles: guild %s not found, dropping %d jobs", config.GUILD_ID, len(jobs))
@@ -339,6 +366,14 @@ class ReactionRolesCog(commands.Cog):
                     await self._delete_post(guild, int(job["channel_id"]), int(job["message_id"]))
             except Exception:
                 logger.exception("ReactionRoles: job %s failed", job)
+
+        # Member counts changed since the last pass (roles added/removed anywhere).
+        dirty, self._dirty_posts = self._dirty_posts - synced, set()
+        for message_id in dirty:
+            try:
+                await self._refresh_post(guild, message_id)
+            except Exception:
+                logger.exception("ReactionRoles: could not refresh counts on %s", message_id)
 
     @_process_queue.before_loop
     async def _before_process_queue(self):
@@ -390,12 +425,8 @@ class ReactionRolesCog(commands.Cog):
             return
         mappings = _get_mapping_rows(message_id)
 
-        if row["managed"] and message.author == self.bot.user:
-            embed = build_role_embed(row["title"], row["body"], mappings)
-            try:
-                await message.edit(content=None, embed=embed)
-            except discord.HTTPException:
-                logger.warning("ReactionRoles: could not edit message %s", message_id)
+        if row["managed"]:
+            await self._update_post_embed(guild, message, row, mappings)
 
         # The bot reacts with every mapped emoji so members have something to click,
         # and takes back its own reaction for emojis that are no longer mapped.
@@ -421,6 +452,50 @@ class ReactionRolesCog(commands.Cog):
             await asyncio.sleep(0.3)
 
         await self._backfill_roles(guild, message_id)
+
+    async def _update_post_embed(self, guild: discord.Guild, message, row: dict, mappings: list[dict]):
+        """Rewrite a bot post's embed (text, role list, member counts) if it changed."""
+        if message.author != self.bot.user:
+            return
+        counts = {}
+        for m in mappings:
+            role = guild.get_role(int(m["role_id"]))
+            if role is not None:
+                counts[role.id] = len(role.members)
+        embed = build_role_embed(row["title"], row["body"], mappings, counts)
+        current = message.embeds[0] if message.embeds else None
+        if current is not None and current.title == embed.title and current.description == embed.description:
+            return
+        try:
+            await message.edit(content=None, embed=embed)
+        except discord.HTTPException:
+            logger.warning("ReactionRoles: could not edit message %s", message.id)
+
+    async def _refresh_post(self, guild: discord.Guild, message_id: int):
+        row = _get_message_row(message_id)
+        if row is None or not row["managed"]:
+            return
+        message = await self._fetch_message(guild, int(row["channel_id"]), message_id)
+        if message is not None:
+            await self._update_post_embed(guild, message, row, _get_mapping_rows(message_id))
+
+    def _mark_posts_for_roles(self, role_ids: set[int]):
+        """Queue a count refresh for bot posts that list any of these roles."""
+        for message_id in self._managed:
+            if role_ids & set(self._role_map.get(message_id, {}).values()):
+                self._dirty_posts.add(message_id)
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        if before.roles != after.roles:
+            changed = {r.id for r in set(before.roles) ^ set(after.roles)}
+            self._mark_posts_for_roles(changed)
+
+    @commands.Cog.listener()
+    async def on_raw_member_remove(self, payload: discord.RawMemberRemoveEvent):
+        user = payload.user
+        if isinstance(user, discord.Member):
+            self._mark_posts_for_roles({r.id for r in user.roles})
 
     async def _backfill_roles(self, guild: discord.Guild, message_id: int):
         """Give the role to anyone who already reacted (e.g. before it was mapped)."""

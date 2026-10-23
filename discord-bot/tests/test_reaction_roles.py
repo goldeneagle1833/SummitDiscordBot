@@ -134,3 +134,54 @@ async def test_sync_does_not_edit_messages_the_bot_did_not_post(db):
 
     message.edit.assert_not_awaited()
     message.add_reaction.assert_awaited_once_with("🌊")
+
+
+def test_role_embed_shows_member_counts():
+    embed = rr.build_role_embed("Clubs", "", [
+        {"emoji": "🌊", "emoji_id": None, "role_id": "300"},
+        {"emoji": "🐻", "emoji_id": None, "role_id": "301"},
+        {"emoji": "🔥", "emoji_id": None, "role_id": "302"},
+    ], {300: 42, 301: 1})
+    assert embed.description.splitlines() == [
+        "🌊  <@&300> · 42 members",
+        "🐻  <@&301> · 1 member",
+        "🔥  <@&302>",
+    ]
+
+
+async def test_role_change_marks_only_bot_posts_listing_that_role(db):
+    _track(db, "200", managed=1, title="Clubs")
+    _track(db, "201", managed=0)
+    _map(db, "🌊", "300", message_id="200")
+    _map(db, "🌊", "300", message_id="201")
+    cog = _cog(db)
+
+    role = MagicMock(id=300)
+    other = MagicMock(id=999)
+    await cog.on_member_update(SimpleNamespace(roles=[]), SimpleNamespace(roles=[role]))
+    assert cog._dirty_posts == {200}
+
+    cog._dirty_posts.clear()
+    await cog.on_member_update(SimpleNamespace(roles=[]), SimpleNamespace(roles=[other]))
+    assert cog._dirty_posts == set()
+
+
+async def test_post_is_not_edited_when_nothing_changed(db):
+    _track(db, managed=1, title="Clubs")
+    _map(db, "🌊", "300")
+    cog = _cog(db)
+    guild = MagicMock()
+    guild.get_role.return_value = SimpleNamespace(id=300, members=[1, 2])
+    row = rr._get_message_row(200)
+    mappings = rr._get_mapping_rows(200)
+    message = MagicMock()
+    message.author = cog.bot.user
+    message.embeds = [rr.build_role_embed("Clubs", "", mappings, {300: 2})]
+    message.edit = AsyncMock()
+
+    await cog._update_post_embed(guild, message, row, mappings)
+    message.edit.assert_not_awaited()
+
+    guild.get_role.return_value = SimpleNamespace(id=300, members=[1, 2, 3])
+    await cog._update_post_embed(guild, message, row, mappings)
+    assert "3 members" in message.edit.await_args.kwargs["embed"].description

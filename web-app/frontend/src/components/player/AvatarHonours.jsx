@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { getAvatarHonours } from '@/api/avatarHonours'
 
 /**
- * Season avatar honours: the top three players on each avatar's season list
- * (Top Players by Avatar, 10+ games), earned when a season is archived.
- * "Gothic Season 7 Top Imposter", "... 2nd Imposter", "... 3rd Imposter".
+ * Season avatar honours: the top three entries on each avatar's Elo ladder
+ * (10+ games) in an Avatar-mode season, earned when the season is archived.
+ * "Gothic Season 9 Top Imposter", "... 2nd Imposter", "... 3rd Imposter".
  *
  * Fetched once per page load and shared through a module-level cache, like
  * the bracket marks.
@@ -141,7 +141,8 @@ export function AvatarHonoursSection({ honours = [] }) {
                   <Medal place={h.place} />
                   <strong className={PLACE_COLOURS[h.place]}>{h.label}</strong>
                   <span className="text-text-muted tabular-nums">
-                    {h.wins}-{h.losses}
+                    {h.elo} Elo
+                    {h.wins != null && ` · ${h.wins}-${h.losses}`}
                   </span>
                 </li>
               ))}
@@ -150,7 +151,7 @@ export function AvatarHonoursSection({ honours = [] }) {
         ))}
       </ul>
       <p className="text-xs text-text-muted">
-        The top three on each avatar's season list (Avatar Score, 10+ games), set when the season ends.
+        The top three on each avatar's season Elo ladder (Avatar-mode seasons, 10+ games), set when the season ends.
       </p>
     </section>
   )

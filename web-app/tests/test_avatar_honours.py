@@ -1,66 +1,70 @@
 """Tests for season avatar honours and the partner season-badges API."""
 
-import json
 import sqlite3
 
 import pytest
 
 import webapp_config
+from migrations.add_avatar_elo_mode import migrate
 
 
-def _deck(avatar):
-    return json.dumps({"avatar": [{"name": avatar}]})
+def _setup(elo_db, match_db):
+    migrate(elo_db, match_db)
 
 
-def _ensure_archive(db):
-    conn = sqlite3.connect(str(db))
-    conn.execute("CREATE TABLE IF NOT EXISTS match_records_archive AS SELECT * FROM match_records WHERE 0")
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(match_records_archive)")}
-    if "event_id" not in cols:
-        conn.execute("ALTER TABLE match_records_archive ADD COLUMN event_id INTEGER")
-    conn.commit()
-    conn.close()
-
-
-def _add_games(db, winner, loser, w_avatar, l_avatar, count, event_id=None):
-    """Archived games under event_id, or live games when event_id is None."""
-    _ensure_archive(db)
-    table = "match_records" if event_id is None else "match_records_archive"
-    conn = sqlite3.connect(str(db))
-    for _ in range(count):
-        cols = ["winner_id", "winner_display_name", "losser_id", "losser_display_name",
-                "json_deck_data_winner", "json_deck_data_loser", "timestamp", "source"]
-        vals = [winner[0], winner[1], loser[0], loser[1], _deck(w_avatar), _deck(l_avatar),
-                "2026-09-01 12:00:00", "Discord"]
-        if event_id is not None:
-            cols.append("event_id")
-            vals.append(event_id)
-        conn.execute(
-            f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", vals
-        )
-    conn.commit()
-    conn.close()
-
-
-def _add_event(elo_db, event_id, name, ended=True):
+def _add_event(elo_db, event_id, name, mode="avatar", ended=True):
     conn = sqlite3.connect(str(elo_db))
     conn.execute(
-        "INSERT INTO events (event_id, event_name, start_date, end_date, is_active) VALUES (?, ?, ?, ?, ?)",
-        (event_id, name, "2026-08-01", "2026-09-30" if ended else None, 0 if ended else 1),
+        "INSERT INTO events (event_id, event_name, start_date, end_date, is_active, elo_mode)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (event_id, name, "2026-08-01", "2026-09-30" if ended else None, 0 if ended else 1, mode),
     )
+    conn.commit()
+    conn.close()
+
+
+def _add_entry(elo_db, event_id, user, avatar, elo, games):
+    conn = sqlite3.connect(str(elo_db))
+    conn.execute(
+        "INSERT INTO event_avatar_standings (event_id, user_id, avatar, user_display_name, event_elo, games_played)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (event_id, user[0], avatar, user[1], elo, games),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _add_games(match_db, event_id, winner, w_avatar, loser, l_avatar, count, source=None):
+    conn = sqlite3.connect(str(match_db))
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(match_records_archive)")}
+    if "source" not in cols:
+        conn.execute("ALTER TABLE match_records_archive ADD COLUMN source TEXT")
+    for _ in range(count):
+        conn.execute(
+            "INSERT INTO match_records_archive (event_id, winner_id, winner_display_name, losser_id,"
+            " losser_display_name, winner_avatar, loser_avatar, timestamp, source)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, '2026-08-15 12:00:00', ?)",
+            (event_id, winner[0], winner[1], loser[0], loser[1], w_avatar, l_avatar, source),
+        )
     conn.commit()
     conn.close()
 
 
 @pytest.fixture()
 def patched(monkeypatch, elo_db, match_db, client):
-    import routes.api.avatars as avatars
     from services import avatar_honours
 
-    monkeypatch.setattr(avatars, "ELO_DB_PATH", elo_db)
-    monkeypatch.setattr(avatars, "MATCH_RECORDS_DB_PATH", match_db)
-    monkeypatch.setattr(avatars, "SEASON_FILTERS", [])
-    avatars.reset_rows_cache()
+    conn = sqlite3.connect(str(match_db))
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS match_records_archive (archive_id INTEGER PRIMARY KEY, event_id INTEGER,"
+        " winner_id INTEGER, winner_display_name TEXT, losser_id INTEGER, losser_display_name TEXT, timestamp TEXT)"
+    )
+    conn.execute("CREATE TABLE IF NOT EXISTS active_pairings (id INTEGER)")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(webapp_config, "ELO_DB_PATH", elo_db)
+    monkeypatch.setattr(webapp_config, "MATCH_RECORDS_DB_PATH", match_db)
+    _setup(elo_db, match_db)
     avatar_honours.reset_cache()
     return client
 
@@ -68,40 +72,47 @@ def patched(monkeypatch, elo_db, match_db, client):
 A, B, C, D, E = (("1", "Ann"), ("2", "Ben"), ("3", "Cat"), ("4", "Dan"), ("5", "Eve"))
 
 
-def test_top_three_per_avatar_for_ended_season(patched, elo_db, match_db):
+def test_top_three_per_avatar_by_ladder_elo(patched, elo_db, match_db):
     from services.avatar_honours import get_honours_by_player
 
-    _add_event(elo_db, 7, "Gothic Season 7")
-    _add_games(match_db, A, E, "Imposter", "Druid", 14, event_id=7)  # 14-0
-    _add_games(match_db, B, E, "Imposter", "Druid", 12, event_id=7)  # 12-0
-    _add_games(match_db, C, E, "Imposter", "Druid", 10, event_id=7)  # 10-0
-    _add_games(match_db, D, E, "Imposter", "Druid", 11, event_id=7)  # 11-0 beats Cat
-    _add_games(match_db, E, A, "Imposter", "Druid", 3, event_id=7)   # Eve: under 10 games
+    _add_event(elo_db, 9, "Gothic Season 9")
+    _add_entry(elo_db, 9, A, "Imposter", 1700, 20)
+    _add_entry(elo_db, 9, B, "Imposter", 1650, 12)
+    _add_entry(elo_db, 9, E, "Imposter", 1800, 6)   # highest, but under 10 games
+    _add_entry(elo_db, 9, C, "Imposter", 1600, 10)
+    _add_entry(elo_db, 9, D, "Imposter", 1550, 30)  # fourth
+    _add_games(match_db, 9, A, "Imposter", B, "Seer", 3)
+    _add_games(match_db, 9, B, "Seer", A, "Imposter", 1)
+    _add_games(match_db, 9, A, "Imposter", B, "Seer", 5, source="Bracket")  # not season games
 
     honours = get_honours_by_player()
-    assert honours["1"][0]["title"] == "Gothic Season 7 Top Imposter"
+    assert honours["1"][0]["title"] == "Gothic Season 9 Top Imposter"
+    assert honours["1"][0]["elo"] == 1700
+    assert (honours["1"][0]["wins"], honours["1"][0]["losses"]) == (3, 1)
     assert honours["2"][0]["label"] == "2nd Imposter"
-    assert honours["4"][0]["label"] == "3rd Imposter"
-    assert "3" not in honours  # fourth
-    # Eve went 0-47 on Druid: 47 games, ranked third or better on Druid only
-    assert all(h["avatar"] == "Druid" for h in honours["5"])
+    assert honours["3"][0]["label"] == "3rd Imposter"
+    assert honours["3"][0]["wins"] is None  # no archived games found
+    assert "4" not in honours
+    assert "5" not in honours
 
 
-def test_running_season_earns_nothing(patched, elo_db, match_db):
+def test_player_mode_and_running_seasons_earn_nothing(patched, elo_db, match_db):
     from services.avatar_honours import get_all_honours
 
-    _add_event(elo_db, 9, "Season 9", ended=False)
-    _add_games(match_db, A, B, "Imposter", "Druid", 15)
+    _add_event(elo_db, 7, "Gothic Season 7", mode="player")
+    _add_event(elo_db, 10, "Season 10", ended=False)
+    _add_entry(elo_db, 10, A, "Imposter", 1700, 20)
     assert get_all_honours() == []
 
 
 def test_avatar_honours_route(patched, elo_db, match_db):
-    _add_event(elo_db, 7, "Gothic Season 7")
-    _add_games(match_db, A, B, "Imposter", "Druid", 12, event_id=7)
+    _add_event(elo_db, 9, "Gothic Season 9")
+    _add_entry(elo_db, 9, A, "Imposter", 1700, 20)
+    _add_entry(elo_db, 9, B, "Druid", 1600, 11)
     data = patched.get("/api/avatar-honours").get_json()
     assert data["success"]
-    assert data["honours"]["1"][0]["title"] == "Gothic Season 7 Top Imposter"
-    assert data["honours"]["2"][0]["title"] == "Gothic Season 7 Top Druid"
+    assert data["honours"]["1"][0]["title"] == "Gothic Season 9 Top Imposter"
+    assert data["honours"]["2"][0]["title"] == "Gothic Season 9 Top Druid"
 
 
 class FakeBrackets:
@@ -140,7 +151,7 @@ def test_partner_badges_need_key(partner):
 
 def test_partner_badges_combine_brackets_and_avatars(partner, elo_db, match_db):
     _add_event(elo_db, 7, "Gothic Season 7")
-    _add_games(match_db, A, B, "Imposter", "Druid", 12, event_id=7)
+    _add_entry(elo_db, 7, A, "Imposter", 1700, 12)
     resp = partner.get("/api/partner/season-badges?user_id=1,9,404", headers={"X-API-Key": "pso-key"})
     assert resp.status_code == 200
     players = {p["user_id"]: p for p in resp.get_json()["players"]}
@@ -155,7 +166,8 @@ def test_partner_badges_combine_brackets_and_avatars(partner, elo_db, match_db):
 
 def test_partner_badges_without_user_id_lists_every_holder(partner, elo_db, match_db):
     _add_event(elo_db, 7, "Gothic Season 7")
-    _add_games(match_db, A, B, "Imposter", "Druid", 12, event_id=7)
+    _add_entry(elo_db, 7, A, "Imposter", 1700, 12)
+    _add_entry(elo_db, 7, B, "Druid", 1600, 12)
     data = partner.get("/api/partner/season-badges", headers={"X-API-Key": "pso-key"}).get_json()
     assert [p["user_id"] for p in data["players"]] == ["1", "2", "9"]
 

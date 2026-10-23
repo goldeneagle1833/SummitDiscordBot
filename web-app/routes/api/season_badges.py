@@ -74,7 +74,7 @@ def _bracket_badges() -> dict:
 
 def _avatar_badges() -> dict:
     keep = ("season", "season_id", "avatar", "place", "label", "title",
-            "wins", "losses", "games", "avatar_score")
+            "elo", "wins", "losses", "games")
     return {
         user_id: [{k: h[k] for k in keep} for h in honours]
         for user_id, honours in avatar_honours.get_honours_by_player().items()

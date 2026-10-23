@@ -5,9 +5,9 @@ player's profile or beside their name:
 
 - **Bracket finishes** from the Summit postseason brackets: Champion, Finalist, Top 4,
   Top 8 and Top cut (anyone else in the bracket), plus the Limited versions.
-- **Season avatar honours**: the top three players on each avatar in each ended season,
-  e.g. "Gothic Season 7 Top Imposter", "Gothic Season 7 2nd Imposter",
-  "Gothic Season 7 3rd Imposter".
+- **Season avatar honours**: the top three players on each avatar's ladder in each ended
+  Avatar-mode season, e.g. "Gothic Season 9 Top Imposter", "Gothic Season 9 2nd Imposter",
+  "Gothic Season 9 3rd Imposter".
 
 Base URL: `https://sorcererssummit.com`
 
@@ -58,16 +58,16 @@ A player with no badges still comes back, with two empty lists.
       ],
       "avatar_honours": [
         {
-          "season": "Gothic Season 7",
-          "season_id": 7,
+          "season": "Gothic Season 9",
+          "season_id": 9,
           "avatar": "Imposter",
           "place": 1,
           "label": "Top Imposter",
-          "title": "Gothic Season 7 Top Imposter",
+          "title": "Gothic Season 9 Top Imposter",
+          "elo": 1712,
           "wins": 14,
           "losses": 2,
-          "games": 16,
-          "avatar_score": 917
+          "games": 16
         }
       ]
     }
@@ -98,18 +98,20 @@ Only finished brackets count. A bracket that is still being played has not place
 | `avatar` | The avatar the honour is for |
 | `place` | 1, 2 or 3 |
 | `label` | `Top <avatar>`, `2nd <avatar>`, `3rd <avatar>` |
-| `title` | Ready-made text, e.g. `Gothic Season 7 2nd Imposter` |
-| `wins` / `losses` / `games` | The player's ranked record on that avatar that season |
-| `avatar_score` | The score they were ranked by |
+| `title` | Ready-made text, e.g. `Gothic Season 9 2nd Imposter` |
+| `elo` | Their final season Elo on that avatar, the number they were ranked by |
+| `games` | Rated games on that avatar that season |
+| `wins` / `losses` | Their record on that avatar that season (`null` if it can't be read) |
 
-How the top three are picked: the same list as the Summit's **Top Players by Avatar** page
-for that season. Ranked games reported through the Summit, ranked by Avatar Score (a Wilson
-lower bound on win rate plus a small bonus for games played), and a player needs at least
-**10 games** on the avatar to be listed. An avatar where fewer than three players reached 10
-games gives out fewer honours.
+How the top three are picked: only **Avatar-mode seasons** give out avatar honours, since
+only they have a separate Elo ladder for each avatar (the same ladder as
+`GET /api/leaderboard/avatars`). When the season ends, each avatar's ladder is ranked by
+final season Elo and the first three entries with at least **10 games** on that avatar earn
+Top, 2nd and 3rd. An avatar where fewer than three players reached 10 games gives out fewer
+honours. Player-mode seasons (every season before Avatar mode) have none.
 
-Honours appear as soon as a season is archived and never change after that. The running
-season has none. Every season archived before this API existed is included.
+Honours appear as soon as the season is archived and stay fixed after that. The running
+season has none.
 
 Both lists are newest season first.
 

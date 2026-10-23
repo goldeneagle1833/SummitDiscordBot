@@ -5,7 +5,7 @@ import re
 from flask import Blueprint, jsonify, request
 
 from services.match import MatchService
-from services.replays import viewable_replays
+from services.replays import own_backfilled_replays, viewable_replays
 from utils.auth import require_api_key
 
 logger = logging.getLogger(__name__)
@@ -93,6 +93,12 @@ def _only_players_see_replays(matches: list[dict]) -> list[dict]:
     for match, ok in zip(with_replays, allowed):
         if not ok:
             match["replay_url"] = None
+    # Older games only have the viewer's own replay, from the PSO backfill
+    missing = [m for m in matches if not m.get("replay_url")]
+    own = own_backfilled_replays(m.get("match_id") for m in missing)
+    for match in missing:
+        if own.get(match.get("match_id")):
+            match["replay_url"] = own[match["match_id"]]
     return matches
 
 

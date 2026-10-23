@@ -222,18 +222,11 @@ describe('Store storefront tabs', () => {
     expect(screen.queryByRole('button', { name: /^Checkout/ })).not.toBeInTheDocument()
   })
 
-  it('shows Shopify apparel on its own tab, apart from the store carts', async () => {
-    renderStore()
-    await userEvent.click(await screen.findByRole('tab', { name: 'Explorer Apparel' }))
-    expect(screen.getByRole('tab', { name: 'Explorer Apparel' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('tab', { name: /Summit Store/ })).toHaveAttribute('aria-selected', 'false')
-    expect(screen.getByRole('heading', { name: 'Explorer Apparel' })).toBeInTheDocument()
-    expect(screen.queryByText('Fire Token')).not.toBeInTheDocument()
-    expect(screen.queryByText(/US shipping only/)).not.toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('tab', { name: /Summit Store/ }))
-    expect(screen.getByText('Fire Token')).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Explorer Apparel' })).not.toBeInTheDocument()
+  it('has no Explorer Apparel tab, and old apparel links open the Summit Store', async () => {
+    renderStore('/store?tab=explorer-apparel')
+    expect(await screen.findByText('Fire Token')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Summit Store/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('tab', { name: /Apparel/ })).not.toBeInTheDocument()
   })
 
   it('highlights US shipping only on every storefront, with its own note', async () => {

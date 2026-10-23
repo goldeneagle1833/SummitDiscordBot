@@ -9,7 +9,6 @@ import Spinner from '@/components/ui/Spinner'
 import FramedImage from '@/components/store/FramedImage'
 import LinkifiedText from '@/components/ui/LinkifiedText'
 import usePageTitle from '@/hooks/usePageTitle'
-import ShopifyApparel from '@/components/store/ShopifyApparel'
 import ImageLightbox from '@/components/store/ImageLightbox'
 
 function LoginPromptModal({ onClose }) {
@@ -140,9 +139,6 @@ export default function Store() {
   const [error, setError] = useState(null)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
 
-  // Explorer Apparel is its own tab: Shopify's cart and checkout, not one of
-  // our storefronts. ?tab=apparel is the older link to it
-  const showApparel = ['explorer-apparel', 'apparel'].includes(params.get('tab'))
   const active =
     storefronts.find((s) => s.slug === params.get('storefront')) || storefronts[0]
   // Each storefront has its own cart, because each one checks out separately
@@ -208,7 +204,7 @@ export default function Store() {
 
       <div role="tablist" aria-label="Storefronts" className="flex gap-6 border-b border-border mb-6 overflow-x-auto no-scrollbar">
         {storefronts.map((sf) => {
-          const selected = !showApparel && sf.slug === active.slug
+          const selected = sf.slug === active.slug
           const inCart = sf.slug === active.slug ? totalQty : cartCount(sf.slug)
           return (
             <button
@@ -232,22 +228,8 @@ export default function Store() {
             </button>
           )
         })}
-        <button
-          type="button"
-          role="tab"
-          aria-selected={showApparel}
-          onClick={() => setParams({ tab: 'explorer-apparel' })}
-          className={`py-3 -mb-px border-b-2 text-sm font-semibold whitespace-nowrap transition-colors ${
-            showApparel
-              ? 'border-secondary text-secondary'
-              : 'border-transparent text-text-muted hover:text-text'
-          }`}
-        >
-          Explorer Apparel
-        </button>
       </div>
 
-      {showApparel ? <ShopifyApparel /> : (<>
       {active.description && (
         <p className="text-sm text-text-muted mb-2 max-w-3xl whitespace-pre-line">
           <LinkifiedText text={active.description} />
@@ -395,7 +377,6 @@ export default function Store() {
           )}
         </div>
       )}
-      </>)}
 
       {showLoginPrompt && <LoginPromptModal onClose={() => setShowLoginPrompt(false)} />}
     </div>

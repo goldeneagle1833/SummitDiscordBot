@@ -1,0 +1,136 @@
+"""Tests for reaction role live sync: job queue, bot posts and reaction upkeep."""
+
+import sqlite3
+import sys
+from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+if "config" not in sys.modules:
+    try:
+        import config  # noqa: F401
+    except ImportError:
+        fake_config = ModuleType("config")
+        fake_config.GUILD_ID = 1
+        sys.modules["config"] = fake_config
+
+from cogs import reaction_roles as rr  # noqa: E402
+
+
+@pytest.fixture()
+def db(tmp_path, monkeypatch):
+    path = str(tmp_path / "match_records.db")
+    monkeypatch.setattr(rr, "DB_PATH", path)
+    rr._ensure_tables()
+    return path
+
+
+def _exec(path, sql, args=()):
+    conn = sqlite3.connect(path)
+    conn.execute(sql, args)
+    conn.commit()
+    conn.close()
+
+
+def _track(path, message_id="200", managed=0, title="", body=""):
+    _exec(path,
+          "INSERT INTO reaction_role_messages (channel_id, message_id, label, title, body, managed) "
+          "VALUES ('100', ?, 'Roles', ?, ?, ?)", (message_id, title, body, managed))
+
+
+def _map(path, emoji, role_id, emoji_id=None, message_id="200"):
+    _exec(path,
+          "INSERT INTO reaction_role_mappings (message_id, emoji, emoji_id, role_id) VALUES (?, ?, ?, ?)",
+          (message_id, emoji, emoji_id, role_id))
+
+
+def test_take_queue_returns_jobs_once(db):
+    _exec(db, "INSERT INTO reaction_role_queue (action, message_id) VALUES ('sync', '200')")
+    _exec(db, "INSERT INTO reaction_role_queue (action, message_id) VALUES ('clear', '201')")
+    assert [j["action"] for j in rr._take_queue()] == ["sync", "clear"]
+    assert rr._take_queue() == []
+
+
+def test_role_embed_lists_each_role():
+    embed = rr.build_role_embed("Clubs", "React below.", [
+        {"emoji": "🌊", "emoji_id": None, "role_id": "300"},
+        {"emoji": "HATE", "emoji_id": "999", "role_id": "301"},
+    ])
+    assert embed.title == "Clubs"
+    assert embed.description == "React below.\n\n🌊  <@&300>\n<:HATE:999>  <@&301>"
+
+
+def test_role_embed_without_roles_says_coming_soon():
+    assert "coming soon" in rr.build_role_embed("Clubs", "", []).description
+
+
+def test_finish_post_tracks_new_message(db):
+    _exec(db, "INSERT INTO reaction_role_posts (channel_id, title, body) VALUES ('100', 'Clubs', 'Hi')")
+    post = rr._get_post(1)
+    rr._finish_post(post, 777)
+    row = rr._get_message_row(777)
+    assert (row["managed"], row["title"], row["label"]) == (1, "Clubs", "Clubs")
+    assert rr._get_post(1)["status"] == "posted"
+
+
+def test_finish_post_records_failure(db):
+    _exec(db, "INSERT INTO reaction_role_posts (channel_id, title) VALUES ('100', 'Clubs')")
+    rr._finish_post(rr._get_post(1), None, "Channel not found")
+    post = rr._get_post(1)
+    assert (post["status"], post["error"]) == ("failed", "Channel not found")
+
+
+def _reaction(emoji, me):
+    return SimpleNamespace(emoji=emoji, me=me)
+
+
+def _cog(db):
+    bot = MagicMock()
+    bot.user = object()
+    with patch.object(rr, "_seed_if_empty"):
+        cog = rr.ReactionRolesCog(bot)
+    return cog
+
+
+async def test_sync_adds_missing_emojis_and_removes_stale_ones(db):
+    _track(db, managed=1, title="Clubs")
+    _map(db, "🌊", "300")
+    _map(db, "🔥", "301")
+    cog = _cog(db)
+
+    message = MagicMock()
+    message.author = cog.bot.user
+    message.reactions = [_reaction("🌊", True), _reaction("💧", True), _reaction("🐻", False)]
+    message.edit = AsyncMock()
+    message.add_reaction = AsyncMock()
+    message.remove_reaction = AsyncMock()
+    cog._fetch_message = AsyncMock(return_value=message)
+    cog._backfill_roles = AsyncMock()
+
+    with patch.object(rr.asyncio, "sleep", AsyncMock()):
+        await cog._sync_message(MagicMock(), 200)
+
+    message.add_reaction.assert_awaited_once_with("🔥")
+    message.remove_reaction.assert_awaited_once_with("💧", cog.bot.user)
+    embed = message.edit.await_args.kwargs["embed"]
+    assert "<@&300>" in embed.description and "<@&301>" in embed.description
+    cog._backfill_roles.assert_awaited_once()
+
+
+async def test_sync_does_not_edit_messages_the_bot_did_not_post(db):
+    _track(db, managed=0)
+    _map(db, "🌊", "300")
+    cog = _cog(db)
+    message = MagicMock()
+    message.reactions = []
+    message.edit = AsyncMock()
+    message.add_reaction = AsyncMock()
+    cog._fetch_message = AsyncMock(return_value=message)
+    cog._backfill_roles = AsyncMock()
+
+    with patch.object(rr.asyncio, "sleep", AsyncMock()):
+        await cog._sync_message(MagicMock(), 200)
+
+    message.edit.assert_not_awaited()
+    message.add_reaction.assert_awaited_once_with("🌊")

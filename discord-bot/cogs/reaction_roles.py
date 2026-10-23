@@ -85,7 +85,34 @@ def _ensure_tables():
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
             UNIQUE(message_id, emoji)
         );
+        CREATE TABLE IF NOT EXISTS reaction_role_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            action TEXT NOT NULL,
+            message_id TEXT,
+            channel_id TEXT,
+            post_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+        );
+        CREATE TABLE IF NOT EXISTS reaction_role_posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            body TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            message_id TEXT,
+            error TEXT,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+        );
     """)
+    # Columns for messages the bot posted itself (title/body it keeps updated).
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(reaction_role_messages)")}
+    for name, ddl in (
+        ("title", "TEXT NOT NULL DEFAULT ''"),
+        ("body", "TEXT NOT NULL DEFAULT ''"),
+        ("managed", "INTEGER NOT NULL DEFAULT 0"),
+    ):
+        if name not in cols:
+            conn.execute(f"ALTER TABLE reaction_role_messages ADD COLUMN {name} {ddl}")
     conn.commit()
     conn.close()
 
@@ -148,6 +175,101 @@ def _load_channel_map() -> dict[int, int]:
     return {int(r["message_id"]): int(r["channel_id"]) for r in rows}
 
 
+def _take_queue() -> list[dict]:
+    """Return and remove all jobs the web app has queued for the bot."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM reaction_role_queue ORDER BY id"
+        ).fetchall()]
+        if rows:
+            conn.execute(
+                "DELETE FROM reaction_role_queue WHERE id <= ?", (rows[-1]["id"],)
+            )
+            conn.commit()
+        return rows
+    finally:
+        conn.close()
+
+
+def _get_post(post_id: int) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT * FROM reaction_role_posts WHERE id = ?", (post_id,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def _finish_post(post: dict, message_id: int | None, error: str | None = None):
+    """Record the outcome of a post; on success, start tracking the new message."""
+    conn = sqlite3.connect(DB_PATH)
+    if message_id is None:
+        conn.execute(
+            "UPDATE reaction_role_posts SET status = 'failed', error = ? WHERE id = ?",
+            (error, post["id"]),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO reaction_role_messages "
+            "(channel_id, message_id, label, title, body, managed) VALUES (?, ?, ?, ?, ?, 1)",
+            (post["channel_id"], str(message_id), post["title"], post["title"], post["body"]),
+        )
+        conn.execute(
+            "UPDATE reaction_role_posts SET status = 'posted', message_id = ?, error = NULL "
+            "WHERE id = ?",
+            (str(message_id), post["id"]),
+        )
+    conn.commit()
+    conn.close()
+
+
+def _get_message_row(message_id: int) -> dict | None:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT * FROM reaction_role_messages WHERE message_id = ?", (str(message_id),)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def _get_mapping_rows(message_id: int) -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT emoji, emoji_id, role_id, role_name FROM reaction_role_mappings "
+        "WHERE message_id = ? ORDER BY id",
+        (str(message_id),),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def _emoji_text(mapping: dict) -> str:
+    """Emoji as it should appear in message text / be added as a reaction."""
+    if mapping["emoji_id"]:
+        return f"<:{mapping['emoji']}:{mapping['emoji_id']}>"
+    return mapping["emoji"]
+
+
+def build_role_embed(title: str, body: str, mappings: list[dict]) -> discord.Embed:
+    """Embed for a bot-posted role message: title, text, then one line per role."""
+    lines = [f"{_emoji_text(m)}  <@&{m['role_id']}>" for m in mappings]
+    parts = [p for p in (body, "\n".join(lines)) if p]
+    if not lines:
+        parts.append("*Roles coming soon.*")
+    embed = discord.Embed(
+        title=title[:256],
+        description="\n\n".join(parts)[:4096],
+        color=discord.Color.gold(),
+    )
+    embed.set_footer(text="React to get a role. Remove your reaction to drop it.")
+    return embed
+
+
 def _emoji_key(emoji: discord.PartialEmoji) -> object:
     """Return the lookup key for an emoji (custom ID or unicode str)."""
     if emoji.id:
@@ -172,12 +294,55 @@ class ReactionRolesCog(commands.Cog):
 
     def cog_unload(self):
         self._refresh_mappings.cancel()
+        self._process_queue.cancel()
 
     @tasks.loop(minutes=5)
     async def _refresh_mappings(self):
-        """Periodically reload mappings so web UI changes take effect."""
+        """Periodic reload, a fallback in case a queued change was missed."""
         self._reload()
         logger.debug("ReactionRoles: refreshed mappings from database")
+
+    @tasks.loop(seconds=5)
+    async def _process_queue(self):
+        """Apply admin-page changes (queued by the web app) within seconds."""
+        try:
+            jobs = _take_queue()
+        except sqlite3.Error:
+            logger.exception("ReactionRoles: could not read job queue")
+            return
+        if not jobs:
+            return
+        self._reload()
+        guild = self.bot.get_guild(config.GUILD_ID)
+        if guild is None:
+            logger.warning("ReactionRoles: guild %s not found, dropping %d jobs", config.GUILD_ID, len(jobs))
+            return
+
+        synced: set[int] = set()
+        for job in jobs:
+            try:
+                action = job["action"]
+                if action == "post":
+                    message_id = await self._publish_post(guild, job["post_id"])
+                    if message_id:
+                        self._reload()
+                        await self._sync_message(guild, message_id)
+                        synced.add(message_id)
+                elif action == "sync":
+                    message_id = int(job["message_id"])
+                    if message_id not in synced:
+                        await self._sync_message(guild, message_id)
+                        synced.add(message_id)
+                elif action == "clear":
+                    await self._clear_own_reactions(guild, int(job["channel_id"]), int(job["message_id"]))
+                elif action == "delete_post":
+                    await self._delete_post(guild, int(job["channel_id"]), int(job["message_id"]))
+            except Exception:
+                logger.exception("ReactionRoles: job %s failed", job)
+
+    @_process_queue.before_loop
+    async def _before_process_queue(self):
+        await self.bot.wait_until_ready()
 
     # ------------------------------------------------------------------
     # Startup sync
@@ -187,6 +352,8 @@ class ReactionRolesCog(commands.Cog):
         self._reload()
         if not self._refresh_mappings.is_running():
             self._refresh_mappings.start()
+        if not self._process_queue.is_running():
+            self._process_queue.start()
         await self._sync_reaction_roles()
 
     async def _sync_reaction_roles(self):
@@ -195,55 +362,142 @@ class ReactionRolesCog(commands.Cog):
             logger.warning("ReactionRoles: guild %s not found, skipping sync", config.GUILD_ID)
             return
 
-        for message_id, emoji_roles in self._role_map.items():
-            channel_id = self._channel_map.get(message_id)
-            if channel_id is None:
-                continue
-
-            channel = guild.get_channel(channel_id)
-            if channel is None:
-                logger.warning("ReactionRoles: channel %s not found, skipping", channel_id)
-                continue
-
-            try:
-                message = await channel.fetch_message(message_id)
-            except discord.NotFound:
-                logger.warning("ReactionRoles: message %s not found, skipping", message_id)
-                continue
-            except discord.Forbidden:
-                logger.warning("ReactionRoles: no permission to fetch message %s", message_id)
-                continue
-
-            # Build {role_id: set(user_ids)} from reactions
-            reacted_users_by_role: dict[int, set[int]] = {rid: set() for rid in emoji_roles.values()}
-
-            for reaction in message.reactions:
-                key = reaction.emoji if isinstance(reaction.emoji, str) else (reaction.emoji.id or reaction.emoji.name)
-                role_id = emoji_roles.get(key)
-                if role_id is None:
-                    continue
-                async for user in reaction.users():
-                    if not user.bot:
-                        reacted_users_by_role[role_id].add(user.id)
-
-            # Sync each role
-            for role_id, user_ids in reacted_users_by_role.items():
-                role = guild.get_role(role_id)
-                if role is None:
-                    logger.warning("ReactionRoles: role %s not found, skipping", role_id)
-                    continue
-
-                for uid in user_ids:
-                    member = guild.get_member(uid)
-                    if member and role not in member.roles:
-                        try:
-                            await member.add_roles(role, reason="Reaction role sync")
-                            logger.info("ReactionRoles sync: added %s to %s", role.name, member)
-                        except discord.Forbidden:
-                            logger.warning("ReactionRoles sync: cannot add %s to %s", role.name, member)
-                        await asyncio.sleep(0.5)
+        for message_id in list(self._role_map):
+            await self._backfill_roles(guild, message_id)
 
         logger.info("ReactionRoles: startup sync complete")
+
+    async def _fetch_message(self, guild: discord.Guild, channel_id: int, message_id: int):
+        channel = guild.get_channel(channel_id)
+        if channel is None:
+            logger.warning("ReactionRoles: channel %s not found, skipping", channel_id)
+            return None
+        try:
+            return await channel.fetch_message(message_id)
+        except discord.NotFound:
+            logger.warning("ReactionRoles: message %s not found, skipping", message_id)
+        except discord.Forbidden:
+            logger.warning("ReactionRoles: no permission to fetch message %s", message_id)
+        return None
+
+    async def _sync_message(self, guild: discord.Guild, message_id: int):
+        """Bring one message in line with its mappings: text, bot reactions, roles."""
+        row = _get_message_row(message_id)
+        if row is None:
+            return
+        message = await self._fetch_message(guild, int(row["channel_id"]), message_id)
+        if message is None:
+            return
+        mappings = _get_mapping_rows(message_id)
+
+        if row["managed"] and message.author == self.bot.user:
+            embed = build_role_embed(row["title"], row["body"], mappings)
+            try:
+                await message.edit(content=None, embed=embed)
+            except discord.HTTPException:
+                logger.warning("ReactionRoles: could not edit message %s", message_id)
+
+        # The bot reacts with every mapped emoji so members have something to click,
+        # and takes back its own reaction for emojis that are no longer mapped.
+        wanted = {int(m["emoji_id"]) if m["emoji_id"] else m["emoji"]: m for m in mappings}
+        for reaction in message.reactions:
+            key = reaction.emoji if isinstance(reaction.emoji, str) else (reaction.emoji.id or reaction.emoji.name)
+            if reaction.me and key not in wanted:
+                try:
+                    await message.remove_reaction(reaction.emoji, self.bot.user)
+                except discord.HTTPException:
+                    logger.warning("ReactionRoles: could not remove %s from %s", key, message_id)
+        have = {
+            (r.emoji if isinstance(r.emoji, str) else (r.emoji.id or r.emoji.name))
+            for r in message.reactions if r.me
+        }
+        for key, m in wanted.items():
+            if key in have:
+                continue
+            try:
+                await message.add_reaction(_emoji_text(m))
+            except discord.HTTPException:
+                logger.warning("ReactionRoles: could not add %s to %s", _emoji_text(m), message_id)
+            await asyncio.sleep(0.3)
+
+        await self._backfill_roles(guild, message_id)
+
+    async def _backfill_roles(self, guild: discord.Guild, message_id: int):
+        """Give the role to anyone who already reacted (e.g. before it was mapped)."""
+        emoji_roles = self._role_map.get(message_id)
+        channel_id = self._channel_map.get(message_id)
+        if not emoji_roles or channel_id is None:
+            return
+        message = await self._fetch_message(guild, channel_id, message_id)
+        if message is None:
+            return
+
+        # Build {role_id: set(user_ids)} from reactions
+        reacted_users_by_role: dict[int, set[int]] = {rid: set() for rid in emoji_roles.values()}
+
+        for reaction in message.reactions:
+            key = reaction.emoji if isinstance(reaction.emoji, str) else (reaction.emoji.id or reaction.emoji.name)
+            role_id = emoji_roles.get(key)
+            if role_id is None:
+                continue
+            async for user in reaction.users():
+                if not user.bot:
+                    reacted_users_by_role[role_id].add(user.id)
+
+        # Sync each role
+        for role_id, user_ids in reacted_users_by_role.items():
+            role = guild.get_role(role_id)
+            if role is None:
+                logger.warning("ReactionRoles: role %s not found, skipping", role_id)
+                continue
+
+            for uid in user_ids:
+                member = guild.get_member(uid)
+                if member and role not in member.roles:
+                    try:
+                        await member.add_roles(role, reason="Reaction role sync")
+                        logger.info("ReactionRoles sync: added %s to %s", role.name, member)
+                    except discord.Forbidden:
+                        logger.warning("ReactionRoles sync: cannot add %s to %s", role.name, member)
+                    await asyncio.sleep(0.5)
+
+    async def _publish_post(self, guild: discord.Guild, post_id: int) -> int | None:
+        """Post a new role message requested from the admin page."""
+        post = _get_post(post_id)
+        if post is None or post["status"] != "pending":
+            return None
+        channel = guild.get_channel(int(post["channel_id"]))
+        if channel is None or not hasattr(channel, "send"):
+            _finish_post(post, None, "Channel not found. Check the Channel ID.")
+            return None
+        try:
+            message = await channel.send(embed=build_role_embed(post["title"], post["body"], []))
+        except discord.Forbidden:
+            _finish_post(post, None, "The bot can't post in that channel (needs Send Messages and Embed Links).")
+            return None
+        except discord.HTTPException as e:
+            _finish_post(post, None, f"Discord error: {e}")
+            return None
+        _finish_post(post, message.id)
+        logger.info("ReactionRoles: posted role message %s in #%s", message.id, channel)
+        return message.id
+
+    async def _clear_own_reactions(self, guild: discord.Guild, channel_id: int, message_id: int):
+        """Take back the bot's reactions from a message that is no longer tracked."""
+        message = await self._fetch_message(guild, channel_id, message_id)
+        if message is None:
+            return
+        for reaction in message.reactions:
+            if reaction.me:
+                try:
+                    await message.remove_reaction(reaction.emoji, self.bot.user)
+                except discord.HTTPException:
+                    pass
+
+    async def _delete_post(self, guild: discord.Guild, channel_id: int, message_id: int):
+        message = await self._fetch_message(guild, channel_id, message_id)
+        if message is not None and message.author == self.bot.user:
+            await message.delete()
 
     # ------------------------------------------------------------------
     # Live reaction handlers

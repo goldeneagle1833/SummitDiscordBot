@@ -38,7 +38,34 @@ class ReactionRolesRepository:
                 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
                 UNIQUE(message_id, emoji)
             );
+            CREATE TABLE IF NOT EXISTS reaction_role_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action TEXT NOT NULL,
+                message_id TEXT,
+                channel_id TEXT,
+                post_id INTEGER,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+            );
+            CREATE TABLE IF NOT EXISTS reaction_role_posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                body TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                message_id TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+            );
         """)
+        # Columns for messages the bot posted itself (title/body it keeps updated).
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(reaction_role_messages)")}
+        for name, ddl in (
+            ("title", "TEXT NOT NULL DEFAULT ''"),
+            ("body", "TEXT NOT NULL DEFAULT ''"),
+            ("managed", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            if name not in cols:
+                conn.execute(f"ALTER TABLE reaction_role_messages ADD COLUMN {name} {ddl}")
         conn.commit()
         conn.close()
 
@@ -47,7 +74,7 @@ class ReactionRolesRepository:
     def get_all_messages(self) -> list[dict]:
         conn = self._get_connection()
         rows = conn.execute(
-            "SELECT id, channel_id, message_id, label, created_at "
+            "SELECT id, channel_id, message_id, label, title, body, managed, created_at "
             "FROM reaction_role_messages ORDER BY created_at DESC"
         ).fetchall()
         conn.close()
@@ -67,6 +94,27 @@ class ReactionRolesRepository:
         ).fetchone()
         conn.close()
         return dict(row)
+
+    def get_message(self, message_id: str) -> dict | None:
+        conn = self._get_connection()
+        row = conn.execute(
+            "SELECT * FROM reaction_role_messages WHERE message_id = ?",
+            (message_id,),
+        ).fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def update_message_text(self, message_id: str, title: str, body: str) -> bool:
+        """Update the title/body of a bot-posted message (label follows the title)."""
+        conn = self._get_connection()
+        cur = conn.execute(
+            "UPDATE reaction_role_messages SET title = ?, body = ?, label = ? "
+            "WHERE message_id = ? AND managed = 1",
+            (title, body, title, message_id),
+        )
+        conn.commit()
+        conn.close()
+        return cur.rowcount > 0
 
     def delete_message(self, message_id: str) -> bool:
         conn = self._get_connection()
@@ -124,6 +172,23 @@ class ReactionRolesRepository:
         conn.close()
         return dict(row)
 
+    def get_mapping(self, mapping_id: int) -> dict | None:
+        conn = self._get_connection()
+        row = conn.execute(
+            "SELECT * FROM reaction_role_mappings WHERE id = ?", (mapping_id,)
+        ).fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def count_mappings(self, message_id: str) -> int:
+        conn = self._get_connection()
+        count = conn.execute(
+            "SELECT COUNT(*) FROM reaction_role_mappings WHERE message_id = ?",
+            (message_id,),
+        ).fetchone()[0]
+        conn.close()
+        return count
+
     def delete_mapping(self, mapping_id: int) -> bool:
         conn = self._get_connection()
         cur = conn.execute(
@@ -176,3 +241,54 @@ class ReactionRolesRepository:
         ).fetchone()
         conn.close()
         return row["channel_id"] if row else None
+
+    # --- Bot job queue (the bot polls this every few seconds) ---
+
+    def enqueue(
+        self, action: str, message_id: str | None = None,
+        channel_id: str | None = None, post_id: int | None = None,
+    ) -> None:
+        """Ask the bot to act: 'sync', 'clear', 'delete_post' or 'post'."""
+        conn = self._get_connection()
+        conn.execute(
+            "INSERT INTO reaction_role_queue (action, message_id, channel_id, post_id) "
+            "VALUES (?, ?, ?, ?)",
+            (action, message_id, channel_id, post_id),
+        )
+        conn.commit()
+        conn.close()
+
+    # --- Posts the bot should publish ---
+
+    def create_post(self, channel_id: str, title: str, body: str) -> dict:
+        conn = self._get_connection()
+        cur = conn.execute(
+            "INSERT INTO reaction_role_posts (channel_id, title, body) VALUES (?, ?, ?)",
+            (channel_id, title, body),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM reaction_role_posts WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+        conn.close()
+        return dict(row)
+
+    def get_open_posts(self) -> list[dict]:
+        """Posts the bot has not published yet, or that failed."""
+        conn = self._get_connection()
+        rows = conn.execute(
+            "SELECT * FROM reaction_role_posts WHERE status IN ('pending', 'failed') "
+            "ORDER BY id DESC"
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def delete_post(self, post_id: int) -> bool:
+        conn = self._get_connection()
+        cur = conn.execute(
+            "DELETE FROM reaction_role_posts WHERE id = ? AND status IN ('pending', 'failed')",
+            (post_id,),
+        )
+        conn.commit()
+        conn.close()
+        return cur.rowcount > 0

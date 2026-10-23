@@ -1,4 +1,4 @@
-import { get, post, put, del } from './client'
+import { get, post, put, patch, del } from './client'
 
 export const removePlayer = (userId) => del(`/api/admin/remove-player/${userId}`)
 
@@ -59,6 +59,12 @@ export const addReactionRoleMapping = (messageId, emoji, roleId, roleName, emoji
   post('/api/reaction-roles/mappings', { message_id: messageId, emoji, role_id: roleId, role_name: roleName, emoji_id: emojiId })
 export const deleteReactionRoleMapping = (mappingId) =>
   del(`/api/reaction-roles/mappings/${mappingId}`)
+export const updateReactionRoleMessage = (messageId, title, body) =>
+  patch(`/api/reaction-roles/messages/${messageId}`, { title, body })
+export const createReactionRolePost = (channelId, title, body) =>
+  post('/api/reaction-roles/posts', { channel_id: channelId, title, body })
+export const deleteReactionRolePost = (postId) =>
+  del(`/api/reaction-roles/posts/${postId}`)
 
 // Monitoring dashboard (requests, outbound services, resources, errors)
 export const getMonitoring = (hours = 24) => get(`/api/admin/monitoring?hours=${hours}`)

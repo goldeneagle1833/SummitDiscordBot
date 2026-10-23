@@ -131,6 +131,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.brackets.get_player_postseason",
     "api.brackets.get_bracket_decks",  # visibility is applied per deck inside
     "api.brackets.get_bracket_deck",
+    "api.season_badges.get_avatar_honours",
 
     # -- Events / tournaments (public read-only) --
     "api.events.list_top8_events",

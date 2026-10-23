@@ -49,10 +49,10 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
       <h3 className="text-lg font-semibold text-text-primary mb-1">{title}</h3>
       {subtitle && <p className="text-xs text-text-muted mb-3">{subtitle}</p>}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm" style={{ minWidth: isOwner ? 1110 : 810 }}>
+        <table className="w-full text-sm" style={{ minWidth: isOwner ? 1060 : 760 }}>
           <thead>
             <tr className="border-b border-border text-left">
-              <th className="py-2 px-3 text-text-muted font-semibold">ID</th>
+              <th className="py-2 px-2 text-text-muted font-semibold w-16">ID</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Result</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Type</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Voice</th>
@@ -62,13 +62,13 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
               {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Opp. Avatar</th>}
               {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Opp. Elements</th>}
               <th className="py-2 px-3 text-text-muted font-semibold">ELO</th>
+              <th className="py-2 px-3 text-text-muted font-semibold">Replay</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Play/Draw</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Time</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Date</th>
-              {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Notes</th>}
               {showDeckUrls && <th className="py-2 px-3 text-text-muted font-semibold">Deck Link</th>}
               {showSnapshots && <th className="py-2 px-3 text-text-muted font-semibold">Snapshot</th>}
-              <th className="py-2 px-3 text-text-muted font-semibold">Replay</th>
+              {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Notes</th>}
             </tr>
           </thead>
           <tbody>
@@ -78,7 +78,9 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                 ? m.player_deck_url : null
               return (
                 <tr key={m.match_id} className="border-b border-border/50 hover:bg-bg-surface/50">
-                  <td className="py-2 px-3 text-text-muted">#{m.match_id}</td>
+                  <td className="py-2 px-2 text-text-muted">
+                    <span className="block max-w-[4rem] truncate" title={`#${m.match_id}`}>#{m.match_id}</span>
+                  </td>
                   <td className="py-2 px-3">
                     <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${isWin ? 'bg-accent-green/20 text-accent-green' : 'bg-accent-red/20 text-accent-red'}`}>
                       {m.result}
@@ -93,9 +95,9 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                   </td>
                   <td className="py-2 px-3 whitespace-nowrap">
                     {m.voice === true ? (
-                      <span className="text-xs text-text-muted">Voice</span>
+                      <span role="img" aria-label="Voice" title="Voice">🔊</span>
                     ) : m.voice === false ? (
-                      <span className="text-xs text-text-muted">No voice</span>
+                      <span role="img" aria-label="No voice" title="No voice">🔇</span>
                     ) : (
                       <span className="text-text-muted">-</span>
                     )}
@@ -135,6 +137,18 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                   )}
                   <td className={`py-2 px-3 font-medium ${isWin ? 'text-accent-green' : 'text-accent-red'}`}>
                     {isWin ? '+' : ''}{m.elo_change}
+                  </td>
+                  <td className="py-2 px-3 text-text-muted">
+                    {m.replay_url ? (
+                      <a
+                        href={m.replay_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-secondary hover:underline text-xs"
+                      >
+                        Watch
+                      </a>
+                    ) : '-'}
                   </td>
                   <td className="py-2 px-3 text-text-muted">{m.first_player || '-'}</td>
                   <td className="py-2 px-3 text-text-muted">
@@ -181,27 +195,6 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                     )}
                   </td>
                   <td className="py-2 px-3 text-text-muted whitespace-nowrap">{m.date ? new Date(m.date).toLocaleDateString() : '-'}</td>
-                  {isOwner && (
-                    <td className="py-2 px-3 text-text-muted max-w-[100px]">
-                      {m.match_comment ? (
-                        <button
-                          onClick={() => { setNoteModal({ matchId: m.match_id, comment: m.match_comment, matchSource: m.match_source }); setEditingNote(false); setEditError(null) }}
-                          className="text-left truncate block max-w-[100px] text-secondary hover:underline cursor-pointer bg-transparent border-none p-0 text-sm"
-                          title="Click to view/edit note"
-                        >
-                          {m.match_comment.split(/\s+/).slice(0, 3).join(' ')}{m.match_comment.split(/\s+/).length > 3 ? '...' : ''}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => { setNoteModal({ matchId: m.match_id, comment: '', matchSource: m.match_source }); setEditingNote(true); setEditText(''); setEditError(null) }}
-                          className="text-text-muted hover:text-secondary text-xs bg-transparent border-none p-0 cursor-pointer"
-                          title="Add a note"
-                        >
-                          + Add
-                        </button>
-                      )}
-                    </td>
-                  )}
                   {showDeckUrls && (
                     <td className="py-2 px-3">
                       <span className="flex items-center gap-1">
@@ -234,18 +227,27 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                       ) : '-'}
                     </td>
                   )}
-                  <td className="py-2 px-3 text-text-muted">
-                    {m.replay_url ? (
-                      <a
-                        href={m.replay_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-secondary hover:underline text-xs"
-                      >
-                        Watch
-                      </a>
-                    ) : '-'}
-                  </td>
+                  {isOwner && (
+                    <td className="py-2 px-3 text-text-muted max-w-[100px]">
+                      {m.match_comment ? (
+                        <button
+                          onClick={() => { setNoteModal({ matchId: m.match_id, comment: m.match_comment, matchSource: m.match_source }); setEditingNote(false); setEditError(null) }}
+                          className="text-left truncate block max-w-[100px] text-secondary hover:underline cursor-pointer bg-transparent border-none p-0 text-sm"
+                          title="Click to view/edit note"
+                        >
+                          {m.match_comment.split(/\s+/).slice(0, 3).join(' ')}{m.match_comment.split(/\s+/).length > 3 ? '...' : ''}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => { setNoteModal({ matchId: m.match_id, comment: '', matchSource: m.match_source }); setEditingNote(true); setEditText(''); setEditError(null) }}
+                          className="text-text-muted hover:text-secondary text-xs bg-transparent border-none p-0 cursor-pointer"
+                          title="Add a note"
+                        >
+                          + Add
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               )
             })}

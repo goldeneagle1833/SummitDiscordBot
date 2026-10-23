@@ -22,7 +22,7 @@ describe('MatchHistoryTable voice column', () => {
     expect(screen.getByRole('columnheader', { name: 'Voice' })).toBeInTheDocument()
   })
 
-  it('labels voice, no-voice and untracked matches', () => {
+  it('shows the voice emojis for voice, no-voice and untracked matches', () => {
     renderWithRouter(
       <MatchHistoryTable
         title="Ranked Match History"
@@ -31,9 +31,9 @@ describe('MatchHistoryTable voice column', () => {
       />
     )
     const rows = screen.getAllByRole('row').slice(1)
-    expect(within(rows[0]).getByText('Voice')).toBeInTheDocument()
-    expect(within(rows[1]).getByText('No voice')).toBeInTheDocument()
-    expect(within(rows[2]).queryByText(/voice/i)).not.toBeInTheDocument()
+    expect(within(rows[0]).getByRole('img', { name: 'Voice' })).toHaveTextContent('🔊')
+    expect(within(rows[1]).getByRole('img', { name: 'No voice' })).toHaveTextContent('🔇')
+    expect(within(rows[2]).queryByRole('img')).not.toBeInTheDocument()
   })
 })
 
@@ -51,5 +51,26 @@ describe('MatchHistoryTable replay column', () => {
     const rows = screen.getAllByRole('row').slice(1)
     expect(within(rows[0]).getByRole('link', { name: 'Watch' })).toHaveAttribute('href', replay)
     expect(within(rows[1]).queryByRole('link', { name: 'Watch' })).not.toBeInTheDocument()
+  })
+})
+
+describe('MatchHistoryTable column order', () => {
+  const headers = () => screen.getAllByRole('columnheader').map((th) => th.textContent)
+
+  it('puts Replay between ELO and Play/Draw for visitors', () => {
+    renderWithRouter(
+      <MatchHistoryTable title="Ranked Match History" matches={[match(1, true)]} isOwner={false} />
+    )
+    expect(headers()).toEqual(['ID', 'Result', 'Type', 'Voice', 'Opponent', 'ELO', 'Replay', 'Play/Draw', 'Time', 'Date'])
+  })
+
+  it('puts Notes last for the owner', () => {
+    renderWithRouter(
+      <MatchHistoryTable title="Ranked Match History" matches={[match(1, true)]} isOwner />
+    )
+    const h = headers()
+    expect(h.indexOf('Replay')).toBe(h.indexOf('ELO') + 1)
+    expect(h.indexOf('Play/Draw')).toBe(h.indexOf('Replay') + 1)
+    expect(h[h.length - 1]).toBe('Notes')
   })
 })

@@ -21,8 +21,13 @@ export const submitBracketDeck = (slug, deckUrl) =>
 export const openBracketMatchTable = (slug, matchNo) =>
   post(`/api/brackets/${slug}/matches/${matchNo}/table`, {})
 
-// Admin
-export const adminListBrackets = () => get('/api/admin/brackets')
+// Bracket organizers (and admins): their own community brackets
+export const organizerSearchPlayers = (q) =>
+  get(`/api/brackets/organizer/search-players?q=${encodeURIComponent(q)}`)
+
+// Admin. Organizers use the same calls for the community brackets they run.
+export const adminListBrackets = (mine = false) =>
+  get(`/api/admin/brackets${mine ? '?mine=1' : ''}`)
 export const adminGetBracket = (slug) => get(`/api/admin/brackets/${slug}`)
 export const adminPreviewBracket = (slug) => get(`/api/admin/brackets/${slug}/preview`)
 export const adminGetSeedPool = (source) =>

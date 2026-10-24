@@ -12,6 +12,7 @@ export default function BracketTree({
   onOpenTable,
   onAdminAction,
   isAdmin,
+  canSettleOwn = true,
   onSwap,
   avatars = {},
 }) {
@@ -88,6 +89,7 @@ export default function BracketTree({
                     onOpenTable={onOpenTable}
                     onAdminAction={onAdminAction}
                     isAdmin={isAdmin}
+                    canSettleOwn={canSettleOwn}
                     onSwap={onSwap}
                     avatars={avatars}
                     followSeed={onSwap ? null : followSeed}

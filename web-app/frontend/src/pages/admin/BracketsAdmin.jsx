@@ -15,6 +15,7 @@ import {
   adminPreviewBracket,
   adminUpdateBracket,
   getBracketDecks,
+  organizerSearchPlayers,
 } from '@/api/brackets'
 import { searchUsers } from '@/api/admin'
 import BracketTree from '@/components/bracket/BracketTree'
@@ -232,7 +233,90 @@ function CreateForm({ onCreated, sets = [] }) {
   )
 }
 
-function AddPlayer({ onAdd }) {
+/** A player's own bracket: a name and a format, players added afterwards. */
+function OrganizerCreateForm({ onCreated }) {
+  const [form, setForm] = useState({ name: '', format: 'constructed' })
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState(null)
+
+  async function submit(e) {
+    e.preventDefault()
+    setBusy(true)
+    setMessage(null)
+    try {
+      const res = await adminCreateBracket({
+        name: form.name,
+        size: 2,
+        source: 'manual',
+        format: form.format,
+        kind: 'community',
+      })
+      onCreated(res.slug)
+      setForm((f) => ({ ...f, name: '' }))
+      setMessage({ type: 'ok', text: 'Draft created — open "Edit seeds" below to add your players.' })
+    } catch (e) {
+      setMessage({ type: 'error', text: e.message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="bg-bg-surface border border-border rounded-lg p-5 space-y-4">
+      <h2 className="text-lg font-display">New bracket</h2>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="sm:col-span-2">
+          <label className={LABEL} htmlFor="bracket-name">Name</label>
+          <input
+            id="bracket-name"
+            className={INPUT}
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            placeholder="Friday Night Draft"
+            required
+          />
+        </div>
+        <div>
+          <label className={LABEL} htmlFor="bracket-format">Format</label>
+          <select
+            id="bracket-format"
+            className={INPUT}
+            value={form.format}
+            onChange={(e) => setForm((f) => ({ ...f, format: e.target.value }))}
+          >
+            <option value="constructed">Constructed</option>
+            <option value="limited">Limited</option>
+          </select>
+        </div>
+      </div>
+
+      <p className="text-xs text-text-muted">
+        {form.format === 'limited'
+          ? 'Limited games count toward each player’s lifetime Limited ELO (not the season ladder). Players submit their DraftSorcery deck.'
+          : 'Constructed games don’t affect anyone’s ELO. Players submit a Curiosa deck.'}{' '}
+        Pairings are DMed to players on Discord, tables open on Sorcery Online, and replays
+        show on the bracket page once it’s finished.
+      </p>
+
+      {message && (
+        <p className={`text-sm ${message.type === 'ok' ? 'text-accent-green' : 'text-accent-red'}`}>
+          {message.text}
+        </p>
+      )}
+
+      <button
+        type="submit"
+        disabled={busy}
+        className="px-4 py-2 rounded bg-secondary text-black text-sm font-medium disabled:opacity-50"
+      >
+        {busy ? 'Creating…' : 'Create draft'}
+      </button>
+    </form>
+  )
+}
+
+function AddPlayer({ onAdd, search = searchUsers }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
 
@@ -240,7 +324,7 @@ function AddPlayer({ onAdd }) {
     e.preventDefault()
     if (query.trim().length < 2) return
     try {
-      const res = await searchUsers(query.trim())
+      const res = await search(query.trim())
       setResults(res.users || [])
     } catch {
       setResults([])
@@ -293,7 +377,7 @@ function describeShape(playerCount, preview) {
   return `${shape} · top ${preview.byes} seeds get a first-round bye and start in round 2`
 }
 
-function SeedEditor({ slug, entrants, preview, onChanged }) {
+function SeedEditor({ slug, entrants, preview, onChanged, search }) {
   const [busy, setBusy] = useState(false)
   const [dragSeed, setDragSeed] = useState(null)
   const [overSeed, setOverSeed] = useState(null)
@@ -435,7 +519,7 @@ function SeedEditor({ slug, entrants, preview, onChanged }) {
             ))}
           </ol>
 
-          <AddPlayer onAdd={add} />
+          <AddPlayer onAdd={add} search={search} />
         </div>
 
         <div className="space-y-2">
@@ -501,7 +585,7 @@ function SetField({ bracket, sets, onSaved }) {
   )
 }
 
-function BracketRow({ bracket, onChanged, onGraphic, sets = [] }) {
+function BracketRow({ bracket, onChanged, onGraphic, sets = [], organizer = false }) {
   const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState(null)
   const [preview, setPreview] = useState(null)
@@ -560,6 +644,11 @@ function BracketRow({ bracket, onChanged, onGraphic, sets = [] }) {
                 Limited
               </span>
             )}
+            {bracket.kind === 'community' && !organizer && (
+              <span className="ml-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider border border-border text-text-muted rounded-sm align-middle">
+                Community{bracket.organizer_name ? ` · ${bracket.organizer_name}` : ''}
+              </span>
+            )}
             <span className="text-text-muted text-sm"> · {bracket.entrant_count} players</span>
           </p>
           <p className="text-xs text-text-muted">
@@ -567,9 +656,11 @@ function BracketRow({ bracket, onChanged, onGraphic, sets = [] }) {
             {bracket.champion ? ` · won by ${bracket.champion.display_name}` : ''}
             {decks ? ` · ${decks.submitted}/${decks.players.length} decks in` : ''}
           </p>
-          <div className="mt-1">
-            <SetField bracket={bracket} sets={sets} onSaved={onChanged} />
-          </div>
+          {!organizer && (
+            <div className="mt-1">
+              <SetField bracket={bracket} sets={sets} onSaved={onChanged} />
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {isDraft ? (
@@ -589,7 +680,11 @@ function BracketRow({ bracket, onChanged, onGraphic, sets = [] }) {
               </Link>
               <button
                 onClick={() => {
-                  if (window.confirm('Unpublish? The current results will be discarded.')) {
+                  const note =
+                    bracket.kind === 'community' && bracket.format === 'limited'
+                      ? ' Any Limited ELO they moved is given back.'
+                      : ''
+                  if (window.confirm(`Unpublish? The current results will be discarded.${note}`)) {
                     act(() => adminUnpublishBracket(bracket.slug))
                   }
                 }}
@@ -614,12 +709,14 @@ function BracketRow({ bracket, onChanged, onGraphic, sets = [] }) {
               {decksOpen ? 'Close decks' : 'Decks'}
             </button>
           )}
-          <button
-            onClick={() => onGraphic(bracket.slug)}
-            className="px-3 py-1 rounded border border-border text-xs"
-          >
-            Graphic
-          </button>
+          {!organizer && (
+            <button
+              onClick={() => onGraphic(bracket.slug)}
+              className="px-3 py-1 rounded border border-border text-xs"
+            >
+              Graphic
+            </button>
+          )}
           <button
             onClick={() => {
               if (window.confirm(`Delete "${bracket.name}"?`)) {
@@ -657,6 +754,7 @@ function BracketRow({ bracket, onChanged, onGraphic, sets = [] }) {
               slug={bracket.slug}
               entrants={detail.entrants}
               preview={preview}
+              search={organizer ? organizerSearchPlayers : searchUsers}
               onChanged={async () => {
                 await loadDetail()
                 await onChanged()
@@ -669,8 +767,13 @@ function BracketRow({ bracket, onChanged, onGraphic, sets = [] }) {
   )
 }
 
-export default function BracketsAdmin() {
-  usePageTitle('Brackets Admin')
+/**
+ * Manage Top Cut for admins. With `organizer` it is "My Brackets": the
+ * community brackets a player with the Bracket Organizer role runs, without
+ * the top cut's seeding sources, sets or graphic.
+ */
+export default function BracketsAdmin({ organizer = false }) {
+  usePageTitle(organizer ? 'My Brackets' : 'Brackets Admin')
   const [brackets, setBrackets] = useState(null)
   const [error, setError] = useState(null)
   const [graphicOpen, setGraphicOpen] = useState(false)
@@ -687,12 +790,12 @@ export default function BracketsAdmin() {
 
   const load = useCallback(async () => {
     try {
-      const res = await adminListBrackets()
+      const res = await adminListBrackets(organizer)
       setBrackets(res.brackets || [])
     } catch {
       setError('Could not load brackets.')
     }
-  }, [])
+  }, [organizer])
 
   useEffect(() => {
     load()
@@ -701,18 +804,30 @@ export default function BracketsAdmin() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <div className="flex items-baseline justify-between gap-3">
-        <h1 className="text-2xl font-display">Manage Top Cut</h1>
+        <h1 className="text-2xl font-display">{organizer ? 'My Brackets' : 'Manage Top Cut'}</h1>
         <Link to="/brackets" className="text-sm text-secondary hover:underline">
           Public page
         </Link>
       </div>
 
-      <CreateForm
-        onCreated={load}
-        sets={knownSets(brackets || [])}
-      />
+      {organizer ? (
+        <>
+          <p className="text-sm text-text-muted">
+            Run a bracket for your own event. Create a draft, add your players and drag them into
+            seed order, then publish. Players get their pairings on Discord, submit a deck, play
+            on Sorcery Online and report results on the bracket page; you can settle a match for
+            them (except one you’re playing in) and add replay links.
+          </p>
+          <OrganizerCreateForm onCreated={load} />
+        </>
+      ) : (
+        <CreateForm
+          onCreated={load}
+          sets={knownSets(brackets || [])}
+        />
+      )}
 
-      {brackets?.length > 0 &&
+      {!organizer && brackets?.length > 0 &&
         (graphicOpen ? (
           <div className="space-y-2">
             <BracketGraphic
@@ -746,6 +861,7 @@ export default function BracketsAdmin() {
           onChanged={load}
           onGraphic={openGraphic}
           sets={knownSets(brackets)}
+          organizer={organizer}
         />
       ))}
     </div>

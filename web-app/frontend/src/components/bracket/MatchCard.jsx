@@ -112,6 +112,7 @@ export default function MatchCard({
   onOpenTable,
   onAdminAction,
   isAdmin,
+  canSettleOwn = true,
   onSwap,
   avatars = {},
   followSeed = null,
@@ -293,7 +294,7 @@ export default function MatchCard({
 
       {isAdmin && onAdminAction && match.playable && (
         <div className="flex border-t border-border text-xs">
-          {!complete && (
+          {!complete && (canSettleOwn || !match.viewer_is_player) && (
             <>
               <button
                 onClick={() => onAdminAction('result', match, match.p1_user_id)}
@@ -311,7 +312,7 @@ export default function MatchCard({
               </button>
             </>
           )}
-          {complete && (
+          {complete && (canSettleOwn || !match.viewer_is_player) && (
             <button
               onClick={() => onAdminAction('reset', match)}
               className="flex-1 px-1 py-1 text-accent-red hover:bg-accent-red/10"

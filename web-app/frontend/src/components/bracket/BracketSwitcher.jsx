@@ -24,6 +24,27 @@ export const FORMATS = [
   { key: 'limited', label: 'Limited' },
 ]
 
+/** The Summit's own top cuts, or brackets players run for their own events. */
+export const kindOf = (bracket) => (bracket?.kind === 'community' ? 'community' : 'official')
+
+export const KINDS = [
+  { key: 'official', label: 'Season top cut' },
+  { key: 'community', label: 'Community' },
+]
+
+/**
+ * Where to land for a format: its live or latest top cut, else its newest
+ * community bracket - so a player's event never displaces the season's.
+ */
+export function pickBracketFor(brackets = [], format, kind = null) {
+  const inFormat = brackets.filter((b) => formatOf(b) === format)
+  if (kind) return pickActiveBracket(inFormat.filter((b) => kindOf(b) === kind))
+  return (
+    pickActiveBracket(inFormat.filter((b) => kindOf(b) === 'official')) ||
+    pickActiveBracket(inFormat)
+  )
+}
+
 /**
  * Brackets grouped by card set, in the order each set was last played (lists
  * come newest first). Brackets with no set land in "Other". Groups come from
@@ -53,21 +74,29 @@ const CHIP =
   'px-3 py-1 text-[11px] font-semibold uppercase tracking-wider border rounded-sm transition-colors'
 
 /**
- * Across the top of the bracket page: Constructed or Limited (once there is a
- * Limited bracket), a filter by card set, then a tab per bracket in that set,
- * so a viewer can flip from the live top cut to an older one without a
- * detour through a list.
+ * Across the top of the bracket page: Constructed or Limited, then - when
+ * players have run brackets of their own - the season top cut or the
+ * community ones, a filter by card set, and a tab per bracket, so a viewer
+ * can flip from the live top cut to an older one without a detour through a
+ * list. `openFormat` says which tab is open when no bracket is on screen.
  */
-export default function BracketSwitcher({ brackets, currentSlug }) {
+export default function BracketSwitcher({
+  brackets,
+  currentSlug,
+  openFormat = null,
+  canOrganize = false,
+}) {
   const navigate = useNavigate()
   const [showAll, setShowAll] = useState(false)
 
-  if (!brackets || brackets.length < 2) return null
+  if (!brackets) return null
 
   const current = brackets.find((b) => b.slug === currentSlug)
-  const currentFormat = formatOf(current)
-  const hasLimited = brackets.some((b) => formatOf(b) === 'limited')
-  const pool = hasLimited ? brackets.filter((b) => formatOf(b) === currentFormat) : brackets
+  const currentFormat = current ? formatOf(current) : openFormat || 'constructed'
+  const inFormat = brackets.filter((b) => formatOf(b) === currentFormat)
+  const hasCommunity = inFormat.some((b) => kindOf(b) === 'community')
+  const currentKind = current ? kindOf(current) : 'official'
+  const pool = hasCommunity ? inFormat.filter((b) => kindOf(b) === currentKind) : inFormat
 
   const groups = groupBrackets(pool)
   const currentKey = setKey(current)
@@ -77,10 +106,17 @@ export default function BracketSwitcher({ brackets, currentSlug }) {
     ? pool
     : groups.find((g) => g.key === selectedKey)?.brackets || pool
 
-  function chooseFormat(format) {
+  function chooseFormat(next) {
     setShowAll(false)
-    if (format === currentFormat) return
-    const target = pickActiveBracket(brackets.filter((b) => formatOf(b) === format))
+    if (next === currentFormat) return
+    const target = pickBracketFor(brackets, next)
+    navigate(target ? `/brackets/${target.slug}` : `/brackets?format=${next}`)
+  }
+
+  function chooseKind(kind) {
+    setShowAll(false)
+    if (kind === currentKind) return
+    const target = pickBracketFor(brackets, currentFormat, kind)
     if (target) navigate(`/brackets/${target.slug}`)
   }
 
@@ -93,7 +129,7 @@ export default function BracketSwitcher({ brackets, currentSlug }) {
 
   return (
     <div className="space-y-3">
-      {hasLimited && (
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div role="group" aria-label="Format" className="inline-flex border border-border rounded-sm overflow-hidden">
           {FORMATS.map((format) => {
             const selected = format.key === currentFormat
@@ -117,6 +153,40 @@ export default function BracketSwitcher({ brackets, currentSlug }) {
                     }`}
                   />
                 )}
+              </button>
+            )
+          })}
+        </div>
+        {canOrganize && (
+          <Link
+            to="/brackets/manage"
+            className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider border border-secondary text-secondary rounded-sm hover:bg-secondary/10"
+          >
+            + Create a bracket
+          </Link>
+        )}
+      </div>
+
+      {hasCommunity && (
+        <div role="group" aria-label="Bracket type" className="flex flex-wrap items-center gap-2">
+          {KINDS.map((kind) => {
+            const selected = kind.key === currentKind
+            const count = inFormat.filter((b) => kindOf(b) === kind.key).length
+            return (
+              <button
+                key={kind.key}
+                type="button"
+                aria-pressed={selected}
+                disabled={!count}
+                onClick={() => chooseKind(kind.key)}
+                className={`${CHIP} disabled:opacity-40 ${
+                  selected
+                    ? 'border-secondary bg-secondary/10 text-secondary'
+                    : 'border-border text-text-muted hover:text-text-primary hover:border-text-muted'
+                }`}
+              >
+                {kind.label}
+                <span className="ml-1.5 font-mono font-normal opacity-70">{count}</span>
               </button>
             )
           })}
@@ -162,47 +232,49 @@ export default function BracketSwitcher({ brackets, currentSlug }) {
         </div>
       )}
 
-      <nav aria-label="Brackets" className="border-b border-border overflow-x-auto">
-        <ul className="flex min-w-max">
-          {visible.map((bracket) => {
-            const isCurrent = bracket.slug === currentSlug
-            const live = bracket.status === 'published'
-            return (
-              <li key={bracket.slug}>
-                <Link
-                  to={`/brackets/${bracket.slug}`}
-                  aria-current={isCurrent ? 'page' : undefined}
-                  className={`flex items-center gap-2 px-4 py-2.5 text-sm border-b-2 -mb-px transition-colors ${
-                    isCurrent
-                      ? 'border-secondary text-text-primary'
-                      : 'border-transparent text-text-muted hover:text-text-primary'
-                  }`}
-                >
-                  {selectedKey === null && hasSets && bracket.set_name && (
-                    <span className="text-[10px] uppercase tracking-wider text-text-muted/70">
-                      {bracket.set_name}
-                    </span>
-                  )}
-                  <span className="whitespace-nowrap">{bracket.name}</span>
-                  <span
-                    className={`text-[10px] font-semibold uppercase tracking-wider ${
-                      live ? 'text-accent-green' : 'text-text-muted/70'
+      {visible.length > 1 && (
+        <nav aria-label="Brackets" className="border-b border-border overflow-x-auto">
+          <ul className="flex min-w-max">
+            {visible.map((bracket) => {
+              const isCurrent = bracket.slug === currentSlug
+              const live = bracket.status === 'published'
+              return (
+                <li key={bracket.slug}>
+                  <Link
+                    to={`/brackets/${bracket.slug}`}
+                    aria-current={isCurrent ? 'page' : undefined}
+                    className={`flex items-center gap-2 px-4 py-2.5 text-sm border-b-2 -mb-px transition-colors ${
+                      isCurrent
+                        ? 'border-secondary text-text-primary'
+                        : 'border-transparent text-text-muted hover:text-text-primary'
                     }`}
                   >
-                    {live && (
-                      <span
-                        aria-hidden="true"
-                        className="inline-block w-1.5 h-1.5 mr-1 align-middle bg-accent-green"
-                      />
+                    {selectedKey === null && hasSets && bracket.set_name && (
+                      <span className="text-[10px] uppercase tracking-wider text-text-muted/70">
+                        {bracket.set_name}
+                      </span>
                     )}
-                    {statusLabel(bracket.status)}
-                  </span>
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
-      </nav>
+                    <span className="whitespace-nowrap">{bracket.name}</span>
+                    <span
+                      className={`text-[10px] font-semibold uppercase tracking-wider ${
+                        live ? 'text-accent-green' : 'text-text-muted/70'
+                      }`}
+                    >
+                      {live && (
+                        <span
+                          aria-hidden="true"
+                          className="inline-block w-1.5 h-1.5 mr-1 align-middle bg-accent-green"
+                        />
+                      )}
+                      {statusLabel(bracket.status)}
+                    </span>
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </nav>
+      )}
     </div>
   )
 }

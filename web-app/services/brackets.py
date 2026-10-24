@@ -52,6 +52,15 @@ ARCHIVE_TABLE = "match_records_archive"
 LIMITED_ARCHIVE_TABLE = "limited_match_records_archive"
 # Same K as the Limited queue.
 LIMITED_K = 32
+# Official brackets are the Summit's own top cuts; community brackets are run
+# by approved players for their own events.
+KINDS = ("official", "community")
+# Community Limited games belong to no season: they move lifetime Limited ELO
+# only, so they are filed in the Limited archive under no season at all.
+NO_SEASON_EVENT_ID = 0
+# What an organizer may set up: a field this big, this many unfinished at once.
+COMMUNITY_MAX_SIZE = 64
+COMMUNITY_MAX_OPEN = 5
 
 
 class BracketError(Exception):
@@ -60,6 +69,10 @@ class BracketError(Exception):
 
 def is_limited(bracket: dict | None) -> bool:
     return (bracket or {}).get("format") == "limited"
+
+
+def is_community(bracket: dict | None) -> bool:
+    return (bracket or {}).get("kind") == "community"
 
 
 def _limited_elo(player_elo, opponent_elo, did_win, k=LIMITED_K):
@@ -215,10 +228,12 @@ class BracketService:
         confirm_hours: int = 48,
         set_name: str | None = None,
         format: str | None = None,
+        kind: str = "official",
     ) -> dict:
         """Create a draft bracket seeded with the top `size` players.
 
-        Seeding from the Limited ladder makes a Limited bracket.
+        Seeding from the Limited ladder makes a Limited bracket. A community
+        bracket starts empty: its organizer adds the players.
         """
         name = (name or "").strip()
         if not name:
@@ -234,6 +249,26 @@ class BracketService:
             raise BracketError("Size must be a number") from None
         if size < 2 or size > 256:
             raise BracketError("Size must be between 2 and 256")
+        kind = kind or "official"
+        if kind not in KINDS:
+            raise BracketError(f"Unknown kind '{kind}'")
+        if kind == "community":
+            source = "manual"
+            set_name = None
+            open_count = len(
+                [
+                    b
+                    for b in self._repo.list_brackets(published_only=False)
+                    if is_community(b)
+                    and str(b.get("created_by") or "") == str(created_by or "")
+                    and b["status"] != "complete"
+                ]
+            )
+            if open_count >= COMMUNITY_MAX_OPEN:
+                raise BracketError(
+                    f"You already have {open_count} brackets that aren't finished -"
+                    " finish or delete one first"
+                )
 
         pool = self.get_seed_pool(source) if source != "manual" else {"players": [], "event": None}
         entrants = pool["players"][:size]
@@ -251,6 +286,7 @@ class BracketService:
                 "created_by": created_by,
                 "set_name": clean_set_name(set_name),
                 "format": format,
+                "kind": kind,
             }
         )
         if entrants:
@@ -299,6 +335,9 @@ class BracketService:
                     "is_ticket_holder": entrant.get("is_ticket_holder"),
                 }
             )
+
+        if is_community(bracket) and len(cleaned) > COMMUNITY_MAX_SIZE:
+            raise BracketError(f"A community bracket can have up to {COMMUNITY_MAX_SIZE} players")
 
         self._repo.replace_entrants(bracket_id, cleaned)
         self._repo.set_counts(
@@ -425,8 +464,18 @@ class BracketService:
         bracket = self._repo.get_bracket(bracket_id=bracket_id)
         if not bracket:
             raise BracketError("Bracket not found")
+        self._give_back_community_elo(bracket)
         self._repo.replace_matches(bracket_id, [])
         return self._repo.set_status(bracket_id, "draft")
+
+    def _give_back_community_elo(self, bracket: dict):
+        """Before a community bracket's results are thrown away, hand back the
+        lifetime Limited ELO they moved, so no rating outlives its game."""
+        if not (is_community(bracket) and is_limited(bracket)):
+            return
+        for match in self._repo.get_matches(bracket["bracket_id"]):
+            if match["state"] == "complete":
+                self._reverse_elo(bracket, match)
 
     def _require_draft(self, bracket_id: int) -> dict:
         bracket = self._repo.get_bracket(bracket_id=bracket_id)
@@ -448,11 +497,29 @@ class BracketService:
         return self._repo.update_bracket(bracket_id, fields)
 
     def delete_bracket(self, bracket_id: int) -> bool:
+        bracket = self._repo.get_bracket(bracket_id=bracket_id)
+        if bracket:
+            self._give_back_community_elo(bracket)
         return self._repo.delete_bracket(bracket_id)
 
-    def list_brackets(self, include_drafts: bool = False) -> list[dict]:
+    def list_brackets(self, include_drafts: bool = False, organizer_id=None) -> list[dict]:
+        """Brackets newest first. With `organizer_id`, only the community
+        brackets that player runs."""
         brackets = self._repo.list_brackets(published_only=not include_drafts)
+        if organizer_id is not None:
+            brackets = [
+                b
+                for b in brackets
+                if is_community(b) and str(b.get("created_by") or "") == str(organizer_id)
+            ]
+        organizers = self._site_names(
+            {b.get("created_by") for b in brackets if is_community(b)}
+        )
         for bracket in brackets:
+            bracket["kind"] = bracket.get("kind") or "official"
+            bracket["organizer_name"] = (
+                organizers.get(str(bracket.get("created_by") or "")) if is_community(bracket) else None
+            )
             bracket["champion"] = None
             bracket["open_matches"] = 0
             try:
@@ -559,6 +626,12 @@ class BracketService:
 
         champion_row = champion(matches) if matches else None
         self._use_site_names(entrants, rounds, champion_row)
+        bracket["kind"] = bracket.get("kind") or "official"
+        bracket["organizer_name"] = (
+            self._site_names([bracket.get("created_by")]).get(str(bracket.get("created_by") or ""))
+            if is_community(bracket)
+            else None
+        )
 
         # The tree stays under wraps until every entrant has a decklist in,
         # so nobody scouts their draw before the field is locked. The count
@@ -1071,7 +1144,8 @@ class BracketService:
         """
         marks = {}
         for bracket in self._repo.list_brackets(published_only=True):
-            if bracket["status"] != "complete":
+            # Community brackets are players' own events, not Summit honours.
+            if bracket["status"] != "complete" or is_community(bracket):
                 continue
 
             limited = is_limited(bracket)
@@ -1113,6 +1187,8 @@ class BracketService:
         out = []
 
         for bracket in self._repo.list_brackets(published_only=True):
+            if is_community(bracket):
+                continue  # The Postseason tab is the Summit's own top cuts
             entrants = self._repo.get_entrants(bracket["bracket_id"])
             entrant = next(
                 (e for e in entrants if str(e.get("user_id") or "") == user_id), None
@@ -1213,6 +1289,8 @@ class BracketService:
         if is_limited(bracket):
             # The Top 8 page (and Deck Archetypes from it) is constructed only.
             raise BracketError("Limited brackets don't go on the Top 8 page")
+        if is_community(bracket):
+            raise BracketError("Community brackets don't go on the Top 8 page")
 
         entrants = self._repo.get_entrants(bracket_id)
         stored_decks = {d["seed"]: d for d in self._repo.get_decks(bracket_id)}
@@ -1270,7 +1348,8 @@ class BracketService:
 
     def _add_to_top8(self, bracket_id: int):
         """Publish to the Top 8 page as the final settles, without risking it."""
-        if is_limited(self._repo.get_bracket(bracket_id=bracket_id)):
+        bracket = self._repo.get_bracket(bracket_id=bracket_id)
+        if is_limited(bracket) or is_community(bracket):
             return
         try:
             self.publish_to_top8(bracket_id)
@@ -1514,10 +1593,11 @@ class BracketService:
         )
 
         if is_limited(bracket):
-            # Limited top cut games count toward Limited lifetime ELO.
+            # Limited bracket games count toward Limited lifetime ELO.
             self._record_limited_match(bracket, match)
-        else:
+        elif not is_community(bracket):
             # Top cut games are history only: no ELO moves, on any ladder.
+            # A community constructed game stays on its bracket page only.
             self._record_match(bracket, match)
 
         parent = advance_winner(match, matches)
@@ -1588,6 +1668,9 @@ class BracketService:
         batch = {
             "bracket_name": bracket["name"],
             "format": bracket.get("format") or "constructed",
+            # The bot DMs a community bracket's players but keeps it out of
+            # the Top Cut channels.
+            "community": is_community(bracket),
             "bracket_url": pairings[0]["bracket_url"],
             "pairings": pairings,
         }
@@ -1621,6 +1704,7 @@ class BracketService:
         return {
             "bracket_name": bracket["name"],
             "format": bracket.get("format") or "constructed",
+            "community": is_community(bracket),
             "round_title": match["round_title"],
             "match_no": match["match_no"],
             "first_round": match.get("round") == 1,
@@ -1789,7 +1873,10 @@ class BracketService:
 
     @staticmethod
     def _match_comment(bracket: dict, match: dict) -> str:
-        kind = "Limited top cut game" if is_limited(bracket) else "Top cut game"
+        if is_community(bracket):
+            kind = "Limited bracket game" if is_limited(bracket) else "Bracket game"
+        else:
+            kind = "Limited top cut game" if is_limited(bracket) else "Top cut game"
         return f"{kind} - {bracket['name']} - {match['round_title']}"
 
     MATCH_SOURCE = "Bracket"
@@ -1863,8 +1950,12 @@ class BracketService:
         """The Limited season a Limited bracket's games are filed under.
 
         Same rule as the constructed archive: the season it was seeded from
-        once that has ended, otherwise the latest ended Limited season.
+        once that has ended, otherwise the latest ended Limited season. A
+        community bracket belongs to no season, so no season's standings
+        count its games; lifetime records still do.
         """
+        if is_community(bracket):
+            return NO_SEASON_EVENT_ID
         try:
             events = limited_repo.get_limited_events()
         except Exception as e:

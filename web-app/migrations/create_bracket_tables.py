@@ -190,6 +190,14 @@ def create_bracket_tables(db_path=None):
             "ALTER TABLE brackets ADD COLUMN format TEXT NOT NULL DEFAULT 'constructed'"
         )
 
+    # Who runs a bracket: the Summit's own top cuts ('official'), or one an
+    # approved player set up for their own event ('community'). Every bracket
+    # before community ones existed was official.
+    if "kind" not in bracket_columns:
+        cursor.execute(
+            "ALTER TABLE brackets ADD COLUMN kind TEXT NOT NULL DEFAULT 'official'"
+        )
+
     conn.commit()
     conn.close()
     logger.info("Bracket tables ensured")

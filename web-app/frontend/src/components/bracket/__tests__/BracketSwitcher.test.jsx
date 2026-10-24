@@ -44,8 +44,63 @@ describe('BracketSwitcher formats', () => {
     expect(screen.getByRole('button', { name: /Limited/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('shows no format switch without a Limited bracket', () => {
+  it('always offers both formats, even before a Limited bracket exists', () => {
     renderWithRouter(<BracketSwitcher brackets={BRACKETS.slice(1)} currentSlug="gothic-s8" />)
-    expect(screen.queryByRole('group', { name: 'Format' })).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Format' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Limited/ })).toBeInTheDocument()
+  })
+})
+
+const WITH_COMMUNITY = [
+  ...BRACKETS,
+  { slug: 'friday-draft', name: 'Friday Draft', status: 'published', format: 'limited', kind: 'community' },
+  { slug: 'store-night', name: 'Store Night', status: 'published', format: 'constructed', kind: 'community' },
+]
+
+function CommunityPage() {
+  const { slug } = useParams()
+  return (
+    <>
+      <p data-testid="slug">{slug}</p>
+      <BracketSwitcher brackets={WITH_COMMUNITY} currentSlug={slug} />
+    </>
+  )
+}
+
+function renderCommunityAt(slug, props = {}) {
+  return renderWithRouter(
+    <Routes>
+      <Route path="/brackets/:slug" element={<CommunityPage {...props} />} />
+    </Routes>,
+    { route: `/brackets/${slug}` },
+  )
+}
+
+describe('BracketSwitcher community brackets', () => {
+  it('keeps community brackets apart from the season top cut', () => {
+    renderCommunityAt('gothic-s8')
+    expect(screen.getByRole('button', { name: /Season top cut/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('link', { name: /Store Night/ })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Community/ }))
+    expect(screen.getByTestId('slug')).toHaveTextContent('store-night')
+    expect(screen.getByRole('button', { name: /Community/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('link', { name: /Gothic Season 7/ })).not.toBeInTheDocument()
+  })
+
+  it('switching format lands on the top cut, not a community bracket', () => {
+    renderCommunityAt('store-night')
+    fireEvent.click(screen.getByRole('button', { name: /Limited/ }))
+    expect(screen.getByTestId('slug')).toHaveTextContent('limited-s3')
+  })
+
+  it('offers organizers a way to create one', () => {
+    renderWithRouter(<BracketSwitcher brackets={BRACKETS} currentSlug="gothic-s8" canOrganize />)
+    expect(screen.getByRole('link', { name: /Create a bracket/ })).toHaveAttribute('href', '/brackets/manage')
+  })
+
+  it('shows nobody else the create link', () => {
+    renderWithRouter(<BracketSwitcher brackets={BRACKETS} currentSlug="gothic-s8" />)
+    expect(screen.queryByRole('link', { name: /Create a bracket/ })).not.toBeInTheDocument()
   })
 })

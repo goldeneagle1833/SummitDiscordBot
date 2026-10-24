@@ -441,6 +441,7 @@ async def start_matchmaking_api(bot):
         from services.postseason import DEFAULT_LIMITED_TOP_CUT_CHANNEL_ID, DEFAULT_TOP_CUT_CHANNEL_ID
         from services.bracket_notify import (
             find_top_cut_channel,
+            is_community,
             is_limited,
             post_pairings,
             send_pairing_dms,
@@ -455,6 +456,11 @@ async def start_matchmaking_api(bot):
 
         async def announce():
             try:
+                if is_community(payload):
+                    # A player's own bracket: its players are DMed, the
+                    # Top Cut channels stay for the Summit's top cuts.
+                    await send_pairing_dms(bot, payload)
+                    return
                 if is_limited(payload):
                     channel_id = (
                         getattr(config, "LIMITED_TOP_CUT_CHANNEL_ID", None)

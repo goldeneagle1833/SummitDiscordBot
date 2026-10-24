@@ -35,7 +35,18 @@ def me():
         "is_card_points_admin": is_card_points_admin(),
         "is_store_admin": is_store_admin(),
         "is_store_staff": _is_store_staff(str(user_id)),
+        "is_bracket_organizer": _is_bracket_organizer(),
     })
+
+
+def _is_bracket_organizer() -> bool:
+    """Admins, or holders of the Discord role that lets them run brackets."""
+    try:
+        from utils.bracket_organizers import is_bracket_organizer
+        return is_bracket_organizer()
+    except Exception:
+        logger.exception("Bracket organizer lookup failed")
+        return False
 
 
 def _is_store_staff(user_id: str) -> bool:

@@ -1,13 +1,16 @@
 """API routes for site-hosted brackets."""
 
 import logging
+from functools import wraps
 
 from flask import Blueprint, jsonify, request, session
 
 from repositories.brackets import BracketRepository
-from services.brackets import BracketError, BracketService
+from repositories.user_profiles import UserProfileRepository
+from services.brackets import BracketError, BracketService, is_community
 from services.ticket_holders import TicketHolderError, is_configured, sync_roster
 from utils.auth import is_admin, require_admin, require_auth
+from utils.bracket_organizers import is_bracket_organizer
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,74 @@ service = BracketService()
 
 def _current_user_id() -> str:
     return str(session.get("user_id", ""))
+
+
+def can_manage(bracket: dict | None) -> bool:
+    """Admins run every bracket; an organizer runs the community ones they made."""
+    if not bracket:
+        return False
+    if is_admin():
+        return True
+    user_id = _current_user_id()
+    return bool(
+        user_id
+        and is_community(bracket)
+        and str(bracket.get("created_by") or "") == user_id
+        and is_bracket_organizer()
+    )
+
+
+def require_bracket_organizer(f):
+    """Admins, or players with the Discord role that lets them run brackets."""
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_bracket_organizer():
+            return jsonify({"success": False, "error": "Bracket organizer access required"}), 403
+        return f(*args, **kwargs)
+
+    decorated_function._auth_required = True
+    return decorated_function
+
+
+def require_bracket_manager(f):
+    """Admins, or the organizer who created this (community) bracket."""
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        bracket = service.get_bracket_by_slug(kwargs.get("slug"))
+        if not bracket:
+            if is_admin():
+                return f(*args, **kwargs)  # Lets the view give its own 404
+            return jsonify({"success": False, "error": "Bracket not found"}), 404
+        if not can_manage(bracket):
+            return jsonify({"success": False, "error": "You can't manage this bracket"}), 403
+        return f(*args, **kwargs)
+
+    decorated_function._auth_required = True
+    return decorated_function
+
+
+def _own_match_refused(slug: str, match_no: int):
+    """An organizer can't settle a match they are playing in; admins can."""
+    if is_admin():
+        return None
+    bracket = service.get_bracket_by_slug(slug)
+    match = BracketRepository().get_match(bracket["bracket_id"], int(match_no)) if bracket else None
+    if match and _current_user_id() in (
+        str(match.get("p1_user_id") or ""),
+        str(match.get("p2_user_id") or ""),
+    ):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "You're playing in this match - report it like any other player",
+                }
+            ),
+            403,
+        )
+    return None
 
 
 def _resolve(slug: str):
@@ -46,6 +117,7 @@ def get_bracket(slug):
     )
     if not detail:
         return jsonify({"success": False, "error": "Bracket not found"}), 404
+    detail["viewer_can_manage"] = can_manage(detail["bracket"])
     return jsonify({"success": True, **detail}), 200
 
 
@@ -156,9 +228,33 @@ def open_match_table(slug, match_no):
 
 
 @brackets_bp.route("/admin/brackets", methods=["GET"])
-@require_admin
+@require_bracket_organizer
 def admin_list_brackets():
-    return jsonify({"success": True, "brackets": service.list_brackets(include_drafts=True)}), 200
+    """Every bracket for admins; an organizer (or ?mine=1) sees their own."""
+    mine = not is_admin() or request.args.get("mine") == "1"
+    brackets = service.list_brackets(
+        include_drafts=True, organizer_id=_current_user_id() if mine else None
+    )
+    return jsonify({"success": True, "brackets": brackets}), 200
+
+
+@brackets_bp.route("/brackets/organizer/search-players", methods=["GET"])
+@require_bracket_organizer
+def organizer_search_players():
+    """Players an organizer can add to a bracket: site name and id only."""
+    q = request.args.get("q", "").strip()
+    if len(q) < 2:
+        return jsonify({"success": False, "error": "Query must be at least 2 characters"}), 400
+    users = [
+        {
+            "user_id": u.get("user_id"),
+            "display_name": u.get("display_name"),
+            "avatar": u.get("avatar"),
+            "provider": u.get("provider"),
+        }
+        for u in UserProfileRepository().search_users(q, limit=10)
+    ]
+    return jsonify({"success": True, "users": users}), 200
 
 
 @brackets_bp.route("/admin/brackets/seed-pool", methods=["GET"])
@@ -181,9 +277,11 @@ def admin_sync_tickets():
 
 
 @brackets_bp.route("/admin/brackets", methods=["POST"])
-@require_admin
+@require_bracket_organizer
 def admin_create_bracket():
     data = request.get_json() or {}
+    # Organizers only make community brackets; an admin makes one by asking.
+    kind = "community" if not is_admin() else (data.get("kind") or "official")
     try:
         result = service.create_bracket(
             name=data.get("name"),
@@ -193,6 +291,7 @@ def admin_create_bracket():
             confirm_hours=int(data.get("confirm_hours", 48)),
             set_name=data.get("set_name"),
             format=data.get("format"),
+            kind=kind,
         )
     except BracketError as e:
         return jsonify({"success": False, "error": str(e)}), 400
@@ -202,10 +301,11 @@ def admin_create_bracket():
 
 
 @brackets_bp.route("/admin/brackets/<slug>", methods=["GET"])
-@require_admin
+@require_bracket_manager
 def admin_get_bracket(slug):
+    # An organizer runs the bracket but doesn't get to see hidden decklists.
     detail = service.get_bracket_detail(
-        slug, include_drafts=True, viewer_id=_current_user_id(), is_admin=True
+        slug, include_drafts=True, viewer_id=_current_user_id(), is_admin=is_admin()
     )
     if not detail:
         return jsonify({"success": False, "error": "Bracket not found"}), 404
@@ -213,7 +313,7 @@ def admin_get_bracket(slug):
 
 
 @brackets_bp.route("/admin/brackets/<slug>/preview", methods=["GET"])
-@require_admin
+@require_bracket_manager
 def admin_preview_bracket(slug):
     """The tree this draft's current seeding would produce, unsaved."""
     bracket, error = _resolve(slug)
@@ -228,7 +328,7 @@ def admin_preview_bracket(slug):
 
 
 @brackets_bp.route("/admin/brackets/<slug>", methods=["PATCH"])
-@require_admin
+@require_bracket_manager
 def admin_update_bracket(slug):
     bracket, error = _resolve(slug)
     if error:
@@ -241,7 +341,7 @@ def admin_update_bracket(slug):
 
 
 @brackets_bp.route("/admin/brackets/<slug>/entrants", methods=["PUT"])
-@require_admin
+@require_bracket_manager
 def admin_set_entrants(slug):
     bracket, error = _resolve(slug)
     if error:
@@ -256,7 +356,7 @@ def admin_set_entrants(slug):
 
 
 @brackets_bp.route("/admin/brackets/<slug>/shuffle", methods=["POST"])
-@require_admin
+@require_bracket_manager
 def admin_shuffle(slug):
     bracket, error = _resolve(slug)
     if error:
@@ -270,7 +370,7 @@ def admin_shuffle(slug):
 
 
 @brackets_bp.route("/admin/brackets/<slug>/move", methods=["POST"])
-@require_admin
+@require_bracket_manager
 def admin_move_entrant(slug):
     bracket, error = _resolve(slug)
     if error:
@@ -289,7 +389,7 @@ def admin_move_entrant(slug):
 
 
 @brackets_bp.route("/admin/brackets/<slug>/publish", methods=["POST"])
-@require_admin
+@require_bracket_manager
 def admin_publish(slug):
     bracket, error = _resolve(slug)
     if error:
@@ -303,7 +403,7 @@ def admin_publish(slug):
 
 
 @brackets_bp.route("/admin/brackets/<slug>/unpublish", methods=["POST"])
-@require_admin
+@require_bracket_manager
 def admin_unpublish(slug):
     bracket, error = _resolve(slug)
     if error:
@@ -317,7 +417,7 @@ def admin_unpublish(slug):
 
 
 @brackets_bp.route("/admin/brackets/<slug>/swap", methods=["POST"])
-@require_admin
+@require_bracket_manager
 def admin_swap_players(slug):
     """Re-pair a published bracket by trading two players' seats."""
     data = request.get_json() or {}
@@ -346,8 +446,11 @@ def admin_publish_to_top8(slug):
 
 
 @brackets_bp.route("/admin/brackets/<slug>/matches/<int:match_no>/result", methods=["POST"])
-@require_admin
+@require_bracket_manager
 def admin_set_result(slug, match_no):
+    refused = _own_match_refused(slug, match_no)
+    if refused:
+        return refused
     data = request.get_json() or {}
     try:
         result = service.set_result(
@@ -359,8 +462,11 @@ def admin_set_result(slug, match_no):
 
 
 @brackets_bp.route("/admin/brackets/<slug>/matches/<int:match_no>/reset", methods=["POST"])
-@require_admin
+@require_bracket_manager
 def admin_reset_match(slug, match_no):
+    refused = _own_match_refused(slug, match_no)
+    if refused:
+        return refused
     try:
         result = service.reset_match(slug, match_no)
     except BracketError as e:
@@ -369,7 +475,7 @@ def admin_reset_match(slug, match_no):
 
 
 @brackets_bp.route("/admin/brackets/<slug>/decks", methods=["POST"])
-@require_admin
+@require_bracket_manager
 def admin_submit_deck(slug):
     """Add a decklist on a player's behalf."""
     data = request.get_json() or {}
@@ -389,7 +495,7 @@ def admin_submit_deck(slug):
 
 
 @brackets_bp.route("/admin/brackets/<slug>/decks/<int:seed>", methods=["DELETE"])
-@require_admin
+@require_bracket_manager
 def admin_delete_deck(slug, seed):
     try:
         removed = service.delete_deck(slug, seed)
@@ -401,7 +507,7 @@ def admin_delete_deck(slug, seed):
 
 
 @brackets_bp.route("/admin/brackets/<slug>/matches/<int:match_no>/replay", methods=["POST"])
-@require_admin
+@require_bracket_manager
 def admin_set_replay(slug, match_no):
     data = request.get_json() or {}
     try:
@@ -414,7 +520,7 @@ def admin_set_replay(slug, match_no):
 
 
 @brackets_bp.route("/admin/brackets/<slug>/matches/<int:match_no>/replay", methods=["DELETE"])
-@require_admin
+@require_bracket_manager
 def admin_clear_replay(slug, match_no):
     try:
         removed = service.clear_replay(slug, match_no)
@@ -426,7 +532,7 @@ def admin_clear_replay(slug, match_no):
 
 
 @brackets_bp.route("/admin/brackets/<slug>", methods=["DELETE"])
-@require_admin
+@require_bracket_manager
 def admin_delete_bracket(slug):
     bracket, error = _resolve(slug)
     if error:

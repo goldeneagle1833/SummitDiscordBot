@@ -88,6 +88,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
   const slug = slugProp || params.slug
   const { user } = useAuth()
   const isAdmin = Boolean(user?.is_admin)
+  const canOrganize = Boolean(user?.is_bracket_organizer)
   const [data, setData] = useState(null)
   const [decks, setDecks] = useState(null)
   const [error, setError] = useState(null)
@@ -187,7 +188,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
   if (error) {
     return (
       <div className="max-w-full px-4 py-6 space-y-5">
-        <BracketSwitcher brackets={brackets} currentSlug={slug} />
+        <BracketSwitcher brackets={brackets} currentSlug={slug} canOrganize={canOrganize} />
         <div className="text-center py-12">
           <p className="text-accent-red">{error}</p>
           <Link to="/brackets" className="text-secondary hover:underline text-sm">
@@ -200,18 +201,22 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
   if (!data || data.bracket?.slug !== slug) {
     return (
       <div className="max-w-full px-4 py-6 space-y-5">
-        <BracketSwitcher brackets={brackets} currentSlug={slug} />
+        <BracketSwitcher brackets={brackets} currentSlug={slug} canOrganize={canOrganize} />
         <Spinner />
       </div>
     )
   }
 
   const { bracket, rounds, champion, entrants } = data
+  // Admins run every bracket; an organizer runs the community ones they made.
+  // An organizer playing in their own bracket still reports like anyone else.
+  const canManage = isAdmin || Boolean(data.viewer_can_manage)
+  const community = bracket.kind === 'community'
   // Nobody scouts their draw before the field is locked: the tree stays
-  // hidden from players until every entrant has a decklist in. Admins still
-  // see it, so they can chase the stragglers.
+  // hidden from players until every entrant has a decklist in. Whoever runs
+  // the bracket still sees it, so they can chase the stragglers.
   const decksMissing = data.decks_missing ?? 0
-  const bracketHidden = decksMissing > 0 && bracket.status !== 'complete' && !isAdmin
+  const bracketHidden = decksMissing > 0 && bracket.status !== 'complete' && !canManage
   const needsYou = rounds
     .flatMap((r) => r.matches)
     .filter((m) => m.viewer_can_report || m.viewer_can_confirm)
@@ -226,13 +231,13 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
     r.matches.some((m) => m.playable && m.state !== 'complete'),
   )
   const canEditPairings =
-    isAdmin &&
+    canManage &&
     bracket.status === 'published' &&
     allMatches.some((m) => m.p1_movable || m.p2_movable)
 
   return (
     <div className="max-w-full px-4 py-6 space-y-5">
-      <BracketSwitcher brackets={brackets} currentSlug={slug} />
+      <BracketSwitcher brackets={brackets} currentSlug={slug} canOrganize={canOrganize} />
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -250,8 +255,10 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
           <h1 className="text-3xl font-display text-text-primary leading-tight">{bracket.name}</h1>
           <p className="text-sm text-text-muted tabular-nums">
             {entrants.length} players
+            {community && bracket.organizer_name ? ` · run by ${bracket.organizer_name}` : ''}
             {bracket.elo_event_name ? ` · seeded from ${bracket.elo_event_name}` : ''}
             {bracket.format === 'limited' ? ' · games count toward lifetime Limited ELO' : ''}
+            {community && bracket.format !== 'limited' ? ' · games don’t affect ELO' : ''}
             {bracketHidden
               ? ' · waiting on decklists'
               : bracket.status === 'complete'
@@ -312,7 +319,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
             </p>
             <p className="text-sm text-text-muted">Seed {champion.seed}</p>
           </div>
-          {(bracket.event_folder || (isAdmin && bracket.status === 'complete' && bracket.format !== 'limited')) && (
+          {(bracket.event_folder || (isAdmin && bracket.status === 'complete' && bracket.format !== 'limited' && !community)) && (
             <div className="ml-auto flex flex-col items-end gap-1 text-sm">
               {bracket.event_folder && (
                 <Link
@@ -349,10 +356,11 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
         </div>
       )}
 
-      {isAdmin && decksMissing > 0 && bracket.status !== 'complete' && (
+      {canManage && decksMissing > 0 && bracket.status !== 'complete' && (
         <div className="bg-amber-400/10 border-l-2 border-amber-400 px-4 py-3 text-sm">
           Players can’t see the bracket yet — {decksMissing} decklist
-          {decksMissing > 1 ? 's are' : ' is'} still to come. Only admins see the tree below.
+          {decksMissing > 1 ? 's are' : ' is'} still to come. Only{' '}
+          {isAdmin ? 'admins' : 'you, as organizer,'} see the tree below.
         </div>
       )}
 
@@ -372,8 +380,9 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
           onReport={setReporting}
           onConfirm={handleConfirm}
           onOpenTable={handleOpenTable}
-          onAdminAction={isAdmin ? handleAdminAction : null}
-          isAdmin={isAdmin}
+          onAdminAction={canManage ? handleAdminAction : null}
+          isAdmin={canManage}
+          canSettleOwn={isAdmin}
           onSwap={canEditPairings && editingPairings ? handleSwap : undefined}
           avatars={avatars}
         />
@@ -382,7 +391,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
       <DeckPanel
         slug={slug}
         roster={decks}
-        isAdmin={isAdmin}
+        isAdmin={canManage}
         onChanged={loadDecks}
         limited={bracket.format === 'limited'}
       />

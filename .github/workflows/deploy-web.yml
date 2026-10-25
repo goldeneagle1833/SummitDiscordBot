@@ -39,6 +39,12 @@ jobs:
             # Restart the service
             sudo systemctl restart summit-web
 
+            # Matchmaking priority pool (LFG queue requests); install/refresh its unit
+            sudo cp web-app/systemd/summit-web-priority.service /etc/systemd/system/summit-web-priority.service
+            sudo systemctl daemon-reload
+            sudo systemctl enable summit-web-priority
+            sudo systemctl restart summit-web-priority
+
             # Update Nginx config and reload if it changed
             sudo cp web-app/nginx/summit-web-cloudflare.conf /etc/nginx/sites-available/summit-web
             sudo nginx -t && sudo nginx -s reload

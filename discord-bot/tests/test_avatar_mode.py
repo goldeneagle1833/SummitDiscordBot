@@ -333,3 +333,49 @@ async def test_casual_and_player_mode_joins_need_no_deck(mock_bot, mock_interact
     await _process_queue_join(mock_bot, mock_interaction, "ranked", 30, None)
     assert lfg_cog.add_to_lfg_queue.call_count == 2
     assert lfg_cog.add_to_lfg_queue.call_args.kwargs["avatar"] is None
+
+
+@pytest.mark.asyncio
+async def test_pairing_is_saved_before_the_slow_follow_up_work(mock_bot, mock_interaction):
+    """The pair is saved on join-time avatars; deck re-reads and Discord posting run afterwards."""
+    import asyncio
+
+    from cogs.lfg import queue as queue_mod
+    from cogs.lfg.state import lfg_queue
+
+    start_new_event("Avatar Season", elo_mode="avatar")
+    opponent_id = 4242
+    lfg_queue[opponent_id] = {"queues": {"ranked": {
+        "deck_url": "https://sorcerytcg.com/decks/opp", "avatar": "Seer", "voice": "voice",
+    }}}
+    lfg_cog = mock_bot.get_cog.return_value
+    lfg_cog.check_if_someone_is_lfg.return_value = opponent_id
+    lfg_cog.resolve_match_type.return_value = "ranked"
+    lfg_cog.update_lfg_status = AsyncMock()
+
+    async def match_time_read(url):
+        return "Pathfinder" if url.endswith("me") else "Seer"
+
+    provision = AsyncMock(return_value={})
+    with patch("services.avatar_mode.read_deck_avatar", AsyncMock(return_value="Sparkmage")), \
+            patch.object(queue_mod, "save_pairing", return_value=77) as save, \
+            patch.object(queue_mod, "set_pairing_avatars") as set_avatars, \
+            patch.object(queue_mod, "provision_match_and_publish_results", provision), \
+            patch.object(queue_mod, "send_pairing_messages", AsyncMock()), \
+            patch.object(queue_mod, "announce_pairing", AsyncMock()), \
+            patch.object(queue_mod, "create_match_card_view", return_value=None):
+        await queue_mod._process_queue_join(
+            mock_bot, mock_interaction, "ranked", 30, "https://sorcerytcg.com/decks/me"
+        )
+        # Paired immediately on the join-time avatars, before any follow-up work
+        assert save.call_args.kwargs["player1_avatar"] == "Sparkmage"
+        assert save.call_args.kwargs["player2_avatar"] == "Seer"
+        provision.assert_not_called()
+
+        # The joiner changed their deck after queueing: the match-time re-read updates the pairing
+        with patch("services.avatar_mode.read_deck_avatar", match_time_read):
+            await asyncio.gather(*queue_mod._background_tasks)
+
+    provision.assert_awaited_once()
+    set_avatars.assert_called_once_with(77, "Pathfinder", "Seer")
+    assert "match found" in mock_interaction.followup.send.await_args.args[0]

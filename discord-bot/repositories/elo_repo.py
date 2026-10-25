@@ -1309,6 +1309,15 @@ def get_pairing_avatars(pairing_id: int) -> dict:
     return {pid: avatar for pid, avatar in ((row[0], row[1]), (row[2], row[3])) if avatar}
 
 
+def set_pairing_avatars(pairing_id: int, player1_avatar: str | None, player2_avatar: str | None) -> None:
+    """Replace the avatars locked to a pairing (the match-time deck re-read runs after pairing)."""
+    with get_db_connection("match_records.db") as conn:
+        conn.execute(
+            "UPDATE active_pairings SET player1_avatar = ?, player2_avatar = ? WHERE pairing_id = ?",
+            (player1_avatar, player2_avatar, pairing_id),
+        )
+
+
 def get_opponent_from_pairing(guild_id: int, user_id: int) -> int | None:
     """
     Get the opponent ID from an active pairing in a specific guild.

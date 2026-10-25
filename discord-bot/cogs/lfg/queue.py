@@ -1,3 +1,4 @@
+import asyncio
 import discord
 import random
 import datetime
@@ -31,7 +32,7 @@ from cogs.lfg.pairing_messages import (
     send_pairing_messages,
 )
 from utils.constants import SORCERY_NICKNAMES
-from utils.database import save_pairing, get_pairing_ban, pairing_ban_message
+from utils.database import save_pairing, set_pairing_avatars, get_pairing_ban, pairing_ban_message
 from repositories.elo_repo import set_pairing_replay
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
 from services.card_points_service import validate_deck_points
@@ -53,6 +54,24 @@ logger = logging.getLogger("discord_bot")
 def _clear_matching_web_users(*user_ids):
     for user_id in user_ids:
         matching_web_users.pop(user_id, None)
+
+
+# Strong references so pending background tasks aren't garbage-collected mid-run
+_background_tasks = set()
+
+
+def run_in_background(coro, label):
+    """Run follow-up work after a pairing/queue join without making the caller wait."""
+    async def runner():
+        try:
+            await coro
+        except Exception:
+            logger.exception("Background task failed: %s", label)
+
+    task = asyncio.create_task(runner())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
 
 
 async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, players, voice=False):
@@ -591,29 +610,6 @@ async def _process_queue_join(
                 avatar=join_avatar,
             )
 
-    # A no-voice player with no match: ask waiting voice players if they'd play without voice
-    if not matched_user_id and voice == NO_VOICE and queue_has_voice_choice(queue_type):
-        try:
-            await offer_no_voice_game(bot, queue_type, interaction.user.id)
-        except Exception as e:
-            logger.error(f"Failed to send no-voice offers: {e}")
-
-    # Notify limited ping channel when someone is waiting (no match found)
-    if not matched_user_id and queue_type == "limited":
-        try:
-            limited_channel = bot.get_channel(config.LIMITED_PING_CHANNEL_ID)
-            if not limited_channel:
-                limited_channel = await bot.fetch_channel(config.LIMITED_PING_CHANNEL_ID)
-            if limited_channel:
-                await limited_channel.send(
-                    f"<@&{config.LIMITED_PING_ROLE_ID}> There is a brave soul looking for a Limited game! "
-                    f"Join the queue!"
-                )
-            else:
-                logger.error(f"Limited ping channel {config.LIMITED_PING_CHANNEL_ID} not found")
-        except Exception as e:
-            logger.error(f"Failed to send limited queue notification: {e}")
-
     if matched_user_id:
         match_type_emoji, match_type_label = match_type_presentation(match_type)
 
@@ -659,22 +655,11 @@ async def _process_queue_join(
             )
             return
 
-        # Avatar-mode season: read both decks now and lock the avatars to the match
+        # Avatar-mode season: pair on the avatars read at join time; finish_pairing
+        # re-reads both decks afterwards and updates the pairing if they changed.
         joiner_avatar = matched_avatar = None
         if match_type == "ranked" and is_avatar_mode():
-            joiner_avatar = await lock_match_avatar(deck_url, join_avatar)
-            matched_avatar = await lock_match_avatar(matched_user_deck_url, matched_join_avatar)
-            if matched_ladder_info:
-                try:
-                    challenger_is_joiner = matched_ladder_info["challenger_id"] == interaction.user.id
-                    set_avatar_ladder_stakes(
-                        matched_ladder_info,
-                        joiner_avatar if challenger_is_joiner else matched_avatar,
-                        matched_user_id if challenger_is_joiner else interaction.user.id,
-                        matched_avatar if challenger_is_joiner else joiner_avatar,
-                    )
-                except Exception as e:
-                    logger.error(f"Could not size avatar ladder stakes: {e}", exc_info=True)
+            joiner_avatar, matched_avatar = join_avatar, matched_join_avatar
 
         try:
             if match_type == "limited":
@@ -718,123 +703,149 @@ async def _process_queue_join(
             )
             return
 
-        provisioned_links = await provision_match_and_publish_results(
-            interaction.guild.id,
-            pairing_id,
-            queue_type,
-            [
-                {
-                    "discord_user_id": interaction.user.id,
-                    "display_name": joiner_global,
-                    "deck_url": deck_url,
-                    "origin": origin,
-                    "opponent_name": matched_global,
-                },
-                {
-                    "discord_user_id": matched_user_id,
-                    "display_name": matched_global,
-                    "deck_url": matched_user_deck_url,
-                    "origin": matched_user_origin,
-                    "opponent_name": joiner_global,
-                },
-            ],
-            voice=bool(match_voice),
-        )
-
-        try:
-            guild = bot.get_guild(config.GUILD_ID)
-            if guild:
-                active_role = guild.get_role(config.ACTIVE_PLAYER_ROLE_ID)
-                if active_role:
-                    for player_id in (interaction.user.id, matched_user_id):
-                        member = guild.get_member(player_id)
-                        if member and active_role not in member.roles:
-                            await member.add_roles(active_role)
-                            logger.info(f"Added active player role to {member.display_name} ({player_id})")
-        except Exception as e:
-            logger.error(f"Failed to assign active player role: {e}")
-
-        players = [
-            (interaction.user.id, joiner_global, interaction.user, deck_url, True),
-            (matched_user_id, matched_global, matched_user, matched_user_deck_url, False),
-        ]
-        avatars = {interaction.user.id: joiner_avatar, matched_user_id: matched_avatar}
-        reporter_player, other_player = random.sample(players, 2)
-        reporter_id, reporter_global, reporter_user, reporter_deck_url, reporter_is_joiner = reporter_player
-        other_id, other_global, other_user, other_deck_url, _ = other_player
-
-        if match_type == "limited":
-            if reporter_is_joiner:
-                reporter_run_id = int(run_id or 0)
-                other_run_id = int(matched_run_id or 0)
-            else:
-                reporter_run_id = int(matched_run_id or 0)
-                other_run_id = int(run_id or 0)
-        else:
-            reporter_run_id = int(0)
-            other_run_id = int(0)
-
-        match_card_view = create_match_card_view(
-            bot=bot,
-            pairing_id=pairing_id,
-            player1_id=reporter_id,
-            player1_global=reporter_global,
-            player2_id=other_id,
-            player2_global=other_global,
-            player1_deck_url=reporter_deck_url,
-            player2_deck_url=other_deck_url,
-            match_start_time=match_start_time,
-            guild_id=interaction.guild.id,
-            ladder_info=matched_ladder_info or {},
-            match_type=match_type or "ranked",
-            player1_run_id=reporter_run_id,
-            player2_run_id=other_run_id,
-        )
-
-        delivery = await send_pairing_messages(
-            bot,
-            reporter=PairingPlayer(
-                reporter_id, reporter_global, reporter_user, reporter_deck_url,
-                avatar=avatars.get(reporter_id),
-            ),
-            other=PairingPlayer(
-                other_id, other_global, other_user, other_deck_url,
-                avatar=avatars.get(other_id),
-            ),
-            match_card_view=match_card_view,
-            match_type=match_type,
-            provisioned_links=provisioned_links,
-            voice=match_voice,
-        )
-
-        ladder_note = ""
-        if matched_ladder_info:
-            challenger_id = matched_ladder_info["challenger_id"]
-            opponent_id = interaction.user.id if challenger_id != interaction.user.id else matched_user_id
-            ladder_note = ladder_stakes_note(
-                challenger_id, opponent_id, avatars.get(challenger_id), avatars.get(opponent_id)
+        # The pairing is saved: answer now, then do the slow Discord/Sorcery Online
+        # work (deck re-reads, seats, DMs, roles, announcements) in the background.
+        async def finish_pairing():
+            nonlocal joiner_avatar, matched_avatar
+            # Sorcery Online seats first: the DMs and website result carry their links
+            provisioned_links = await provision_match_and_publish_results(
+                interaction.guild.id,
+                pairing_id,
+                queue_type,
+                [
+                    {
+                        "discord_user_id": interaction.user.id,
+                        "display_name": joiner_global,
+                        "deck_url": deck_url,
+                        "origin": origin,
+                        "opponent_name": matched_global,
+                    },
+                    {
+                        "discord_user_id": matched_user_id,
+                        "display_name": matched_global,
+                        "deck_url": matched_user_deck_url,
+                        "origin": matched_user_origin,
+                        "opponent_name": joiner_global,
+                    },
+                ],
+                voice=bool(match_voice),
             )
-        await announce_pairing(
-            lfg_channel,
-            player_a=interaction.user,
-            player_b=matched_user,
-            match_type=match_type,
-            note=ladder_note,
-            pairing_id=pairing_id,
-        )
 
-        await lfg_cog.update_lfg_status()
+            if match_type == "ranked" and is_avatar_mode():
+                locked = await asyncio.gather(
+                    lock_match_avatar(deck_url, join_avatar),
+                    lock_match_avatar(matched_user_deck_url, matched_join_avatar),
+                )
+                if locked != [joiner_avatar, matched_avatar]:
+                    joiner_avatar, matched_avatar = locked
+                    set_pairing_avatars(pairing_id, joiner_avatar, matched_avatar)
+                if matched_ladder_info:
+                    try:
+                        challenger_is_joiner = matched_ladder_info["challenger_id"] == interaction.user.id
+                        set_avatar_ladder_stakes(
+                            matched_ladder_info,
+                            joiner_avatar if challenger_is_joiner else matched_avatar,
+                            matched_user_id if challenger_is_joiner else interaction.user.id,
+                            matched_avatar if challenger_is_joiner else joiner_avatar,
+                        )
+                    except Exception as e:
+                        logger.error(f"Could not size avatar ladder stakes: {e}", exc_info=True)
 
-        where = (
-            f"<#{config.DM_DISABLED_CHANNEL_ID}>"
-            if delivery.fell_back_for(interaction.user.id)
-            else "your DMs"
-        )
-        await interaction.followup.send(
-            f"{match_type_emoji} {match_type_label} match found! "
-            f"You've been paired with {matched_global}. Check {where}!",
-            ephemeral=True,
-        )
+            players = [
+                (interaction.user.id, joiner_global, interaction.user, deck_url, True),
+                (matched_user_id, matched_global, matched_user, matched_user_deck_url, False),
+            ]
+            avatars = {interaction.user.id: joiner_avatar, matched_user_id: matched_avatar}
+            reporter_player, other_player = random.sample(players, 2)
+            reporter_id, reporter_global, reporter_user, reporter_deck_url, reporter_is_joiner = reporter_player
+            other_id, other_global, other_user, other_deck_url, _ = other_player
+
+            if match_type == "limited":
+                if reporter_is_joiner:
+                    reporter_run_id = int(run_id or 0)
+                    other_run_id = int(matched_run_id or 0)
+                else:
+                    reporter_run_id = int(matched_run_id or 0)
+                    other_run_id = int(run_id or 0)
+            else:
+                reporter_run_id = int(0)
+                other_run_id = int(0)
+
+            match_card_view = create_match_card_view(
+                bot=bot,
+                pairing_id=pairing_id,
+                player1_id=reporter_id,
+                player1_global=reporter_global,
+                player2_id=other_id,
+                player2_global=other_global,
+                player1_deck_url=reporter_deck_url,
+                player2_deck_url=other_deck_url,
+                match_start_time=match_start_time,
+                guild_id=interaction.guild.id,
+                ladder_info=matched_ladder_info or {},
+                match_type=match_type or "ranked",
+                player1_run_id=reporter_run_id,
+                player2_run_id=other_run_id,
+            )
+
+            delivery = await send_pairing_messages(
+                bot,
+                reporter=PairingPlayer(
+                    reporter_id, reporter_global, reporter_user, reporter_deck_url,
+                    avatar=avatars.get(reporter_id),
+                ),
+                other=PairingPlayer(
+                    other_id, other_global, other_user, other_deck_url,
+                    avatar=avatars.get(other_id),
+                ),
+                match_card_view=match_card_view,
+                match_type=match_type,
+                provisioned_links=provisioned_links,
+                voice=match_voice,
+            )
+
+            ladder_note = ""
+            if matched_ladder_info:
+                challenger_id = matched_ladder_info["challenger_id"]
+                opponent_id = interaction.user.id if challenger_id != interaction.user.id else matched_user_id
+                ladder_note = ladder_stakes_note(
+                    challenger_id, opponent_id, avatars.get(challenger_id), avatars.get(opponent_id)
+                )
+            await announce_pairing(
+                lfg_channel,
+                player_a=interaction.user,
+                player_b=matched_user,
+                match_type=match_type,
+                note=ladder_note,
+                pairing_id=pairing_id,
+            )
+
+            await lfg_cog.update_lfg_status()
+
+            where = (
+                f"<#{config.DM_DISABLED_CHANNEL_ID}>"
+                if delivery.fell_back_for(interaction.user.id)
+                else "your DMs"
+            )
+            await interaction.followup.send(
+                f"{match_type_emoji} {match_type_label} match found! "
+                f"You've been paired with {matched_global}. Check {where}!",
+                ephemeral=True,
+            )
+
+            try:
+                guild = bot.get_guild(config.GUILD_ID)
+                if guild:
+                    active_role = guild.get_role(config.ACTIVE_PLAYER_ROLE_ID)
+                    if active_role:
+                        for player_id in (interaction.user.id, matched_user_id):
+                            member = guild.get_member(player_id)
+                            if member and active_role not in member.roles:
+                                await member.add_roles(active_role)
+                                logger.info(f"Added active player role to {member.display_name} ({player_id})")
+            except Exception as e:
+                logger.error(f"Failed to assign active player role: {e}")
+        run_in_background(finish_pairing(), f"finish pairing {pairing_id}")
     else:
         queue_label = "Rumble (Omens)" if queue_type == "points" else queue_type.capitalize()
         deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
@@ -842,22 +853,49 @@ async def _process_queue_join(
             deck_msg += f"\n**Avatar:** {join_avatar} (locked when your match is made)"
         if queue_has_voice_choice(queue_type):
             deck_msg += f"\n**Voice:** {VOICE_LABELS[voice]}"
-        try:
-            await interaction.user.send(
-                f"You have been added to the **{queue_label}** queue for {timeframe_value} minutes.{deck_msg}"
-            )
-        except Exception:
-            pass
-
-        try:
-            await lfg_cog.update_lfg_status()
-        except Exception as e:
-            logger.error(f"Failed to update LFG status after queue join: {e}")
-
         await interaction.followup.send(
             f"You've joined the **{queue_label}** queue for {timeframe_value} minutes!{deck_msg}",
             ephemeral=True,
         )
+
+        # The player is queued: the DM, status board, no-voice offers and Limited ping can follow.
+        async def finish_queue_join():
+            try:
+                await interaction.user.send(
+                    f"You have been added to the **{queue_label}** queue for {timeframe_value} minutes.{deck_msg}"
+                )
+            except Exception:
+                pass
+
+            try:
+                await lfg_cog.update_lfg_status()
+            except Exception as e:
+                logger.error(f"Failed to update LFG status after queue join: {e}")
+
+            # A no-voice player with no match: ask waiting voice players if they'd play without voice
+            if voice == NO_VOICE and queue_has_voice_choice(queue_type):
+                try:
+                    await offer_no_voice_game(bot, queue_type, interaction.user.id)
+                except Exception as e:
+                    logger.error(f"Failed to send no-voice offers: {e}")
+
+            # Notify limited ping channel when someone is waiting
+            if queue_type == "limited":
+                try:
+                    limited_channel = bot.get_channel(config.LIMITED_PING_CHANNEL_ID)
+                    if not limited_channel:
+                        limited_channel = await bot.fetch_channel(config.LIMITED_PING_CHANNEL_ID)
+                    if limited_channel:
+                        await limited_channel.send(
+                            f"<@&{config.LIMITED_PING_ROLE_ID}> There is a brave soul looking for a Limited game! "
+                            f"Join the queue!"
+                        )
+                    else:
+                        logger.error(f"Limited ping channel {config.LIMITED_PING_CHANNEL_ID} not found")
+                except Exception as e:
+                    logger.error(f"Failed to send limited queue notification: {e}")
+
+        run_in_background(finish_queue_join(), f"finish queue join for {interaction.user.id}")
 
 
 class JoinQueueButtons(discord.ui.View):

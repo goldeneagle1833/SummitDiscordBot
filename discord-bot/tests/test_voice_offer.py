@@ -8,7 +8,13 @@ import pytest
 from cogs.lfg import voice_offer
 from cogs.lfg.state import lfg_queue
 from cogs.lfg.voice import NO_VOICE, VOICE
-from cogs.lfg.voice_offer import NoVoiceOfferView, offer_no_voice_game, waiting_voice_players
+from cogs.lfg.voice_offer import (
+    NoVoiceOfferView,
+    VoiceOnlyToggleView,
+    offer_no_voice_game,
+    waiting_voice_players,
+)
+from repositories.voice_only_repo import is_voice_only, set_voice_only, voice_only_ids
 
 NO_VOICE_ID = 500
 
@@ -155,6 +161,71 @@ class TestAnsweringTheOffer:
 
         assert lfg_queue[1]["queues"]["ranked"]["voice"] == VOICE
         assert "still in the" in interaction.edit_original_response.await_args.kwargs["content"]
+
+
+class TestVoiceOnly:
+    def test_setting_round_trip(self):
+        assert not is_voice_only(1)
+        set_voice_only(1, True)
+        set_voice_only(1, True)
+        assert is_voice_only(1)
+        assert voice_only_ids([1, 2]) == {1}
+        set_voice_only(1, False)
+        assert not is_voice_only(1)
+        assert voice_only_ids([]) == set()
+
+    @pytest.mark.asyncio
+    async def test_voice_only_players_are_not_asked(self, bot):
+        queue(1, "ranked", entry(5, VOICE))
+        queue(2, "ranked", entry(10, VOICE))
+        queue(NO_VOICE_ID, "ranked", entry(0, NO_VOICE))
+        set_voice_only(2, True)
+
+        await offer_no_voice_game(bot, "ranked", NO_VOICE_ID)
+        bot.users[1].send.assert_awaited_once()
+        assert 2 not in bot.users
+        # Still queued for voice like before
+        assert lfg_queue[2]["queues"]["ranked"]["voice"] == VOICE
+
+    @pytest.mark.asyncio
+    async def test_offer_button_marks_voice_only(self, bot):
+        queue(1, "ranked", entry(10, VOICE))
+        queue(NO_VOICE_ID, "ranked", entry(0, NO_VOICE))
+        view = NoVoiceOfferView(bot, "ranked", 1, NO_VOICE_ID)
+        interaction, pending = click(view, "voice_only")
+        await pending
+
+        assert is_voice_only(1)
+        assert lfg_queue[1]["queues"]["ranked"]["voice"] == VOICE
+        kwargs = interaction.edit_original_response.await_args.kwargs
+        assert "voice-only" in kwargs["content"]
+        assert isinstance(kwargs["view"], VoiceOnlyToggleView)
+
+    @pytest.mark.asyncio
+    async def test_toggle_button_turns_it_off_and_on(self):
+        set_voice_only(1, True)
+        view = VoiceOnlyToggleView(1, True)
+        assert view.toggle.label == "Turn off voice only"
+        interaction, pending = click(view, "toggle")
+        interaction.user.id = 1
+        await pending
+        assert not is_voice_only(1)
+        assert view.toggle.label == "Mark me as voice only"
+
+        interaction, pending = click(view, "toggle")
+        interaction.user.id = 1
+        await pending
+        assert is_voice_only(1)
+
+    @pytest.mark.asyncio
+    async def test_toggle_button_is_only_for_its_owner(self):
+        view = VoiceOnlyToggleView(1, False)
+        interaction, pending = click(view, "toggle")
+        interaction.user.id = 2
+        interaction.response.send_message = AsyncMock()
+        await pending
+        assert not is_voice_only(1)
+        interaction.response.send_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio

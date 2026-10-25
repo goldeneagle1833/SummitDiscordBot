@@ -14,6 +14,7 @@ from services.replays import own_backfilled_replays, viewable_replays
 from repositories.external_matches import ExternalMatchRepository
 from repositories.user_profiles import UserProfileRepository
 from repositories.blocked_users_repo import BlockedUsersRepository
+from repositories.voice_only_repo import VoiceOnlyRepository
 from utils.auth import is_admin
 from utils.card_images import resolve_card_image
 from services.curiosa import is_deck_url, normalize_deck_url
@@ -3014,6 +3015,42 @@ def unblock_user(player_id, blocked_user_id):
     repo = BlockedUsersRepository()
     removed = repo.unblock_user(block_key, str(blocked_user_id))
     return jsonify({"success": True, "removed": removed})
+
+
+def _queue_settings_key(player_id) -> tuple[str | None, str | None]:
+    """(storage key, error) for a player's queue settings: owner or admin, Discord IDs only."""
+    key = _block_list_key(player_id)
+    if key is None:
+        return None, "You can only change your own queue settings"
+    if key.startswith("google_") or not key.isdigit():
+        return None, "Queue settings are for Discord accounts"
+    return key, None
+
+
+@players_bp.route("/player/<player_id>/queue-settings", methods=["GET"])
+def get_queue_settings(player_id):
+    """A player's Discord queue settings (owner only): voice only."""
+    if session.get("user_id") is None:
+        return jsonify({"error": "Authentication required"}), 401
+    key, error = _queue_settings_key(player_id)
+    if key is None:
+        return jsonify({"error": error}), 403
+    return jsonify({"voice_only": VoiceOnlyRepository().is_voice_only(key)})
+
+
+@players_bp.route("/player/<player_id>/queue-settings", methods=["POST"])
+def set_queue_settings(player_id):
+    """Save a player's Discord queue settings (owner only)."""
+    if session.get("user_id") is None:
+        return jsonify({"error": "Authentication required"}), 401
+    key, error = _queue_settings_key(player_id)
+    if key is None:
+        return jsonify({"error": error}), 403
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data.get("voice_only"), bool):
+        return jsonify({"error": "voice_only must be true or false"}), 400
+    voice_only = VoiceOnlyRepository().set_voice_only(key, data["voice_only"])
+    return jsonify({"success": True, "voice_only": voice_only})
 
 
 @players_bp.route("/nav-prefs", methods=["GET"])

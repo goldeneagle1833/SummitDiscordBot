@@ -157,6 +157,27 @@ class SlashCommandsCog(commands.Cog):
 
         await lfg_cog.issue_challenge(ctx, voice, *([deck_url] if deck_url else []))
 
+    @app_commands.command(
+        name="voice-only",
+        description="Only play on voice? Stop the \"want to play a no-voice game?\" DMs",
+    )
+    @app_commands.describe(setting="Turn voice only on or off (leave empty to see your setting)")
+    @app_commands.choices(setting=[
+        app_commands.Choice(name="🔊 On: never ask me about no-voice games", value="on"),
+        app_commands.Choice(name="🔇 Off: ask me about no-voice games", value="off"),
+    ])
+    async def voice_only_slash(self, interaction: discord.Interaction, setting: str = None):
+        """Voice-only players never get no-voice game offers"""
+        await interaction.response.defer(ephemeral=True)
+        ctx = FakeContext(self.bot, interaction)
+
+        lfg_cog = self.bot.get_cog("LFGCog")
+        if not lfg_cog:
+            await interaction.followup.send("LFG system is not available.", ephemeral=True)
+            return
+
+        await lfg_cog.voice_only(ctx, setting)
+
     # ==================== ADMIN MATCH REPORTS ====================
 
     async def _admin_report_flow(self, interaction, winner, loser, top16_player=None):

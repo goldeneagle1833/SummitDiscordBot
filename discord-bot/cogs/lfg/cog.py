@@ -1356,6 +1356,27 @@ class LFGCog(commands.Cog):
         else:
             await ctx.send(f"{ctx.author.mention}, no one is currently in the queue.")
 
+    @commands.command(aliases=["voiceonly"])
+    async def voice_only(self, ctx, setting: str = None):
+        """Stop (or start) the "want to play a no-voice game?" DMs.
+
+        Usage: !voice_only (shows your setting), !voice_only on, !voice_only off
+        """
+        from cogs.lfg.voice_offer import VoiceOnlyToggleView, voice_only_text
+        from repositories.voice_only_repo import is_voice_only, set_voice_only
+
+        choice = (setting or "").strip().lower()
+        if choice in ("on", "yes", "true"):
+            current = await asyncio.to_thread(set_voice_only, ctx.author.id, True, "command")
+        elif choice in ("off", "no", "false"):
+            current = await asyncio.to_thread(set_voice_only, ctx.author.id, False, "command")
+        elif choice:
+            await ctx.send("Use `!voice_only on`, `!voice_only off`, or just `!voice_only` to see your setting.")
+            return
+        else:
+            current = await asyncio.to_thread(is_voice_only, ctx.author.id)
+        await ctx.send(voice_only_text(current), view=VoiceOnlyToggleView(ctx.author.id, current))
+
     @commands.command()
     async def challenge(self, ctx, opponent: discord.Member = None):
         """Challenge a specific player to a match
@@ -1889,6 +1910,8 @@ class LFGCog(commands.Cog):
             value=(
                 "`!check_lfg` - See if anyone is currently in queue\n"
                 "**When to use:** Before joining, to see if someone is already waiting.\n\n"
+                "`!voice_only on` / `!voice_only off` or `/voice-only` - Voice-only players never get "
+                "\"want to play a no-voice game?\" DMs\n\n"
                 "**Tip:** Use the **Join Queue** button in the LFG channel to enter your deck URL and join the matchmaking queue!"
             ),
             inline=False,

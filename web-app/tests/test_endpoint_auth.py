@@ -91,6 +91,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.get_blocked_users",
     "api.players.block_user",
     "api.players.unblock_user",
+    "api.players.get_queue_settings",  # owner/admin, checked in the handler
+    "api.players.set_queue_settings",
 
     # -- Card / avatar stats (public read-only) --
     "api.cards.get_cards",

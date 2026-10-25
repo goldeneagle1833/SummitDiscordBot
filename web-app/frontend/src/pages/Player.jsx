@@ -25,6 +25,7 @@ import PostseasonSection from '@/components/player/PostseasonSection'
 import { AvatarHonoursSection, useAvatarHonours } from '@/components/player/AvatarHonours'
 import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
 import BlockListModal from '@/components/player/BlockListModal'
+import QueueSettingsModal from '@/components/player/QueueSettingsModal'
 import CardStats from '@/components/player/CardStats'
 import { useBracketMarks } from '@/components/player/BracketMarks'
 import { useAuth } from '@/context/AuthContext'
@@ -57,6 +58,7 @@ export default function Player() {
   const [showReportModal, setShowReportModal] = useState(false)
   const [showPrivacyModal, setShowPrivacyModal] = useState(false)
   const [showBlockListModal, setShowBlockListModal] = useState(false)
+  const [showQueueSettingsModal, setShowQueueSettingsModal] = useState(false)
   const [showResetModal, setShowResetModal] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [editDeck, setEditDeck] = useState(null)
@@ -167,6 +169,7 @@ export default function Player() {
   const settingsItems = [
     { label: 'Privacy settings', onClick: () => setShowPrivacyModal(true) },
     { label: 'Block list', onClick: () => setShowBlockListModal(true) },
+    /^\d+$/.test(String(playerId)) && { label: 'Queue settings', onClick: () => setShowQueueSettingsModal(true) },
     { label: data.profile_reset_at ? 'Undo Fresh Start' : 'Fresh Start', onClick: () => setShowResetModal(true) },
     authUser?.is_store_admin && { label: 'My orders', onClick: () => navigate('/store/orders') },
   ].filter(Boolean)
@@ -400,6 +403,13 @@ export default function Player() {
         <BlockListModal
           playerId={playerId}
           onClose={() => setShowBlockListModal(false)}
+        />
+      )}
+
+      {showQueueSettingsModal && (
+        <QueueSettingsModal
+          playerId={playerId}
+          onClose={() => setShowQueueSettingsModal(false)}
         />
       )}
 

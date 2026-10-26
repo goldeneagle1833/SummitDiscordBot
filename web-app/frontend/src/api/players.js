@@ -1,6 +1,6 @@
 import { get, post, put, del } from './client'
 
-export const getPlayer = (id, { event, source, page, perPage, casualPage, externalPage } = {}) => {
+export const getPlayer = (id, { event, source, page, perPage, casualPage, externalPage, filters = {} } = {}) => {
   const params = new URLSearchParams()
   if (event && event !== 'lifetime') params.set('event', event)
   if (source) params.set('source', source)
@@ -8,6 +8,9 @@ export const getPlayer = (id, { event, source, page, perPage, casualPage, extern
   if (perPage) params.set('per_page', perPage)
   if (casualPage) params.set('casual_page', casualPage)
   if (externalPage) params.set('external_page', externalPage)
+  for (const key of ['opponent', 'result', 'avatar', 'opponent_avatar']) {
+    if (filters[key]) params.set(key, filters[key])
+  }
   const qs = params.toString()
   return get(`/api/player/${id}${qs ? '?' + qs : ''}`)
 }

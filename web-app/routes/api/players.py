@@ -2159,6 +2159,59 @@ def player_api(player_id):
     ranked_rows = [r for r in sorted_rows if not (len(r) > 19 and r[19] in ("casual", "testing"))]
     casual_rows = [r for r in sorted_rows if len(r) > 19 and r[19] in ("casual", "testing")]
 
+    # Matches tab filters. The choices come from every game in the period,
+    # so picking one never empties its own dropdown.
+    def _row_facts(row):
+        did_win = row[0]
+        my_avatar, _ = _extract_deck_info(row[13] if did_win else row[14]) if len(row) > 14 else (None, None)
+        opp_avatar, _ = _extract_deck_info(row[14] if did_win else row[13]) if len(row) > 14 else (None, None)
+        return {
+            "opponent_id": str(row[11]) if did_win else str(row[10]),
+            "opponent": row[5] if did_win else row[4],
+            "result": "win" if did_win else "loss",
+            "avatar": my_avatar,
+            "opponent_avatar": opp_avatar,
+        }
+
+    row_facts = {id(r): _row_facts(r) for r in sorted_rows}
+    opponent_games = {}
+    opponent_names = {}
+    for r in sorted_rows:
+        facts = row_facts[id(r)]
+        if facts["opponent_id"] in ("None", ""):
+            continue
+        opponent_games[facts["opponent_id"]] = opponent_games.get(facts["opponent_id"], 0) + 1
+        opponent_names.setdefault(facts["opponent_id"], facts["opponent"] or "Unknown")
+    filter_options = {
+        "opponents": sorted(
+            ({"id": oid, "name": opponent_names[oid], "games": n} for oid, n in opponent_games.items()),
+            key=lambda o: (-o["games"], str(o["name"]).lower()),
+        ),
+        "avatars": sorted({row_facts[id(r)]["avatar"] for r in sorted_rows} - {None}),
+        "opponent_avatars": sorted({row_facts[id(r)]["opponent_avatar"] for r in sorted_rows} - {None}),
+    }
+    match_filters = {
+        "opponent_id": (request.args.get("opponent") or "").strip(),
+        "result": (request.args.get("result") or "").strip().lower(),
+        "avatar": (request.args.get("avatar") or "").strip(),
+        "opponent_avatar": (request.args.get("opponent_avatar") or "").strip(),
+    }
+    match_filters = {k: v for k, v in match_filters.items() if v}
+
+    def _passes_filters(row):
+        facts = row_facts[id(row)]
+        return all(
+            str(facts[k] or "").lower() == v.lower() for k, v in match_filters.items()
+        )
+
+    if match_filters:
+        ranked_rows = [r for r in ranked_rows if _passes_filters(r)]
+        casual_rows = [r for r in casual_rows if _passes_filters(r)]
+
+    def _record(rows_in):
+        wins = sum(1 for r in rows_in if r[0])
+        return {"wins": wins, "losses": len(rows_in) - wins}
+
     # Get pagination parameters
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 50, type=int)
@@ -2759,6 +2812,12 @@ def player_api(player_id):
                 "total_pages": total_pages,
                 "has_previous": page > 1,
                 "has_next": page < total_pages,
+            },
+            "match_filters": {
+                "options": filter_options,
+                "active": match_filters,
+                "ranked": _record(ranked_rows),
+                "casual": _record(casual_rows),
             },
             "casual_pagination": {
                 "current_page": casual_page,

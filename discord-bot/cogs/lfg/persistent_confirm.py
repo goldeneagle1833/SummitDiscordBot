@@ -1266,10 +1266,18 @@ def _load_match_cards_for_pairing_all(pairing_id: int, match_type: str = None):
     return [dict(row) for row in rows]
 
 
+def with_opponent_mention(text: str, opponent_id) -> str:
+    """Keep the opponent as a clickable mention when a match card is edited."""
+    if not opponent_id:
+        return text
+    return f"{text}\n**Opponent:** <@{opponent_id}>"
+
+
 async def edit_match_card_messages(bot, pairing_id: int, match_type: str, result_text: str):
     """Edit the original match card DM messages to show the result and remove buttons.
 
     The Report Player button is the exception: it stays on the message.
+    The opponent mention stays too, so players can still click through to DM.
 
     Called when a match is recorded via an external source (e.g. Sorcery Online)
     where there is no live interaction to update.
@@ -1284,7 +1292,8 @@ async def edit_match_card_messages(bot, pairing_id: int, match_type: str, result
             channel = bot.get_channel(ch_id) or await bot.fetch_channel(ch_id)
             message = await channel.fetch_message(msg_id)
             # Keep Report Player on the card; drop Report Result / Cancel.
-            await message.edit(content=result_text, view=report_player_only_view(message))
+            content = with_opponent_mention(result_text, card.get("player2_id"))
+            await message.edit(content=content, view=report_player_only_view(message))
         except Exception as e:
             logger.warning("Could not edit match card message %s in channel %s: %s", msg_id, ch_id, e)
 
@@ -1493,7 +1502,10 @@ class PersistentMatchCardCancelButton(
                     if not is_report_player_item(item):
                         item.disabled = True
                 try:
-                    await interaction.message.edit(content="**Match Cancelled**", view=self.view)
+                    await interaction.message.edit(
+                        content=with_opponent_mention("**Match Cancelled**", other_id),
+                        view=self.view,
+                    )
                 except Exception:
                     pass
 

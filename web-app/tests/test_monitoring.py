@@ -23,6 +23,12 @@ def metrics_db(tmp_path, monkeypatch):
     monkeypatch.setattr(webapp_config, "MONITORING_DB_PATH", db)
     monkeypatch.setattr("services.monitoring._health_cache", None)
     monitoring.init_db()
+    # Drop requests earlier tests left unflushed in the process-wide collector,
+    # so they can't crowd these tests' rows out of a limited summary.
+    with monitoring.collector._lock:
+        monitoring.collector._requests.clear()
+        monitoring.collector._external.clear()
+        monitoring.collector._errors.clear()
     return db
 
 

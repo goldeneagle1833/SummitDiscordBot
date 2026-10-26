@@ -1,5 +1,6 @@
 """API routes for event deck management."""
 
+import functools
 import json
 import logging
 import os
@@ -29,11 +30,15 @@ def _job_path(job_id):
 
 
 def _write_job(job_id, data):
-    """Atomically write job status to disk."""
+    """Atomically write job status to disk.
+
+    The writing process's pid rides along so the poll can tell when the
+    worker running the job has died (see _job_died).
+    """
     path = _job_path(job_id)
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
-        json.dump(data, f)
+        json.dump({**data, "pid": os.getpid()}, f)
     os.replace(tmp, path)
 
 
@@ -51,6 +56,110 @@ def _delete_job(job_id):
     """Remove a job status file."""
     try:
         os.remove(_job_path(job_id))
+    except FileNotFoundError:
+        pass
+
+
+# Jobs run on a daemon thread inside the gunicorn worker that took the
+# request, so a worker recycle (max_requests) or a restart kills the job
+# mid-way and its status file says "processing" forever. A running job
+# touches its file every _JOB_HEARTBEAT_SECONDS; the poll calls it dead when
+# its worker is gone or the file has gone quiet for _JOB_STALE_SECONDS.
+_JOB_HEARTBEAT_SECONDS = 30
+_JOB_STALE_SECONDS = 180
+
+_JOB_DIED_ERROR = (
+    "This stopped part way because the web server restarted. Please start it "
+    "again; an event import keeps the decks it already fetched and picks up "
+    "where it left off."
+)
+
+
+def _pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except (PermissionError, OSError):
+        return True
+    return True
+
+
+def _job_died(job_id, job):
+    """True when a processing job's worker is gone or has stopped heartbeating."""
+    if job.get("status") != "processing":
+        return False
+    pid = job.get("pid")
+    if pid and not _pid_alive(pid):
+        return True
+    try:
+        quiet_for = time.time() - os.path.getmtime(_job_path(job_id))
+    except OSError:
+        return False
+    return quiet_for > _JOB_STALE_SECONDS
+
+
+def _job_worker(fn):
+    """Run a background job function with a heartbeat on its status file."""
+    @functools.wraps(fn)
+    def run(job_id, *args, **kwargs):
+        stop = threading.Event()
+
+        def beat():
+            while not stop.wait(_JOB_HEARTBEAT_SECONDS):
+                job = _read_job(job_id)
+                if not job or job.get("status") != "processing":
+                    return
+                try:
+                    os.utime(_job_path(job_id))
+                except OSError:
+                    return
+
+        threading.Thread(target=beat, daemon=True).start()
+        try:
+            return fn(job_id, *args, **kwargs)
+        finally:
+            stop.set()
+    return run
+
+
+# Decks an event import has already fetched, kept per sorcerytcg.com event so
+# a rerun after a restart only fetches the rest (each deck costs a 20s wait).
+_IMPORT_CACHE_MAX_AGE = 24 * 60 * 60
+
+
+def _import_cache_path(event_id):
+    safe_id = "".join(c for c in event_id if c.isalnum() or c in "-_")
+    return os.path.join(_JOBS_DIR, f"import-decks-{safe_id}.json")
+
+
+def _load_import_cache(event_id):
+    path = _import_cache_path(event_id)
+    try:
+        if time.time() - os.path.getmtime(path) > _IMPORT_CACHE_MAX_AGE:
+            os.remove(path)
+            return {}
+        with open(path, "r") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_import_cache(event_id, decks_by_id):
+    path = _import_cache_path(event_id)
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(decks_by_id, f)
+        os.replace(tmp, path)
+    except OSError as e:
+        logger.warning("Could not save import deck cache: %s", e)
+
+
+def _clear_import_cache(event_id):
+    try:
+        os.remove(_import_cache_path(event_id))
     except FileNotFoundError:
         pass
 
@@ -398,6 +507,7 @@ def reorder_event_decks(event_folder):
     return jsonify(result), status
 
 
+@_job_worker
 def _run_event_creation(job_id, title, valid_ranked, valid_bulk):
     """Background worker for event creation — fetches from Curiosa and saves."""
     try:
@@ -520,6 +630,18 @@ def get_event_job_status(job_id):
     if not job:
         return jsonify({"error": "Job not found"}), 404
 
+    if _job_died(job_id, job):
+        logger.warning("Event job %s died while processing (%s)", job_id, job.get("progress"))
+        _delete_job(job_id)
+        return jsonify({
+            "status": "failed",
+            "result": {
+                "success": False,
+                "error": _JOB_DIED_ERROR,
+                "stopped_at": job.get("progress"),
+            },
+        })
+
     response = {"status": job["status"]}
     if "progress" in job:
         response["progress"] = job["progress"]
@@ -531,6 +653,7 @@ def get_event_job_status(job_id):
     return jsonify(response)
 
 
+@_job_worker
 def _run_event_deck_update(job_id, event_folder, table_type, urls, mode):
     """Background worker for updating event decks."""
     try:
@@ -615,6 +738,7 @@ def delete_event(event_folder):
     return jsonify(result), status
 
 
+@_job_worker
 def _run_event_refresh(job_id, event_folder):
     """Background worker for refreshing event decks."""
     try:
@@ -654,6 +778,7 @@ def refresh_event(event_folder):
     return jsonify({"success": True, "job_id": job_id}), 202
 
 
+@_job_worker
 def _run_event_import(job_id, title, event_url):
     """Background worker for importing an event from a sorcerytcg.com URL."""
     try:
@@ -695,22 +820,29 @@ def _run_event_import(job_id, title, event_url):
         top_cut = discovery.get("top_cut_size", 8)
         on_progress(f"Found {len(deck_ids)} decks, fetching deck data...")
 
-        # Step 2: Fetch full deck data using discovered IDs
+        # Step 2: Fetch full deck data using discovered IDs, one at a time.
+        # A deck that fails is skipped and reported, never retried forever,
+        # and every fetched deck is cached so a rerun resumes from here.
+        event_id = discovery.get("event_id") or curiosa.get_event_id_from_url(event_url)
+        cache = _load_import_cache(event_id)
         total = len(deck_ids)
-        completed = [0]
-        original_rate_limit = curiosa._rate_limit
-        def _tracking_rate_limit():
-            original_rate_limit()
-            completed[0] += 1
-            _write_job(job_id, {
-                "status": "processing",
-                "progress": f"Fetching deck {completed[0]}/{total}...",
-            })
-        curiosa._rate_limit = _tracking_rate_limit
-
-        decks, failed_ids = curiosa.fetch_decks_by_ids(deck_ids)
-        if failed_ids:
-            errors.extend([f"Failed to fetch deck: {did}" for did in failed_ids])
+        decks = []
+        for n, player in enumerate(players, 1):
+            deck_id = player["deck_id"]
+            if deck_id in cache:
+                decks.append(cache[deck_id])
+                continue
+            on_progress(f"Fetching deck {n}/{total}...")
+            deck = curiosa.fetch_deck_by_id(deck_id)
+            if deck:
+                decks.append(deck)
+                cache[deck_id] = deck
+                _save_import_cache(event_id, cache)
+            else:
+                errors.append(
+                    f"Could not fetch deck {n} ({player.get('name') or deck_id}); "
+                    "it may be private or sorcerytcg.com did not answer"
+                )
 
         if not decks:
             _write_job(job_id, {
@@ -737,6 +869,7 @@ def _run_event_import(job_id, title, event_url):
         result = repo.create_event(title, top8_decks, bulk_decks)
 
         if result.get("success"):
+            _clear_import_cache(event_id)
             result["top8_added"] = len(top8_decks)
             result["bulk_added"] = len(bulk_decks) if bulk_decks else 0
             result["event_name"] = discovery["event_name"]
@@ -832,6 +965,7 @@ def get_event_match_history(event_folder: str):
         return jsonify({"error": "Failed to load match history"}), 500
 
 
+@_job_worker
 def _run_match_history_import(job_id, event_folder, event_url):
     """Background worker for importing pairings from a sorcerytcg.com URL."""
     try:

@@ -256,7 +256,8 @@ class CuriosaService:
         """Fetch a single deck by ID from the tRPC API. Returns legacy dict or None."""
         input_json = json.dumps({"json": {"id": deck_id}})
         url = f"{_TRPC_BASE}?input={urllib.parse.quote(input_json)}"
-        response = requests.get(url, timeout=30)
+        # (connect, read): a stalled sorcerytcg.com can't hold the job forever
+        response = requests.get(url, timeout=(10, 30))
         if response.status_code != 200:
             logger.warning(f"API returned status {response.status_code} for deck {deck_id}")
             return None

@@ -485,6 +485,33 @@ def get_deck_stats(player_id):
     })
 
 
+def _any_display_name(player_id):
+    """The player's name from their newest bot match in any period, or None."""
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    except sqlite3.OperationalError:
+        return None
+    try:
+        for table in ["match_records", "match_records_archive"]:
+            try:
+                row = conn.execute(
+                    f"""
+                    SELECT CASE WHEN winner_id = ? THEN winner_display_name ELSE losser_display_name END
+                    FROM {table}
+                    WHERE winner_id = ? OR losser_id = ?
+                    ORDER BY timestamp DESC LIMIT 1
+                    """,
+                    (player_id, player_id, player_id),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                continue
+            if row and row[0]:
+                return row[0]
+    finally:
+        conn.close()
+    return None
+
+
 @players_bp.route("/player/<player_id>/avatar/<avatar_name>")
 def player_avatar_stats(player_id, avatar_name):
     """Get detailed stats for a specific avatar used by a player."""
@@ -493,19 +520,41 @@ def player_avatar_stats(player_id, avatar_name):
     if player_id_str.startswith("google_"):
         player_id = player_id_str[7:]
 
-    event_filter = request.args.get("event", "lifetime")
+    event_filter = request.args.get("event") or "lifetime"
 
-    # Determine season date range if applicable
+    # Period picker, same choices as the profile: lifetime, the current event
+    # (live table), a past event (archive rows with that event_id) or a
+    # season_* date range. event_start/end date the external matches.
+    tables = ["match_records", "match_records_archive"]
+    archive_event_id = None
+    season_range = None
     event_start_date = None
     event_end_date = None
-    is_season_filter = isinstance(event_filter, str) and event_filter.startswith("season_")
-    if is_season_filter:
+    if event_filter == "current":
+        tables = ["match_records"]
+        event_start_date, event_end_date = _active_event_window()
+    elif event_filter.startswith("season_"):
+        season = next((sf for sf in SEASON_FILTERS if sf["id"] == event_filter), None)
+        if not season:
+            return jsonify({"error": "Unknown period"}), 400
+        season_range = (season["start_date"], season["end_date"])
+        event_start_date, event_end_date = season_range
+    elif event_filter != "lifetime":
         try:
-            season_id = int(event_filter.split("_")[1])
-            if season_id in SEASON_FILTERS:
-                event_start_date = SEASON_FILTERS[season_id]["start"]
-                event_end_date = SEASON_FILTERS[season_id]["end"]
-        except (ValueError, IndexError):
+            archive_event_id = int(event_filter)
+        except ValueError:
+            return jsonify({"error": "Unknown period"}), 400
+        tables = ["match_records_archive"]
+        try:
+            elo_conn = sqlite3.connect(str(ELO_DB_PATH))
+            ev_row = elo_conn.execute(
+                "SELECT start_date, end_date FROM events WHERE event_id = ?",
+                (archive_event_id,),
+            ).fetchone()
+            elo_conn.close()
+            if ev_row:
+                event_start_date, event_end_date = ev_row[0], ev_row[1]
+        except sqlite3.OperationalError:
             pass
 
     conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
@@ -513,15 +562,15 @@ def player_avatar_stats(player_id, avatar_name):
     cur = conn.cursor()
 
     all_rows = []
-    for table in ["match_records", "match_records_archive"]:
+    for table in tables:
         date_filter = ""
         params = [player_id, player_id, player_id]
-        if event_start_date:
-            date_filter += " AND timestamp >= ?"
-            params.append(event_start_date)
-        if event_end_date:
-            date_filter += " AND timestamp <= ?"
-            params.append(event_end_date)
+        if archive_event_id is not None:
+            date_filter = " AND event_id = ?"
+            params.append(archive_event_id)
+        elif season_range:
+            date_filter = " AND timestamp >= ? AND timestamp <= ?"
+            params.extend(season_range)
         try:
             cur.execute(
                 f"""
@@ -586,6 +635,21 @@ def player_avatar_stats(player_id, avatar_name):
     # Also fetch external matches
     external_repo = ExternalMatchRepository()
     external_matches_raw = external_repo.get_player_matches(str(player_id))
+    if event_filter != "lifetime":
+        def _norm_ts(value):
+            return str(value or "")[:19].replace("T", " ")
+
+        def _external_in_period(em):
+            ts = _norm_ts(em.get("timestamp"))
+            if not ts or not (event_start_date or event_end_date):
+                return False  # a period we can't date
+            if event_start_date and ts < _norm_ts(event_start_date):
+                return False
+            if event_end_date and ts > _norm_ts(event_end_date):
+                return False
+            return True
+
+        external_matches_raw = [em for em in external_matches_raw if _external_in_period(em)]
 
     wins = 0
     losses = 0
@@ -768,6 +832,9 @@ def player_avatar_stats(player_id, avatar_name):
     if all_rows:
         first = all_rows[0]
         player_name = first["winner_display_name"] if first["did_win"] else first["losser_display_name"]
+    elif event_filter != "lifetime":
+        # No games in this period: take the name from any of their games
+        player_name = _any_display_name(player_id) or player_name
 
     return jsonify({
         "player_id": player_id,

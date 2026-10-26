@@ -23,7 +23,7 @@ function ElementIcons({ elements }) {
   )
 }
 
-export default function MatchHistoryTable({ title, subtitle, matches, pagination, playerId, isOwner, profileVisibility, perPage, perPageOptions, onPageChange, onPerPageChange, onEditDeck, onMatchUpdate }) {
+export default function MatchHistoryTable({ title, subtitle, matches, pagination, playerId, isOwner, profileVisibility, perPage, perPageOptions, onPageChange, onPerPageChange, onEditDeck, onMatchUpdate, emptyText = 'No matches recorded.' }) {
   const showDeckUrls = isOwner || profileVisibility?.deck_urls
   const showSnapshots = isOwner || profileVisibility?.deck_snapshots
   const [noteModal, setNoteModal] = useState(null)
@@ -39,7 +39,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
     return (
       <section>
         <h3 className="text-lg font-semibold text-text-primary mb-3">{title}</h3>
-        <p className="text-text-muted text-sm py-4 text-center">No matches recorded.</p>
+        <p className="text-text-muted text-sm py-4 text-center">{emptyText}</p>
       </section>
     )
   }

@@ -159,3 +159,28 @@ def test_heartbeat_keeps_a_long_quiet_job_fresh(jobs_dir, monkeypatch):
 
     slow_job("slow")
     assert time.time() - os.path.getmtime(events_routes._job_path("slow")) < 5
+
+
+def test_jobs_run_in_their_own_process(jobs_dir):
+    """A job outlives the gunicorn worker that started it."""
+    events_routes._write_job("proc", {"status": "processing", "progress": "Refreshing decks..."})
+
+    events_routes._start_job(events_routes._run_event_refresh, ("proc", "No Such Event"))
+
+    deadline = time.time() + 60
+    job = events_routes._read_job("proc")
+    while job["status"] == "processing" and time.time() < deadline:
+        time.sleep(0.2)
+        job = events_routes._read_job("proc")
+    assert job["status"] == "failed"
+    assert job["result"]["error"] == "Event not found"
+    assert job["pid"] != os.getpid()
+
+
+def test_every_job_started_by_a_route_can_be_run_by_name():
+    import inspect
+    import re
+
+    source = inspect.getsource(events_routes)
+    started = set(re.findall(r"    _start_job\((_run_\w+),", source))
+    assert started == set(events_routes.JOB_TARGETS)

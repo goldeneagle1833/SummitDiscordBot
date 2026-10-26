@@ -4,6 +4,8 @@ import functools
 import json
 import logging
 import os
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -18,7 +20,9 @@ from utils.formatting import format_event_name
 # File-based job store for background Curiosa fetching.
 # Using files instead of an in-memory dict so that jobs are visible
 # across multiple Gunicorn worker processes.
-_JOBS_DIR = os.path.join(tempfile.gettempdir(), "summit_event_jobs")
+_JOBS_DIR = os.environ.get("SUMMIT_EVENT_JOBS_DIR") or os.path.join(
+    tempfile.gettempdir(), "summit_event_jobs"
+)
 os.makedirs(_JOBS_DIR, exist_ok=True)
 
 
@@ -69,7 +73,7 @@ _JOB_HEARTBEAT_SECONDS = 30
 _JOB_STALE_SECONDS = 180
 
 _JOB_DIED_ERROR = (
-    "This stopped part way because the web server restarted. Please start it "
+    "This stopped part way because the web server restarted (usually a deploy). Please start it "
     "again; an event import keeps the decks it already fetched and picks up "
     "where it left off."
 )
@@ -115,12 +119,56 @@ def _job_worker(fn):
                 except OSError:
                     return
 
+        # Claim the job for this process, so the poll watches the pid that
+        # is actually running it rather than the worker that started it
+        job = _read_job(job_id)
+        if job and job.get("status") == "processing":
+            _write_job(job_id, {k: v for k, v in job.items() if k != "pid"})
+
         threading.Thread(target=beat, daemon=True).start()
         try:
             return fn(job_id, *args, **kwargs)
         finally:
             stop.set()
     return run
+
+
+# Jobs run in their own process, not on a thread in the gunicorn worker that
+# took the request. A worker is recycled every ~2000 requests (max_requests)
+# and an event import takes ~13 minutes (a 20s wait per deck), so a job on a
+# worker thread was regularly killed part way. The job process is in its own
+# session, so a worker recycle leaves it running; only a full service restart
+# (a deploy) stops it, and the poll reports that as above.
+_WEB_APP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_JOB_RUNNER = os.path.join(_WEB_APP_DIR, "scripts", "run_event_job.py")
+
+
+def _job_log_path(job_id):
+    return _job_path(job_id)[: -len(".json")] + ".log"
+
+
+def _start_job(target, args):
+    """Start target(*args) in a separate process; fall back to a thread."""
+    job_id = args[0]
+    try:
+        with open(_job_log_path(job_id), "ab") as log:
+            proc = subprocess.Popen(
+                [sys.executable, _JOB_RUNNER, target.__name__, json.dumps(list(args))],
+                cwd=_WEB_APP_DIR,
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                close_fds=True,
+                env={**os.environ, "SUMMIT_EVENT_JOBS_DIR": _JOBS_DIR},
+            )
+    except OSError as e:
+        logger.warning("Could not start a job process, running %s on a thread: %s",
+                       target.__name__, e)
+        threading.Thread(target=target, args=args, daemon=True).start()
+        return
+    # Reap it when it ends so it never lingers as a zombie of this worker
+    threading.Thread(target=proc.wait, daemon=True).start()
 
 
 # Decks an event import has already fetched, kept per sorcerytcg.com event so
@@ -611,12 +659,7 @@ def create_event():
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting..."})
 
-    thread = threading.Thread(
-        target=_run_event_creation,
-        args=(job_id, title, valid_ranked, valid_bulk),
-        daemon=True,
-    )
-    thread.start()
+    _start_job(_run_event_creation, (job_id, title, valid_ranked, valid_bulk))
 
     return jsonify({"success": True, "job_id": job_id}), 202
 
@@ -717,12 +760,7 @@ def update_event_decks(event_folder):
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting..."})
 
-    thread = threading.Thread(
-        target=_run_event_deck_update,
-        args=(job_id, event_folder, table_type, urls, mode),
-        daemon=True,
-    )
-    thread.start()
+    _start_job(_run_event_deck_update, (job_id, event_folder, table_type, urls, mode))
 
     return jsonify({"success": True, "job_id": job_id}), 202
 
@@ -768,12 +806,7 @@ def refresh_event(event_folder):
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Refreshing decks..."})
 
-    thread = threading.Thread(
-        target=_run_event_refresh,
-        args=(job_id, event_folder),
-        daemon=True,
-    )
-    thread.start()
+    _start_job(_run_event_refresh, (job_id, event_folder))
 
     return jsonify({"success": True, "job_id": job_id}), 202
 
@@ -938,12 +971,7 @@ def import_event_from_url():
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting import..."})
 
-    thread = threading.Thread(
-        target=_run_event_import,
-        args=(job_id, title, event_url),
-        daemon=True,
-    )
-    thread.start()
+    _start_job(_run_event_import, (job_id, title, event_url))
 
     return jsonify({"success": True, "job_id": job_id}), 202
 
@@ -1032,12 +1060,7 @@ def import_event_match_history(event_folder: str):
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting import..."})
 
-    thread = threading.Thread(
-        target=_run_match_history_import,
-        args=(job_id, event_folder, event_url),
-        daemon=True,
-    )
-    thread.start()
+    _start_job(_run_match_history_import, (job_id, event_folder, event_url))
 
     return jsonify({"success": True, "job_id": job_id}), 202
 
@@ -1078,3 +1101,16 @@ def reorder_events_list():
 
     status = 200 if result.get("success") else 400
     return jsonify(result), status
+
+
+# Job functions scripts/run_event_job.py may run, by name
+JOB_TARGETS = {
+    fn.__name__: fn
+    for fn in (
+        _run_event_creation,
+        _run_event_deck_update,
+        _run_event_refresh,
+        _run_event_import,
+        _run_match_history_import,
+    )
+}

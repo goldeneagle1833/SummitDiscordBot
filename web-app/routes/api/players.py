@@ -2159,6 +2159,21 @@ def player_api(player_id):
     ranked_rows = [r for r in sorted_rows if not (len(r) > 19 and r[19] in ("casual", "testing"))]
     casual_rows = [r for r in sorted_rows if len(r) > 19 and r[19] in ("casual", "testing")]
 
+    def _player_on_play(row):
+        """True on the play, False on the draw, None when the match never recorded it."""
+        did_win = bool(row[0])
+        winner_went_first = row[17] if len(row) > 17 else None
+        loser_went_first = row[18] if len(row) > 18 else None
+        if winner_went_first is not None or loser_went_first is not None:
+            went_first = winner_went_first if did_win else loser_went_first
+            if not went_first:
+                return None
+            return "y" in str(went_first).lower()
+        first_player_val = row[1]
+        if not first_player_val:
+            return None
+        return did_win if "y" in str(first_player_val).lower() else not did_win
+
     # Matches tab filters. The choices come from every game in the period,
     # so picking one never empties its own dropdown.
     def _row_facts(row):
@@ -2171,6 +2186,7 @@ def player_api(player_id):
             "result": "win" if did_win else "loss",
             "avatar": my_avatar,
             "opponent_avatar": opp_avatar,
+            "play_draw": {True: "play", False: "draw"}.get(_player_on_play(row)),
         }
 
     row_facts = {id(r): _row_facts(r) for r in sorted_rows}
@@ -2195,6 +2211,8 @@ def player_api(player_id):
         "result": (request.args.get("result") or "").strip().lower(),
         "avatar": (request.args.get("avatar") or "").strip(),
         "opponent_avatar": (request.args.get("opponent_avatar") or "").strip(),
+        # Matches with no play/draw recorded only show under "All"
+        "play_draw": (request.args.get("play_draw") or "").strip().lower(),
     }
     match_filters = {k: v for k, v in match_filters.items() if v}
 
@@ -2335,28 +2353,7 @@ def player_api(player_id):
         if not show_deck_snapshots:
             has_deck_json = False
 
-        winner_went_first = row[17] if len(row) > 17 else None
-        loser_went_first = row[18] if len(row) > 18 else None
-
-        if winner_went_first is not None or loser_went_first is not None:
-            if did_win:
-                player_on_play = (
-                    winner_went_first and "y" in str(winner_went_first).lower()
-                )
-            else:
-                player_on_play = (
-                    loser_went_first and "y" in str(loser_went_first).lower()
-                )
-        else:
-            first_player_val = row[1]
-            if first_player_val:
-                fp_lower = str(first_player_val).lower()
-                if "y" in fp_lower:
-                    player_on_play = did_win
-                else:
-                    player_on_play = not did_win
-            else:
-                player_on_play = None
+        player_on_play = _player_on_play(row)
 
         return {
             "match_id": row[12],

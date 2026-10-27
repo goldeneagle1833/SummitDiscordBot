@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '@/test/test-utils'
@@ -218,5 +218,42 @@ describe('EventDetail avatar win rates', () => {
 
     await screen.findByText('paladin_of_io')
     expect(screen.queryByText('Avatar Match Win %')).not.toBeInTheDocument()
+  })
+})
+
+describe('EventDetail deck list layout', () => {
+  const setViewport = (wide) => {
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
+      matches: query.includes('min-width: 768px') ? wide : false,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+  }
+
+  afterEach(() => {
+    delete window.matchMedia
+  })
+
+  it('stacks each deck as a card on phones', async () => {
+    setViewport(false)
+    mockApi()
+    renderWithRouter(<EventDetail />)
+
+    expect(await screen.findByText('Seeing Red')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    const links = screen.getAllByRole('link', { name: 'Deck List' })
+    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/deck-rec/deck-1', '/deck-rec/deck-9'])
+  })
+
+  it('keeps the table on wider screens', async () => {
+    setViewport(true)
+    mockApi()
+    renderWithRouter(<EventDetail />)
+
+    expect(await screen.findByRole('table')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Player' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /paladin_of_io/ }))
+    expect(screen.getByText('Opponent: Gideon M')).toBeInTheDocument()
   })
 })

@@ -1,4 +1,4 @@
-"""Matches tab filters on the player profile (opponent, result, avatars)."""
+"""Matches tab filters on the player profile (opponent, result, avatars, play/draw)."""
 
 import json
 import sqlite3
@@ -70,3 +70,26 @@ def test_filters_combine(client, filter_matches):
     data = client.get("/api/player/100?avatar=Druid").get_json()
     assert data["match_filters"]["ranked"] == {"wins": 1, "losses": 0}
     assert data["match_filters"]["casual"] == {"wins": 0, "losses": 1}
+
+
+def test_play_draw(client, filter_matches, match_db):
+    conn = sqlite3.connect(str(match_db))
+    # Hicham went first in his first win and second loss; his first loss uses
+    # the old first_player column (winner went first, so Hicham was on the draw)
+    conn.execute("UPDATE match_records SET winner_went_first = 'y', loser_went_first = 'n' WHERE timestamp LIKE '2026-10-01%'")
+    conn.execute("UPDATE match_records SET first_player = 'y' WHERE timestamp LIKE '2026-10-02%'")
+    conn.execute("UPDATE match_records SET winner_went_first = 'n', loser_went_first = 'y' WHERE timestamp LIKE '2026-10-03%'")
+    conn.commit()
+    conn.close()
+
+    data = client.get("/api/player/100?play_draw=play").get_json()
+    assert data["match_filters"]["ranked"] == {"wins": 1, "losses": 1}
+    assert {m["first_player"] for m in data["matches"]} == {"Play"}
+
+    data = client.get("/api/player/100?play_draw=draw").get_json()
+    assert data["match_filters"]["ranked"] == {"wins": 0, "losses": 1}
+    assert [m["first_player"] for m in data["matches"]] == ["Draw"]
+
+    # Games with nothing recorded only show with no play/draw filter
+    data = client.get("/api/player/100").get_json()
+    assert sum(m["first_player"] is None for m in data["matches"]) == 1

@@ -1,6 +1,6 @@
 /**
- * Filters for the Matches tab: opponent, result, my avatar and opponent
- * avatar. The server applies them before paging and sends back the record
+ * Filters for the Matches tab: opponent, result, my avatar, opponent
+ * avatar and play/draw. The server applies them before paging and sends back the record
  * for what is left, shown as a one-line summary.
  */
 const SELECT_CLASS = 'h-11 w-full min-w-0 rounded-lg border border-border bg-bg-raised px-3 text-sm text-text-primary'
@@ -26,7 +26,7 @@ export default function MatchFilters({ filters = {}, data, onChange }) {
   const avatars = withCurrent((options.avatars || []).map((a) => ({ value: a, label: a })), filters.avatar)
   const oppAvatars = withCurrent((options.opponent_avatars || []).map((a) => ({ value: a, label: a })), filters.opponent_avatar)
 
-  const active = ['opponent', 'result', 'avatar', 'opponent_avatar'].some((k) => filters[k])
+  const active = ['opponent', 'result', 'avatar', 'opponent_avatar', 'play_draw'].some((k) => filters[k])
   if (!active && !(options.opponents || []).length) return null
   const ranked = data?.ranked || { wins: 0, losses: 0 }
   const casual = data?.casual || { wins: 0, losses: 0 }
@@ -38,7 +38,7 @@ export default function MatchFilters({ filters = {}, data, onChange }) {
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-4 space-y-3">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <label className="flex flex-col gap-1 text-xs text-text-muted">
           Opponent
           <select
@@ -72,6 +72,14 @@ export default function MatchFilters({ filters = {}, data, onChange }) {
           <select value={filters.opponent_avatar || ''} onChange={(e) => set('opponent_avatar', e.target.value)} className={SELECT_CLASS}>
             <option value="">All avatars</option>
             {oppAvatars.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-text-muted">
+          Play/Draw
+          <select value={filters.play_draw || ''} onChange={(e) => set('play_draw', e.target.value)} className={SELECT_CLASS}>
+            <option value="">Play and draw</option>
+            <option value="play">On the play</option>
+            <option value="draw">On the draw</option>
           </select>
         </label>
       </div>

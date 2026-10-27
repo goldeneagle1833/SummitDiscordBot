@@ -35,4 +35,11 @@ describe('MatchFilters', () => {
     render(<MatchFilters filters={{ opponent: '200', opponentName: 'Geoffrey' }} data={empty} onChange={() => {}} />)
     expect(screen.getByLabelText('Opponent')).toHaveDisplayValue('Geoffrey')
   })
+
+  it('filters to games on the draw', async () => {
+    const onChange = vi.fn()
+    render(<MatchFilters filters={{}} data={data} onChange={onChange} />)
+    await userEvent.selectOptions(screen.getByLabelText('Play/Draw'), 'draw')
+    expect(onChange).toHaveBeenCalledWith({ play_draw: 'draw' })
+  })
 })

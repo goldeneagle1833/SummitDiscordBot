@@ -1,15 +1,16 @@
 """Meta Report: a twice-monthly look at what the Summit plays and wins with.
 
-Each report covers one half-month period (the 1st-15th, or the 16th-month end)
+Each report covers one half-month period (the 1st-14th, or the 15th-month end)
 and comes out at 01:00 UTC the day after the period ends, in step with the
 two-week batches of ranked card data Play Sorcery Online releases for Card Win
-Rates:
+Rates at 00:00 UTC on the 1st and 15th:
 
-    Nov 1-15   -> published Nov 16
-    Nov 16-30  -> published Dec 1
+    Nov 1-14   -> published Nov 15
+    Nov 15-30  -> published Dec 1
 
-Until November 2026 data came out on a rolling two-week lag (Sep 1-15 on
-Oct 1, Sep 16-30 on Oct 15). The switch releases all of October on Nov 1.
+Until November 2026 data came out on a rolling two-week lag, with halves split
+at the 15th (Sep 1-15 on Oct 1, Sep 16-30 on Oct 15). The switch releases all
+of October (Oct 1-14 and Oct 15-31) on Nov 1.
 
 Data sources, all held to the report's period:
   - Summit ranked games (match_records.db): Avatar + element pair share, win
@@ -48,8 +49,9 @@ from repositories.meta_reports import MetaReportRepository
 
 logger = logging.getLogger(__name__)
 
-PUBLISH_HOUR_UTC = 1       # reports come out at 01:00 UTC on the 1st and 16th
+PUBLISH_HOUR_UTC = 1       # reports come out at 01:00 UTC on the 1st and 15th
 BATCH_RELEASE_START = date(2026, 11, 1)  # first batch release (all of October)
+BATCH_FIRST_MONTH = (2026, 10)           # from here, halves split at the 14th, not the 15th
 MIN_ARCHETYPE_GAMES = 20   # deck-games before an Avatar + element pair is listed...
 MIN_ARCHETYPE_SHARE = 0.01  # ...and at least 1% of the period's decks
 MIN_MATCHUP_GAMES = 10     # games before a matchup cell shows a number
@@ -68,11 +70,16 @@ BANNER_DAYS = 14
 # Periods                                                                  #
 # ---------------------------------------------------------------------- #
 
+def _split_day(year: int, month: int) -> int:
+    """Last day of a month's first half: the 15th before batch releases, the 14th after."""
+    return 14 if (year, month) >= BATCH_FIRST_MONTH else 15
+
+
 @dataclass(frozen=True)
 class Period:
     year: int
     month: int
-    half: str  # "a" = 1st-15th, "b" = 16th-month end
+    half: str  # "a" = 1st to the split day, "b" = the day after to month end
 
     @classmethod
     def from_slug(cls, slug: str) -> "Period":
@@ -87,7 +94,7 @@ class Period:
 
     @classmethod
     def containing(cls, day: date) -> "Period":
-        return cls(day.year, day.month, "a" if day.day <= 15 else "b")
+        return cls(day.year, day.month, "a" if day.day <= _split_day(day.year, day.month) else "b")
 
     @property
     def slug(self) -> str:
@@ -95,16 +102,16 @@ class Period:
 
     @property
     def start(self) -> date:
-        return date(self.year, self.month, 1 if self.half == "a" else 16)
+        return date(self.year, self.month, 1 if self.half == "a" else _split_day(self.year, self.month) + 1)
 
     @property
     def end(self) -> date:
         last = calendar.monthrange(self.year, self.month)[1]
-        return date(self.year, self.month, 15 if self.half == "a" else last)
+        return date(self.year, self.month, _split_day(self.year, self.month) if self.half == "a" else last)
 
     @property
     def publish_day(self) -> date:
-        """The day after the period ends: the 16th (for the 1st-15th) or the 1st of the next month.
+        """The day after the period ends: the 15th (for the 1st-14th) or the 1st of the next month.
 
         Periods released before BATCH_RELEASE_START keep the old rolling lag (the 1st or
         15th of the next month), and nothing newer comes out before it.
@@ -140,7 +147,7 @@ def latest_due_period(today: date) -> Period:
 def report_today(now: datetime | None = None) -> date:
     """Today's date on the report clock: UTC, rolling over at 01:00 UTC.
 
-    Before 01:00 UTC on the 1st or 16th it is still the day before, so the
+    Before 01:00 UTC on the 1st or 15th it is still the day before, so the
     new period isn't due yet.
     """
     now = now or datetime.now(timezone.utc)

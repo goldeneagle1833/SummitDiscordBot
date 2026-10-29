@@ -55,11 +55,17 @@ def test_periods_publish_in_batches_from_november_2026():
     # All of October comes out together on Nov 1.
     assert Period(2026, 10, "a").publish_day == date(2026, 11, 1)
     assert Period(2026, 10, "b").publish_day == date(2026, 11, 1)
+    assert Period(2026, 10, "a").end == date(2026, 10, 14)
+    assert Period(2026, 10, "b").start == date(2026, 10, 15)
     # From then on, the day after each half-month ends.
-    assert Period(2026, 11, "a").publish_day == date(2026, 11, 16)
+    assert Period(2026, 11, "a").publish_day == date(2026, 11, 15)
     assert Period(2026, 11, "b").publish_day == date(2026, 12, 1)
     assert Period(2026, 12, "b").publish_day == date(2027, 1, 1)
-    assert Period(2027, 2, "a").publish_day == date(2027, 2, 16)
+    assert Period(2027, 2, "a").publish_day == date(2027, 2, 15)
+    assert Period.containing(date(2026, 11, 14)).slug == "2026-11-a"
+    assert Period.containing(date(2026, 11, 15)).slug == "2026-11-b"
+    # Earlier months keep the 15th / 16th split.
+    assert Period.containing(date(2026, 9, 15)).slug == "2026-09-a"
 
 
 def test_latest_due_period():
@@ -69,8 +75,8 @@ def test_latest_due_period():
     assert latest(date(2026, 10, 15)) == "2026-09-b"
     assert latest(date(2026, 10, 31)) == "2026-09-b"
     assert latest(date(2026, 11, 1)) == "2026-10-b"
-    assert latest(date(2026, 11, 15)) == "2026-10-b"
-    assert latest(date(2026, 11, 16)) == "2026-11-a"
+    assert latest(date(2026, 11, 14)) == "2026-10-b"
+    assert latest(date(2026, 11, 15)) == "2026-11-a"
     assert latest(date(2027, 1, 3)) == "2026-12-b"
 
 
@@ -258,15 +264,15 @@ def test_auto_publish_releases_all_of_october_on_nov_1(repo, monkeypatch):
     assert report["slug"] == "2026-10-b"
     assert built == ["2026-10-a", "2026-10-b"] and announced == built
     assert meta_report.auto_publish_due(date(2026, 11, 2), repo, pso_ready=lambda p: True) is None
-    # Next batch: Nov 1-15 on Nov 16.
-    assert meta_report.auto_publish_due(date(2026, 11, 16), repo, pso_ready=lambda p: True)["slug"] == "2026-11-a"
+    # Next batch: Nov 1-14 on Nov 15.
+    assert meta_report.auto_publish_due(date(2026, 11, 15), repo, pso_ready=lambda p: True)["slug"] == "2026-11-a"
 
 
 def test_auto_publish_keeps_order_while_waiting_for_pso(repo, monkeypatch):
     monkeypatch.setattr(meta_report, "build", lambda p, r: r.save_build(
         p.slug, p.start.isoformat(), p.end.isoformat(), {}, []))
     monkeypatch.setattr(meta_report, "deliver", lambda r, repo=None: {})
-    # PSO has Oct 1-15 but not Oct 16-31 yet: publish the first half only.
+    # PSO has Oct 1-14 but not Oct 15-31 yet: publish the first half only.
     report = meta_report.auto_publish_due(date(2026, 11, 1), repo,
                                           pso_ready=lambda p: p.slug == "2026-10-a")
     assert report["slug"] == "2026-10-a" and repo.get("2026-10-b") is None

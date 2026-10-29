@@ -196,3 +196,31 @@ def test_left_out_avatars_make_room_for_the_next_weakest(dbs):
     )
     description = service._repo.get_bracket(slug=result["slug"])["description"]
     assert description.endswith("Left out: Frostmage, Lavamancer.")
+
+
+def test_standings_endpoint_matches_the_admin_preview(dbs, monkeypatch):
+    """The Discord card reads this: same pick as the admin preview, left-outs honoured."""
+    from flask import Flask
+
+    from routes.api.brackets import brackets_bp
+
+    _, match_db = dbs
+    build_season(match_db)
+    BracketRepository().ensure_tables()
+    app = Flask(__name__)
+    app.register_blueprint(brackets_bp, url_prefix="/api")
+    client = app.test_client()
+
+    import utils.auth
+
+    monkeypatch.setattr(utils.auth, "VALID_API_KEYS", ["bot-key"])
+    url = f"/api/brackets/underdog-standings?event={ENDED}&exclude=Frostmage,Lavamancer"
+    assert client.get(url).status_code == 401
+    resp = client.get(url, headers={"X-API-Key": "bot-key"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    preview = BracketService().get_seed_pool("underdog", ENDED, ["Frostmage", "Lavamancer"])
+    assert data["players"] == preview["players"]
+    assert data["avatars"] == preview["avatars"]
+    assert data["event"]["event_id"] == ENDED
+    assert not {p["avatar"] for p in data["players"]} & {"Frostmage", "Lavamancer"}

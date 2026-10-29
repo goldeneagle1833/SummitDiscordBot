@@ -480,8 +480,21 @@ class LFGCog(commands.Cog):
 
             embed.set_footer(text="Updates automatically after each match")
 
+            # Second card: who the underdog bracket would take right now. Left
+            # off when there is no running season or the site can't be reached.
+            from services.underdog_standings import underdog_embed
+
+            embeds = [embed]
+            try:
+                underdog = await underdog_embed(active_event)
+            except Exception as e:
+                logger.warning(f"Could not build the underdog standings card: {e}")
+                underdog = None
+            if underdog:
+                embeds.append(underdog)
+
             # Send new leaderboard message first (before deleting old one)
-            new_message = await leaderboard_channel.send(embed=embed)
+            new_message = await leaderboard_channel.send(embeds=embeds)
             old_message_id = lfg_state.leaderboard_message_id
             lfg_state.leaderboard_message_id = new_message.id
 

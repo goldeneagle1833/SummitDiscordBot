@@ -18,6 +18,8 @@ Rules where two answers were possible:
   next best player with 10 games takes the other. If that leaves an avatar
   with nobody, it drops out like one with too few games.
 - Seeds go by the player's Avatar Score on their avatar, best first.
+- An admin can leave avatars out (Season 8 leaves out Frostmage and
+  Lavamancer); the next weakest avatars take their places.
 """
 
 import logging
@@ -148,13 +150,15 @@ def _ranked_players(players: dict, min_games: int) -> list[dict]:
 
 
 def underdog_field(event_id=None, size: int = UNDERDOG_SIZE,
-                   min_games: int = UNDERDOG_MIN_GAMES) -> dict:
+                   min_games: int = UNDERDOG_MIN_GAMES, exclude=()) -> dict:
     """The season's weakest avatars and the player each one sends.
 
     Returns {"event", "players", "avatars"}: players in seeding order (each
     with the avatar they represent), and every avatar of the season weakest
     first with what happened to it, so the admin can see why one was skipped.
+    Avatars named in ``exclude`` (any case) are listed but never picked.
     """
+    left_out = {str(name).strip().lower() for name in exclude or () if str(name).strip()}
     event = _event(event_id)
     if not event:
         return {"event": None, "players": [], "avatars": [], "min_games": min_games}
@@ -175,14 +179,19 @@ def underdog_field(event_id=None, size: int = UNDERDOG_SIZE,
             "games": record["wins"] + record["losses"],
             "avatar_score": _score(record["wins"], record["losses"]),
             "player": None,
-            "note": None if candidates[name] else f"Nobody has {min_games} games",
+            "excluded": name.lower() in left_out,
+            "note": (
+                "Left out" if name.lower() in left_out
+                else None if candidates[name]
+                else f"Nobody has {min_games} games"
+            ),
         })
 
     # Each avatar sends its best player. A player who comes out best on
     # several keeps the one where their Avatar Score is highest and steps
     # aside on the rest, where the next best player comes in. An avatar left
     # with nobody drops out and the next weakest avatar joins.
-    queue = [s["avatar"] for s in summary if candidates[s["avatar"]]]
+    queue = [s["avatar"] for s in summary if candidates[s["avatar"]] and not s["excluded"]]
     field, passed = [], {}  # passed: avatar -> user_ids stepping aside there
     chosen = {}
     while True:

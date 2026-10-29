@@ -25,10 +25,11 @@ export const openBracketMatchTable = (slug, matchNo) =>
 export const adminListBrackets = () => get('/api/admin/brackets')
 export const adminGetBracket = (slug) => get(`/api/admin/brackets/${slug}`)
 export const adminPreviewBracket = (slug) => get(`/api/admin/brackets/${slug}/preview`)
-export const adminGetSeedPool = (source, event) =>
+export const adminGetSeedPool = (source, event, exclude = []) =>
   get(
     `/api/admin/brackets/seed-pool?source=${encodeURIComponent(source)}` +
-      (event ? `&event=${encodeURIComponent(event)}` : ''),
+      (event ? `&event=${encodeURIComponent(event)}` : '') +
+      (exclude.length ? `&exclude=${encodeURIComponent(exclude.join(','))}` : ''),
   )
 export const adminSyncTickets = () => post('/api/admin/brackets/sync-tickets', {})
 export const adminCreateBracket = (body) => post('/api/admin/brackets', body)

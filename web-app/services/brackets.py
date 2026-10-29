@@ -139,7 +139,7 @@ class BracketService:
 
     # -- Seed pool ------------------------------------------------
 
-    def get_seed_pool(self, source: str = "ticket_holders", event=None) -> dict:
+    def get_seed_pool(self, source: str = "ticket_holders", event=None, exclude=()) -> dict:
         """Ladder standings to seed from, flagged with ticket-holder status.
 
         Mirrors the bot's leaderboard message: current-event ELO, restricted to
@@ -148,12 +148,13 @@ class BracketService:
 
         The "limited" source is the Limited season ladder instead, and
         "underdog" the best player on each of a season's weakest avatars
-        (``event`` picks the season; the latest by default).
+        (``event`` picks the season, the latest by default; avatars in
+        ``exclude`` are left out).
         """
         if source == "limited":
             return self._limited_seed_pool()
         if source == "underdog":
-            return self._underdog_seed_pool(event)
+            return self._underdog_seed_pool(event, exclude)
 
         data = self._leaderboard.get_event_leaderboard()
         standings = data.get("leaderboard") or []
@@ -215,9 +216,9 @@ class BracketService:
             "ticket_filter_applied": False,
         }
 
-    def _underdog_seed_pool(self, event=None) -> dict:
+    def _underdog_seed_pool(self, event=None, exclude=()) -> dict:
         """The season's 8 weakest avatars, each sending its best player."""
-        field = underdog_field(event)
+        field = underdog_field(event, exclude=exclude)
         names = self._site_names([p["user_id"] for p in field["players"]])
         players = [
             {
@@ -258,6 +259,7 @@ class BracketService:
         set_name: str | None = None,
         format: str | None = None,
         event=None,
+        exclude=(),
     ) -> dict:
         """Create a draft bracket seeded with the top `size` players.
 
@@ -279,7 +281,10 @@ class BracketService:
         if size < 2 or size > 256:
             raise BracketError("Size must be between 2 and 256")
 
-        pool = self.get_seed_pool(source, event) if source != "manual" else {"players": [], "event": None}
+        pool = (
+            self.get_seed_pool(source, event, exclude) if source != "manual"
+            else {"players": [], "event": None}
+        )
         entrants = pool["players"][:size]
         description = None
         if source == "underdog" and entrants:
@@ -288,6 +293,9 @@ class BracketService:
                 len(entrants),
                 "; ".join(f"{i}. {e['display_name']} ({e['avatar']})" for i, e in enumerate(entrants, 1)),
             )
+            left_out = [a["avatar"] for a in pool.get("avatars", []) if a.get("excluded")]
+            if left_out:
+                description += f" Left out: {', '.join(left_out)}."
 
         slug = self._unique_slug(slugify(name))
         bracket_id = self._repo.create_bracket(

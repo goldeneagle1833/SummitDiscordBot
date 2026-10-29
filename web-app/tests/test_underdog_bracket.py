@@ -174,3 +174,25 @@ def test_underdog_finish_has_its_own_marks(dbs):
     assert marks["underdog_wins"] == 1
     assert marks["underdog_best_label"] == "Underdog Champion"
     assert marks["entries"][0]["label"] == "Underdog Champion"
+
+
+def test_left_out_avatars_make_room_for_the_next_weakest(dbs):
+    _, match_db = dbs
+    build_season(match_db)
+    BracketRepository().ensure_tables()
+
+    field = underdog_field(ENDED, exclude=["frostmage", "Lavamancer"])
+
+    picked = {p["avatar"] for p in field["players"]}
+    assert not picked & {"Frostmage", "Lavamancer"}
+    assert len(picked) == 8
+    assert "Sparkmage" in picked  # the next weakest moved up
+    notes = {a["avatar"]: a["note"] for a in field["avatars"]}
+    assert notes["Frostmage"] == notes["Lavamancer"] == "Left out"
+
+    service = BracketService()
+    result = service.create_bracket(
+        "Season 8 Underdog Bracket", 8, source="underdog", event=ENDED, exclude=["Frostmage", "Lavamancer"]
+    )
+    description = service._repo.get_bracket(slug=result["slug"])["description"]
+    assert description.endswith("Left out: Frostmage, Lavamancer.")

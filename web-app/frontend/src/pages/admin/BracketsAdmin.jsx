@@ -58,13 +58,14 @@ function SetOptions({ id, sets }) {
 /**
  * The underdog field before it is drafted: the season's avatars weakest
  * first, who each of the 8 sends, and why any avatar was passed over.
+ * Ticking "Leave out" skips an avatar so the next weakest moves up.
  */
-function UnderdogPreview({ pool }) {
+function UnderdogPreview({ pool, exclude = [], onToggle }) {
   const avatars = pool.avatars || []
   if (!avatars.length) {
     return <p className="text-xs text-text-muted">No avatar games recorded for this season.</p>
   }
-  const lastPicked = avatars.reduce((last, a, i) => (a.player ? i : last), -1)
+  const lastPicked = avatars.reduce((last, a, i) => (a.player || a.excluded ? i : last), -1)
   const shown = avatars.slice(0, Math.max(lastPicked + 1, 8))
   return (
     <div className="border border-border rounded overflow-x-auto">
@@ -75,6 +76,7 @@ function UnderdogPreview({ pool }) {
             <th className="text-right px-3 py-2">Score</th>
             <th className="text-right px-3 py-2 hidden sm:table-cell">Games</th>
             <th className="text-left px-3 py-2">Sends</th>
+            <th className="text-center px-3 py-2">Leave out</th>
           </tr>
         </thead>
         <tbody>
@@ -99,6 +101,14 @@ function UnderdogPreview({ pool }) {
                   <span className="text-xs">{a.note}</span>
                 )}
               </td>
+              <td className="px-3 py-2 text-center">
+                <input
+                  type="checkbox"
+                  aria-label={`Leave out ${a.avatar}`}
+                  checked={exclude.includes(a.avatar)}
+                  onChange={() => onToggle(a.avatar)}
+                />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -114,6 +124,7 @@ function CreateForm({ onCreated, sets = [] }) {
     source: 'ticket_holders',
     set_name: sets[0] || '',
     event: '',
+    exclude: [],
   })
   const [pool, setPool] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -132,10 +143,11 @@ function CreateForm({ onCreated, sets = [] }) {
       setPool(null)
       return
     }
-    adminGetSeedPool(form.source, form.source === 'underdog' ? form.event : undefined)
+    const underdog = form.source === 'underdog'
+    adminGetSeedPool(form.source, underdog ? form.event : undefined, underdog ? form.exclude : [])
       .then(setPool)
       .catch(() => setPool(null))
-  }, [form.source, form.event])
+  }, [form.source, form.event, form.exclude])
 
   useEffect(() => {
     loadPool()
@@ -162,7 +174,9 @@ function CreateForm({ onCreated, sets = [] }) {
         size: Number(form.size),
         source: form.source,
         set_name: form.set_name,
-        ...(form.source === 'underdog' ? { event: form.event || pool?.event?.event_id } : {}),
+        ...(form.source === 'underdog'
+          ? { event: form.event || pool?.event?.event_id, exclude: form.exclude }
+          : {}),
       })
       onCreated(res.slug)
       setForm((f) => ({ ...f, name: '' }))
@@ -262,7 +276,20 @@ function CreateForm({ onCreated, sets = [] }) {
         )}
       </div>
 
-      {form.source === 'underdog' && pool && <UnderdogPreview pool={pool} />}
+      {form.source === 'underdog' && pool && (
+        <UnderdogPreview
+          pool={pool}
+          exclude={form.exclude}
+          onToggle={(avatar) =>
+            setForm((f) => ({
+              ...f,
+              exclude: f.exclude.includes(avatar)
+                ? f.exclude.filter((a) => a !== avatar)
+                : [...f.exclude, avatar],
+            }))
+          }
+        />
+      )}
 
       {pool && (
         <p className="text-xs text-text-muted">

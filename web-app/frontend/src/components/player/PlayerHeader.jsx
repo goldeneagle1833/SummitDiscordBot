@@ -159,6 +159,13 @@ export default function PlayerHeader({
                 onClick={onPostseason}
               />
             )}
+            {marks?.underdog_best_label && (
+              <PostseasonBadge
+                label={marks.underdog_best_label}
+                entries={marks.entries}
+                onClick={onPostseason}
+              />
+            )}
             <AvatarHonourBadge honours={honours} onClick={onPostseason} />
           </div>
         </div>

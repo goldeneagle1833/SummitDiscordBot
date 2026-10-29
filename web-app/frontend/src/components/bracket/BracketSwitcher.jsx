@@ -16,13 +16,18 @@ export function pickActiveBracket(brackets = []) {
 
 const setKey = (bracket) => (bracket?.set_name || '').trim().toLowerCase()
 
-/** Constructed (the season top cut) or Limited (a Limited season's top 8). */
-export const formatOf = (bracket) => (bracket?.format === 'limited' ? 'limited' : 'constructed')
-
 export const FORMATS = [
   { key: 'constructed', label: 'Constructed' },
   { key: 'limited', label: 'Limited' },
+  { key: 'underdog', label: 'Underdog' },
 ]
+
+/**
+ * Constructed (the season top cut), Limited (a Limited season's top 8) or
+ * Underdog (the best player on each of the season's weakest avatars).
+ */
+export const formatOf = (bracket) =>
+  FORMATS.some((f) => f.key === bracket?.format) ? bracket.format : 'constructed'
 
 /**
  * Brackets grouped by card set, in the order each set was last played (lists
@@ -53,8 +58,8 @@ const CHIP =
   'px-3 py-1 text-[11px] font-semibold uppercase tracking-wider border rounded-sm transition-colors'
 
 /**
- * Across the top of the bracket page: Constructed or Limited (once there is a
- * Limited bracket), a filter by card set, then a tab per bracket in that set,
+ * Across the top of the bracket page: Constructed, Limited or Underdog (the
+ * formats that have a bracket, once there is more than one), a filter by card set, then a tab per bracket in that set,
  * so a viewer can flip from the live top cut to an older one without a
  * detour through a list.
  */
@@ -66,8 +71,10 @@ export default function BracketSwitcher({ brackets, currentSlug }) {
 
   const current = brackets.find((b) => b.slug === currentSlug)
   const currentFormat = formatOf(current)
-  const hasLimited = brackets.some((b) => formatOf(b) === 'limited')
-  const pool = hasLimited ? brackets.filter((b) => formatOf(b) === currentFormat) : brackets
+  // The format switch shows once there is more than one format to pick.
+  const formats = FORMATS.filter((f) => brackets.some((b) => formatOf(b) === f.key))
+  const hasFormats = formats.length > 1
+  const pool = hasFormats ? brackets.filter((b) => formatOf(b) === currentFormat) : brackets
 
   const groups = groupBrackets(pool)
   const currentKey = setKey(current)
@@ -93,9 +100,9 @@ export default function BracketSwitcher({ brackets, currentSlug }) {
 
   return (
     <div className="space-y-3">
-      {hasLimited && (
+      {hasFormats && (
         <div role="group" aria-label="Format" className="inline-flex border border-border rounded-sm overflow-hidden">
-          {FORMATS.map((format) => {
+          {formats.map((format) => {
             const selected = format.key === currentFormat
             const live = brackets.some((b) => formatOf(b) === format.key && b.status === 'published')
             return (

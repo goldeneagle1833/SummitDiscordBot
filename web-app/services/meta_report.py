@@ -1,11 +1,15 @@
 """Meta Report: a twice-monthly look at what the Summit plays and wins with.
 
 Each report covers one half-month period (the 1st-15th, or the 16th-month end)
-and comes out at 01:00 UTC on the 1st or 15th of the next month, in step with
-the ranked card data Play Sorcery Online releases for Card Win Rates:
+and comes out at 01:00 UTC the day after the period ends, in step with the
+two-week batches of ranked card data Play Sorcery Online releases for Card Win
+Rates:
 
-    Sep 1-15   -> published Oct 1
-    Sep 16-30  -> published Oct 15
+    Nov 1-15   -> published Nov 16
+    Nov 16-30  -> published Dec 1
+
+Until November 2026 data came out on a rolling two-week lag (Sep 1-15 on
+Oct 1, Sep 16-30 on Oct 15). The switch releases all of October on Nov 1.
 
 Data sources, all held to the report's period:
   - Summit ranked games (match_records.db): Avatar + element pair share, win
@@ -44,7 +48,8 @@ from repositories.meta_reports import MetaReportRepository
 
 logger = logging.getLogger(__name__)
 
-PUBLISH_HOUR_UTC = 1       # reports come out at 01:00 UTC on the 1st and 15th
+PUBLISH_HOUR_UTC = 1       # reports come out at 01:00 UTC on the 1st and 16th
+BATCH_RELEASE_START = date(2026, 11, 1)  # first batch release (all of October)
 MIN_ARCHETYPE_GAMES = 20   # deck-games before an Avatar + element pair is listed...
 MIN_ARCHETYPE_SHARE = 0.01  # ...and at least 1% of the period's decks
 MIN_MATCHUP_GAMES = 10     # games before a matchup cell shows a number
@@ -99,9 +104,16 @@ class Period:
 
     @property
     def publish_day(self) -> date:
-        """The 1st (for the 1st-15th) or the 15th (for the 16th-month end) of the next month."""
+        """The day after the period ends: the 16th (for the 1st-15th) or the 1st of the next month.
+
+        Periods released before BATCH_RELEASE_START keep the old rolling lag (the 1st or
+        15th of the next month), and nothing newer comes out before it.
+        """
         y, m = (self.year + 1, 1) if self.month == 12 else (self.year, self.month + 1)
-        return date(y, m, 1 if self.half == "a" else 15)
+        rolling = date(y, m, 1 if self.half == "a" else 15)
+        if rolling < BATCH_RELEASE_START:
+            return rolling
+        return max(self.end + timedelta(days=1), BATCH_RELEASE_START)
 
     def previous(self) -> "Period":
         if self.half == "b":
@@ -128,7 +140,7 @@ def latest_due_period(today: date) -> Period:
 def report_today(now: datetime | None = None) -> date:
     """Today's date on the report clock: UTC, rolling over at 01:00 UTC.
 
-    Before 01:00 UTC on the 1st or 15th it is still the day before, so the
+    Before 01:00 UTC on the 1st or 16th it is still the day before, so the
     new period isn't due yet.
     """
     now = now or datetime.now(timezone.utc)
@@ -1143,19 +1155,28 @@ def publish(slug: str, published_by: str, announce: bool = True,
 
 def auto_publish_due(today: date | None = None, repo: MetaReportRepository | None = None,
                      pso_ready=pso_has_period) -> dict | None:
-    """Build and publish the newest due period once, if it hasn't been made yet."""
+    """Build and publish every due period that hasn't been made yet, oldest first.
+
+    Usually that is one period, but a batch release can make two due on the same
+    day (Nov 1, 2026 releases both halves of October). Returns the newest report
+    published, or None.
+    """
     if os.environ.get("META_REPORT_AUTOPUBLISH", "1") != "1":
         return None
     repo = repo or MetaReportRepository()
     today = today or report_today()
-    period = latest_due_period(today)
-    late = (today - period.publish_day).days
-    if late > AUTO_PUBLISH_GRACE_DAYS or repo.get(period.slug):
-        return None
-    if late < PSO_WAIT_DAYS and not pso_ready(period):
-        return None  # give PSO a few days to release the period's card data
-    build(period, repo)
-    return publish(period.slug, "auto", announce=True, repo=repo)
+    due, period = [], latest_due_period(today)
+    while (today - period.publish_day).days <= AUTO_PUBLISH_GRACE_DAYS:
+        if not repo.get(period.slug):
+            due.append(period)
+        period = period.previous()
+    published = None
+    for period in reversed(due):
+        if (today - period.publish_day).days < PSO_WAIT_DAYS and not pso_ready(period):
+            break  # give PSO a few days to release the period's card data
+        build(period, repo)
+        published = publish(period.slug, "auto", announce=True, repo=repo)
+    return published
 
 
 def tick(repo: MetaReportRepository | None = None) -> None:

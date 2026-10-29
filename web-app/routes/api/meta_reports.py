@@ -187,9 +187,7 @@ def admin_list():
     for _ in range(12):
         periods.append({"slug": p.slug, "label": p.label(), "publishLabel": p.publish_label()})
         p = p.previous()
-    nxt = meta_report.Period.containing(today)
-    while nxt.publish_day <= today:
-        nxt = meta_report.Period.containing(nxt.end + timedelta(days=1))
+    nxt = meta_report.Period.containing(due.end + timedelta(days=1))
     return jsonify({
         "reports": [_admin_row(repo, r) for r in repo.list_reports(published_only=False)],
         "periods": periods,

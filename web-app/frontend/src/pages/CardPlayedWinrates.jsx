@@ -58,7 +58,7 @@ function UnavailablePanel({ title, children }) {
  *
  * Every rate comes from PSO through the server-side proxy. The population is
  * fixed there: first games at Summit matchmade ranked tables, released in
- * batches on the 1st and 15th. This page filters, sorts and pages those
+ * two-week batches. This page filters, sorts and pages those
  * rows in the browser and never re-computes a rate itself.
  */
 export default function CardPlayedWinrates() {
@@ -258,7 +258,7 @@ export default function CardPlayedWinrates() {
           <Spinner className="py-20" />
         ) : unavailable ? (
           <UnavailablePanel title="Ranked analytics isn’t available yet">
-            Play Sorcery Online publishes Summit ranked card data in batches on the 1st and 15th of each month.
+            Play Sorcery Online publishes Summit ranked card data in two-week batches.
             Check back soon.
           </UnavailablePanel>
         ) : error ? (

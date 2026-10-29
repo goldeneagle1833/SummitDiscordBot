@@ -10,13 +10,14 @@ import Bracket from './Bracket'
 /**
  * `/brackets` opens straight onto the event being played - or, between
  * events, the last one finished - with tabs to flip to any other. That is
- * the constructed top cut; `?format=limited` opens on the Limited one.
+ * the constructed top cut; `?format=limited` opens on the Limited one and
+ * `?format=underdog` on the underdog bracket.
  */
 export default function Brackets() {
   usePageTitle('Season Top Cut')
   const { user } = useAuth()
   const [params] = useSearchParams()
-  const wanted = params.get('format') === 'limited' ? 'limited' : 'constructed'
+  const wanted = formatOf({ format: params.get('format') })
   const [brackets, setBrackets] = useState(null)
   const [myMatches, setMyMatches] = useState([])
   const [error, setError] = useState(null)

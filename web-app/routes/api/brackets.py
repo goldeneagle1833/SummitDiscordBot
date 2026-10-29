@@ -165,7 +165,7 @@ def admin_list_brackets():
 @require_admin
 def admin_seed_pool():
     source = request.args.get("source", "ticket_holders")
-    pool = service.get_seed_pool(source)
+    pool = service.get_seed_pool(source, request.args.get("event"))
     pool["ticket_sync_configured"] = is_configured()
     return jsonify({"success": True, **pool}), 200
 
@@ -193,6 +193,7 @@ def admin_create_bracket():
             confirm_hours=int(data.get("confirm_hours", 48)),
             set_name=data.get("set_name"),
             format=data.get("format"),
+            event=data.get("event"),
         )
     except BracketError as e:
         return jsonify({"success": False, "error": str(e)}), 400

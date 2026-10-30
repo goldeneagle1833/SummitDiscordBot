@@ -3,6 +3,8 @@
 import json
 import logging
 import sqlite3
+import threading
+from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, session, request
 
@@ -16,8 +18,8 @@ from repositories.user_profiles import UserProfileRepository
 from repositories.blocked_users_repo import BlockedUsersRepository
 from repositories.voice_only_repo import VoiceOnlyRepository
 from utils.auth import is_admin
-from utils.card_images import resolve_card_image
-from services.curiosa import is_deck_url, normalize_deck_url
+from utils.card_images import attach_images, resolve_card_image
+from services.curiosa import deck_url_source, is_deck_url, normalize_deck_url
 from services.avatar_elo import get_player_avatar_changes, get_player_avatar_elo
 
 logger = logging.getLogger(__name__)
@@ -2975,6 +2977,151 @@ def set_hidden_avatars(player_id):
     if not repo.set_hidden_avatars(player_id_normalized, avatars):
         return jsonify({"error": "Profile not found"}), 404
     return jsonify({"success": True, "avatars": repo.get_hidden_avatars(player_id_normalized)})
+
+
+# ---------------------------------------------------------------------------
+# Featured deck: a public deck the player chose to show on their profile.
+# Only ever a link the player pasted themselves - never a deck from their
+# ranked games.
+# ---------------------------------------------------------------------------
+
+# A kept-updated deck is re-read from its site at most this often
+FEATURED_DECK_REFRESH_SECONDS = 6 * 60 * 60
+_featured_refreshing: set[str] = set()
+_featured_refresh_lock = threading.Lock()
+
+
+def _fetch_featured_deck(url: str) -> dict:
+    """Read a deck from sorcerytcg.com or Sorcery Online, or {} if it can't be.
+
+    Both sites only hand out public decks, so a deck we can read is public.
+    """
+    from services.curiosa import CuriosaService
+
+    try:
+        deck = json.loads(CuriosaService().fetch_deck_data(url))
+    except (TypeError, ValueError):
+        return {}
+    has_cards = isinstance(deck, dict) and any(
+        deck.get(section) for section in ("avatar", "spellbook", "atlas")
+    )
+    return deck if has_cards else {}
+
+
+def _refresh_featured_deck(player_id: str, url: str) -> None:
+    try:
+        deck = _fetch_featured_deck(url)
+        UserProfileRepository().refresh_featured_deck(player_id, url, deck or None)
+    except Exception as e:
+        logger.warning(f"Featured deck refresh failed for {player_id}: {e}")
+    finally:
+        with _featured_refresh_lock:
+            _featured_refreshing.discard(player_id)
+
+
+def _featured_deck_is_stale(checked_at: str | None) -> bool:
+    if not checked_at:
+        return True
+    try:
+        checked = datetime.fromisoformat(checked_at)
+    except ValueError:
+        return True
+    if checked.tzinfo is None:
+        checked = checked.replace(tzinfo=timezone.utc)
+    age = (datetime.now(timezone.utc) - checked).total_seconds()
+    return age >= FEATURED_DECK_REFRESH_SECONDS
+
+
+def _featured_deck_payload(featured: dict) -> dict:
+    deck = featured["deck"]
+    # Card images resolve against the site's own image set, as in brackets
+    for section in ("avatar", "spellbook", "atlas", "sideboard"):
+        attach_images(deck.get(section))
+    avatar = deck.get("avatar") or []
+    return {
+        "url": featured["url"],
+        "source": deck_url_source(featured["url"]),
+        "name": deck.get("name") or "Featured deck",
+        "avatar": avatar[0].get("name") if avatar and isinstance(avatar[0], dict) else None,
+        "avatar_image": avatar[0].get("image") if avatar and isinstance(avatar[0], dict) else None,
+        "spellbook": deck.get("spellbook") or [],
+        "atlas": deck.get("atlas") or [],
+        "sideboard": deck.get("sideboard") or [],
+        "auto_update": featured["auto_update"],
+        "checked_at": featured["checked_at"],
+    }
+
+
+def _owner_or_admin(player_id):
+    """(normalized id, None) when the viewer may change this profile, else (None, error)."""
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return None, (jsonify({"error": "Authentication required"}), 401)
+    viewer = str(logged_in_user_id).removeprefix("google_")
+    player_id_normalized = str(player_id).removeprefix("google_")
+    if viewer != player_id_normalized and not is_admin():
+        return None, (jsonify({"error": "You can only change your own profile"}), 403)
+    return player_id_normalized, None
+
+
+@players_bp.route("/player/<player_id>/featured-deck", methods=["GET"])
+def get_featured_deck(player_id):
+    """The player's featured deck, or {"deck": null} when they have not set one."""
+    player_id_normalized = str(player_id).removeprefix("google_")
+    featured = UserProfileRepository().get_featured_deck(player_id_normalized)
+    if not featured or not featured["deck"]:
+        return jsonify({"deck": None})
+
+    # A kept-updated deck is re-read in the background; this answer uses the
+    # saved copy so the profile never waits on the deck site.
+    if featured["auto_update"] and _featured_deck_is_stale(featured["checked_at"]):
+        with _featured_refresh_lock:
+            start = player_id_normalized not in _featured_refreshing
+            if start:
+                _featured_refreshing.add(player_id_normalized)
+        if start:
+            threading.Thread(
+                target=_refresh_featured_deck,
+                args=(player_id_normalized, featured["url"]),
+                daemon=True,
+            ).start()
+
+    return jsonify({"deck": _featured_deck_payload(featured)})
+
+
+@players_bp.route("/player/<player_id>/featured-deck", methods=["PUT"])
+def set_featured_deck(player_id):
+    """Feature a public deck on the player's profile (owner or admin)."""
+    player_id_normalized, error = _owner_or_admin(player_id)
+    if error:
+        return error
+
+    data = request.get_json(silent=True) or {}
+    url = str(data.get("url") or "").strip()
+    if not is_deck_url(url):
+        return jsonify({"error": "Paste a sorcerytcg.com or Sorcery Online deck link"}), 400
+    url = normalize_deck_url(url)
+
+    deck = _fetch_featured_deck(url)
+    if not deck:
+        return jsonify({
+            "error": "We couldn't read that deck. Check the link and that the deck is set to public."
+        }), 400
+
+    repo = UserProfileRepository()
+    if not repo.set_featured_deck(player_id_normalized, url, deck, bool(data.get("auto_update"))):
+        return jsonify({"error": "Profile not found"}), 404
+    return jsonify({"success": True, "deck": _featured_deck_payload(repo.get_featured_deck(player_id_normalized))})
+
+
+@players_bp.route("/player/<player_id>/featured-deck", methods=["DELETE"])
+def clear_featured_deck(player_id):
+    """Take the featured deck off the player's profile (owner or admin)."""
+    player_id_normalized, error = _owner_or_admin(player_id)
+    if error:
+        return error
+    UserProfileRepository().clear_featured_deck(player_id_normalized)
+    return jsonify({"success": True})
 
 
 @players_bp.route("/player/<player_id>/card-stats")

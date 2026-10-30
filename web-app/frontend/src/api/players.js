@@ -44,8 +44,11 @@ export const getPlayerCardStats = (id, { event, queue } = {}) => {
 /** Hide avatars from the player's own profile. Their games are kept. */
 export const setHiddenAvatars = (id, avatars) => put(`/api/player/${id}/hidden-avatars`, { avatars })
 
-/** The public deck a player features on their profile: { deck } or { deck: null }. */
+/** The deck a player features on their profile: { deck, mode } (deck is null when none). */
 export const getFeaturedDeck = (id) => get(`/api/player/${id}/featured-deck`)
 export const setFeaturedDeck = (id, url, autoUpdate) =>
   put(`/api/player/${id}/featured-deck`, { url, auto_update: autoUpdate })
+/** Go back to featuring the player's most-played public deck. */
+export const setFeaturedDeckAuto = (id) => put(`/api/player/${id}/featured-deck`, { mode: 'auto' })
+/** Show no featured deck at all. */
 export const clearFeaturedDeck = (id) => del(`/api/player/${id}/featured-deck`)

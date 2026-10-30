@@ -112,11 +112,12 @@ function PostseasonBadge({ label, entries = [], onClick }) {
 
 /**
  * The profile's hero card: name, avatar ratings, postseason badge, the
- * headline ELO / rank / record, the period picker and the owner's actions.
+ * headline ELO / rank / record, the period picker, the owner's actions and
+ * the featured deck tile.
  */
 export default function PlayerHeader({
   data, playerId, headline = {}, avatarEntries = [], eventFilter, pastEvents, onEventChange,
-  canSeeLifetime, onReport, settingsItems = [], onPostseason,
+  canSeeLifetime, onReport, settingsItems = [], onPostseason, featured = null,
 }) {
   const marks = useBracketMarks(playerId)
   const honours = useAvatarHonours(playerId)
@@ -212,6 +213,8 @@ export default function PlayerHeader({
           </div>
         )}
       </div>
+
+      {featured}
     </section>
   )
 }

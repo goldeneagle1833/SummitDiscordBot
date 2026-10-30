@@ -23,7 +23,7 @@ describe('FeaturedDeck', () => {
   beforeEach(() => getFeaturedDeck.mockReset())
 
   it('shows the deck and a link to it', async () => {
-    getFeaturedDeck.mockResolvedValue({ deck, mode: 'manual' })
+    getFeaturedDeck.mockResolvedValue({ deck })
     renderWithRouter(<FeaturedDeck playerId="100" isOwner={false} />)
     expect(await screen.findByText('Fire Druid')).toBeInTheDocument()
     expect(screen.getByText('Druid')).toBeInTheDocument()
@@ -43,7 +43,7 @@ describe('FeaturedDeck', () => {
   })
 
   it('invites the owner to add one', async () => {
-    getFeaturedDeck.mockResolvedValue({ deck: null, mode: 'auto' })
+    getFeaturedDeck.mockResolvedValue({ deck: null })
     const onEdit = vi.fn()
     renderWithRouter(<FeaturedDeck playerId="100" isOwner onEdit={onEdit} />)
     ;(await screen.findByRole('button', { name: 'Choose a deck' })).click()
@@ -51,22 +51,10 @@ describe('FeaturedDeck', () => {
   })
 
   it('shows the record when the deck is among the recent decks', async () => {
-    getFeaturedDeck.mockResolvedValue({ deck, mode: 'manual' })
+    getFeaturedDeck.mockResolvedValue({ deck })
     const recent = [{ url: deck.url, wins: 70, losses: 13, win_rate: 84.3, total_games: 83 }]
     renderWithRouter(<FeaturedDeck playerId="100" isOwner={false} recentDecks={recent} />)
     expect(await screen.findByText('84.3%')).toBeInTheDocument()
     expect(screen.getByText('70W · 13L')).toBeInTheDocument()
-  })
-
-  it('labels an automatic pick as the most played deck', async () => {
-    getFeaturedDeck.mockResolvedValue({ deck: { ...deck, picked: 'auto' }, mode: 'auto' })
-    renderWithRouter(<FeaturedDeck playerId="100" isOwner={false} />)
-    expect(await screen.findByText(/Most played/)).toBeInTheDocument()
-  })
-
-  it('tells the owner when it is turned off', async () => {
-    getFeaturedDeck.mockResolvedValue({ deck: null, mode: 'off' })
-    renderWithRouter(<FeaturedDeck playerId="100" isOwner onEdit={() => {}} />)
-    expect(await screen.findByRole('button', { name: 'Turn on' })).toBeInTheDocument()
   })
 })

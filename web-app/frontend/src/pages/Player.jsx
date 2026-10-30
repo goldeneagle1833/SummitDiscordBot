@@ -233,6 +233,16 @@ export default function Player() {
         onReport={data.is_owner ? () => setShowReportModal(true) : undefined}
         settingsItems={data.is_owner ? settingsItems : []}
         onPostseason={() => setTab('postseason')}
+        featured={(
+          <FeaturedDeck
+            playerId={playerId}
+            isOwner={Boolean(data.is_owner)}
+            onEdit={() => setShowFeaturedModal(true)}
+            recentDecks={data.recent_decks || []}
+            refreshKey={featuredKey}
+            onLoaded={setFeaturedDeckState}
+          />
+        )}
       />
 
       <PendingMatches
@@ -273,13 +283,6 @@ export default function Player() {
             stats={stats}
             statsType={statsType}
             onStatsTypeChange={setStatsType}
-          />
-          <FeaturedDeck
-            playerId={playerId}
-            isOwner={Boolean(data.is_owner)}
-            onEdit={() => setShowFeaturedModal(true)}
-            refreshKey={featuredKey}
-            onLoaded={setFeaturedDeckState}
           />
           {sectionVisible('elo_history') && (
             <EloHistory eloHistory={data.elo_history} currentElo={data.elo} open />

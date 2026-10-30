@@ -431,6 +431,7 @@ export default function Player() {
         <FeaturedDeckModal
           playerId={playerId}
           current={featuredDeck}
+          recentDecks={data.recent_decks || []}
           onClose={() => setShowFeaturedModal(false)}
           onSaved={() => setFeaturedKey((k) => k + 1)}
         />

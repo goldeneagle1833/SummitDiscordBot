@@ -15,7 +15,7 @@ describe('FeaturedDeckModal', () => {
     const onClose = vi.fn()
     renderWithRouter(<FeaturedDeckModal playerId="100" current={{ mode: 'auto' }} onClose={onClose} />)
     fireEvent.click(screen.getByLabelText(/A deck I choose/))
-    fireEvent.change(screen.getByLabelText('Deck link'), { target: { value: 'https://sorcerytcg.com/decks/abc' } })
+    fireEvent.change(screen.getByLabelText(/Deck link/i), { target: { value: 'https://sorcerytcg.com/decks/abc' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onClose).toHaveBeenCalled())
     expect(setFeaturedDeck).toHaveBeenCalledWith('100', 'https://sorcerytcg.com/decks/abc', true)
@@ -35,5 +35,23 @@ describe('FeaturedDeckModal', () => {
     fireEvent.click(screen.getByLabelText(/No featured deck/))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(clearFeaturedDeck).toHaveBeenCalledWith('100'))
+  })
+
+  it('fills the link from a recent deck', async () => {
+    const onClose = vi.fn()
+    const recent = [
+      { url: 'https://sorcerytcg.com/decks/one', deck_name: 'Dancing in the mist', avatar: 'Necromancer', wins: 70, losses: 13 },
+      { url: 'https://sorcerytcg.com/decks/two', deck_name: 'Rock', avatar: 'Geomancer', wins: 2, losses: 1 },
+    ]
+    renderWithRouter(
+      <FeaturedDeckModal playerId="100" current={{ mode: 'auto' }} recentDecks={recent} onClose={onClose} />,
+    )
+    fireEvent.click(screen.getByLabelText(/A deck I choose/))
+    const select = screen.getByLabelText('Pick from your recent decks')
+    expect(screen.getByRole('option', { name: /Dancing in the mist · Necromancer \(70W 13L\)/ })).toBeInTheDocument()
+    fireEvent.change(select, { target: { value: 'https://sorcerytcg.com/decks/two' } })
+    expect(screen.getByLabelText(/Or paste a deck link/)).toHaveValue('https://sorcerytcg.com/decks/two')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(setFeaturedDeck).toHaveBeenCalledWith('100', 'https://sorcerytcg.com/decks/two', true))
   })
 })

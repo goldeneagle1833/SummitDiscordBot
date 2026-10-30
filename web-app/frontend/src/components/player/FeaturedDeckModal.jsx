@@ -8,12 +8,12 @@ const CHOICES = [
     label: 'My most-played public deck',
     hint: 'Picked for you from your games. Only decks set to public on sorcerytcg.com or Sorcery Online.',
   },
-  { value: 'manual', label: 'A deck I choose', hint: 'Paste a public deck link.' },
+  { value: 'manual', label: 'A deck I choose', hint: 'Pick a recent deck or paste a link. It must be public.' },
   { value: 'off', label: 'No featured deck', hint: 'Nothing shows on your profile.' },
 ]
 
 /** Owner's settings for the featured deck: automatic, a pasted link, or off. */
-export default function FeaturedDeckModal({ playerId, current, onClose, onSaved }) {
+export default function FeaturedDeckModal({ playerId, current, recentDecks = [], onClose, onSaved }) {
   const currentMode = current?.mode || 'auto'
   const pasted = currentMode === 'manual' ? current?.deck : null
   const [choice, setChoice] = useState(currentMode)
@@ -74,7 +74,29 @@ export default function FeaturedDeckModal({ playerId, current, onClose, onSaved 
               </label>
               {c.value === 'manual' && choice === 'manual' && (
                 <div className="mt-3 pl-6">
-                  <label htmlFor="featured-deck-url" className="block text-xs text-text-muted mb-1">Deck link</label>
+                  {recentDecks.length > 0 && (
+                    <>
+                      <label htmlFor="featured-deck-recent" className="block text-xs text-text-muted mb-1">
+                        Pick from your recent decks
+                      </label>
+                      <select
+                        id="featured-deck-recent"
+                        value={recentDecks.some((d) => d.url === url.trim()) ? url.trim() : ''}
+                        onChange={(e) => e.target.value && setUrl(e.target.value)}
+                        className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-3"
+                      >
+                        <option value="">Choose a recent deck…</option>
+                        {recentDecks.map((d) => (
+                          <option key={d.url} value={d.url}>
+                            {d.deck_name}{d.avatar && d.avatar !== 'Unknown' ? ` · ${d.avatar}` : ''} ({d.wins}W {d.losses}L)
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )}
+                  <label htmlFor="featured-deck-url" className="block text-xs text-text-muted mb-1">
+                    {recentDecks.length > 0 ? 'Or paste a deck link' : 'Deck link'}
+                  </label>
                   <input
                     id="featured-deck-url"
                     type="url"

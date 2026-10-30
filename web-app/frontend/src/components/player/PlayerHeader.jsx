@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import PostseasonName, { useBracketMarks } from '@/components/player/BracketMarks'
 import { AvatarHonourBadge, useAvatarHonours } from '@/components/player/AvatarHonours'
-import { PaperFinishBadge, usePaperFinishes } from '@/components/player/PaperFinishes'
+import { PaperFinishChips, usePaperFinishes } from '@/components/player/PaperFinishes'
 
 function initials(name) {
   const parts = String(name || '?').replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/)
@@ -157,10 +157,15 @@ export default function PlayerHeader({
               />
             )}
             <AvatarHonourBadge honours={honours} onClick={onPostseason} />
-            <PaperFinishBadge finishes={paperFinishes} />
           </div>
         </div>
       </div>
+
+      {paperFinishes.length > 0 && (
+        <div className="basis-full -mt-2 lg:order-last">
+          <PaperFinishChips finishes={paperFinishes} />
+        </div>
+      )}
 
       {avatarEntries.length > 0 && (
         <ul className="basis-full flex flex-wrap gap-2 -mt-2 lg:order-last" aria-label="Event ELO per avatar">

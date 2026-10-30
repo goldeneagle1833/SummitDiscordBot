@@ -115,7 +115,7 @@ appears in round two with `p1_from_bye` / `p2_from_bye` set.
 | `next_match_no`, `next_slot`| Where the winner goes (the match number and whether they become p1 or p2)     |
 | `reported_*`, `expires_at`  | The pending report: who reported which winner, and when it auto-confirms      |
 | `replay_url`                | A replay link when one was added and made public, otherwise `null`            |
-| `has_table`                 | Whether a Sorcery Online table was opened for this match                      |
+| `has_table`                 | Whether a Play Sorcery Online table was opened for this match                      |
 
 The `viewer_*` fields (`viewer_can_report`, `viewer_can_confirm`, `viewer_table_url`, …)
 describe what a logged-in player may do on the Summit site. For a server-to-server call

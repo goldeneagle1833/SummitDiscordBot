@@ -6,7 +6,7 @@ const CHOICES = [
   {
     value: 'auto',
     label: 'My most-played public deck',
-    hint: 'Picked for you from your games. Only decks set to public on sorcerytcg.com or Sorcery Online.',
+    hint: 'Picked for you from your games. Only decks set to public on sorcerytcg.com or Play Sorcery Online.',
   },
   { value: 'manual', label: 'A deck I choose', hint: 'Pick a recent deck or paste a link. It must be public.' },
   { value: 'off', label: 'No featured deck', hint: 'Nothing shows on your profile.' },

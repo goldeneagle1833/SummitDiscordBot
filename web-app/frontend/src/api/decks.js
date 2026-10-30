@@ -8,7 +8,7 @@ export const getDeckInfo = (deckId) =>
 export const getDeckRecommendations = (deckId) =>
   get(`/api/deck-rec/${encodeURIComponent(deckId)}/recommendations`)
 
-// Opens a Sorcery Online table with this deck preloaded — returns { game_url }
+// Opens a Play Sorcery Online table with this deck preloaded — returns { game_url }
 export const createPsoTable = (deckId) =>
   post(`/api/deck-rec/${encodeURIComponent(deckId)}/pso-table`, {})
 

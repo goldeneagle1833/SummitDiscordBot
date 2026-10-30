@@ -159,7 +159,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.deck_rec.get_deck_info",
     "api.deck_rec.get_recommendations",
     "api.deck_rec.staff_pick",
-    # Public: opens a Sorcery Online table with a public deck preloaded.
+    # Public: opens a Play Sorcery Online table with a public deck preloaded.
     # Throttled per client in services/sorcery_online_table.py.
     "api.deck_rec.create_pso_table",
 

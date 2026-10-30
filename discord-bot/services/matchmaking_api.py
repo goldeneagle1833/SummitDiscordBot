@@ -185,7 +185,7 @@ def _pick(payload, *keys, default=None):
 
 
 def _result_fields(payload):
-    """Normalize a Sorcery Online result payload.
+    """Normalize a Play Sorcery Online result payload.
 
     Accepts both snake_case (queue_type) and camelCase (queueType) keys —
     the provisioning payload Summit sends *to* SO is camelCase, so SO may
@@ -322,13 +322,13 @@ async def start_matchmaking_api(bot):
         )
         fields = _result_fields(payload)
         logger.info("SO report_result normalized fields: %s", fields)
-        # Not sent today, but take a replay link if Sorcery Online includes one
+        # Not sent today, but take a replay link if Play Sorcery Online includes one
         replay_url = _pick(payload, "replay_url", "replayUrl")
         if replay_url and fields["queue_type"] != "limited":
             try:
                 set_pairing_replay(int(request.match_info["pairing_id"]), replay_url)
             except Exception as exc:
-                logger.warning("Could not save Sorcery Online replay link: %r", exc)
+                logger.warning("Could not save Play Sorcery Online replay link: %r", exc)
         try:
             result = await record_sorcery_online_result(
                 bot,
@@ -347,13 +347,13 @@ async def start_matchmaking_api(bot):
                 status=404,
             )
         except RuntimeError as exc:
-            logger.error("Could not record Sorcery Online result: %s", exc)
+            logger.error("Could not record Play Sorcery Online result: %s", exc)
             return web.json_response(
                 {"error": str(exc), "code": "RECORDING_FAILED"},
                 status=409,
             )
         except Exception as exc:
-            logger.error("Could not record Sorcery Online result: %s", exc, exc_info=True)
+            logger.error("Could not record Play Sorcery Online result: %s", exc, exc_info=True)
             return web.json_response(
                 {"error": "Could not record match result", "code": "INTERNAL_ERROR"},
                 status=500,

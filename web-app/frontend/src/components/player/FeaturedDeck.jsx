@@ -55,7 +55,7 @@ function DeckListModal({ deck, onClose }) {
  * The featured deck as a tile in the profile header, styled like the avatar
  * tiles: the avatar's art behind the deck name and its record. Tapping it
  * opens the full list. The deck is one the player pasted, or by default their
- * most-played deck that is public on sorcerytcg.com or Sorcery Online.
+ * most-played deck that is public on sorcerytcg.com or Play Sorcery Online.
  * Visitors see nothing when there is none; the owner gets a small prompt.
  */
 export default function FeaturedDeck({ playerId, isOwner, onEdit, recentDecks = [], refreshKey = 0, onLoaded }) {
@@ -102,7 +102,7 @@ export default function FeaturedDeck({ playerId, isOwner, onEdit, recentDecks = 
           <p className="text-sm text-text-muted mt-1">
             {mode === 'off'
               ? 'Turned off. Nobody sees a featured deck on your profile.'
-              : 'Your most-played deck shows here once it is public on sorcerytcg.com or Sorcery Online.'}
+              : 'Your most-played deck shows here once it is public on sorcerytcg.com or Play Sorcery Online.'}
           </p>
         </div>
         <button

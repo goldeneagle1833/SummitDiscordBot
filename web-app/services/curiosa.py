@@ -276,7 +276,7 @@ class CuriosaService:
         )
         if response.status_code != 200:
             logger.warning(
-                f"Sorcery Online returned status {response.status_code} for deck {deck_id}"
+                f"Play Sorcery Online returned status {response.status_code} for deck {deck_id}"
             )
             return None
         legacy = _convert_pso_export_to_legacy(response.json())

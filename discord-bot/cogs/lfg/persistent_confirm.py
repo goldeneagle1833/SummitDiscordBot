@@ -447,7 +447,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 f"{data['winner_global']} defeated {data['loser_global']}.{elo_msg}{stakes_msg}"
             )
             if data.get("match_comment", "").startswith("Automatically reported by"):
-                result_text += "\n*(Reported via Sorcery Online)*"
+                result_text += "\n*(Reported via Play Sorcery Online)*"
             try:
                 await edit_match_card_messages(bot, pairing_id, data.get("match_type", "ranked"), result_text)
             except Exception as e:
@@ -1279,7 +1279,7 @@ async def edit_match_card_messages(bot, pairing_id: int, match_type: str, result
     The Report Player button is the exception: it stays on the message.
     The opponent mention stays too, so players can still click through to DM.
 
-    Called when a match is recorded via an external source (e.g. Sorcery Online)
+    Called when a match is recorded via an external source (e.g. Play Sorcery Online)
     where there is no live interaction to update.
     """
     cards = _load_match_cards_for_pairing_all(pairing_id, match_type)

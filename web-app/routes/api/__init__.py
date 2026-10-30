@@ -44,6 +44,7 @@ from routes.api.monitoring import monitoring_bp
 from routes.api.brackets import brackets_bp
 from routes.api.ranked_analytics import ranked_analytics_bp
 from routes.api.season_badges import season_badges_bp
+from routes.api.paper_finishes import paper_finishes_bp
 
 api_bp.register_blueprint(leaderboard_bp)
 api_bp.register_blueprint(matches_bp)
@@ -80,3 +81,4 @@ api_bp.register_blueprint(monitoring_bp)
 api_bp.register_blueprint(brackets_bp)
 api_bp.register_blueprint(ranked_analytics_bp, url_prefix="/ranked-analytics")
 api_bp.register_blueprint(season_badges_bp)
+api_bp.register_blueprint(paper_finishes_bp)

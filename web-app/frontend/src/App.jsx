@@ -100,6 +100,7 @@ const BracketsAdmin = lazyPage(() => import('@/pages/admin/BracketsAdmin'))
 const UserProfiles = lazyPage(() => import('@/pages/admin/UserProfiles'))
 const ExplorerApplications = lazyPage(() => import('@/pages/admin/ExplorerApplications'))
 const MetaReportsAdmin = lazyPage(() => import('@/pages/admin/MetaReports'))
+const PaperBadgesAdmin = lazyPage(() => import('@/pages/admin/PaperBadges'))
 const MetaReport = lazyPage(() => import('@/pages/MetaReport'))
 const MetaReportEmail = lazyPage(() => import('@/pages/MetaReportEmail'))
 const ExplorerApply = lazyPage(() => import('@/pages/ExplorerApply'))
@@ -267,6 +268,7 @@ const router = createBrowserRouter([
       { path: '/admin/brackets', element: <AdminGuard><BracketsAdmin /></AdminGuard> },
       { path: '/admin/users', element: <AdminGuard><UserProfiles /></AdminGuard> },
       { path: '/admin/meta-reports', element: <AdminGuard><MetaReportsAdmin /></AdminGuard> },
+      { path: '/admin/paper-badges', element: <AdminGuard><PaperBadgesAdmin /></AdminGuard> },
       { path: '/admin/explorer-applications', element: <ExplorerAdminGuard><LazyPage><ExplorerApplications /></LazyPage></ExplorerAdminGuard> },
       // Error & 404
       { path: '/error', element: <ErrorPage /> },

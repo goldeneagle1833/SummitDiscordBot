@@ -138,6 +138,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.brackets.get_bracket_deck",
     "api.season_badges.get_avatar_honours",
     "api.paper_finishes.get_paper_finishes",  # Top 8 results matched to profiles; public lists
+    "api.paper_finishes.get_event_profiles",  # same, for one event's Top 8 page
 
     # -- Events / tournaments (public read-only) --
     "api.events.list_top8_events",

@@ -135,3 +135,21 @@ def test_public_and_admin_routes(setup, elo_db, client):
     data = client.get("/api/paper-finishes").get_json()
     assert data["finishes"]["1"][0]["label"] == "Winner"
     assert client.get("/api/admin/paper-finishes").status_code in (200, 403)
+
+
+def test_event_profiles_route(setup, elo_db, client):
+    from repositories.paper_links import PaperLinkRepository
+    from services.paper_finishes import reset_cache
+
+    _player(elo_db, "1", "Avaloneer")
+    _player(elo_db, "2", "Bruce")
+    _event(setup, "LinCon May 14-16 2026", [_deck("w", "Avaloneer"), _deck("f", "Stranger")])
+    entries = client.get("/api/paper-finishes/event/LinCon May 14-16 2026").get_json()["entries"]
+    assert entries[0]["player"] == {"user_id": "1", "name": "Avaloneer"}
+    assert entries[1]["player"] is None and entries[1]["status"] == "unmatched"
+
+    PaperLinkRepository().assign_result("LinCon May 14-16 2026", "f", "2")
+    reset_cache()
+    entries = client.get("/api/paper-finishes/event/LinCon May 14-16 2026").get_json()["entries"]
+    assert entries[1]["player"]["user_id"] == "2" and entries[1]["status"] == "assigned"
+    assert client.get("/api/paper-finishes/event/Nope").get_json()["entries"] == []

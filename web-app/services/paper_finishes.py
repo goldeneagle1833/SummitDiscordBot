@@ -385,6 +385,38 @@ def get_player_finishes(user_id) -> list[dict]:
     return get_finishes_by_player().get(bare_id(user_id), [])
 
 
+def event_profiles(folder: str) -> list[dict]:
+    """Each top cut entry of one event with the Summit player it matched.
+
+    Shown on the event's Top 8 page whether or not the event gives badges:
+    the link says who played, the badge setting only decides the profile tag.
+    """
+    _, results = _all_results()
+    rows = [r for r in results if r["folder"] == folder]
+    if not rows:
+        return []
+    players = _summit_players()
+    index = _name_index(players)
+    linked, rejected, assignments, _ = _decisions()
+    out = []
+    for result in rows:
+        match = _resolve(result, index, linked, rejected, assignments)
+        user_id = match["user_id"] if match["status"] in EARNS_BADGE else None
+        entry = players.get(user_id) if user_id else None
+        out.append(
+            {
+                "place": result["place"],
+                "deck_id": result["deck_id"],
+                "status": match["status"],
+                "player": (
+                    {"user_id": user_id, "name": entry["name"] if entry else f"Player {user_id}"}
+                    if user_id else None
+                ),
+            }
+        )
+    return out
+
+
 # -- admin review ---------------------------------------------------------
 
 def _suggest(key: str, index: dict, rejected: dict, limit: int = 3) -> list[str]:

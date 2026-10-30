@@ -50,6 +50,16 @@ def get_paper_finishes():
         return jsonify({"success": True, "finishes": {}}), 200
 
 
+@paper_finishes_bp.route("/paper-finishes/event/<folder>", methods=["GET"])
+def get_event_profiles(folder):
+    """The Summit profile each Top 8 entry of one event matched, for its page."""
+    try:
+        return jsonify({"success": True, "entries": paper_finishes.event_profiles(folder)}), 200
+    except Exception as e:
+        logger.error("Failed to load event profiles for %s: %s", folder, e, exc_info=True)
+        return jsonify({"success": True, "entries": []}), 200
+
+
 @paper_finishes_bp.route("/admin/paper-finishes", methods=["GET"])
 @require_admin
 def admin_paper_finishes():

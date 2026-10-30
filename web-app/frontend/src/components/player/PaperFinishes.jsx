@@ -94,16 +94,16 @@ function Trophy({ label, size = 15 }) {
 
 /**
  * The hero card chip: the player's best paper finish (they come best first),
- * plus how many more they hold. Hovering lists them all.
+ * plus how many more they hold. Hovering lists them all; clicking opens that
+ * event's Top 8 page.
  */
-export function PaperFinishBadge({ finishes = [], onClick }) {
+export function PaperFinishBadge({ finishes = [] }) {
   if (!finishes.length) return null
   const best = finishes[0]
   const more = finishes.length - 1
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <Link
+      to={`/top-8/${encodeURIComponent(best.folder)}`}
       title={finishes.map((f) => f.title).join('\n')}
       className="inline-flex flex-wrap items-center gap-x-2 px-3 py-1 rounded-2xl bg-bg-raised border border-secondary/40 text-sm hover:border-secondary text-left"
     >
@@ -111,7 +111,7 @@ export function PaperFinishBadge({ finishes = [], onClick }) {
       <strong className={`whitespace-nowrap ${FINISH_COLOURS[best.label] || 'text-text-primary'}`}>{best.label}</strong>
       <span className="text-text-muted">{best.event}</span>
       {more > 0 && <span className="text-text-muted">+{more}</span>}
-    </button>
+    </Link>
   )
 }
 

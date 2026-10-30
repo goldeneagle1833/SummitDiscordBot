@@ -32,3 +32,10 @@ describe('PaperFinishes', () => {
     expect(screen.getByText('Druid · Mar 2026')).toBeInTheDocument()
   })
 })
+
+describe('PaperFinishBadge link', () => {
+  it('opens the best finish event page', () => {
+    renderWithRouter(<PaperFinishBadge finishes={FINISHES} />)
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/top-8/SCG%20Con%20Alanta%202026')
+  })
+})

@@ -93,25 +93,28 @@ function Trophy({ label, size = 15 }) {
 }
 
 /**
- * The hero card chip: the player's best paper finish (they come best first),
- * plus how many more they hold. Hovering lists them all; clicking opens that
- * event's Top 8 page.
+ * The hero card's paper finishes: one chip per event, best first, each
+ * opening that event's Top 8 page. Long event names are cut short on the
+ * chip; hovering shows the full title.
  */
-export function PaperFinishBadge({ finishes = [] }) {
+export function PaperFinishChips({ finishes = [] }) {
   if (!finishes.length) return null
-  const best = finishes[0]
-  const more = finishes.length - 1
   return (
-    <Link
-      to={`/top-8/${encodeURIComponent(best.folder)}`}
-      title={finishes.map((f) => f.title).join('\n')}
-      className="inline-flex flex-wrap items-center gap-x-2 px-3 py-1 rounded-2xl bg-bg-raised border border-secondary/40 text-sm hover:border-secondary text-left"
-    >
-      <Trophy label={best.label} />
-      <strong className={`whitespace-nowrap ${FINISH_COLOURS[best.label] || 'text-text-primary'}`}>{best.label}</strong>
-      <span className="text-text-muted">{best.event}</span>
-      {more > 0 && <span className="text-text-muted">+{more}</span>}
-    </Link>
+    <ul className="flex flex-wrap gap-2" aria-label="Paper tournament finishes">
+      {finishes.map((f) => (
+        <li key={f.folder} className="min-w-0 max-w-full">
+          <Link
+            to={`/top-8/${encodeURIComponent(f.folder)}`}
+            title={f.title}
+            className="flex items-center gap-1.5 sm:gap-2 max-w-full px-2.5 sm:px-3 py-1 rounded-full bg-bg-raised border border-secondary/40 text-xs sm:text-sm hover:border-secondary"
+          >
+            <Trophy label={f.label} size={14} />
+            <strong className={`whitespace-nowrap ${FINISH_COLOURS[f.label] || 'text-text-primary'}`}>{f.label}</strong>
+            <span className="text-text-muted truncate">{f.event}</span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   )
 }
 

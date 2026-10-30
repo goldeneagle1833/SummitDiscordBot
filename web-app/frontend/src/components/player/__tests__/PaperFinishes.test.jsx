@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
-import { PaperFinishBadge, PaperFinishesSection, resetPaperFinishesCache } from '../PaperFinishes'
+import { PaperFinishChips, PaperFinishesSection, resetPaperFinishesCache } from '../PaperFinishes'
 
 vi.mock('@/api/paperFinishes', () => ({ getPaperFinishes: vi.fn() }))
 
@@ -13,15 +13,17 @@ const FINISHES = [
 describe('PaperFinishes', () => {
   beforeEach(() => resetPaperFinishesCache())
 
-  it('shows the best finish on the badge with a count of the rest', () => {
-    renderWithRouter(<PaperFinishBadge finishes={FINISHES} />)
-    expect(screen.getByText('Winner')).toBeInTheDocument()
-    expect(screen.getByText('SCG Con Atlanta')).toBeInTheDocument()
-    expect(screen.getByText('+1')).toBeInTheDocument()
+  it('shows a chip for every finish, each linking to its event', () => {
+    renderWithRouter(<PaperFinishChips finishes={FINISHES} />)
+    const links = screen.getAllByRole('link')
+    expect(links).toHaveLength(2)
+    expect(links[0]).toHaveAttribute('href', '/top-8/SCG%20Con%20Alanta%202026')
+    expect(screen.getByText('Top 8')).toBeInTheDocument()
+    expect(screen.queryByText('+1')).not.toBeInTheDocument()
   })
 
   it('renders nothing without finishes', () => {
-    const { container } = renderWithRouter(<PaperFinishBadge finishes={[]} />)
+    const { container } = renderWithRouter(<PaperFinishChips finishes={[]} />)
     expect(container).toBeEmptyDOMElement()
   })
 
@@ -30,12 +32,5 @@ describe('PaperFinishes', () => {
     expect(screen.getByText('Paper tournament finishes')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'LinCon' })).toHaveAttribute('href', '/top-8/LinCon%20May%2014-16%202026')
     expect(screen.getByText('Druid · Mar 2026')).toBeInTheDocument()
-  })
-})
-
-describe('PaperFinishBadge link', () => {
-  it('opens the best finish event page', () => {
-    renderWithRouter(<PaperFinishBadge finishes={FINISHES} />)
-    expect(screen.getByRole('link')).toHaveAttribute('href', '/top-8/SCG%20Con%20Alanta%202026')
   })
 })

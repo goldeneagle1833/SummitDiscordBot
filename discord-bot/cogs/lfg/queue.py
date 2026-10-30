@@ -35,7 +35,7 @@ from utils.constants import SORCERY_NICKNAMES
 from cogs.lfg.avatar_alert import add_avatar_alert_checkbox, alert_ticked, send_avatar_alert
 from utils.database import save_pairing, set_pairing_avatars, get_pairing_ban, pairing_ban_message
 from repositories.recent_decks_repo import get_recent_decks, recent_deck_summary
-from repositories.elo_repo import set_pairing_replay
+from repositories.elo_repo import set_pairing_replay, set_pairing_table
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
 from services.card_points_service import validate_deck_points
 from services.limited_service import auto_start_arena_run
@@ -79,14 +79,17 @@ def run_in_background(coro, label):
 async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, players, voice=False):
     """Provision seats and publish stable results for website-origin players."""
     # Limited pairings have their own ids, so only queue pairings keep a replay
-    on_replay_url = None
+    on_replay_url = on_table_url = None
     if queue_type != "limited":
         def on_replay_url(url):
             set_pairing_replay(pairing_id, url)
 
+        def on_table_url(url):
+            set_pairing_table(pairing_id, url)
+
     provisioned_links = await provision_sorcery_online_match(
         guild_id, pairing_id, queue_type, players, voice=voice,
-        on_replay_url=on_replay_url,
+        on_replay_url=on_replay_url, on_table_url=on_table_url,
     ) or {}
     result_id_base = f"{guild_id}:{pairing_id}"
     matched_at = int(time.time() * 1000)

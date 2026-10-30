@@ -142,7 +142,7 @@ def test_typed_link_wins_over_the_dropdown_pick():
 # ── The alert itself ──
 
 
-def _channel_bot(members=None):
+def _channel_bot():
     """A bot whose avatar channels all resolve to one mock channel."""
     channel = MagicMock()
     channel.send = AsyncMock(return_value=MagicMock(id=555))
@@ -150,17 +150,9 @@ def _channel_bot(members=None):
     partial.edit = AsyncMock()
     partial.delete = AsyncMock()
     channel.get_partial_message = MagicMock(return_value=partial)
-    guild = MagicMock()
-    guild.get_member = MagicMock(side_effect=lambda uid: (members or {}).get(uid))
     bot = MagicMock()
     bot.get_channel = MagicMock(return_value=channel)
-    bot.get_guild = MagicMock(return_value=guild)
     return bot, channel, partial
-
-
-def _in_voice(channel_id):
-    room = MagicMock(id=channel_id, jump_url=f"https://discord.com/channels/1/{channel_id}")
-    return MagicMock(voice=MagicMock(channel=room)), room
 
 
 def _save_pairing(status="active"):
@@ -205,37 +197,16 @@ async def test_alert_names_the_avatar_but_never_the_deck(avatar_channels):
 
 
 @pytest.mark.asyncio
-async def test_live_room_link_is_added_once_both_players_are_in_voice(avatar_channels):
+async def test_alert_links_the_live_table(avatar_channels):
+    from repositories.elo_repo import set_pairing_table
+
     _save_pairing()
-    me_member, room = _in_voice(31)
-    opp_member, _ = _in_voice(31)
-    opp_member.voice.channel = room
-    members = {}
-    bot, _, partial = _channel_bot(members)
+    set_pairing_table(77, "https://playsorceryonline.com/play?table=glowing-lantern-citadel")
+    bot, channel, _ = _channel_bot()
     await _alert(bot)
-    partial.edit.assert_not_called()  # nobody in voice yet
-
-    members.update({ME: me_member, OPP: opp_member})
-    await avatar_alert.refresh_avatar_alerts(bot)
-    content = partial.edit.await_args.kwargs["content"]
-    assert content.endswith("🔊 [Listen in live](https://discord.com/channels/1/31)")
-
-    # Same room on the next sweep: no extra edit
-    await avatar_alert.refresh_avatar_alerts(bot)
-    assert partial.edit.await_count == 1
-
-
-@pytest.mark.asyncio
-async def test_join_to_make_a_room_hub_is_not_the_live_room(avatar_channels):
-    _save_pairing()
-    me_member, room = _in_voice(99)
-    opp_member, _ = _in_voice(99)
-    opp_member.voice.channel = room
-    bot, _, partial = _channel_bot({ME: me_member, OPP: opp_member})
-    with patch.object(config, "DYNAMIC_VOICE_HUB_ID", 99, create=True):
-        await _alert(bot)
-        await avatar_alert.refresh_avatar_alerts(bot)
-    partial.edit.assert_not_called()
+    assert channel.send.await_args.args[0].endswith(
+        "\n🎮 [Watch the live game](https://playsorceryonline.com/play?table=glowing-lantern-citadel)"
+    )
 
 
 @pytest.mark.parametrize("status", ["reported", "cancelled", "expired"])
@@ -331,3 +302,22 @@ async def test_alert_choice_is_stored_with_the_queue_entry(
     assert kwargs["alert_avatar"] is True
     assert kwargs["deck_avatar"] == "Sorcerer"
     assert "Avatar channel alert:** on" in mock_interaction.followup.send.await_args.args[0]
+
+
+# ── PSO table link ──
+
+
+@pytest.mark.parametrize("data, expected", [
+    ({"tableUrl": "https://playsorceryonline.com/play?table=glowing-lantern-citadel"},
+     "https://playsorceryonline.com/play?table=glowing-lantern-citadel"),
+    ({"table": "glowing-lantern-citadel"}, "https://playsorceryonline.com/play?table=glowing-lantern-citadel"),
+    ({"table": {"name": "quiet-river-keep"}}, "https://playsorceryonline.com/play?table=quiet-river-keep"),
+    # A seat link is never a table link
+    ({"tableUrl": "https://playsorceryonline.com/play?m=s1.secret"}, None),
+    ({"tableUrl": "https://evil.example/play?table=x"}, None),
+    ({"players": []}, None),
+])
+def test_table_link_is_read_from_the_pso_reply(data, expected):
+    from services.sorcery_online_matchmaking import table_url_from_response
+
+    assert table_url_from_response(data) == expected

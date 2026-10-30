@@ -134,3 +134,19 @@ async def test_limited_pairing_never_saves_a_replay(monkeypatch):
     with patch("services.sorcery_online_matchmaking.aiohttp.ClientSession", return_value=session):
         await provision_match_and_publish_results(1, pairing_id, "limited", players)
     assert get_pairing_replay(pairing_id) is None
+
+
+@pytest.mark.asyncio
+async def test_queue_pairing_saves_the_table_link(monkeypatch):
+    from repositories.elo_repo import get_pairing_table
+
+    monkeypatch.setenv("DRAFT_SORCERY_API_KEY", "configured-key")
+    pairing_id = save_pairing(1, 10, 20, "", "", "ranked")
+    players = [
+        {"discord_user_id": 10, "display_name": "A", "origin": "discord", "opponent_name": "B"},
+        {"discord_user_id": 20, "display_name": "B", "origin": "discord", "opponent_name": "A"},
+    ]
+    session = _table_session({"players": SEATS, "table": "glowing-lantern-citadel"})
+    with patch("services.sorcery_online_matchmaking.aiohttp.ClientSession", return_value=session):
+        await provision_match_and_publish_results(1, pairing_id, "ranked", players)
+    assert get_pairing_table(pairing_id) == "https://playsorceryonline.com/play?table=glowing-lantern-citadel"

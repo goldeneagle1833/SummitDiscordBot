@@ -2,14 +2,14 @@
 
 A player can tick a box in the join modal; when their match is made the bot
 posts in the private channel for the avatar they are playing (the same
-config.AVATAR_CHANNEL_MAP the stream alerts use). The post never carries a
-deck link or list.
+config.AVATAR_CHANNEL_MAP the stream alerts use), with a link to the live
+Play Sorcery Online table. The post never carries a deck link or list, and
+never a player's own seat link.
 
-The post then lives only while the game does. A one-minute sweep
-(:func:`refresh_avatar_alerts`) adds a link to the live voice room once both
-players are in the same Summit voice channel, and deletes the post as soon as
-the result is reported (or the pairing is cancelled or expires). Posts are
-remembered in the database, so a bot restart still cleans them up.
+The post lives only while the game does: a one-minute sweep
+(:func:`refresh_avatar_alerts`) deletes it once the result is reported (or
+the pairing is cancelled or expires). Posts are remembered in the database,
+so a bot restart still cleans them up.
 """
 
 import datetime
@@ -20,13 +20,13 @@ import discord
 
 import config
 from cogs.lfg.helpers import match_type_presentation
-from repositories.elo_repo import create_active_pairings_table, get_db_connection
+from repositories.elo_repo import create_active_pairings_table, get_db_connection, get_pairing_table
 from utils.avatars import read_deck_avatar
 
 logger = logging.getLogger("discord_bot")
 
 ALERT_LABEL = "Alert my avatar's channel that I'm playing"
-ALERT_DESCRIPTION = "Posts in your avatar's channel with a link to the live room once you're paired."
+ALERT_DESCRIPTION = "Posts in your avatar's channel with a link to your game. Removed once it's reported."
 # An alert is removed after this long even if the result was never reported
 ALERT_MAX_AGE = datetime.timedelta(hours=6)
 
@@ -80,7 +80,6 @@ def create_avatar_alerts_table():
                          channel_id INTEGER NOT NULL,
                          message_id INTEGER NOT NULL,
                          content TEXT NOT NULL,
-                         room_channel_id INTEGER,
                          created_at TEXT NOT NULL,
                          PRIMARY KEY (pairing_id, player_id))""")
 
@@ -122,27 +121,18 @@ def _forget_alert(pairing_id, player_id):
         )
 
 
-def _set_alert_room(pairing_id, player_id, room_channel_id):
-    with get_db_connection("match_records.db") as conn:
-        conn.execute(
-            "UPDATE avatar_alerts SET room_channel_id = ? WHERE pairing_id = ? AND player_id = ?",
-            (room_channel_id, pairing_id, player_id),
-        )
-
-
 # ── Posting ──
 
 
-def build_alert_message(player_name, avatar, opponent_name, match_type) -> str:
+def build_alert_message(player_name, avatar, opponent_name, match_type, table_url=None) -> str:
     emoji, label = match_type_presentation(match_type)
-    return (
+    message = (
         f"{emoji} **{player_name}** is playing **{avatar}** in a {label} game "
         f"against **{opponent_name}**!"
     )
-
-
-def with_room_link(content, room_url) -> str:
-    return f"{content}\n🔊 [Listen in live]({room_url})" if room_url else content
+    if table_url:
+        message += f"\n🎮 [Watch the live game]({table_url})"
+    return message
 
 
 async def _get_channel(bot, channel_id):
@@ -166,7 +156,8 @@ async def send_avatar_alert(
             return False
         channel = await _get_channel(bot, channel_id)
 
-        content = build_alert_message(player_name, avatar, opponent_name, match_type)
+        table_url = get_pairing_table(pairing_id) if match_type != "limited" else None
+        content = build_alert_message(player_name, avatar, opponent_name, match_type, table_url)
         message = await channel.send(
             content,
             allowed_mentions=discord.AllowedMentions.none(),
@@ -174,32 +165,10 @@ async def send_avatar_alert(
         )
         save_avatar_alert(pairing_id, player_id, opponent_id, channel_id, message.id, content)
         logger.info("Avatar alert sent to %s channel for %s (pairing %s)", avatar, player_id, pairing_id)
-        # The players may already be sitting in a room together
-        await refresh_avatar_alerts(bot)
         return True
     except Exception:
         logger.exception("Avatar alert failed for %s (pairing %s)", player_id, pairing_id)
         return False
-
-
-def live_room(bot, player_id, opponent_id):
-    """The Summit voice channel both players are in right now, or None.
-
-    The "Join To Make a Room" hub doesn't count: players only pass through it.
-    """
-    guild = bot.get_guild(config.GUILD_ID)
-    if guild is None:
-        return None
-    hub_id = getattr(config, "DYNAMIC_VOICE_HUB_ID", None)
-    channels = []
-    for user_id in (player_id, opponent_id):
-        member = guild.get_member(user_id)
-        voice = member.voice if member else None
-        channels.append(voice.channel if voice else None)
-    room = channels[0]
-    if room is None or room != channels[1] or room.id == hub_id:
-        return None
-    return room
 
 
 def _alert_is_over(alert, now) -> bool:
@@ -213,32 +182,19 @@ def _alert_is_over(alert, now) -> bool:
 
 
 async def refresh_avatar_alerts(bot):
-    """Add the live room link to open alerts and remove the ones whose game is over."""
+    """Delete the alerts whose game is over (reported, cancelled, expired or too old)."""
     now = datetime.datetime.now()
     for alert in _open_alerts():
+        if not _alert_is_over(alert, now):
+            continue
         pairing_id, player_id = alert["pairing_id"], alert["player_id"]
         try:
-            if _alert_is_over(alert, now):
-                try:
-                    channel = await _get_channel(bot, alert["channel_id"])
-                    await channel.get_partial_message(alert["message_id"]).delete()
-                except discord.NotFound:
-                    pass  # already deleted by hand
-                _forget_alert(pairing_id, player_id)
-                logger.info("Avatar alert for %s (pairing %s) removed", player_id, pairing_id)
-                continue
-
-            room = live_room(bot, player_id, alert["opponent_id"])
-            if room is None or room.id == alert.get("room_channel_id"):
-                continue
-            channel = await _get_channel(bot, alert["channel_id"])
-            await channel.get_partial_message(alert["message_id"]).edit(
-                content=with_room_link(alert["content"], room.jump_url),
-                allowed_mentions=discord.AllowedMentions.none(),
-                suppress=True,
-            )
-            _set_alert_room(pairing_id, player_id, room.id)
-        except discord.NotFound:
+            try:
+                channel = await _get_channel(bot, alert["channel_id"])
+                await channel.get_partial_message(alert["message_id"]).delete()
+            except discord.NotFound:
+                pass  # already deleted by hand
             _forget_alert(pairing_id, player_id)
+            logger.info("Avatar alert for %s (pairing %s) removed", player_id, pairing_id)
         except Exception:
-            logger.exception("Could not refresh avatar alert for %s (pairing %s)", player_id, pairing_id)
+            logger.exception("Could not remove avatar alert for %s (pairing %s)", player_id, pairing_id)

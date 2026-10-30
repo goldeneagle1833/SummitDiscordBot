@@ -660,7 +660,7 @@ class LFGCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error in check_expired_queue task: {e}")
 
-        # Avatar channel alerts: add the live room link, remove finished games
+        # Avatar channel alerts: remove the ones whose game is over
         try:
             from cogs.lfg.avatar_alert import refresh_avatar_alerts
 

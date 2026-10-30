@@ -135,6 +135,8 @@ export default function PaperBadges() {
   const [error, setError] = useState(null)
   const [tab, setTab] = useState('look')
   const [busy, setBusy] = useState(false)
+  const [playerQuery, setPlayerQuery] = useState('')
+  const [eventQuery, setEventQuery] = useState('')
 
   const load = useCallback(() => {
     getPaperFinishesReview()
@@ -168,6 +170,27 @@ export default function PaperBadges() {
     return out
   }, [data])
 
+  // The search boxes narrow every tab: player against the paper names, who
+  // posted the deck and the Summit player (matched or suggested); event
+  // against the event's name.
+  const filtered = useMemo(() => {
+    const player = playerQuery.trim().toLowerCase()
+    const event = eventQuery.trim().toLowerCase()
+    const eventHit = (name) => !event || (name || '').toLowerCase().includes(event)
+    const playerHit = (row) =>
+      !player ||
+      [...row.names, row.posted_by, row.player?.name, ...row.candidates.map((c) => c.name)]
+        .some((n) => (n || '').toLowerCase().includes(player))
+    const keep = (rows) => rows.filter((row) => eventHit(row.event) && playerHit(row))
+    return {
+      look: keep(groups.look),
+      matched: keep(groups.matched),
+      none: keep(groups.none),
+      events: (data?.events || []).filter((ev) => eventHit(ev.name)),
+    }
+  }, [groups, data, playerQuery, eventQuery])
+  const searching = Boolean(playerQuery.trim() || eventQuery.trim())
+
   if (error && !data) return <p className="text-accent-red">{error}</p>
   if (!data) return <p className="text-text-muted">Loading results...</p>
 
@@ -198,6 +221,25 @@ export default function PaperBadges() {
         ))}
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+        <input
+          type="search"
+          value={playerQuery}
+          onChange={(e) => setPlayerQuery(e.target.value)}
+          placeholder="Search player name..."
+          aria-label="Search player name"
+          className="h-10 rounded-lg border border-border bg-bg-raised px-3 text-sm text-text-primary"
+        />
+        <input
+          type="search"
+          value={eventQuery}
+          onChange={(e) => setEventQuery(e.target.value)}
+          placeholder="Search event name..."
+          aria-label="Search event name"
+          className="h-10 rounded-lg border border-border bg-bg-raised px-3 text-sm text-text-primary"
+        />
+      </div>
+
       <div className="flex flex-wrap gap-2" role="tablist">
         {TABS.map((t) => (
           <button
@@ -209,7 +251,7 @@ export default function PaperBadges() {
             className={`px-4 h-10 rounded-lg text-sm font-semibold border ${tab === t.id ? 'bg-secondary text-black border-secondary' : 'border-border text-text-primary hover:border-secondary'}`}
           >
             {t.label}
-            {t.id !== 'events' && <span className="ml-1.5 opacity-70">{groups[t.id].length}</span>}
+            {(t.id !== 'events' || searching) && <span className="ml-1.5 opacity-70">{filtered[t.id].length}</span>}
           </button>
         ))}
       </div>
@@ -218,8 +260,10 @@ export default function PaperBadges() {
 
       {tab !== 'events' && (
         <ul className={`bg-bg-surface border border-border rounded-xl divide-y divide-border ${busy ? 'opacity-60' : ''}`}>
-          {groups[tab].length === 0 && <li className="px-4 py-6 text-sm text-text-muted">Nothing here.</li>}
-          {groups[tab].map((row) => (
+          {filtered[tab].length === 0 && (
+            <li className="px-4 py-6 text-sm text-text-muted">{searching ? 'Nothing matches your search.' : 'Nothing here.'}</li>
+          )}
+          {filtered[tab].map((row) => (
             <ResultRow key={`${row.folder}-${row.place}`} row={row} act={act} />
           ))}
         </ul>
@@ -227,7 +271,10 @@ export default function PaperBadges() {
 
       {tab === 'events' && (
         <ul className="bg-bg-surface border border-border rounded-xl divide-y divide-border">
-          {data.events.map((ev) => (
+          {filtered.events.length === 0 && (
+            <li className="px-4 py-6 text-sm text-text-muted">Nothing matches your search.</li>
+          )}
+          {filtered.events.map((ev) => (
             <li key={ev.folder} className="flex flex-wrap items-center gap-3 px-4 py-3">
               <div className="flex-1 min-w-[14rem]">
                 <Link to={`/top-8/${encodeURIComponent(ev.folder)}`} className="font-semibold text-text-primary hover:text-secondary">

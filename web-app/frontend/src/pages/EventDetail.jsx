@@ -7,6 +7,7 @@ import Top8Profile from '@/components/deck/Top8Profile'
 import Spinner from '@/components/ui/Spinner'
 import ShareLinkButton from '@/components/ui/ShareLinkButton'
 import usePageTitle from '@/hooks/usePageTitle'
+import useMediaQuery from '@/hooks/useMediaQuery'
 
 const ELEMENT_COLORS = {
   Fire: { label: 'text-red-400', bar: 'from-red-500 to-red-700' },
@@ -205,7 +206,7 @@ function MatchHistory({ entry, imageFiles }) {
         const isTopCut = match.phase === 'SingleElimination'
         return (
           <li key={match.round ?? i} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-            <div className="w-24 flex-shrink-0">
+            <div className="w-16 sm:w-24 flex-shrink-0">
               <span className="text-xs font-semibold text-text-primary">Round {match.round}</span>
               {isTopCut && <span className="block text-[10px] text-yellow-400">Top Cut</span>}
             </div>
@@ -233,22 +234,24 @@ function MatchHistory({ entry, imageFiles }) {
               )}
             </div>
 
-            {opp?.deck_id && (
-              <Link
-                to={`/deck-rec/${opp.deck_id}`}
-                className="text-secondary border border-secondary rounded px-2 py-0.5 text-[11px] hover:bg-secondary hover:text-black transition-colors"
-              >
-                Deck List
-              </Link>
-            )}
+            <div className="ml-auto flex items-center gap-x-3">
+              {opp?.deck_id && (
+                <Link
+                  to={`/deck-rec/${opp.deck_id}`}
+                  className="whitespace-nowrap text-secondary border border-secondary rounded px-2 py-0.5 text-[11px] hover:bg-secondary hover:text-black transition-colors"
+                >
+                  Deck List
+                </Link>
+              )}
 
-            <span
-              className={`w-14 text-center text-[11px] font-semibold rounded border px-2 py-0.5 ${
-                RESULT_CLASSES[match.result] || 'bg-white/10 text-text-muted border-border'
-              }`}
-            >
-              {match.result || '—'}
-            </span>
+              <span
+                className={`w-14 text-center text-[11px] font-semibold rounded border px-2 py-0.5 ${
+                  RESULT_CLASSES[match.result] || 'bg-white/10 text-text-muted border-border'
+                }`}
+              >
+                {match.result || '—'}
+              </span>
+            </div>
           </li>
         )
       })}
@@ -372,6 +375,7 @@ function AvatarWinRates({ stats, imageFiles }) {
 function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHistory, imageFiles, profiles, onProfilesChange }) {
   const [dragIdx, setDragIdx] = useState(null)
   const [expanded, setExpanded] = useState(null)
+  const isWide = useMediaQuery('(min-width: 768px)')
 
   if (!decks?.length) return null
 
@@ -394,6 +398,83 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHis
     setDragIdx(null)
   }
 
+  const toggle = (idx) => setExpanded(expanded === idx ? null : idx)
+  const dragProps = (idx) => (isAdmin ? {
+    draggable: true,
+    onDragStart: () => handleDragStart(idx),
+    onDragOver: handleDragOver,
+    onDrop: () => handleDrop(idx),
+  } : {})
+
+  // Phones get one stacked card per deck. Five table columns cannot fit at
+  // that width: the deck name wrapped to four lines and the Player column
+  // scrolled off-screen.
+  if (!isWide) return (
+    <ul className="divide-y divide-border/30">
+      {decks.map((deck, idx) => {
+        const entry = historyFor(deck)
+        const isOpen = expanded === idx
+        return (
+          <li key={idx} {...dragProps(idx)}>
+            <div className="flex items-start gap-3 p-3">
+              {isAdmin && (
+                <span className="cursor-grab text-text-muted select-none pt-0.5">⠁⠁</span>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-text-primary leading-snug break-words">{deck.deck_name || '-'}</p>
+                <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-secondary">
+                  <span>{deck.avatar}</span>
+                  <ElementIcons elements={deck.elements} />
+                </p>
+                {entry ? (
+                  <button
+                    className="mt-1 flex items-center gap-1.5 text-left text-xs text-text-muted hover:text-secondary"
+                    onClick={() => toggle(idx)}
+                    aria-expanded={isOpen}
+                  >
+                    <span className={`text-[10px] transition-transform ${isOpen ? 'rotate-90' : ''}`}>▶</span>
+                    <span>
+                      <span className="text-text-primary">{deck.player}</span>
+                      {' · '}
+                      {entry.wins}-{entry.losses}
+                      {entry.draws ? `-${entry.draws}` : ''}
+                      {' · '}
+                      {entry.matches.length} round{entry.matches.length !== 1 ? 's' : ''}
+                    </span>
+                  </button>
+                ) : (
+                  <p className="mt-1 text-xs text-text-primary">{deck.player}</p>
+                )}
+                {tableType === 'top8' && profiles && (
+                  <Top8Profile
+                    entry={profileFor(deck, idx)}
+                    deckId={deck.deck_id}
+                    folder={eventFolder}
+                    isAdmin={isAdmin}
+                    onChange={onProfilesChange}
+                  />
+                )}
+              </div>
+              {deck.deck_id && (
+                <Link
+                  to={`/deck-rec/${deck.deck_id}`}
+                  className="flex-shrink-0 whitespace-nowrap text-secondary border border-secondary rounded px-3 py-1.5 text-xs hover:bg-secondary hover:text-black transition-colors"
+                >
+                  Deck List
+                </Link>
+              )}
+            </div>
+            {isOpen && entry && (
+              <div className="bg-bg-raised/40 px-3 pb-2">
+                <MatchHistory entry={entry} imageFiles={imageFiles} />
+              </div>
+            )}
+          </li>
+        )
+      })}
+    </ul>
+  )
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -415,13 +496,7 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHis
             const colSpan = 5 + (isAdmin ? 1 : 0)
             return (
               <Fragment key={idx}>
-                <tr
-                  className="border-t border-border/30 hover:bg-white/5"
-                  draggable={isAdmin}
-                  onDragStart={() => handleDragStart(idx)}
-                  onDragOver={handleDragOver}
-                  onDrop={() => handleDrop(idx)}
-                >
+                <tr className="border-t border-border/30 hover:bg-white/5" {...dragProps(idx)}>
                   {isAdmin && (
                     <td className="py-3 px-4 cursor-grab text-text-muted text-center select-none">⠁⠁</td>
                   )}
@@ -429,7 +504,7 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHis
                     {entry ? (
                       <button
                         className="text-left hover:text-secondary"
-                        onClick={() => setExpanded(isOpen ? null : idx)}
+                        onClick={() => toggle(idx)}
                         aria-expanded={isOpen}
                       >
                         <span className="flex items-center gap-1.5">
@@ -463,7 +538,7 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHis
                     {deck.deck_id ? (
                       <Link
                         to={`/deck-rec/${deck.deck_id}`}
-                        className="text-secondary border border-secondary rounded px-3 py-1 text-xs hover:bg-secondary hover:text-black transition-colors"
+                        className="inline-block whitespace-nowrap text-secondary border border-secondary rounded px-3 py-1 text-xs hover:bg-secondary hover:text-black transition-colors"
                       >
                         Deck List
                       </Link>
@@ -473,9 +548,7 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHis
                 {isOpen && entry && (
                   <tr className="border-t border-border/30 bg-bg-raised/40">
                     <td colSpan={colSpan} className="p-0">
-                      {/* Pinned to the left so the panel stays readable while
-                          the table itself scrolls sideways on narrow screens. */}
-                      <div className="sticky left-0 w-[calc(100vw-2rem)] px-4 pb-3 md:w-auto">
+                      <div className="px-4 pb-3">
                         <MatchHistory entry={entry} imageFiles={imageFiles} />
                       </div>
                     </td>
@@ -566,7 +639,7 @@ function CardStatsTable({ cardData, top8CardData }) {
         <input
           type="text"
           placeholder="Search cards..."
-          className="flex-1 min-w-[200px] bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
+          className="w-full sm:w-auto sm:flex-1 sm:min-w-[200px] bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -595,13 +668,13 @@ function CardStatsTable({ cardData, top8CardData }) {
               <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none" onClick={() => handleSort('name')}>
                 Card Name{sortIcon('name')}
               </th>
-              <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none" onClick={() => handleSort('type')}>
+              <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none hidden sm:table-cell" onClick={() => handleSort('type')}>
                 Type{sortIcon('type')}
               </th>
-              <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none" onClick={() => handleSort('element')}>
+              <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none hidden sm:table-cell" onClick={() => handleSort('element')}>
                 Element{sortIcon('element')}
               </th>
-              <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none" onClick={() => handleSort('rarity')}>
+              <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none hidden sm:table-cell" onClick={() => handleSort('rarity')}>
                 Rarity{sortIcon('rarity')}
               </th>
               <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none w-24" onClick={() => handleSort('count')}>
@@ -610,7 +683,7 @@ function CardStatsTable({ cardData, top8CardData }) {
               <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none w-24 hidden sm:table-cell" onClick={() => handleSort('avg_played')}>
                 Avg{sortIcon('avg_played')}
               </th>
-              <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none w-24 hidden sm:table-cell" onClick={() => handleSort('deck_percent')}>
+              <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none w-24" onClick={() => handleSort('deck_percent')}>
                 {hasComparison ? 'All %' : '% Decks'}{sortIcon('deck_percent')}
               </th>
               {hasComparison && (
@@ -636,17 +709,25 @@ function CardStatsTable({ cardData, top8CardData }) {
               const diff = hasComparison ? top8Pct - allPct : 0
               return (
                 <tr key={card.name} className="border-t border-border/30 hover:bg-white/5">
-                  <td className="py-2.5 px-3">{card.name}</td>
-                  <td className="py-2.5 px-3">{card.type}</td>
-                  <td className="py-2.5 px-3">{card.element}</td>
                   <td className="py-2.5 px-3">
+                    {card.name}
+                    {/* Phones drop the Type, Element and Rarity columns to
+                        make room for % Decks, so show them under the name. */}
+                    <span className="sm:hidden mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-text-muted">
+                      {[card.type, card.element].filter(Boolean).join(' · ')}
+                      {card.rarity && <span className={`px-1.5 rounded ${rarityClass}`}>{card.rarity}</span>}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 hidden sm:table-cell">{card.type}</td>
+                  <td className="py-2.5 px-3 hidden sm:table-cell">{card.element}</td>
+                  <td className="py-2.5 px-3 hidden sm:table-cell">
                     <span className={`text-xs px-2 py-0.5 rounded ${rarityClass}`}>{card.rarity}</span>
                   </td>
                   <td className="py-2.5 px-3">
                     <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded font-semibold text-xs">{card.count}</span>
                   </td>
                   <td className="py-2.5 px-3 font-semibold text-secondary hidden sm:table-cell">{card.avg_played}</td>
-                  <td className="py-2.5 px-3 font-semibold text-secondary hidden sm:table-cell">{card.deck_percent}%</td>
+                  <td className="py-2.5 px-3 font-semibold text-secondary">{card.deck_percent}%</td>
                   {hasComparison && (
                     <>
                       <td className="py-2.5 px-3 font-semibold text-yellow-400 hidden sm:table-cell">{top8Pct}%</td>

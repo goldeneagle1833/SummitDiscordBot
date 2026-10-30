@@ -74,8 +74,9 @@ const HISTORY = {
   },
 }
 
-function mockApi({ history = HISTORY } = {}) {
+function mockApi({ history = HISTORY, profiles = [] } = {}) {
   get.mockImplementation((url) => {
+    if (url.includes('/paper-finishes/event/')) return Promise.resolve({ entries: profiles })
     if (url.includes('/match-history')) return Promise.resolve(history)
     if (url.includes('/avatars/image-files')) return Promise.resolve([])
     if (url.includes('/api/events/')) return Promise.resolve(EVENT)
@@ -244,6 +245,15 @@ describe('EventDetail deck list layout', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     const links = screen.getAllByRole('link', { name: 'Deck List' })
     expect(links.map((a) => a.getAttribute('href'))).toEqual(['/deck-rec/deck-1', '/deck-rec/deck-9'])
+  })
+
+  it('links the Top 8 player to their Summit profile on phones', async () => {
+    setViewport(false)
+    mockApi({ profiles: [{ deck_id: 'deck-1', place: 1, status: 'matched', player: { user_id: '42', name: 'Christian V' } }] })
+    renderWithRouter(<EventDetail />)
+
+    const link = await screen.findByRole('link', { name: /Christian V/ })
+    expect(link.getAttribute('href')).toBe('/player/42')
   })
 
   it('keeps the table on wider screens', async () => {

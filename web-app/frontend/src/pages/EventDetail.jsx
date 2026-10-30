@@ -445,6 +445,15 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHis
                 ) : (
                   <p className="mt-1 text-xs text-text-primary">{deck.player}</p>
                 )}
+                {tableType === 'top8' && profiles && (
+                  <Top8Profile
+                    entry={profileFor(deck, idx)}
+                    deckId={deck.deck_id}
+                    folder={eventFolder}
+                    isAdmin={isAdmin}
+                    onChange={onProfilesChange}
+                  />
+                )}
               </div>
               {deck.deck_id && (
                 <Link

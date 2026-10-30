@@ -75,10 +75,10 @@ export default function Player() {
 
   // Profile tab, kept in the URL so a tab can be linked to
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab = searchParams.get('tab') || 'overview'
+  const tab = searchParams.get('tab') || 'matches'
   const setTab = (id) => {
     const next = new URLSearchParams(searchParams)
-    if (id === 'overview') next.delete('tab')
+    if (id === 'matches') next.delete('tab')
     else next.set('tab', id)
     setSearchParams(next, { replace: true })
   }
@@ -185,7 +185,7 @@ export default function Player() {
     { id: 'matches', label: 'Matches' },
     hasPostseason && { id: 'postseason', label: 'Postseason' },
   ].filter(Boolean)
-  const activeTab = tabs.some((t) => t.id === tab) ? tab : 'overview'
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : 'matches'
 
   const settingsItems = [
     { label: 'Featured deck', onClick: () => setShowFeaturedModal(true) },

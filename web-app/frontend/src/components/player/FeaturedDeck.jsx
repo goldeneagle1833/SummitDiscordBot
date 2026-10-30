@@ -4,14 +4,13 @@ import { getFeaturedDeck } from '@/api/players'
 import { getDeckSourceLabel } from '@/utils/deckLinks'
 
 /**
- * The public deck a player chose to show off on their profile.
- *
- * Only ever a link the player pasted themselves, never a deck from their
- * ranked games. Visitors see nothing until one is set; the owner gets a
- * prompt to add one.
+ * The deck shown off on a player's profile: one they pasted, or by default
+ * their most-played deck that is public on sorcerytcg.com or Sorcery Online.
+ * Visitors see nothing when there is none; the owner gets a prompt.
  */
 export default function FeaturedDeck({ playerId, isOwner, onEdit, refreshKey = 0, onLoaded }) {
   const [deck, setDeck] = useState(undefined)
+  const [mode, setMode] = useState('auto')
 
   useEffect(() => {
     let active = true
@@ -19,7 +18,8 @@ export default function FeaturedDeck({ playerId, isOwner, onEdit, refreshKey = 0
       .then((res) => {
         if (!active) return
         setDeck(res?.deck || null)
-        onLoaded?.(res?.deck || null)
+        setMode(res?.mode || 'auto')
+        onLoaded?.(res || null)
       })
       .catch(() => active && setDeck(null))
     return () => {
@@ -36,7 +36,9 @@ export default function FeaturedDeck({ playerId, isOwner, onEdit, refreshKey = 0
         <div className="min-w-0">
           <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">Featured Deck</h2>
           <p className="text-sm text-text-muted mt-1">
-            Show off a deck on your profile. Paste a public sorcerytcg.com or Sorcery Online deck link.
+            {mode === 'off'
+              ? 'Turned off. Nobody sees a featured deck on your profile.'
+              : 'Your most-played deck shows here once it is public on sorcerytcg.com or Sorcery Online. Or pick a deck yourself.'}
           </p>
         </div>
         <button
@@ -44,7 +46,7 @@ export default function FeaturedDeck({ playerId, isOwner, onEdit, refreshKey = 0
           onClick={onEdit}
           className="px-4 py-2 text-sm font-semibold rounded bg-secondary text-black hover:opacity-90"
         >
-          Add featured deck
+          {mode === 'off' ? 'Turn on' : 'Choose a deck'}
         </button>
       </section>
     )
@@ -63,7 +65,12 @@ export default function FeaturedDeck({ playerId, isOwner, onEdit, refreshKey = 0
             />
           )}
           <div className="min-w-0">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">Featured Deck</h2>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">
+              Featured Deck
+              {deck.picked === 'auto' && (
+                <span className="ml-2 normal-case tracking-normal font-semibold text-secondary">· Most played</span>
+              )}
+            </h2>
             <p className="text-xl font-display text-text-primary break-words mt-0.5">{deck.name}</p>
             {deck.avatar && <p className="text-sm text-text-muted">{deck.avatar}</p>}
           </div>
@@ -90,9 +97,11 @@ export default function FeaturedDeck({ playerId, isOwner, onEdit, refreshKey = 0
       </div>
       {isOwner && (
         <p className="text-xs text-text-muted">
-          {deck.auto_update
-            ? 'Kept up to date: changes you make to the public deck show here within a few hours.'
-            : 'Saved as it was when you added it. Turn on "Keep it up to date" to follow changes.'}
+          {deck.picked === 'auto'
+            ? 'Picked for you: your most-played deck that is public. It changes when you play another deck more. Edit to choose your own or turn it off.'
+            : deck.auto_update
+              ? 'Kept up to date: changes you make to the public deck show here within a few hours.'
+              : 'Saved as it was when you added it. Turn on "Keep it up to date" to follow changes.'}
         </p>
       )}
       <DeckVisualizer spellbook={deck.spellbook} atlas={deck.atlas} sideboard={deck.sideboard} />

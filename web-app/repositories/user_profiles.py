@@ -74,6 +74,7 @@ class UserProfileRepository:
             'featured_deck_json': 'TEXT',
             'featured_deck_auto_update': 'INTEGER',
             'featured_deck_checked_at': 'TEXT',
+            'featured_deck_source': 'TEXT',
         }
 
         # Add missing columns
@@ -655,12 +656,18 @@ class UserProfileRepository:
         return updated
 
     def get_featured_deck(self, user_id: str) -> dict | None:
-        """The public deck a player chose to show on their profile, or None."""
+        """The player's featured deck settings, or None if never touched.
+
+        ``source`` is "manual" (a link the player pasted), "auto" (their
+        most-played public deck, picked by the site) or "off" (they chose to
+        show none). An auto row with no url means nothing public was found.
+        """
         conn = self._get_connection()
         row = conn.execute(
             "SELECT featured_deck_url, featured_deck_json, featured_deck_auto_update,"
-            " featured_deck_checked_at FROM user_profiles"
-            " WHERE user_id IN (?, ?) AND featured_deck_url IS NOT NULL LIMIT 1",
+            " featured_deck_checked_at, featured_deck_source FROM user_profiles"
+            " WHERE user_id IN (?, ?)"
+            " AND (featured_deck_url IS NOT NULL OR featured_deck_source IS NOT NULL) LIMIT 1",
             self._both_ids(user_id),
         ).fetchone()
         conn.close()
@@ -675,20 +682,27 @@ class UserProfileRepository:
             "deck": deck if isinstance(deck, dict) else {},
             "auto_update": bool(row[2]),
             "checked_at": row[3],
+            # Rows saved before auto picks existed were all pasted links
+            "source": row[4] or "manual",
         }
 
     def set_featured_deck(
-        self, user_id: str, url: str, deck: dict, auto_update: bool
+        self, user_id: str, url: str | None, deck: dict | None, auto_update: bool,
+        source: str = "manual",
     ) -> bool:
-        """Save a player's featured deck: the link and a copy of the list."""
+        """Save a player's featured deck: the link, a copy of the list, and who chose it."""
         now = datetime.now(timezone.utc).isoformat()
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
             "UPDATE user_profiles SET featured_deck_url = ?, featured_deck_json = ?,"
-            " featured_deck_auto_update = ?, featured_deck_checked_at = ?"
+            " featured_deck_auto_update = ?, featured_deck_checked_at = ?,"
+            " featured_deck_source = ?"
             " WHERE user_id IN (?, ?)",
-            (url, json.dumps(deck), 1 if auto_update else 0, now, *self._both_ids(user_id)),
+            (
+                url, json.dumps(deck) if deck else None, 1 if auto_update else 0, now,
+                source, *self._both_ids(user_id),
+            ),
         )
         conn.commit()
         updated = cur.rowcount > 0
@@ -720,13 +734,30 @@ class UserProfileRepository:
         conn.commit()
         conn.close()
 
+    def save_auto_featured_deck(self, user_id: str, url: str | None, deck: dict | None) -> None:
+        """Store the site's pick, unless the player has since chosen for themselves."""
+        now = datetime.now(timezone.utc).isoformat()
+        conn = self._get_connection()
+        conn.execute(
+            "UPDATE user_profiles SET featured_deck_url = ?, featured_deck_json = ?,"
+            " featured_deck_auto_update = 1, featured_deck_checked_at = ?,"
+            " featured_deck_source = 'auto'"
+            " WHERE user_id IN (?, ?)"
+            " AND COALESCE(featured_deck_source, CASE WHEN featured_deck_url IS NULL"
+            " THEN 'auto' ELSE 'manual' END) = 'auto'",
+            (url, json.dumps(deck) if deck else None, now, *self._both_ids(user_id)),
+        )
+        conn.commit()
+        conn.close()
+
     def clear_featured_deck(self, user_id: str) -> bool:
-        """Take the featured deck off a player's profile."""
+        """Forget the player's choice, so the site picks their deck again."""
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
             "UPDATE user_profiles SET featured_deck_url = NULL, featured_deck_json = NULL,"
-            " featured_deck_auto_update = NULL, featured_deck_checked_at = NULL"
+            " featured_deck_auto_update = NULL, featured_deck_checked_at = NULL,"
+            " featured_deck_source = NULL"
             " WHERE user_id IN (?, ?)",
             self._both_ids(user_id),
         )

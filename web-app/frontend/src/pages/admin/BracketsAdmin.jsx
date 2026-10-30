@@ -31,6 +31,7 @@ const SOURCES = [
   { value: 'ticket_holders', label: 'Ticket holders' },
   { value: 'overall', label: 'Everyone on the ladder' },
   { value: 'limited', label: 'Limited season ladder (Limited bracket)' },
+  { value: 'underdog', label: 'Underdog avatars (best player on the 8 weakest avatars)' },
   { value: 'manual', label: 'Empty (add players myself)' },
 ]
 
@@ -54,12 +55,76 @@ function SetOptions({ id, sets }) {
   )
 }
 
+/**
+ * The underdog field before it is drafted: the season's avatars weakest
+ * first, who each of the 8 sends, and why any avatar was passed over.
+ * Ticking "Leave out" skips an avatar so the next weakest moves up.
+ */
+function UnderdogPreview({ pool, exclude = [], onToggle }) {
+  const avatars = pool.avatars || []
+  if (!avatars.length) {
+    return <p className="text-xs text-text-muted">No avatar games recorded for this season.</p>
+  }
+  const lastPicked = avatars.reduce((last, a, i) => (a.player || a.excluded ? i : last), -1)
+  const shown = avatars.slice(0, Math.max(lastPicked + 1, 8))
+  return (
+    <div className="border border-border rounded overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-[11px] uppercase tracking-wider text-text-muted bg-bg-raised">
+          <tr>
+            <th className="text-left px-3 py-2">Avatar</th>
+            <th className="text-right px-3 py-2">Score</th>
+            <th className="text-right px-3 py-2 hidden sm:table-cell">Games</th>
+            <th className="text-left px-3 py-2">Sends</th>
+            <th className="text-center px-3 py-2">Leave out</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((a) => (
+            <tr key={a.avatar} className={`border-t border-border ${a.player ? '' : 'text-text-muted'}`}>
+              <td className="px-3 py-2">
+                {a.avatar}
+                <span className="block text-xs text-text-muted sm:hidden">{a.games} games</span>
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums">{a.avatar_score}</td>
+              <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">{a.games}</td>
+              <td className="px-3 py-2">
+                {a.player ? (
+                  <>
+                    <span className="text-text-primary">{a.player.display_name}</span>{' '}
+                    <span className="text-text-muted tabular-nums whitespace-nowrap">
+                      {a.player.wins}-{a.player.losses} · score {a.player.avatar_score}
+                    </span>
+                    {a.note && <span className="block text-xs text-text-muted">{a.note}</span>}
+                  </>
+                ) : (
+                  <span className="text-xs">{a.note}</span>
+                )}
+              </td>
+              <td className="px-3 py-2 text-center">
+                <input
+                  type="checkbox"
+                  aria-label={`Leave out ${a.avatar}`}
+                  checked={exclude.includes(a.avatar)}
+                  onChange={() => onToggle(a.avatar)}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function CreateForm({ onCreated, sets = [] }) {
   const [form, setForm] = useState({
     name: '',
     size: 16,
     source: 'ticket_holders',
     set_name: sets[0] || '',
+    event: '',
+    exclude: [],
   })
   const [pool, setPool] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -78,8 +143,11 @@ function CreateForm({ onCreated, sets = [] }) {
       setPool(null)
       return
     }
-    adminGetSeedPool(form.source).then(setPool).catch(() => setPool(null))
-  }, [form.source])
+    const underdog = form.source === 'underdog'
+    adminGetSeedPool(form.source, underdog ? form.event : undefined, underdog ? form.exclude : [])
+      .then(setPool)
+      .catch(() => setPool(null))
+  }, [form.source, form.event, form.exclude])
 
   useEffect(() => {
     loadPool()
@@ -106,6 +174,9 @@ function CreateForm({ onCreated, sets = [] }) {
         size: Number(form.size),
         source: form.source,
         set_name: form.set_name,
+        ...(form.source === 'underdog'
+          ? { event: form.event || pool?.event?.event_id, exclude: form.exclude }
+          : {}),
       })
       onCreated(res.slug)
       setForm((f) => ({ ...f, name: '' }))
@@ -173,8 +244,12 @@ function CreateForm({ onCreated, sets = [] }) {
             value={form.source}
             onChange={(e) => {
               const source = e.target.value
-              // A Limited season's bracket is its top 8.
-              setForm((f) => ({ ...f, source, ...(source === 'limited' ? { size: 8 } : {}) }))
+              // A Limited season's bracket is its top 8, and so is the underdog bracket.
+              setForm((f) => ({
+                ...f,
+                source,
+                ...(source === 'limited' || source === 'underdog' ? { size: 8 } : {}),
+              }))
             }}
           >
             {SOURCES.map((source) => (
@@ -182,16 +257,54 @@ function CreateForm({ onCreated, sets = [] }) {
             ))}
           </select>
         </div>
+        {form.source === 'underdog' && pool?.seasons?.length > 0 && (
+          <div>
+            <label className={LABEL} htmlFor="bracket-season">Season</label>
+            <select
+              id="bracket-season"
+              className={INPUT}
+              value={form.event || pool.event?.event_id || ''}
+              onChange={(e) => setForm((f) => ({ ...f, event: e.target.value }))}
+            >
+              {pool.seasons.map((season) => (
+                <option key={season.event_id} value={season.event_id}>
+                  {season.event_name}{season.is_active ? ' (running)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
+
+      {form.source === 'underdog' && pool && (
+        <UnderdogPreview
+          pool={pool}
+          exclude={form.exclude}
+          onToggle={(avatar) =>
+            setForm((f) => ({
+              ...f,
+              exclude: f.exclude.includes(avatar)
+                ? f.exclude.filter((a) => a !== avatar)
+                : [...f.exclude, avatar],
+            }))
+          }
+        />
+      )}
 
       {pool && (
         <p className="text-xs text-text-muted">
           {pool.players.length} player{pool.players.length === 1 ? '' : 's'} available
           {pool.event?.event_name
             ? ` from ${pool.event.event_name}`
-            : form.source === 'limited' ? '' : ' (lifetime ELO)'}.
+            : form.source === 'limited' || form.source === 'underdog' ? '' : ' (lifetime ELO)'}.
           {form.source === 'limited' && (
             <> Makes a Limited bracket: its games count toward lifetime Limited ELO.</>
+          )}
+          {form.source === 'underdog' && (
+            <>
+              {' '}Makes an Underdog bracket, apart from the top cut: players need {pool.min_games ?? 10}+
+              games on an avatar, one avatar each, seeded by their Avatar Score. Its games don't affect ELO.
+            </>
           )}
           {form.source === 'ticket_holders' && !pool.ticket_filter_applied && (
             <>

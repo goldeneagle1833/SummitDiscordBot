@@ -8,7 +8,7 @@ export const getPlayer = (id, { event, source, page, perPage, casualPage, extern
   if (perPage) params.set('per_page', perPage)
   if (casualPage) params.set('casual_page', casualPage)
   if (externalPage) params.set('external_page', externalPage)
-  for (const key of ['opponent', 'result', 'avatar', 'opponent_avatar']) {
+  for (const key of ['opponent', 'result', 'avatar', 'opponent_avatar', 'play_draw']) {
     if (filters[key]) params.set(key, filters[key])
   }
   const qs = params.toString()
@@ -43,3 +43,9 @@ export const getPlayerCardStats = (id, { event, queue } = {}) => {
 
 /** Hide avatars from the player's own profile. Their games are kept. */
 export const setHiddenAvatars = (id, avatars) => put(`/api/player/${id}/hidden-avatars`, { avatars })
+
+/** The public deck a player features on their profile: { deck } or { deck: null }. */
+export const getFeaturedDeck = (id) => get(`/api/player/${id}/featured-deck`)
+export const setFeaturedDeck = (id, url, autoUpdate) =>
+  put(`/api/player/${id}/featured-deck`, { url, auto_update: autoUpdate })
+export const clearFeaturedDeck = (id) => del(`/api/player/${id}/featured-deck`)

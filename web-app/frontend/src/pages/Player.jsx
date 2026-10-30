@@ -10,6 +10,8 @@ import EloBrackets from '@/components/player/EloBrackets'
 import AvatarPerformance from '@/components/player/AvatarPerformance'
 import AvatarMatchups from '@/components/player/AvatarMatchups'
 import RecentDecks from '@/components/player/RecentDecks'
+import FeaturedDeck from '@/components/player/FeaturedDeck'
+import FeaturedDeckModal from '@/components/player/FeaturedDeckModal'
 import LimitedArena from '@/components/player/LimitedArena'
 import MatchHistoryTable from '@/components/player/MatchHistoryTable'
 import MatchFilters from '@/components/player/MatchFilters'
@@ -24,6 +26,7 @@ import EloHistory from '@/components/player/EloHistory'
 import AvatarEloHistory from '@/components/player/AvatarEloHistory'
 import PostseasonSection from '@/components/player/PostseasonSection'
 import { AvatarHonoursSection, useAvatarHonours } from '@/components/player/AvatarHonours'
+import { PaperFinishesSection, usePaperFinishes } from '@/components/player/PaperFinishes'
 import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
 import BlockListModal from '@/components/player/BlockListModal'
 import QueueSettingsModal from '@/components/player/QueueSettingsModal'
@@ -66,6 +69,9 @@ export default function Player() {
   const [showResetModal, setShowResetModal] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [editDeck, setEditDeck] = useState(null)
+  const [showFeaturedModal, setShowFeaturedModal] = useState(false)
+  const [featuredDeck, setFeaturedDeckState] = useState(null)
+  const [featuredKey, setFeaturedKey] = useState(0)
 
   // Profile tab, kept in the URL so a tab can be linked to
   const [searchParams, setSearchParams] = useSearchParams()
@@ -78,7 +84,9 @@ export default function Player() {
   }
   const navigate = useNavigate()
   const avatarHonours = useAvatarHonours(playerId)
-  const hasPostseason = Boolean(useBracketMarks(playerId)?.entries?.length) || avatarHonours.length > 0
+  const paperFinishes = usePaperFinishes(playerId)
+  const hasPostseason =
+    Boolean(useBracketMarks(playerId)?.entries?.length) || avatarHonours.length > 0 || paperFinishes.length > 0
 
   const fetchData = useCallback(
     (ev, pg, src, cpg, pp, epg) => {
@@ -180,6 +188,7 @@ export default function Player() {
   const activeTab = tabs.some((t) => t.id === tab) ? tab : 'overview'
 
   const settingsItems = [
+    { label: 'Featured deck', onClick: () => setShowFeaturedModal(true) },
     { label: 'Privacy settings', onClick: () => setShowPrivacyModal(true) },
     { label: 'Block list', onClick: () => setShowBlockListModal(true) },
     /^\d+$/.test(String(playerId)) && { label: 'Queue settings', onClick: () => setShowQueueSettingsModal(true) },
@@ -264,6 +273,13 @@ export default function Player() {
             stats={stats}
             statsType={statsType}
             onStatsTypeChange={setStatsType}
+          />
+          <FeaturedDeck
+            playerId={playerId}
+            isOwner={Boolean(data.is_owner)}
+            onEdit={() => setShowFeaturedModal(true)}
+            refreshKey={featuredKey}
+            onLoaded={setFeaturedDeckState}
           />
           {sectionVisible('elo_history') && (
             <EloHistory eloHistory={data.elo_history} currentElo={data.elo} open />
@@ -385,6 +401,7 @@ export default function Player() {
         <div className="space-y-8">
           <AvatarHonoursSection honours={avatarHonours} />
           <PostseasonSection playerId={playerId} />
+          <PaperFinishesSection finishes={paperFinishes} />
         </div>
       )}
 
@@ -404,6 +421,15 @@ export default function Player() {
           eloSource={eloSource}
           onClose={() => setEditDeck(null)}
           onSaved={refreshCurrentPage}
+        />
+      )}
+
+      {showFeaturedModal && (
+        <FeaturedDeckModal
+          playerId={playerId}
+          current={featuredDeck}
+          onClose={() => setShowFeaturedModal(false)}
+          onSaved={() => setFeaturedKey((k) => k + 1)}
         />
       )}
 

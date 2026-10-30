@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import PostseasonName, { useBracketMarks } from '@/components/player/BracketMarks'
 import { AvatarHonourBadge, useAvatarHonours } from '@/components/player/AvatarHonours'
+import { PaperFinishBadge, usePaperFinishes } from '@/components/player/PaperFinishes'
 
 function initials(name) {
   const parts = String(name || '?').replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/)
@@ -119,6 +120,7 @@ export default function PlayerHeader({
 }) {
   const marks = useBracketMarks(playerId)
   const honours = useAvatarHonours(playerId)
+  const paperFinishes = usePaperFinishes(playerId)
   const wins = data.wins ?? 0
   const losses = data.losses ?? 0
 
@@ -136,19 +138,6 @@ export default function PlayerHeader({
             </PostseasonName>
           </h1>
           <div className="flex flex-wrap gap-2">
-            {avatarEntries.length > 0 && (
-              <ul className="contents" aria-label="Event ELO per avatar">
-                {avatarEntries.map((entry) => (
-                  <li
-                    key={entry.avatar}
-                    className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-bg-raised border border-border text-sm"
-                  >
-                    <strong className="text-text-primary">{entry.avatar}</strong>
-                    <span className="text-text-muted tabular-nums">{entry.event_elo} · #{entry.rank}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
             {marks?.best_label && (
               <PostseasonBadge label={marks.best_label} entries={marks.entries} onClick={onPostseason} />
             )}
@@ -159,10 +148,32 @@ export default function PlayerHeader({
                 onClick={onPostseason}
               />
             )}
+            {marks?.underdog_best_label && (
+              <PostseasonBadge
+                label={marks.underdog_best_label}
+                entries={marks.entries}
+                onClick={onPostseason}
+              />
+            )}
             <AvatarHonourBadge honours={honours} onClick={onPostseason} />
+            <PaperFinishBadge finishes={paperFinishes} />
           </div>
         </div>
       </div>
+
+      {avatarEntries.length > 0 && (
+        <ul className="basis-full flex flex-wrap gap-2 -mt-2 lg:order-last" aria-label="Event ELO per avatar">
+          {avatarEntries.map((entry) => (
+            <li
+              key={entry.avatar}
+              className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-bg-raised border border-border text-xs sm:text-sm"
+            >
+              <strong className="text-text-primary">{entry.avatar}</strong>
+              <span className="text-text-muted tabular-nums">{entry.event_elo} · #{entry.rank}</span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <div className="flex flex-wrap gap-8">
         {headline.elo != null && <BigStat value={headline.elo} label={headline.eloLabel} gold />}

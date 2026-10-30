@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, request, session
 from repositories.brackets import BracketRepository
 from services.brackets import BracketError, BracketService
 from services.ticket_holders import TicketHolderError, is_configured, sync_roster
-from utils.auth import is_admin, require_admin, require_auth
+from utils.auth import is_admin, require_admin, require_api_key, require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +152,30 @@ def open_match_table(slug, match_no):
     return jsonify({"success": True, **result}), 200
 
 
+@brackets_bp.route("/brackets/underdog-standings", methods=["GET"])
+@require_api_key
+def get_underdog_standings():
+    """Who the underdog bracket would take right now, for the Discord leaderboard.
+
+    The same pick the admin's New bracket preview makes. ``event`` is an event
+    id (default: the running season, else the last one to end) and
+    ``exclude`` a comma list of avatars to leave out.
+    """
+    exclude = [a for a in (request.args.get("exclude") or "").split(",") if a.strip()]
+    try:
+        pool = service.get_seed_pool("underdog", request.args.get("event"), exclude)
+    except Exception as e:
+        logger.error("Failed to load underdog standings: %s", e, exc_info=True)
+        return jsonify({"success": False, "error": "Could not load underdog standings"}), 500
+    return jsonify({
+        "success": True,
+        "event": pool["event"],
+        "players": pool["players"],
+        "avatars": pool["avatars"],
+        "min_games": pool["min_games"],
+    }), 200
+
+
 # -- Admin --------------------------------------------------------
 
 
@@ -165,7 +189,8 @@ def admin_list_brackets():
 @require_admin
 def admin_seed_pool():
     source = request.args.get("source", "ticket_holders")
-    pool = service.get_seed_pool(source)
+    exclude = [a for a in (request.args.get("exclude") or "").split(",") if a.strip()]
+    pool = service.get_seed_pool(source, request.args.get("event"), exclude)
     pool["ticket_sync_configured"] = is_configured()
     return jsonify({"success": True, **pool}), 200
 
@@ -193,6 +218,11 @@ def admin_create_bracket():
             confirm_hours=int(data.get("confirm_hours", 48)),
             set_name=data.get("set_name"),
             format=data.get("format"),
+            event=data.get("event"),
+            exclude=(
+                data["exclude"].split(",") if isinstance(data.get("exclude"), str)
+                else data.get("exclude") or ()
+            ),
         )
     except BracketError as e:
         return jsonify({"success": False, "error": str(e)}), 400

@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { getEvent, updateEventMetadata, updateEventDecks, refreshEvent, deleteEvent, pollEventJob, getEventMatchHistory, importMatchHistory } from '@/api/events'
 import { getAvatarImageFiles } from '@/api/cards'
+import { getEventProfiles } from '@/api/paperFinishes'
+import Top8Profile from '@/components/deck/Top8Profile'
 import Spinner from '@/components/ui/Spinner'
 import ShareLinkButton from '@/components/ui/ShareLinkButton'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -370,7 +372,7 @@ function AvatarWinRates({ stats, imageFiles }) {
 }
 
 /* ---- Deck Table ---- */
-function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHistory, imageFiles }) {
+function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHistory, imageFiles, profiles, onProfilesChange }) {
   const [dragIdx, setDragIdx] = useState(null)
   const [expanded, setExpanded] = useState(null)
   const isWide = useMediaQuery('(min-width: 768px)')
@@ -378,6 +380,11 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHis
   if (!decks?.length) return null
 
   const historyFor = (deck) => matchHistory?.by_deck_id?.[deck.deck_id] || null
+  // Summit profiles are matched for the top cut only
+  const profileFor = (deck, idx) =>
+    tableType === 'top8' && profiles
+      ? profiles.find((p) => deck.deck_id && p.deck_id === deck.deck_id) || profiles.find((p) => !p.deck_id && p.place === idx + 1) || null
+      : null
   const hasHistory = decks.some(historyFor)
 
   const handleDragStart = (idx) => setDragIdx(idx)
@@ -504,6 +511,15 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHis
                       </button>
                     ) : (
                       deck.player
+                    )}
+                    {tableType === 'top8' && profiles && (
+                      <Top8Profile
+                        entry={profileFor(deck, idx)}
+                        deckId={deck.deck_id}
+                        folder={eventFolder}
+                        isAdmin={isAdmin}
+                        onChange={onProfilesChange}
+                      />
                     )}
                   </td>
                   <td className="py-3 px-4">{deck.avatar}</td>
@@ -783,6 +799,15 @@ export default function EventDetail() {
       .then((res) => setMatchHistory(res?.available ? res : null))
       .catch(() => setMatchHistory(null))
   }, [folder])
+
+  // Which Summit profile each Top 8 entry matched (paper tournament badges)
+  const [profiles, setProfiles] = useState(null)
+  const loadProfiles = useCallback(() => {
+    getEventProfiles(folder)
+      .then((res) => setProfiles(res?.entries || []))
+      .catch(() => setProfiles([]))
+  }, [folder])
+  useEffect(loadProfiles, [loadProfiles])
 
   useEffect(() => {
     getAvatarImageFiles()
@@ -1145,6 +1170,8 @@ export default function EventDetail() {
                 onReorder={handleReorder}
                 matchHistory={matchHistory}
                 imageFiles={imageFiles}
+                profiles={profiles}
+                onProfilesChange={loadProfiles}
               />
             </div>
           )}

@@ -3,6 +3,8 @@
 import json
 import logging
 import sqlite3
+import threading
+from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, session, request
 
@@ -16,8 +18,8 @@ from repositories.user_profiles import UserProfileRepository
 from repositories.blocked_users_repo import BlockedUsersRepository
 from repositories.voice_only_repo import VoiceOnlyRepository
 from utils.auth import is_admin
-from utils.card_images import resolve_card_image
-from services.curiosa import is_deck_url, normalize_deck_url
+from utils.card_images import attach_images, resolve_card_image
+from services.curiosa import deck_url_source, is_deck_url, normalize_deck_url
 from services.avatar_elo import get_player_avatar_changes, get_player_avatar_elo
 
 logger = logging.getLogger(__name__)
@@ -2159,6 +2161,21 @@ def player_api(player_id):
     ranked_rows = [r for r in sorted_rows if not (len(r) > 19 and r[19] in ("casual", "testing"))]
     casual_rows = [r for r in sorted_rows if len(r) > 19 and r[19] in ("casual", "testing")]
 
+    def _player_on_play(row):
+        """True on the play, False on the draw, None when the match never recorded it."""
+        did_win = bool(row[0])
+        winner_went_first = row[17] if len(row) > 17 else None
+        loser_went_first = row[18] if len(row) > 18 else None
+        if winner_went_first is not None or loser_went_first is not None:
+            went_first = winner_went_first if did_win else loser_went_first
+            if not went_first:
+                return None
+            return "y" in str(went_first).lower()
+        first_player_val = row[1]
+        if not first_player_val:
+            return None
+        return did_win if "y" in str(first_player_val).lower() else not did_win
+
     # Matches tab filters. The choices come from every game in the period,
     # so picking one never empties its own dropdown.
     def _row_facts(row):
@@ -2171,6 +2188,7 @@ def player_api(player_id):
             "result": "win" if did_win else "loss",
             "avatar": my_avatar,
             "opponent_avatar": opp_avatar,
+            "play_draw": {True: "play", False: "draw"}.get(_player_on_play(row)),
         }
 
     row_facts = {id(r): _row_facts(r) for r in sorted_rows}
@@ -2195,6 +2213,8 @@ def player_api(player_id):
         "result": (request.args.get("result") or "").strip().lower(),
         "avatar": (request.args.get("avatar") or "").strip(),
         "opponent_avatar": (request.args.get("opponent_avatar") or "").strip(),
+        # Matches with no play/draw recorded only show under "All"
+        "play_draw": (request.args.get("play_draw") or "").strip().lower(),
     }
     match_filters = {k: v for k, v in match_filters.items() if v}
 
@@ -2335,28 +2355,7 @@ def player_api(player_id):
         if not show_deck_snapshots:
             has_deck_json = False
 
-        winner_went_first = row[17] if len(row) > 17 else None
-        loser_went_first = row[18] if len(row) > 18 else None
-
-        if winner_went_first is not None or loser_went_first is not None:
-            if did_win:
-                player_on_play = (
-                    winner_went_first and "y" in str(winner_went_first).lower()
-                )
-            else:
-                player_on_play = (
-                    loser_went_first and "y" in str(loser_went_first).lower()
-                )
-        else:
-            first_player_val = row[1]
-            if first_player_val:
-                fp_lower = str(first_player_val).lower()
-                if "y" in fp_lower:
-                    player_on_play = did_win
-                else:
-                    player_on_play = not did_win
-            else:
-                player_on_play = None
+        player_on_play = _player_on_play(row)
 
         return {
             "match_id": row[12],
@@ -2978,6 +2977,151 @@ def set_hidden_avatars(player_id):
     if not repo.set_hidden_avatars(player_id_normalized, avatars):
         return jsonify({"error": "Profile not found"}), 404
     return jsonify({"success": True, "avatars": repo.get_hidden_avatars(player_id_normalized)})
+
+
+# ---------------------------------------------------------------------------
+# Featured deck: a public deck the player chose to show on their profile.
+# Only ever a link the player pasted themselves - never a deck from their
+# ranked games.
+# ---------------------------------------------------------------------------
+
+# A kept-updated deck is re-read from its site at most this often
+FEATURED_DECK_REFRESH_SECONDS = 6 * 60 * 60
+_featured_refreshing: set[str] = set()
+_featured_refresh_lock = threading.Lock()
+
+
+def _fetch_featured_deck(url: str) -> dict:
+    """Read a deck from sorcerytcg.com or Sorcery Online, or {} if it can't be.
+
+    Both sites only hand out public decks, so a deck we can read is public.
+    """
+    from services.curiosa import CuriosaService
+
+    try:
+        deck = json.loads(CuriosaService().fetch_deck_data(url))
+    except (TypeError, ValueError):
+        return {}
+    has_cards = isinstance(deck, dict) and any(
+        deck.get(section) for section in ("avatar", "spellbook", "atlas")
+    )
+    return deck if has_cards else {}
+
+
+def _refresh_featured_deck(player_id: str, url: str) -> None:
+    try:
+        deck = _fetch_featured_deck(url)
+        UserProfileRepository().refresh_featured_deck(player_id, url, deck or None)
+    except Exception as e:
+        logger.warning(f"Featured deck refresh failed for {player_id}: {e}")
+    finally:
+        with _featured_refresh_lock:
+            _featured_refreshing.discard(player_id)
+
+
+def _featured_deck_is_stale(checked_at: str | None) -> bool:
+    if not checked_at:
+        return True
+    try:
+        checked = datetime.fromisoformat(checked_at)
+    except ValueError:
+        return True
+    if checked.tzinfo is None:
+        checked = checked.replace(tzinfo=timezone.utc)
+    age = (datetime.now(timezone.utc) - checked).total_seconds()
+    return age >= FEATURED_DECK_REFRESH_SECONDS
+
+
+def _featured_deck_payload(featured: dict) -> dict:
+    deck = featured["deck"]
+    # Card images resolve against the site's own image set, as in brackets
+    for section in ("avatar", "spellbook", "atlas", "sideboard"):
+        attach_images(deck.get(section))
+    avatar = deck.get("avatar") or []
+    return {
+        "url": featured["url"],
+        "source": deck_url_source(featured["url"]),
+        "name": deck.get("name") or "Featured deck",
+        "avatar": avatar[0].get("name") if avatar and isinstance(avatar[0], dict) else None,
+        "avatar_image": avatar[0].get("image") if avatar and isinstance(avatar[0], dict) else None,
+        "spellbook": deck.get("spellbook") or [],
+        "atlas": deck.get("atlas") or [],
+        "sideboard": deck.get("sideboard") or [],
+        "auto_update": featured["auto_update"],
+        "checked_at": featured["checked_at"],
+    }
+
+
+def _owner_or_admin(player_id):
+    """(normalized id, None) when the viewer may change this profile, else (None, error)."""
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return None, (jsonify({"error": "Authentication required"}), 401)
+    viewer = str(logged_in_user_id).removeprefix("google_")
+    player_id_normalized = str(player_id).removeprefix("google_")
+    if viewer != player_id_normalized and not is_admin():
+        return None, (jsonify({"error": "You can only change your own profile"}), 403)
+    return player_id_normalized, None
+
+
+@players_bp.route("/player/<player_id>/featured-deck", methods=["GET"])
+def get_featured_deck(player_id):
+    """The player's featured deck, or {"deck": null} when they have not set one."""
+    player_id_normalized = str(player_id).removeprefix("google_")
+    featured = UserProfileRepository().get_featured_deck(player_id_normalized)
+    if not featured or not featured["deck"]:
+        return jsonify({"deck": None})
+
+    # A kept-updated deck is re-read in the background; this answer uses the
+    # saved copy so the profile never waits on the deck site.
+    if featured["auto_update"] and _featured_deck_is_stale(featured["checked_at"]):
+        with _featured_refresh_lock:
+            start = player_id_normalized not in _featured_refreshing
+            if start:
+                _featured_refreshing.add(player_id_normalized)
+        if start:
+            threading.Thread(
+                target=_refresh_featured_deck,
+                args=(player_id_normalized, featured["url"]),
+                daemon=True,
+            ).start()
+
+    return jsonify({"deck": _featured_deck_payload(featured)})
+
+
+@players_bp.route("/player/<player_id>/featured-deck", methods=["PUT"])
+def set_featured_deck(player_id):
+    """Feature a public deck on the player's profile (owner or admin)."""
+    player_id_normalized, error = _owner_or_admin(player_id)
+    if error:
+        return error
+
+    data = request.get_json(silent=True) or {}
+    url = str(data.get("url") or "").strip()
+    if not is_deck_url(url):
+        return jsonify({"error": "Paste a sorcerytcg.com or Sorcery Online deck link"}), 400
+    url = normalize_deck_url(url)
+
+    deck = _fetch_featured_deck(url)
+    if not deck:
+        return jsonify({
+            "error": "We couldn't read that deck. Check the link and that the deck is set to public."
+        }), 400
+
+    repo = UserProfileRepository()
+    if not repo.set_featured_deck(player_id_normalized, url, deck, bool(data.get("auto_update"))):
+        return jsonify({"error": "Profile not found"}), 404
+    return jsonify({"success": True, "deck": _featured_deck_payload(repo.get_featured_deck(player_id_normalized))})
+
+
+@players_bp.route("/player/<player_id>/featured-deck", methods=["DELETE"])
+def clear_featured_deck(player_id):
+    """Take the featured deck off the player's profile (owner or admin)."""
+    player_id_normalized, error = _owner_or_admin(player_id)
+    if error:
+        return error
+    UserProfileRepository().clear_featured_deck(player_id_normalized)
+    return jsonify({"success": True})
 
 
 @players_bp.route("/player/<player_id>/card-stats")

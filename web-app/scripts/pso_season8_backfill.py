@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-time Season 8 backfill from Sorcery Online's game lookup.
+"""One-time Season 8 backfill from Play Sorcery Online's game lookup.
 
 Season 8 ranked games played before Summit opened every table through PSO
 (and so before replay links came back) are matched to the PSO game they came

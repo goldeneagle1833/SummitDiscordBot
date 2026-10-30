@@ -4,12 +4,12 @@ import { createPsoTable } from '@/api/decks'
 /**
  * "Try this Deck" — opens a Play Sorcery Online table with the deck preloaded.
  *
- * Sorcery Online tables always seat two, so the visitor takes the seat holding
+ * Play Sorcery Online tables always seat two, so the visitor takes the seat holding
  * the deck and the other seat stays open; its link is offered as an invite.
  *
  * The tab is opened synchronously on click (before the request) so popup
  * blockers treat it as user-initiated, and the table URL is swapped in once
- * Sorcery Online answers. If the browser blocked the tab anyway, the button
+ * Play Sorcery Online answers. If the browser blocked the tab anyway, the button
  * turns into a plain link the visitor can click.
  */
 export default function TryDeckButton({ deckId, className = '', size = 'md' }) {

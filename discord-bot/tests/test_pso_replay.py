@@ -1,4 +1,4 @@
-"""Sorcery Online replay links: saved from the table, carried onto the match."""
+"""Play Sorcery Online replay links: saved from the table, carried onto the match."""
 
 import sqlite3
 import sys

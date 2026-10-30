@@ -1589,7 +1589,7 @@ def get_deck_composition():
 
 
 # ---------------------------------------------------------------------------
-# Card Played Winrates (from Sorcery Online match callbacks)
+# Card Played Winrates (from Play Sorcery Online match callbacks)
 # ---------------------------------------------------------------------------
 
 _PLAYED_WR_Z = 1.96  # 95% confidence
@@ -1730,7 +1730,7 @@ def get_played_winrate_season_stats():
 
 @cards_bp.route("/cards/played-winrates")
 def get_played_winrates():
-    """Card played winrates from Sorcery Online match callback data.
+    """Card played winrates from Play Sorcery Online match callback data.
 
     Returns per-card stats: when a card is played in a game, how often does that
     player win? Supports ?event=all|current|<event_id> filtering.

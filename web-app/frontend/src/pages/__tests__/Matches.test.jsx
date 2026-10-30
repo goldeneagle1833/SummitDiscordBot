@@ -58,7 +58,7 @@ describe('Matches page recap', () => {
 })
 
 describe('Matches page replay column', () => {
-  it('links to the Sorcery Online replay when a match has one', async () => {
+  it('links to the Play Sorcery Online replay when a match has one', async () => {
     const replay = 'https://playsorceryonline.com/replay/abc123'
     get.mockReset()
     get.mockImplementation((url) => {

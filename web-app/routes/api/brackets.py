@@ -144,7 +144,7 @@ def submit_bracket_deck(slug):
 @brackets_bp.route("/brackets/<slug>/matches/<int:match_no>/table", methods=["POST"])
 @require_auth
 def open_match_table(slug, match_no):
-    """Open the Sorcery Online table for this pairing, both decks preloaded."""
+    """Open the Play Sorcery Online table for this pairing, both decks preloaded."""
     try:
         result = service.open_table(slug, match_no, _current_user_id())
     except BracketError as e:

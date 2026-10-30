@@ -63,7 +63,7 @@ SECTIONS: list[dict] = [
                 "type": "checkbox",
                 "options": [
                     "Joining the queue", "Reporting results",
-                    "Sorcery Online tables", "Voice rules", "How ELO works",
+                    "Play Sorcery Online tables", "Voice rules", "How ELO works",
                     "Finding games at my times",
                 ],
                 "allow_other": True,

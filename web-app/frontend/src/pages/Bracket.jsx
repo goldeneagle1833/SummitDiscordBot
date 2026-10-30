@@ -136,7 +136,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
   }
 
   async function handleOpenTable(match) {
-    setNotice('Opening a table on Sorcery Online…')
+    setNotice('Opening a table on Play Sorcery Online…')
     try {
       await openBracketMatchTable(slug, match.match_no)
       setNotice('Table ready — use "Join your table" on your match.')
@@ -284,7 +284,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
       {canEditPairings && editingPairings && (
         <div className="bg-secondary/10 border-l-2 border-secondary px-4 py-3 text-sm">
           Drag a player onto another to swap their places. Players keep their seed and
-          decklist. Only seats that haven’t been played, reported or given a Sorcery Online
+          decklist. Only seats that haven’t been played, reported or given a Play Sorcery Online
           table can move.
         </div>
       )}

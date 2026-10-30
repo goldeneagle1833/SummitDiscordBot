@@ -175,7 +175,7 @@ def _active_event_window():
 
 
 def _attach_replays(entries: list[dict], player_id: str) -> None:
-    """Add each match_records match's Sorcery Online replay link where the viewer may see it."""
+    """Add each match_records match's Play Sorcery Online replay link where the viewer may see it."""
     ids = sorted({e["match_id"] for e in entries})
     if not ids:
         return
@@ -3003,7 +3003,7 @@ _featured_refresh_lock = threading.Lock()
 
 
 def _fetch_featured_deck(url: str) -> dict:
-    """Read a deck from sorcerytcg.com or Sorcery Online, or {} if it can't be.
+    """Read a deck from sorcerytcg.com or Play Sorcery Online, or {} if it can't be.
 
     Both sites only hand out public decks, so a deck we can read is public.
     """
@@ -3196,7 +3196,7 @@ def set_featured_deck(player_id):
 
     url = str(data.get("url") or "").strip()
     if not is_deck_url(url):
-        return jsonify({"error": "Paste a sorcerytcg.com or Sorcery Online deck link"}), 400
+        return jsonify({"error": "Paste a sorcerytcg.com or Play Sorcery Online deck link"}), 400
     url = normalize_deck_url(url)
 
     deck = _fetch_featured_deck(url)
@@ -3222,7 +3222,7 @@ def clear_featured_deck(player_id):
 
 @players_bp.route("/player/<player_id>/card-stats")
 def player_card_stats(player_id):
-    """One player's played-card stats from Sorcery Online games.
+    """One player's played-card stats from Play Sorcery Online games.
 
     Private by default: the owner and admins always see it, everyone else
     only when the player turned on the "card_stats" profile section.

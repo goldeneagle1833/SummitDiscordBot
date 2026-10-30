@@ -715,7 +715,7 @@ class TestSwappingPlayers:
         slug, bracket_id = published(service, repo, 8)
         repo.update_match(bracket_id, 2, {"table_provisioned_at": "2026-10-01T12:00:00"})
 
-        with pytest.raises(BracketError, match="Sorcery Online table"):
+        with pytest.raises(BracketError, match="Play Sorcery Online table"):
             service.swap_players(slug, 1, 5)
         assert self._pair(repo, bracket_id, 1) == (1, 8)
 
@@ -1233,7 +1233,7 @@ class TestSorceryOnlineTables:
         service.submit_deck(slug, "https://curiosa.io/decks/one", actor_id="u1")
         monkeypatch.setattr(
             brackets_module, "provision_match_table",
-            lambda *a, **k: pytest.fail("should not reach Sorcery Online"),
+            lambda *a, **k: pytest.fail("should not reach Play Sorcery Online"),
         )
 
         match = repo.get_matches(bracket_id)[0]
@@ -1256,10 +1256,10 @@ class TestSorceryOnlineTables:
         slug, _, match = self._ready_match(service, repo, monkeypatch)
 
         def refuse(pairing_id, players):
-            raise brackets_module.TableUnavailable("Could not reach Sorcery Online.")
+            raise brackets_module.TableUnavailable("Could not reach Play Sorcery Online.")
 
         monkeypatch.setattr(brackets_module, "provision_match_table", refuse)
-        with pytest.raises(BracketError, match="Could not reach Sorcery Online"):
+        with pytest.raises(BracketError, match="Could not reach Play Sorcery Online"):
             service.open_table(slug, match["match_no"], "u1")
 
     def test_a_seat_link_is_only_shown_to_its_own_player(self, service, repo, monkeypatch):
@@ -1279,7 +1279,7 @@ class TestSorceryOnlineTables:
         assert "table_p1_url" not in bystander and "table_p2_url" not in bystander
 
     def test_opening_a_table_keeps_its_replay_url(self, service, repo, monkeypatch):
-        """Sorcery Online hands the replay link back with the table."""
+        """Play Sorcery Online hands the replay link back with the table."""
         slug, bracket_id, match = self._ready_match(service, repo, monkeypatch)
 
         service.open_table(slug, match["match_no"], "u1")
@@ -1360,7 +1360,7 @@ class TestReplayLinks:
 
     def test_only_sorcery_online_links_are_accepted(self, service, repo):
         slug, _, match = self._played_match(service, repo)
-        with pytest.raises(BracketError, match="have to be Sorcery Online links"):
+        with pytest.raises(BracketError, match="have to be Play Sorcery Online links"):
             service.set_replay(slug, match["match_no"], "https://youtube.com/watch?v=x", "admin_1")
 
     def test_an_empty_link_is_rejected(self, service, repo):

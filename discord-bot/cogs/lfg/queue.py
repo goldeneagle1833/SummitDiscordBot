@@ -276,7 +276,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             # Avatar-mode season: the deck link is how the avatar is known
             self.deck_url.required = True
             self.deck_url.label = "Deck URL (required: sets your avatar)"
-            self.deck_url.placeholder = "Curiosa or Sorcery Online deck link"
+            self.deck_url.placeholder = "Curiosa or Play Sorcery Online deck link"
         # Keep the voice choice next to the deck URL, above the duration.
         self.voice_select = add_voice_select(self)
         if queue_type in SEASON_RULES_QUEUES:
@@ -414,7 +414,7 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
 
     deck_url = discord.ui.TextInput(
         label="Deck URL (required)",
-        placeholder="Curiosa, Sorcery Online, or DraftSorcery deck link",
+        placeholder="Curiosa, Play Sorcery Online, or DraftSorcery deck link",
         required=True,
         max_length=200,
     )
@@ -441,7 +441,7 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
             "curiosa.io", "sorcerytcg.com", "draftsorcery.com", "playsorceryonline.com"
         )):
             await interaction.followup.send(
-                "Please provide a valid deck URL (Curiosa, Sorcery Online, or DraftSorcery).",
+                "Please provide a valid deck URL (Curiosa, Play Sorcery Online, or DraftSorcery).",
                 ephemeral=True,
             )
             return
@@ -703,11 +703,11 @@ async def _process_queue_join(
             )
             return
 
-        # The pairing is saved: answer now, then do the slow Discord/Sorcery Online
+        # The pairing is saved: answer now, then do the slow Discord/Play Sorcery Online
         # work (deck re-reads, seats, DMs, roles, announcements) in the background.
         async def finish_pairing():
             nonlocal joiner_avatar, matched_avatar
-            # Sorcery Online seats first: the DMs and website result carry their links
+            # Play Sorcery Online seats first: the DMs and website result carry their links
             provisioned_links = await provision_match_and_publish_results(
                 interaction.guild.id,
                 pairing_id,

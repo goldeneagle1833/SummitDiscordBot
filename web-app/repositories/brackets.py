@@ -386,7 +386,7 @@ class BracketRepository:
         return changed
 
     def find_table_match(self, user_a, user_b, settled_since: str) -> dict | None:
-        """The bracket match these two players were given a Sorcery Online table for.
+        """The bracket match these two players were given a Play Sorcery Online table for.
 
         Only a match still being played, or one settled since `settled_since`
         (ISO time), so an old bracket meeting never claims a later ladder game.

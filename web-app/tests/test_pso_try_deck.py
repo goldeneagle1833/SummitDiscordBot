@@ -1,4 +1,4 @@
-"""Tests for "Try this Deck" — one-sided Sorcery Online table provisioning."""
+"""Tests for "Try this Deck" — one-sided Play Sorcery Online table provisioning."""
 
 import pytest
 import requests
@@ -27,7 +27,7 @@ OK_TABLE = pso.DeckTable(
 
 
 def raise_unavailable(*_args, **_kwargs):
-    raise pso.TableUnavailable("Sorcery Online said no")
+    raise pso.TableUnavailable("Play Sorcery Online said no")
 
 
 @pytest.fixture(autouse=True)
@@ -92,7 +92,7 @@ class TestProvisionDeckTable:
         assert captured["url"] == pso.DEFAULT_ENDPOINT
         assert captured["headers"]["X-API-Key"] == "shared-test-key"
 
-        # Sorcery Online rejects anything shorter than two players.
+        # Play Sorcery Online rejects anything shorter than two players.
         players = captured["json"]["players"]
         assert len(players) == 2
         assert players[0]["deckUrl"] == "https://curiosa.io/decks/abc123"
@@ -310,7 +310,7 @@ class TestPsoTableRoute:
         monkeypatch.setattr(deck_rec_routes, "provision_deck_table", raise_unavailable)
         resp = client.post(f"/api/deck-rec/{seed_deck.deck_id}/pso-table")
         assert resp.status_code == 502
-        assert "Sorcery Online" in resp.get_json()["error"]
+        assert "Play Sorcery Online" in resp.get_json()["error"]
 
     def test_failure_does_not_consume_the_cooldown(self, client, configured, seed_deck, monkeypatch):
         monkeypatch.setattr(deck_rec_routes, "provision_deck_table", raise_unavailable)

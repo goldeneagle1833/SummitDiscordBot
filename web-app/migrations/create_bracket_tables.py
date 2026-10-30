@@ -145,7 +145,7 @@ def create_bracket_tables(db_path=None):
         )
     """)
 
-    # Brackets published before Sorcery Online tables and replays existed.
+    # Brackets published before Play Sorcery Online tables and replays existed.
     cursor.execute("PRAGMA table_info(bracket_matches)")
     existing = {row[1] for row in cursor.fetchall()}
     for column in (

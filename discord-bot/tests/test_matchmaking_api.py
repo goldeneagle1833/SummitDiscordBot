@@ -559,7 +559,7 @@ async def test_missing_configured_guild_is_temporarily_unavailable():
         await _summit_member(bot, 123)
 
 
-# ── Sorcery Online results: payload casing, audit table robustness ──
+# ── Play Sorcery Online results: payload casing, audit table robustness ──
 
 from services.matchmaking_api import _result_fields
 from services import summit_result_reporting

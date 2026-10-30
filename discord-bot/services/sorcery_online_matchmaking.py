@@ -1,4 +1,4 @@
-"""Best-effort Sorcery Online table provisioning for Summit pairings."""
+"""Best-effort Play Sorcery Online table provisioning for Summit pairings."""
 
 import asyncio
 import logging
@@ -26,9 +26,9 @@ def summit_matchmaking_api_key():
 async def provision_sorcery_online_match(
     guild_id, pairing_id, queue_type, players, voice=False, on_replay_url=None,
 ):
-    """Open a Sorcery Online table and return {discord_user_id: seat_url}.
+    """Open a Play Sorcery Online table and return {discord_user_id: seat_url}.
 
-    Sorcery Online also hands back a replay link with the table; it is passed
+    Play Sorcery Online also hands back a replay link with the table; it is passed
     to ``on_replay_url`` when given. The link is stable but only plays once
     the game has been saved.
     """
@@ -38,7 +38,7 @@ async def provision_sorcery_online_match(
         "https://playsorceryonline.com/api/internal/summit-matchmaking/matches",
     ).strip()
     if not api_key or not endpoint:
-        logger.info("Sorcery Online matchmaking provisioning is not configured")
+        logger.info("Play Sorcery Online matchmaking provisioning is not configured")
         return None
 
     payload = {
@@ -75,7 +75,7 @@ async def provision_sorcery_online_match(
                             }
                             if len(links) != 2:
                                 logger.warning(
-                                    "Sorcery Online provisioning returned %s usable seat links",
+                                    "Play Sorcery Online provisioning returned %s usable seat links",
                                     len(links),
                                 )
                                 return None
@@ -85,7 +85,7 @@ async def provision_sorcery_online_match(
                                     on_replay_url(replay_url)
                                 except Exception as exc:
                                     logger.warning(
-                                        "Could not save Sorcery Online replay for pairing %s: %r",
+                                        "Could not save Play Sorcery Online replay for pairing %s: %r",
                                         pairing_id, exc,
                                     )
                             return links
@@ -93,13 +93,13 @@ async def provision_sorcery_online_match(
                         body = await response.text()
                         retryable = response.status in {408, 425, 429} or response.status >= 500
                         logger.warning(
-                            "Sorcery Online provisioning attempt %s/%s returned status %s: %s",
+                            "Play Sorcery Online provisioning attempt %s/%s returned status %s: %s",
                             attempt, PROVISION_ATTEMPTS, response.status, body[:500],
                         )
                 except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                     retryable = True
                     logger.warning(
-                        "Sorcery Online provisioning attempt %s/%s failed: %r",
+                        "Play Sorcery Online provisioning attempt %s/%s failed: %r",
                         attempt, PROVISION_ATTEMPTS, exc,
                     )
 
@@ -107,5 +107,5 @@ async def provision_sorcery_online_match(
                     return None
                 await asyncio.sleep(PROVISION_RETRY_DELAYS[attempt - 1])
     except Exception as exc:
-        logger.warning("Sorcery Online provisioning failed: %r", exc, exc_info=True)
+        logger.warning("Play Sorcery Online provisioning failed: %r", exc, exc_info=True)
     return None

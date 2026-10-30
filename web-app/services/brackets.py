@@ -671,7 +671,7 @@ class BracketService:
         )
 
         # Replays follow the decks: public once the bracket is done. The link
-        # is kept the moment a table opens, but Sorcery Online has nothing to
+        # is kept the moment a table opens, but Play Sorcery Online has nothing to
         # serve until a game is saved, so it is only offered on a played match.
         visible_to = finished or is_admin or is_player
         match["replay_url"] = (
@@ -758,7 +758,7 @@ class BracketService:
     TABLE_REPORTER = "sorcery-online"
 
     def record_table_result(self, bracket_id: int, match_no: int, winner_user_id: str) -> str:
-        """File the winner Sorcery Online reports for a bracket table.
+        """File the winner Play Sorcery Online reports for a bracket table.
 
         It goes in as a report the players confirm or dispute, exactly like
         one a player filed, so a wrong result can still be put right. A match
@@ -1420,10 +1420,10 @@ class BracketService:
             "errors": [],
         }
 
-    # -- Sorcery Online tables ------------------------------------
+    # -- Play Sorcery Online tables ------------------------------------
 
     def open_table(self, slug: str, match_no: int, user_id: str) -> dict:
-        """Open (or re-open) the Sorcery Online table for a pairing.
+        """Open (or re-open) the Play Sorcery Online table for a pairing.
 
         Both decks are preloaded, so both players must have submitted one. The
         table is provisioned once and each player is handed only their own seat.
@@ -1439,7 +1439,7 @@ class BracketService:
         on_p1 = user_id == str(match["p1_user_id"] or "")
 
         # Already provisioned: hand back this player's seat rather than asking
-        # Sorcery Online for a second table.
+        # Play Sorcery Online for a second table.
         if match["table_provisioned_at"]:
             seat = match["table_p1_url"] if on_p1 else match["table_p2_url"]
             if seat:
@@ -1485,7 +1485,7 @@ class BracketService:
             "table_p2_url": seats.get(str(match["p2_user_id"])),
         }
 
-        # Sorcery Online hands back the replay url with the table. It only
+        # Play Sorcery Online hands back the replay url with the table. It only
         # serves a recording once a game has been saved, but the link itself is
         # stable, so keep it now and let the usual rule decide when to show it.
         # An admin who has already filed one keeps theirs.
@@ -1507,7 +1507,7 @@ class BracketService:
     REPLAY_HOSTS = ("playsorceryonline.com",)
 
     def set_replay(self, slug: str, match_no: int, replay_url: str, admin_id: str) -> dict:
-        """Attach a Sorcery Online replay to a match. Public when the bracket ends."""
+        """Attach a Play Sorcery Online replay to a match. Public when the bracket ends."""
         bracket, match = self._require_live_match(slug, match_no)
 
         replay_url = (replay_url or "").strip()
@@ -1516,7 +1516,7 @@ class BracketService:
 
         host = (urlparse(replay_url).hostname or "").lower().removeprefix("www.")
         if host not in self.REPLAY_HOSTS:
-            raise BracketError("Replay links have to be Sorcery Online links")
+            raise BracketError("Replay links have to be Play Sorcery Online links")
 
         self._repo.update_match(
             bracket["bracket_id"],
@@ -2179,9 +2179,9 @@ def _entry_slot(matches: dict, seed: int) -> dict:
     if match["state"] == "reported":
         raise BracketError(f"{name}'s match has a result waiting to be confirmed")
     if match.get("table_provisioned_at"):
-        # The Sorcery Online table is keyed to this pairing and preloaded with
+        # The Play Sorcery Online table is keyed to this pairing and preloaded with
         # both decks, so it cannot be handed to somebody else.
-        raise BracketError(f"{name}'s match already has a Sorcery Online table open")
+        raise BracketError(f"{name}'s match already has a Play Sorcery Online table open")
     return {"match": match, "slot": slot, "bye": bye}
 
 

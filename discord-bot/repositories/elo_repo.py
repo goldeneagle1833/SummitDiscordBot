@@ -167,7 +167,7 @@ def create_db():
         cur.execute("ALTER TABLE match_records ADD COLUMN pairing_id INTEGER")
     except sqlite3.OperationalError:
         pass  # Column already exists
-    # Sorcery Online replay link for games played at a Summit-opened table
+    # Play Sorcery Online replay link for games played at a Summit-opened table
     try:
         cur.execute("ALTER TABLE match_records ADD COLUMN replay_url TEXT")
     except sqlite3.OperationalError:
@@ -437,7 +437,7 @@ def create_active_pairings_table():
         except sqlite3.OperationalError:
             pass  # Column already exists
 
-    # Migration: Sorcery Online replay link handed back with the table
+    # Migration: Play Sorcery Online replay link handed back with the table
     try:
         cur.execute("ALTER TABLE active_pairings ADD COLUMN replay_url TEXT")
     except sqlite3.OperationalError:
@@ -1234,7 +1234,7 @@ REPLAY_HOSTS = ("playsorceryonline.com",)
 
 
 def clean_replay_url(url) -> str | None:
-    """A Sorcery Online replay link, or None for anything else."""
+    """A Play Sorcery Online replay link, or None for anything else."""
     url = str(url or "").strip()
     if not url:
         return None
@@ -1246,7 +1246,7 @@ def clean_replay_url(url) -> str | None:
 
 
 def set_pairing_replay(pairing_id: int, replay_url) -> bool:
-    """Remember a queue pairing's Sorcery Online replay link.
+    """Remember a queue pairing's Play Sorcery Online replay link.
 
     Also fills it in on the match record when the result was recorded
     first. Limited pairings live in their own table with their own ids, so
@@ -1276,7 +1276,7 @@ def set_pairing_replay(pairing_id: int, replay_url) -> bool:
 
 
 def get_pairing_replay(pairing_id: int) -> str | None:
-    """The Sorcery Online replay link saved for a queue pairing, if any."""
+    """The Play Sorcery Online replay link saved for a queue pairing, if any."""
     if not pairing_id:
         return None
     create_active_pairings_table()

@@ -250,7 +250,7 @@ export default function MatchCard({
         </p>
       )}
 
-      {/* Sorcery Online table — only ever shown to the two players */}
+      {/* Play Sorcery Online table — only ever shown to the two players */}
       {match.viewer_table_url && (
         <a
           href={match.viewer_table_url}
@@ -267,7 +267,7 @@ export default function MatchCard({
           onClick={() => onOpenTable?.(match)}
           className="w-full px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors border-t border-border"
         >
-          Open table on Sorcery Online
+          Open table on Play Sorcery Online
         </button>
       )}
 
@@ -340,7 +340,7 @@ export default function MatchCard({
           <input
             value={replayInput}
             onChange={(e) => setReplayInput(e.target.value)}
-            placeholder="Sorcery Online replay link"
+            placeholder="Play Sorcery Online replay link"
             aria-label={`Replay link for match ${match.match_no}`}
             className="w-full bg-bg-raised border border-border rounded-sm px-2 py-1 text-xs"
           />

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import PostseasonName, { useBracketMarks } from '@/components/player/BracketMarks'
 import { AvatarHonourBadge, useAvatarHonours } from '@/components/player/AvatarHonours'
+import { PaperFinishBadge, usePaperFinishes } from '@/components/player/PaperFinishes'
 
 function initials(name) {
   const parts = String(name || '?').replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/)
@@ -119,6 +120,7 @@ export default function PlayerHeader({
 }) {
   const marks = useBracketMarks(playerId)
   const honours = useAvatarHonours(playerId)
+  const paperFinishes = usePaperFinishes(playerId)
   const wins = data.wins ?? 0
   const losses = data.losses ?? 0
 
@@ -167,6 +169,7 @@ export default function PlayerHeader({
               />
             )}
             <AvatarHonourBadge honours={honours} onClick={onPostseason} />
+            <PaperFinishBadge finishes={paperFinishes} onClick={onPostseason} />
           </div>
         </div>
       </div>

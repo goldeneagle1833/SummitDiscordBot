@@ -17,3 +17,7 @@ export const clearPaperResult = (folder, deckId) =>
   post('/api/admin/paper-finishes/assign', { folder, deck_id: deckId, clear: true })
 export const setPaperEventBadges = (folder, awardsBadges) =>
   post('/api/admin/paper-finishes/event', { folder, awards_badges: awardsBadges })
+
+// One event's Top 8 entries with the Summit profile each one matched
+export const getEventProfiles = (folder) =>
+  get(`/api/paper-finishes/event/${encodeURIComponent(folder)}`)

@@ -1289,7 +1289,7 @@ class LFGCog(commands.Cog):
 
     def add_to_lfg_queue(
         self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None, run_id=None,
-        origin="discord", voice=DEFAULT_VOICE, avatar=None
+        origin="discord", voice=DEFAULT_VOICE, avatar=None, alert_avatar=False, deck_avatar=None
     ):
         queue_entry = {
             "timestamp": datetime.datetime.now(),
@@ -1301,6 +1301,11 @@ class LFGCog(commands.Cog):
         if avatar:
             # Avatar mode: read from the deck at join; re-read when the match is made
             queue_entry["avatar"] = avatar
+        if alert_avatar and deck_url:
+            # Post in the avatar's channel when the match is made
+            queue_entry["alert_avatar"] = True
+            if deck_avatar:
+                queue_entry["deck_avatar"] = deck_avatar
         if ladder_info:
             queue_entry["ladder_info"] = ladder_info
         if run_id is not None:

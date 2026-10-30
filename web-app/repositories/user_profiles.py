@@ -70,6 +70,10 @@ class UserProfileRepository:
             'profile_reset_at': 'TEXT',
             'manually_added_by': 'TEXT',
             'manually_added_at': 'TEXT',
+            'featured_deck_url': 'TEXT',
+            'featured_deck_json': 'TEXT',
+            'featured_deck_auto_update': 'INTEGER',
+            'featured_deck_checked_at': 'TEXT',
         }
 
         # Add missing columns
@@ -644,6 +648,87 @@ class UserProfileRepository:
         cur.execute(
             "UPDATE user_profiles SET hidden_avatars = ? WHERE user_id IN (?, ?)",
             (json.dumps(sorted(set(avatars))), *self._both_ids(user_id)),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return updated
+
+    def get_featured_deck(self, user_id: str) -> dict | None:
+        """The public deck a player chose to show on their profile, or None."""
+        conn = self._get_connection()
+        row = conn.execute(
+            "SELECT featured_deck_url, featured_deck_json, featured_deck_auto_update,"
+            " featured_deck_checked_at FROM user_profiles"
+            " WHERE user_id IN (?, ?) AND featured_deck_url IS NOT NULL LIMIT 1",
+            self._both_ids(user_id),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return None
+        try:
+            deck = json.loads(row[1] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            deck = {}
+        return {
+            "url": row[0],
+            "deck": deck if isinstance(deck, dict) else {},
+            "auto_update": bool(row[2]),
+            "checked_at": row[3],
+        }
+
+    def set_featured_deck(
+        self, user_id: str, url: str, deck: dict, auto_update: bool
+    ) -> bool:
+        """Save a player's featured deck: the link and a copy of the list."""
+        now = datetime.now(timezone.utc).isoformat()
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_profiles SET featured_deck_url = ?, featured_deck_json = ?,"
+            " featured_deck_auto_update = ?, featured_deck_checked_at = ?"
+            " WHERE user_id IN (?, ?)",
+            (url, json.dumps(deck), 1 if auto_update else 0, now, *self._both_ids(user_id)),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return updated
+
+    def refresh_featured_deck(
+        self, user_id: str, url: str, deck: dict | None = None
+    ) -> None:
+        """Mark a kept-updated deck as checked, saving the new list if there is one.
+
+        Only touches the row while it still features ``url``, so a refresh
+        that finishes after the player picked another deck changes nothing.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        conn = self._get_connection()
+        if deck:
+            conn.execute(
+                "UPDATE user_profiles SET featured_deck_json = ?, featured_deck_checked_at = ?"
+                " WHERE user_id IN (?, ?) AND featured_deck_url = ?",
+                (json.dumps(deck), now, *self._both_ids(user_id), url),
+            )
+        else:
+            conn.execute(
+                "UPDATE user_profiles SET featured_deck_checked_at = ?"
+                " WHERE user_id IN (?, ?) AND featured_deck_url = ?",
+                (now, *self._both_ids(user_id), url),
+            )
+        conn.commit()
+        conn.close()
+
+    def clear_featured_deck(self, user_id: str) -> bool:
+        """Take the featured deck off a player's profile."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_profiles SET featured_deck_url = NULL, featured_deck_json = NULL,"
+            " featured_deck_auto_update = NULL, featured_deck_checked_at = NULL"
+            " WHERE user_id IN (?, ?)",
+            self._both_ids(user_id),
         )
         conn.commit()
         updated = cur.rowcount > 0

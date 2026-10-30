@@ -660,6 +660,14 @@ class LFGCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error in check_expired_queue task: {e}")
 
+        # Avatar channel alerts: add the live room link, remove finished games
+        try:
+            from cogs.lfg.avatar_alert import refresh_avatar_alerts
+
+            await refresh_avatar_alerts(self.bot)
+        except Exception as e:
+            logger.error(f"Error refreshing avatar alerts: {e}")
+
     @check_expired_queue.before_loop
     async def before_check_expired_queue(self):
         """Wait for bot to be ready before starting the loop"""

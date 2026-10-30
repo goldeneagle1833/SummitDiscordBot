@@ -35,20 +35,6 @@ def _add_match(winner, loser, ts, winner_url, loser_url, winner_json="{}", loser
     conn.close()
 
 
-def _set_replays_public(*user_ids):
-    conn = sqlite3.connect("match_records.db")
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS user_profiles (user_id TEXT PRIMARY KEY, profile_public_sections TEXT)"
-    )
-    for user_id in user_ids:
-        conn.execute(
-            "INSERT OR REPLACE INTO user_profiles VALUES (?, ?)",
-            (user_id, json.dumps({"replays": True})),
-        )
-    conn.commit()
-    conn.close()
-
-
 @pytest.fixture
 def avatar_channels():
     with patch.object(config, "AVATAR_CHANNEL_MAP", {"Sorcerer": 9001, "Seer": 9002}, create=True):
@@ -156,12 +142,46 @@ def test_typed_link_wins_over_the_dropdown_pick():
 # ── The alert itself ──
 
 
-def _channel_bot():
+def _channel_bot(members=None):
+    """A bot whose avatar channels all resolve to one mock channel."""
     channel = MagicMock()
-    channel.send = AsyncMock()
+    channel.send = AsyncMock(return_value=MagicMock(id=555))
+    partial = MagicMock()
+    partial.edit = AsyncMock()
+    partial.delete = AsyncMock()
+    channel.get_partial_message = MagicMock(return_value=partial)
+    guild = MagicMock()
+    guild.get_member = MagicMock(side_effect=lambda uid: (members or {}).get(uid))
     bot = MagicMock()
     bot.get_channel = MagicMock(return_value=channel)
-    return bot, channel
+    bot.get_guild = MagicMock(return_value=guild)
+    return bot, channel, partial
+
+
+def _in_voice(channel_id):
+    room = MagicMock(id=channel_id, jump_url=f"https://discord.com/channels/1/{channel_id}")
+    return MagicMock(voice=MagicMock(channel=room)), room
+
+
+def _save_pairing(status="active"):
+    from repositories.elo_repo import create_active_pairings_table
+
+    create_active_pairings_table()
+    conn = sqlite3.connect("match_records.db")
+    conn.execute(
+        "INSERT INTO active_pairings (pairing_id, guild_id, player1_id, player2_id, "
+        "player1_deck_url, player2_deck_url, created_at, status) VALUES (77, 1, ?, ?, '', '', ?, ?)",
+        (ME, OPP, "2026-10-30T20:00:00", status),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _set_pairing_status(status):
+    conn = sqlite3.connect("match_records.db")
+    conn.execute("UPDATE active_pairings SET status = ? WHERE pairing_id = 77", (status,))
+    conn.commit()
+    conn.close()
 
 
 async def _alert(bot, **overrides):
@@ -174,24 +194,69 @@ async def _alert(bot, **overrides):
 
 
 @pytest.mark.asyncio
-async def test_alert_links_the_replay_only_when_both_players_share_replays(avatar_channels):
-    bot, channel = _channel_bot()
-    with patch.object(avatar_alert, "get_pairing_replay", return_value="https://playsorceryonline.com/replay/abc"):
-        assert await _alert(bot)
-        text = channel.send.await_args.args[0]
-        assert "**Bruce** is playing **Sorcerer** in a Ranked game against **Geoffrey**" in text
-        assert "replay" not in text.lower()
-        assert CURIOSA not in text  # never the deck link
-
-        _set_replays_public(str(ME), f"google_{OPP}")
-        await _alert(bot)
-        assert "[Watch the replay](https://playsorceryonline.com/replay/abc)" in channel.send.await_args.args[0]
+async def test_alert_names_the_avatar_but_never_the_deck(avatar_channels):
+    _save_pairing()
+    bot, channel, _ = _channel_bot()
+    assert await _alert(bot)
+    text = channel.send.await_args.args[0]
+    assert text == "⚔️ **Bruce** is playing **Sorcerer** in a Ranked game against **Geoffrey**!"
+    assert CURIOSA not in text
     bot.get_channel.assert_called_with(9001)
 
 
 @pytest.mark.asyncio
+async def test_live_room_link_is_added_once_both_players_are_in_voice(avatar_channels):
+    _save_pairing()
+    me_member, room = _in_voice(31)
+    opp_member, _ = _in_voice(31)
+    opp_member.voice.channel = room
+    members = {}
+    bot, _, partial = _channel_bot(members)
+    await _alert(bot)
+    partial.edit.assert_not_called()  # nobody in voice yet
+
+    members.update({ME: me_member, OPP: opp_member})
+    await avatar_alert.refresh_avatar_alerts(bot)
+    content = partial.edit.await_args.kwargs["content"]
+    assert content.endswith("🔊 [Listen in live](https://discord.com/channels/1/31)")
+
+    # Same room on the next sweep: no extra edit
+    await avatar_alert.refresh_avatar_alerts(bot)
+    assert partial.edit.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_join_to_make_a_room_hub_is_not_the_live_room(avatar_channels):
+    _save_pairing()
+    me_member, room = _in_voice(99)
+    opp_member, _ = _in_voice(99)
+    opp_member.voice.channel = room
+    bot, _, partial = _channel_bot({ME: me_member, OPP: opp_member})
+    with patch.object(config, "DYNAMIC_VOICE_HUB_ID", 99, create=True):
+        await _alert(bot)
+        await avatar_alert.refresh_avatar_alerts(bot)
+    partial.edit.assert_not_called()
+
+
+@pytest.mark.parametrize("status", ["reported", "cancelled", "expired"])
+@pytest.mark.asyncio
+async def test_alert_is_deleted_when_the_game_is_over(avatar_channels, status):
+    _save_pairing()
+    bot, channel, partial = _channel_bot()
+    await _alert(bot)
+    await avatar_alert.refresh_avatar_alerts(bot)
+    partial.delete.assert_not_called()
+
+    _set_pairing_status(status)
+    await avatar_alert.refresh_avatar_alerts(bot)
+    channel.get_partial_message.assert_called_with(555)
+    partial.delete.assert_awaited_once()
+    assert avatar_alert._open_alerts() == []
+
+
+@pytest.mark.asyncio
 async def test_alert_reads_the_avatar_from_the_deck_when_unknown(avatar_channels):
-    bot, _ = _channel_bot()
+    bot, _, _ = _channel_bot()
     with patch.object(avatar_alert, "read_deck_avatar", AsyncMock(return_value="seer")):
         assert await _alert(bot, avatar=None)
     bot.get_channel.assert_called_with(9002)
@@ -199,7 +264,7 @@ async def test_alert_reads_the_avatar_from_the_deck_when_unknown(avatar_channels
 
 @pytest.mark.asyncio
 async def test_alert_skips_avatars_without_a_channel(avatar_channels):
-    bot, channel = _channel_bot()
+    bot, channel, _ = _channel_bot()
     assert not await _alert(bot, avatar="Witch")
     channel.send.assert_not_called()
 

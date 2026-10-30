@@ -22,29 +22,44 @@ PSO_HOST = "playsorceryonline.com"
 _TABLE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 
+# Query keys that would put a viewer in a player's seat; never kept in a shared link
+_SEAT_PARAMS = {"m", "seat", "token"}
+
+
 def _table_link(value) -> str | None:
-    """A playsorceryonline.com link carrying ``table=<name>``, rebuilt in canonical form."""
+    """A playsorceryonline.com link carrying ``table=<name>``, kept as PSO sent it.
+
+    PSO's link (e.g. ``/?table=K7QF&join=spectator``) is kept with its path and
+    query, so ``join=spectator`` survives; only seat parameters are stripped.
+    """
     value = str(value or "").strip()
     if "table=" not in value:
         return None
     if value.startswith("/"):
         value = f"https://{PSO_HOST}{value}"
     elif value.startswith("?"):
-        value = f"https://{PSO_HOST}/play{value}"
+        value = f"https://{PSO_HOST}/{value}"
     elif not value.lower().startswith(("http://", "https://")):
-        value = f"https://{PSO_HOST}/play?{value.lstrip('&')}"
+        value = f"https://{PSO_HOST}/?{value.lstrip('&')}"
     parsed = urllib.parse.urlparse(value)
     host = (parsed.hostname or "").lower().removeprefix("www.")
     if host != PSO_HOST and not host.endswith("." + PSO_HOST):
         return None
-    name = urllib.parse.parse_qs(parsed.query).get("table", [""])[0].strip()
+    params = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    name = next((v.strip() for k, v in params if k == "table"), "")
     if not _TABLE_NAME_RE.match(name):
         return None
-    return f"https://{PSO_HOST}/play?table={name}"
+    query = urllib.parse.urlencode([(k, v) for k, v in params if k.lower() not in _SEAT_PARAMS])
+    return urllib.parse.urlunparse(("https", parsed.netloc.lower(), parsed.path or "/", "", query, ""))
+
+
+def _named_table_link(name: str) -> str:
+    """The spectator link for a table PSO only named (same shape as PSO's tableUrl)."""
+    return f"https://{PSO_HOST}/?table={urllib.parse.quote(name)}&join=spectator"
 
 
 def table_url_from_response(data, _depth=0) -> str | None:
-    """The table's shared link (playsorceryonline.com/play?table=<name>), if PSO sent one.
+    """The table's shared spectator link (PSO's ``tableUrl``), if PSO sent one.
 
     PSO's reply format for this isn't fixed yet, so any ``table=`` link
     anywhere in the reply counts (searched breadth-first, top level first),
@@ -65,7 +80,7 @@ def table_url_from_response(data, _depth=0) -> str | None:
                 # e.g. {"table": {"name": "glowing-lantern-citadel"}}
                 name = name.get("name") or name.get("slug") or name.get("id")
             if isinstance(name, str) and _TABLE_NAME_RE.match(name.strip()):
-                return f"https://{PSO_HOST}/play?table={name.strip()}"
+                return _named_table_link(name.strip())
         children = list(data.values())
     else:
         return None

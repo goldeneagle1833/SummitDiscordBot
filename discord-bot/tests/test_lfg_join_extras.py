@@ -201,11 +201,11 @@ async def test_alert_links_the_live_table(avatar_channels):
     from repositories.elo_repo import set_pairing_table
 
     _save_pairing()
-    set_pairing_table(77, "https://playsorceryonline.com/play?table=glowing-lantern-citadel")
+    set_pairing_table(77, "https://playsorceryonline.com/?table=K7QF&join=spectator")
     bot, channel, _ = _channel_bot()
     await _alert(bot)
     assert channel.send.await_args.args[0].endswith(
-        "\n🎮 [Watch the live game](https://playsorceryonline.com/play?table=glowing-lantern-citadel)"
+        "\n🎮 [Watch the live game](https://playsorceryonline.com/?table=K7QF&join=spectator)"
     )
 
 
@@ -307,24 +307,39 @@ async def test_alert_choice_is_stored_with_the_queue_entry(
 # ── PSO table link ──
 
 
+# PSO's announced reply shape (2026-10-30)
+PSO_REPLY = {
+    "pairingId": "123456",
+    "created": True,
+    "replayUrl": "https://playsorceryonline.com/replay/Xy7abc",
+    "tableUrl": "https://playsorceryonline.com/?table=K7QF&join=spectator",
+    "players": [
+        {"discordUserId": "111", "seat": 1, "gameUrl": "https://playsorceryonline.com/play?m=s1.one"},
+        {"discordUserId": "222", "seat": 2, "gameUrl": "https://playsorceryonline.com/play?m=s1.two"},
+    ],
+}
+
+
 @pytest.mark.parametrize("data, expected", [
+    # PSO's real shape: the spectator link is kept exactly as sent
+    (PSO_REPLY, "https://playsorceryonline.com/?table=K7QF&join=spectator"),
     ({"tableUrl": "https://playsorceryonline.com/play?table=glowing-lantern-citadel"},
      "https://playsorceryonline.com/play?table=glowing-lantern-citadel"),
-    ({"table": "glowing-lantern-citadel"}, "https://playsorceryonline.com/play?table=glowing-lantern-citadel"),
-    ({"table": {"name": "quiet-river-keep"}}, "https://playsorceryonline.com/play?table=quiet-river-keep"),
-    # A seat link is never a table link
+    # Only a name: build PSO's spectator link
+    ({"table": "glowing-lantern-citadel"},
+     "https://playsorceryonline.com/?table=glowing-lantern-citadel&join=spectator"),
+    ({"table": {"name": "quiet-river-keep"}},
+     "https://playsorceryonline.com/?table=quiet-river-keep&join=spectator"),
+    # A seat link is never a table link, and seat params are stripped
     ({"tableUrl": "https://playsorceryonline.com/play?m=s1.secret"}, None),
+    ({"tableUrl": "https://playsorceryonline.com/?table=K7QF&m=s1.secret&join=spectator"},
+     "https://playsorceryonline.com/?table=K7QF&join=spectator"),
     ({"tableUrl": "https://evil.example/play?table=x"}, None),
     ({"players": []}, None),
-    # Any shape PSO picks: nested, a different key, a relative query, a player entry
+    # Other shapes: nested, a different key, a relative link
     ({"match": {"links": {"watch": "https://playsorceryonline.com/play?table=a-b-c&x=1"}}},
-     "https://playsorceryonline.com/play?table=a-b-c"),
-    ({"spectateUrl": "https://www.playsorceryonline.com/?table=a-b-c"},
-     "https://playsorceryonline.com/play?table=a-b-c"),
-    ({"room": "/play?table=a-b-c"}, "https://playsorceryonline.com/play?table=a-b-c"),
-    ({"players": [{"gameUrl": "https://playsorceryonline.com/play?m=s1.x", "tableUrl": "?table=a-b-c"}]},
-     "https://playsorceryonline.com/play?table=a-b-c"),
-    ({"tableId": "a-b-c"}, "https://playsorceryonline.com/play?table=a-b-c"),
+     "https://playsorceryonline.com/play?table=a-b-c&x=1"),
+    ({"room": "/?table=a-b-c&join=spectator"}, "https://playsorceryonline.com/?table=a-b-c&join=spectator"),
     ({"tableUrl": "https://playsorceryonline.com/play?table=bad name!"}, None),
 ])
 def test_table_link_is_read_from_the_pso_reply(data, expected):

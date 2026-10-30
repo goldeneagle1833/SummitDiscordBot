@@ -192,6 +192,8 @@ class NoVoiceOfferView(discord.ui.View):
             run_id=entry.get("run_id"),
             origin=entry.get("origin", "discord"),
             voice=NO_VOICE,
+            alert_avatar=entry.get("alert_avatar", False),
+            deck_avatar=entry.get("deck_avatar"),
         )
 
     @discord.ui.button(label="No thanks", style=discord.ButtonStyle.secondary)

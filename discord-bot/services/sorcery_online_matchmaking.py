@@ -22,35 +22,63 @@ PSO_HOST = "playsorceryonline.com"
 _TABLE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 
-def table_url_from_response(data) -> str | None:
-    """The table's own link (playsorceryonline.com/play?table=<name>), if PSO sent one.
-
-    This is the shared room link, not a player's seat link (``?m=...``), so it
-    is safe to show other people. Accepts a full link or just the table name.
-    """
-    if not isinstance(data, dict):
+def _table_link(value) -> str | None:
+    """A playsorceryonline.com link carrying ``table=<name>``, rebuilt in canonical form."""
+    value = str(value or "").strip()
+    if "table=" not in value:
         return None
-    table = data.get("table")
-    if isinstance(table, dict):
-        candidates = [table.get("url"), table.get("tableUrl"), table.get("name"), table.get("id")]
+    if value.startswith("/"):
+        value = f"https://{PSO_HOST}{value}"
+    elif value.startswith("?"):
+        value = f"https://{PSO_HOST}/play{value}"
+    elif not value.lower().startswith(("http://", "https://")):
+        value = f"https://{PSO_HOST}/play?{value.lstrip('&')}"
+    parsed = urllib.parse.urlparse(value)
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    if host != PSO_HOST and not host.endswith("." + PSO_HOST):
+        return None
+    name = urllib.parse.parse_qs(parsed.query).get("table", [""])[0].strip()
+    if not _TABLE_NAME_RE.match(name):
+        return None
+    return f"https://{PSO_HOST}/play?table={name}"
+
+
+def table_url_from_response(data, _depth=0) -> str | None:
+    """The table's shared link (playsorceryonline.com/play?table=<name>), if PSO sent one.
+
+    PSO's reply format for this isn't fixed yet, so any ``table=`` link
+    anywhere in the reply counts (searched breadth-first, top level first),
+    and so does a bare table name under a "table"/"tableName"/"tableId" key.
+    This is the shared room link, never a player's seat link (``?m=...``),
+    so it is safe to show other people.
+    """
+    if _depth > 4:
+        return None
+    if isinstance(data, str):
+        return _table_link(data)
+    if isinstance(data, list):
+        children = data
+    elif isinstance(data, dict):
+        for key in ("table", "tableName", "table_name", "tableId", "table_id", "tableSlug"):
+            name = data.get(key)
+            if isinstance(name, dict):
+                # e.g. {"table": {"name": "glowing-lantern-citadel"}}
+                name = name.get("name") or name.get("slug") or name.get("id")
+            if isinstance(name, str) and _TABLE_NAME_RE.match(name.strip()):
+                return f"https://{PSO_HOST}/play?table={name.strip()}"
+        children = list(data.values())
     else:
-        candidates = [table]
-    candidates = [
-        data.get("tableUrl"), data.get("table_url"), *candidates,
-        data.get("tableName"), data.get("tableId"), data.get("table_id"),
-    ]
-    for value in candidates:
-        value = str(value or "").strip()
-        if not value:
-            continue
-        if value.lower().startswith(("http://", "https://")):
-            parsed = urllib.parse.urlparse(value)
-            host = (parsed.hostname or "").lower().removeprefix("www.")
-            name = urllib.parse.parse_qs(parsed.query).get("table", [""])[0]
-            if host == PSO_HOST and _TABLE_NAME_RE.match(name):
-                return f"https://{PSO_HOST}/play?table={name}"
-        elif _TABLE_NAME_RE.match(value):
-            return f"https://{PSO_HOST}/play?table={value}"
+        return None
+    for child in children:
+        if isinstance(child, str):
+            link = _table_link(child)
+            if link:
+                return link
+    for child in children:
+        if isinstance(child, (dict, list)):
+            link = table_url_from_response(child, _depth + 1)
+            if link:
+                return link
     return None
 
 

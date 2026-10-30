@@ -316,6 +316,16 @@ async def test_alert_choice_is_stored_with_the_queue_entry(
     ({"tableUrl": "https://playsorceryonline.com/play?m=s1.secret"}, None),
     ({"tableUrl": "https://evil.example/play?table=x"}, None),
     ({"players": []}, None),
+    # Any shape PSO picks: nested, a different key, a relative query, a player entry
+    ({"match": {"links": {"watch": "https://playsorceryonline.com/play?table=a-b-c&x=1"}}},
+     "https://playsorceryonline.com/play?table=a-b-c"),
+    ({"spectateUrl": "https://www.playsorceryonline.com/?table=a-b-c"},
+     "https://playsorceryonline.com/play?table=a-b-c"),
+    ({"room": "/play?table=a-b-c"}, "https://playsorceryonline.com/play?table=a-b-c"),
+    ({"players": [{"gameUrl": "https://playsorceryonline.com/play?m=s1.x", "tableUrl": "?table=a-b-c"}]},
+     "https://playsorceryonline.com/play?table=a-b-c"),
+    ({"tableId": "a-b-c"}, "https://playsorceryonline.com/play?table=a-b-c"),
+    ({"tableUrl": "https://playsorceryonline.com/play?table=bad name!"}, None),
 ])
 def test_table_link_is_read_from_the_pso_reply(data, expected):
     from services.sorcery_online_matchmaking import table_url_from_response

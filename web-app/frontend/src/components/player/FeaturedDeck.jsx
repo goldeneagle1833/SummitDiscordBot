@@ -54,13 +54,12 @@ function DeckListModal({ deck, onClose }) {
 /**
  * The featured deck as a tile in the profile header, styled like the avatar
  * tiles: the avatar's art behind the deck name and its record. Tapping it
- * opens the full list. The deck is one the player pasted, or by default their
- * most-played deck that is public on sorcerytcg.com or Play Sorcery Online.
- * Visitors see nothing when there is none; the owner gets a small prompt.
+ * opens the full list. Only ever a deck the player chose; the site never
+ * picks one. Visitors see nothing when there is none; the owner gets a
+ * small prompt.
  */
 export default function FeaturedDeck({ playerId, isOwner, onEdit, recentDecks = [], refreshKey = 0, onLoaded }) {
   const [deck, setDeck] = useState(undefined)
-  const [mode, setMode] = useState('auto')
   const [imageFiles, setImageFiles] = useState([])
   const [open, setOpen] = useState(false)
 
@@ -70,7 +69,6 @@ export default function FeaturedDeck({ playerId, isOwner, onEdit, recentDecks = 
       .then((res) => {
         if (!active) return
         setDeck(res?.deck || null)
-        setMode(res?.mode || 'auto')
         onLoaded?.(res || null)
       })
       .catch(() => active && setDeck(null))
@@ -100,9 +98,7 @@ export default function FeaturedDeck({ playerId, isOwner, onEdit, recentDecks = 
         <div>
           <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted">Featured Deck</h2>
           <p className="text-sm text-text-muted mt-1">
-            {mode === 'off'
-              ? 'Turned off. Nobody sees a featured deck on your profile.'
-              : 'Your most-played deck shows here once it is public on sorcerytcg.com or Play Sorcery Online.'}
+            Show off a deck on your profile. Pick one of your recent decks or paste a deck link.
           </p>
         </div>
         <button
@@ -110,7 +106,7 @@ export default function FeaturedDeck({ playerId, isOwner, onEdit, recentDecks = 
           onClick={onEdit}
           className="self-start h-9 px-3 text-sm font-semibold rounded-lg bg-secondary text-black hover:opacity-90"
         >
-          {mode === 'off' ? 'Turn on' : 'Choose a deck'}
+          Choose a deck
         </button>
       </section>
     )
@@ -139,7 +135,6 @@ export default function FeaturedDeck({ playerId, isOwner, onEdit, recentDecks = 
         <AvatarArtCard name={deck.avatar || ''} imageFiles={imageFiles} className="min-h-[170px] hover:border-secondary/60 transition-colors">
           <div className="text-xs font-bold uppercase tracking-wider text-gray-300 pr-14">
             Featured Deck
-            {deck.picked === 'auto' && <span className="normal-case tracking-normal text-secondary"> · Most played</span>}
           </div>
           <h3 className="text-xl font-bold text-white leading-tight mt-1 break-words">{deck.name}</h3>
           {deck.avatar && <div className="text-sm text-gray-300 mt-0.5">{deck.avatar}</div>}

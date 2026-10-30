@@ -84,6 +84,20 @@ class UserProfileRepository:
                 cur.execute(f"ALTER TABLE user_profiles ADD COLUMN {col_name} {col_type}")
                 columns_added.append(col_name)
 
+        # The automatic featured deck pick was removed (it showed private
+        # decks). Clear what it saved, so only decks players chose remain.
+        # Read first: this runs on every repository start, and a bare UPDATE
+        # would take the write lock each time.
+        if cur.execute(
+            "SELECT 1 FROM user_profiles WHERE featured_deck_source IN ('auto', 'off') LIMIT 1"
+        ).fetchone():
+            cur.execute(
+                "UPDATE user_profiles SET featured_deck_url = NULL, featured_deck_json = NULL,"
+                " featured_deck_auto_update = NULL, featured_deck_checked_at = NULL,"
+                " featured_deck_source = NULL"
+                " WHERE featured_deck_source IN ('auto', 'off')"
+            )
+
         if columns_added:
             import logging
             logger = logging.getLogger(__name__)
@@ -658,9 +672,8 @@ class UserProfileRepository:
     def get_featured_deck(self, user_id: str) -> dict | None:
         """The player's featured deck settings, or None if never touched.
 
-        ``source`` is "manual" (a link the player pasted), "auto" (their
-        most-played public deck, picked by the site) or "off" (they chose to
-        show none). An auto row with no url means nothing public was found.
+        ``source`` is "manual" for a deck the player chose. Older rows may say
+        "auto" or "off", from the removed automatic pick; neither is shown.
         """
         conn = self._get_connection()
         row = conn.execute(
@@ -734,24 +747,8 @@ class UserProfileRepository:
         conn.commit()
         conn.close()
 
-    def save_auto_featured_deck(self, user_id: str, url: str | None, deck: dict | None) -> None:
-        """Store the site's pick, unless the player has since chosen for themselves."""
-        now = datetime.now(timezone.utc).isoformat()
-        conn = self._get_connection()
-        conn.execute(
-            "UPDATE user_profiles SET featured_deck_url = ?, featured_deck_json = ?,"
-            " featured_deck_auto_update = 1, featured_deck_checked_at = ?,"
-            " featured_deck_source = 'auto'"
-            " WHERE user_id IN (?, ?)"
-            " AND COALESCE(featured_deck_source, CASE WHEN featured_deck_url IS NULL"
-            " THEN 'auto' ELSE 'manual' END) = 'auto'",
-            (url, json.dumps(deck) if deck else None, now, *self._both_ids(user_id)),
-        )
-        conn.commit()
-        conn.close()
-
     def clear_featured_deck(self, user_id: str) -> bool:
-        """Forget the player's choice, so the site picks their deck again."""
+        """Take the featured deck off a player's profile."""
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(

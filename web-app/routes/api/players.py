@@ -4,7 +4,7 @@ import json
 import logging
 import sqlite3
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, session, request
 
@@ -2980,33 +2980,22 @@ def set_hidden_avatars(player_id):
 
 
 # ---------------------------------------------------------------------------
-# Featured deck: a public deck shown on the player's profile.
+# Featured deck: a deck the player chose to show on their profile.
 #
-# Either a link the player pasted ("manual"), or by default the deck they
-# played most lately that its deck site shows to anyone ("auto"). Bruce's call
-# (2026-10-30): a deck the player made public on sorcerytcg.com or Sorcery
-# Online may be featured, whatever their Summit privacy settings. The player
-# can paste another deck or switch it off.
+# Only ever one the player picked themselves. The site never chooses one:
+# an automatic "most-played public deck" pick (Oct 2026) showed private
+# decks, because the deck sites hand out some private decks too, so it was
+# removed and its picks cleared.
 # ---------------------------------------------------------------------------
 
 # A kept-updated deck is re-read from its site at most this often
 FEATURED_DECK_REFRESH_SECONDS = 6 * 60 * 60
-# The automatic pick is redone at most this often
-FEATURED_DECK_AUTO_SECONDS = 24 * 60 * 60
-# "Most played" counts games over this many days, or all time if none
-FEATURED_DECK_AUTO_DAYS = 30
-# Decks tried, most played first, before giving up on finding a public one
-FEATURED_DECK_AUTO_TRIES = 3
 _featured_refreshing: set[str] = set()
-_featured_auto_running: set[str] = set()
 _featured_refresh_lock = threading.Lock()
 
 
 def _fetch_featured_deck(url: str) -> dict:
-    """Read a deck from sorcerytcg.com or Play Sorcery Online, or {} if it can't be.
-
-    Both sites only hand out public decks, so a deck we can read is public.
-    """
+    """Read a deck from sorcerytcg.com or Sorcery Online, or {} if it can't be."""
     from services.curiosa import CuriosaService
 
     try:
@@ -3019,89 +3008,29 @@ def _fetch_featured_deck(url: str) -> dict:
     return deck if has_cards else {}
 
 
-def _most_played_deck_urls(player_id: str) -> list[str]:
-    """The player's deck links, most games first: lately, else all time."""
-    since = (datetime.now(timezone.utc) - timedelta(days=FEATURED_DECK_AUTO_DAYS)).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
-    games = []  # (timestamp, deck url)
-    conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+def _refresh_featured_deck(player_id: str, url: str) -> None:
     try:
-        for table in ("match_records", "match_records_archive"):
-            for loser_col in ("curiosa_url_loser", "NULL"):
-                try:
-                    rows = conn.execute(
-                        f"""SELECT timestamp,
-                                   CASE WHEN winner_id = ? THEN COALESCE(curiosa_url_winner, curiosa_url)
-                                        ELSE {loser_col} END
-                            FROM {table} WHERE winner_id = ? OR losser_id = ?""",
-                        (player_id, player_id, player_id),
-                    ).fetchall()
-                except sqlite3.OperationalError:
-                    continue
-                games.extend(rows)
-                break
-    finally:
-        conn.close()
-
-    def ranked(rows):
-        counts = {}
-        for _, url in rows:
-            if url and is_deck_url(str(url)):
-                key = normalize_deck_url(str(url))
-                counts[key] = counts.get(key, 0) + 1
-        return [u for u, _ in sorted(counts.items(), key=lambda kv: -kv[1])]
-
-    recent = ranked([g for g in games if g[0] and str(g[0]) >= since])
-    return recent or ranked(games)
-
-
-def _pick_auto_featured_deck(player_id: str) -> None:
-    """Feature the player's most-played deck that is public; remember if none is."""
-    deck_url, deck = None, None
-    for url in _most_played_deck_urls(player_id)[:FEATURED_DECK_AUTO_TRIES]:
-        fetched = _fetch_featured_deck(url)
-        if fetched:
-            deck_url, deck = url, fetched
-            break
-    UserProfileRepository().save_auto_featured_deck(player_id, deck_url, deck)
-
-
-def _refresh_featured_deck(player_id: str, url: str | None, auto: bool) -> None:
-    try:
-        if auto:
-            _pick_auto_featured_deck(player_id)
-        else:
-            deck = _fetch_featured_deck(url)
-            UserProfileRepository().refresh_featured_deck(player_id, url, deck or None)
+        deck = _fetch_featured_deck(url)
+        UserProfileRepository().refresh_featured_deck(player_id, url, deck or None)
     except Exception as e:
         logger.warning(f"Featured deck refresh failed for {player_id}: {e}")
     finally:
         with _featured_refresh_lock:
             _featured_refreshing.discard(player_id)
-            _featured_auto_running.discard(player_id)
 
 
-def _start_featured_refresh(player_id: str, url: str | None, auto: bool) -> None:
-    """Refresh in the background, once at a time per player.
-
-    Automatic picks can read several decks each, so only one runs at a time
-    across the site; a profile skipped now is picked on a later visit.
-    """
+def _start_featured_refresh(player_id: str, url: str) -> None:
+    """Re-read a kept-updated deck in the background, once at a time per player."""
     with _featured_refresh_lock:
         if player_id in _featured_refreshing:
             return
-        if auto and _featured_auto_running:
-            return
         _featured_refreshing.add(player_id)
-        if auto:
-            _featured_auto_running.add(player_id)
     threading.Thread(
-        target=_refresh_featured_deck, args=(player_id, url, auto), daemon=True
+        target=_refresh_featured_deck, args=(player_id, url), daemon=True
     ).start()
 
 
-def _featured_deck_is_stale(checked_at: str | None, max_age: int = FEATURED_DECK_REFRESH_SECONDS) -> bool:
+def _featured_deck_is_stale(checked_at: str | None) -> bool:
     if not checked_at:
         return True
     try:
@@ -3111,7 +3040,7 @@ def _featured_deck_is_stale(checked_at: str | None, max_age: int = FEATURED_DECK
     if checked.tzinfo is None:
         checked = checked.replace(tzinfo=timezone.utc)
     age = (datetime.now(timezone.utc) - checked).total_seconds()
-    return age >= max_age
+    return age >= FEATURED_DECK_REFRESH_SECONDS
 
 
 def _featured_deck_payload(featured: dict) -> dict:
@@ -3123,7 +3052,6 @@ def _featured_deck_payload(featured: dict) -> dict:
     return {
         "url": featured["url"],
         "source": deck_url_source(featured["url"]),
-        "picked": featured["source"],
         "name": deck.get("name") or "Featured deck",
         "avatar": avatar[0].get("name") if avatar and isinstance(avatar[0], dict) else None,
         "avatar_image": avatar[0].get("image") if avatar and isinstance(avatar[0], dict) else None,
@@ -3149,54 +3077,31 @@ def _owner_or_admin(player_id):
 
 @players_bp.route("/player/<player_id>/featured-deck", methods=["GET"])
 def get_featured_deck(player_id):
-    """The player's featured deck, or {"deck": null} when there is none to show.
-
-    Also says how it is chosen ("mode": manual, auto or off).
-    """
+    """The deck the player chose to feature, or {"deck": null} when they chose none."""
     player_id_normalized = str(player_id).removeprefix("google_")
-    repo = UserProfileRepository()
-    featured = repo.get_featured_deck(player_id_normalized)
-    mode = featured["source"] if featured else "auto"
-    answer = {"deck": None, "mode": mode}
+    featured = UserProfileRepository().get_featured_deck(player_id_normalized)
+    if not featured or featured["source"] != "manual" or not featured["url"] or not featured["deck"]:
+        return jsonify({"deck": None})
 
-    if mode == "off":
-        return jsonify(answer)
+    # A kept-updated deck is re-read in the background; this answer uses the
+    # saved copy so the profile never waits on the deck site.
+    if featured["auto_update"] and _featured_deck_is_stale(featured["checked_at"]):
+        _start_featured_refresh(player_id_normalized, featured["url"])
 
-    if mode == "auto":
-        # The pick runs in the background; this answer uses the saved one so
-        # the profile never waits on the deck site.
-        if not featured or _featured_deck_is_stale(featured["checked_at"], FEATURED_DECK_AUTO_SECONDS):
-            _start_featured_refresh(player_id_normalized, None, auto=True)
-    elif featured["auto_update"] and _featured_deck_is_stale(featured["checked_at"]):
-        _start_featured_refresh(player_id_normalized, featured["url"], auto=False)
-
-    if featured and featured["url"] and featured["deck"]:
-        answer["deck"] = _featured_deck_payload(featured)
-    return jsonify(answer)
+    return jsonify({"deck": _featured_deck_payload(featured)})
 
 
 @players_bp.route("/player/<player_id>/featured-deck", methods=["PUT"])
 def set_featured_deck(player_id):
-    """Choose the featured deck (owner or admin).
-
-    {"url": ..., "auto_update": bool} features a pasted public deck;
-    {"mode": "auto"} goes back to the most-played public deck.
-    """
+    """Feature a deck on the player's profile (owner or admin)."""
     player_id_normalized, error = _owner_or_admin(player_id)
     if error:
         return error
 
     data = request.get_json(silent=True) or {}
-    repo = UserProfileRepository()
-
-    if data.get("mode") == "auto":
-        repo.clear_featured_deck(player_id_normalized)
-        _start_featured_refresh(player_id_normalized, None, auto=True)
-        return jsonify({"success": True, "mode": "auto"})
-
     url = str(data.get("url") or "").strip()
     if not is_deck_url(url):
-        return jsonify({"error": "Paste a sorcerytcg.com or Play Sorcery Online deck link"}), 400
+        return jsonify({"error": "Paste a sorcerytcg.com or Sorcery Online deck link"}), 400
     url = normalize_deck_url(url)
 
     deck = _fetch_featured_deck(url)
@@ -3205,6 +3110,7 @@ def set_featured_deck(player_id):
             "error": "We couldn't read that deck. Check the link and that the deck is set to public."
         }), 400
 
+    repo = UserProfileRepository()
     if not repo.set_featured_deck(player_id_normalized, url, deck, bool(data.get("auto_update"))):
         return jsonify({"error": "Profile not found"}), 404
     return jsonify({"success": True, "deck": _featured_deck_payload(repo.get_featured_deck(player_id_normalized))})
@@ -3212,11 +3118,11 @@ def set_featured_deck(player_id):
 
 @players_bp.route("/player/<player_id>/featured-deck", methods=["DELETE"])
 def clear_featured_deck(player_id):
-    """Show no featured deck at all, not even the automatic one (owner or admin)."""
+    """Take the featured deck off the player's profile (owner or admin)."""
     player_id_normalized, error = _owner_or_admin(player_id)
     if error:
         return error
-    UserProfileRepository().set_featured_deck(player_id_normalized, None, None, False, source="off")
+    UserProfileRepository().clear_featured_deck(player_id_normalized)
     return jsonify({"success": True})
 
 

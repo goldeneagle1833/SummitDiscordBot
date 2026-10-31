@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
+import ModerationActions from '@/components/admin/ModerationActions'
 
 const PER_PAGE = 50
 
@@ -53,6 +54,7 @@ export default function BlockedUsersSection() {
                   <th className="px-4 py-2 font-medium">Blocked By</th>
                   <th className="px-4 py-2 font-medium">Reason</th>
                   <th className="px-4 py-2 font-medium whitespace-nowrap">Date</th>
+                  <th className="px-4 py-2 font-medium hidden md:table-cell">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -64,6 +66,18 @@ export default function BlockedUsersSection() {
                     <td className="px-4 py-2">
                       <div className="text-text-primary">{e.blocked_name}</div>
                       <div className="text-xs text-text-muted font-mono">{e.blocked_id}</div>
+                      <div className="md:hidden mt-2">
+                        <ModerationActions
+                          userId={e.blocked_id}
+                          userName={e.blocked_name}
+                          canModerate={e.can_moderate}
+                          moderation={e.moderation}
+                          sourceKind="block"
+                          sourceRef={e.blocker_id}
+                          defaultReason={`Blocked by ${e.blocker_name}${e.reason ? `: ${e.reason}` : ''}`}
+                          playerReason="Blocked by other players"
+                        />
+                      </div>
                     </td>
                     <td className="px-4 py-2">
                       <div className="text-text-primary">{e.blocker_name}</div>
@@ -78,6 +92,18 @@ export default function BlockedUsersSection() {
                     </td>
                     <td className="px-4 py-2 text-xs text-text-muted whitespace-nowrap">
                       {formatDate(e.created_at)}
+                    </td>
+                    <td className="px-4 py-2 hidden md:table-cell">
+                      <ModerationActions
+                        userId={e.blocked_id}
+                        userName={e.blocked_name}
+                        canModerate={e.can_moderate}
+                        moderation={e.moderation}
+                        sourceKind="block"
+                        sourceRef={e.blocker_id}
+                        defaultReason={`Blocked by ${e.blocker_name}${e.reason ? `: ${e.reason}` : ''}`}
+                        playerReason="Blocked by other players"
+                      />
                     </td>
                   </tr>
                 ))}

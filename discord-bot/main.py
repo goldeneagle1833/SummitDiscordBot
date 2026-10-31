@@ -29,6 +29,8 @@ from cogs.dynamic_voice import DynamicVoiceCog
 from cogs.content_monitor import ContentMonitorCog
 from cogs.health_monitor import HealthMonitorCog
 from cogs.pairing_bans import PairingBanCog
+from cogs.moderation_alerts import ModerationAlertsCog, PersistentModerationButton
+from repositories.moderation_repo import create_moderation_tables
 from repositories.pairing_bans_repo import create_pairing_bans_table
 from repositories.voice_only_repo import create_voice_only_table
 from repositories.player_reports_repo import create_player_reports_table
@@ -196,6 +198,7 @@ async def setup_cogs():
     await bot.add_cog(ContentMonitorCog(bot))  # Auto-create promo banners from sorcery-content links
     await bot.add_cog(HealthMonitorCog(bot))  # Periodic API health checks, DMs owner on degradation
     await bot.add_cog(PairingBanCog(bot))  # !ban / !unban: block players from the pairing service
+    await bot.add_cog(ModerationAlertsCog(bot))  # DM owner on blocks/reports with Timeout/Ban
 
 
 async def main():
@@ -211,6 +214,7 @@ async def main():
         create_pairing_bans_table()
         create_voice_only_table()
         create_player_reports_table()
+        create_moderation_tables()
         # Register DynamicItem buttons so Confirm/Dispute survive bot restarts
         bot.add_dynamic_items(
             PersistentConfirmButton, PersistentDisputeButton,
@@ -218,7 +222,7 @@ async def main():
             PersistentRemovalConfirmButton, PersistentRemovalDenyButton,
             PersistentMatchCardReportButton, PersistentMatchCardCancelButton,
             PersistentPSOConfirmButton, PersistentPSODisputeButton,
-            PersistentReportPlayerButton,
+            PersistentReportPlayerButton, PersistentModerationButton,
         )
         await setup_cogs()
         matchmaking_runner = await start_matchmaking_api(bot)

@@ -119,3 +119,43 @@ describe('Events page — desktop', () => {
     expect(screen.getAllByRole('heading', { level: 2, name: 'SCG Portland 2026' })).toHaveLength(1)
   })
 })
+
+describe('Events page — event type tags', () => {
+  const TAGGED = [
+    { ...EVENTS[0], tag: 'Grand Contest' },
+    { ...EVENTS[1], tag: 'Cornerstone' },
+    { folder: 'local-night', name: 'Local Night', event_date: '2026-04-01', player_count: 12, rating: 1, tag: null },
+  ]
+
+  beforeEach(() => {
+    setViewport({ desktop: true })
+    get.mockImplementation((url) => {
+      if (url === '/api/top-8-events') return Promise.resolve({ events: TAGGED, is_admin: false, featured_event: null, event_tags: ['Grand Contest', 'Cornerstone', 'Local'] })
+      if (url === '/api/avatar-image-files') return Promise.resolve([])
+      if (url.startsWith('/api/events/')) return Promise.resolve({ top8_decks: [], all_decks: [], element_stats: null })
+      return Promise.resolve({})
+    })
+  })
+
+  it('shows tag badges and filters the list by type', async () => {
+    renderWithRouter(<Events />)
+    await screen.findByText('Local Night')
+    expect(within(rowFor('SCG Portland 2026')).getByText('Cornerstone')).toBeInTheDocument()
+
+    const select = screen.getByLabelText('Type')
+    // Untagged is admin-only
+    expect(within(select).queryByRole('option', { name: 'Untagged' })).toBeNull()
+
+    await userEvent.selectOptions(select, 'Cornerstone')
+    expect(screen.queryByRole('button', { name: /Local Night/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /GenCon 2026/ })).toBeNull()
+    expect(rowFor('SCG Portland 2026')).toBeInTheDocument()
+    expect(screen.getByText('1 event')).toBeInTheDocument()
+
+    await userEvent.selectOptions(select, 'Local')
+    expect(screen.getByText('No events match your filters.')).toBeInTheDocument()
+
+    await userEvent.selectOptions(select, '')
+    expect(screen.getByText('3 events')).toBeInTheDocument()
+  })
+})

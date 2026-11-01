@@ -6,6 +6,7 @@ Public:
   POST /api/meta-reports/subscribe          {email} -> confirmation email
   POST /api/meta-reports/email/confirm      {token}
   POST /api/meta-reports/email/unsubscribe  {token}
+  GET  /api/data-release                    newest released batch (Avatars, Popular Cards)
 
 Admin:
   GET    /api/meta-reports/admin                   every report, subscriber counts
@@ -91,6 +92,13 @@ def list_reports():
               "publishLabel": meta_report.Period.from_slug(r["slug"]).publish_label(),
               "publishedAt": r["publishedAt"]} for r in reports]
     return jsonify({"reports": items})
+
+
+@meta_reports_bp.route("/data-release")
+def get_data_release():
+    """How far the batch-released pages (Avatars, Popular Cards) go, and the next batch."""
+    from services.data_release import release_info
+    return jsonify(release_info())
 
 
 @meta_reports_bp.route("/meta-reports/<slug>")

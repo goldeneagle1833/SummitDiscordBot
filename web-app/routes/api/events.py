@@ -16,6 +16,7 @@ from flask import Blueprint, jsonify, request
 from repositories.events import EventRepository
 from utils.auth import is_admin, require_admin
 from utils.formatting import format_event_name
+from webapp_config import EVENT_TAGS
 
 # File-based job store for background Curiosa fetching.
 # Using files instead of an in-memory dict so that jobs are visible
@@ -223,7 +224,7 @@ def list_top8_events():
         repo = EventRepository()
         events = repo.get_all_events()
         featured = repo.get_featured_event()
-        return jsonify({"events": events, "is_admin": is_admin(), "featured_event": featured})
+        return jsonify({"events": events, "is_admin": is_admin(), "featured_event": featured, "event_tags": EVENT_TAGS})
     except Exception as e:
         logger.exception("Error listing events: %s", e)
         return jsonify({"error": "Failed to load events"}), 500
@@ -499,7 +500,7 @@ def compare_events():
 @events_bp.route("/events/<event_folder>/metadata", methods=["PUT"])
 @require_admin
 def update_event_metadata(event_folder):
-    """Update display name and/or star rating for an event (admin only)."""
+    """Update display name, star rating, date, description and/or tag for an event (admin only)."""
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"success": False, "error": "Request body required"}), 400
@@ -508,6 +509,7 @@ def update_event_metadata(event_folder):
     rating = data.get("rating")
     description = data.get("description")
     event_date = data.get("event_date")
+    tag = data.get("tag")
 
     if name is not None and (not isinstance(name, str) or not name.strip()):
         return jsonify({"success": False, "error": "Name must be a non-empty string"}), 400
@@ -519,6 +521,9 @@ def update_event_metadata(event_folder):
     if description is not None and not isinstance(description, str):
         return jsonify({"success": False, "error": "Description must be a string"}), 400
 
+    if tag is not None and (not isinstance(tag, str) or (tag and tag not in EVENT_TAGS)):
+        return jsonify({"success": False, "error": "Tag must be one of: " + ", ".join(EVENT_TAGS)}), 400
+
     repo = EventRepository()
     result = repo.update_event_metadata(
         event_folder,
@@ -526,6 +531,7 @@ def update_event_metadata(event_folder):
         rating=rating,
         description=description.strip() if description else description,
         event_date=event_date.strip() if isinstance(event_date, str) else event_date,
+        tag=tag,
     )
 
     status = 200 if result.get("success") else 400

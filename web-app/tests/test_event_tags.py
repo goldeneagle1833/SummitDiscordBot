@@ -43,3 +43,24 @@ def test_unknown_tag_rejected(tmp_path):
     result = repo.update_event_metadata(name, tag="Regional")
     assert not result["success"]
     assert _event(repo, name)["tag"] is None
+
+
+def test_auto_tag_from_title(tmp_path):
+    repo, name = _repo(tmp_path, "Sydney Cornerstone Top 4 2025")
+    assert _event(repo, name)["tag"] == "Cornerstone"
+
+
+def test_auto_tag_from_renamed_title(tmp_path):
+    repo, name = _repo(tmp_path, "Italy 2026")
+    assert _event(repo, name)["tag"] is None
+    assert repo.update_event_metadata(name, name="Grand Contest Italy")["success"]
+    assert _event(repo, name)["tag"] == "Grand Contest"
+
+
+def test_admin_choice_beats_auto_tag(tmp_path):
+    repo, name = _repo(tmp_path, "King of the Realm Cornerstone in NYC - 2025")
+    assert repo.update_event_metadata(name, tag="Local")["success"]
+    assert _event(repo, name)["tag"] == "Local"
+    # Admin picks None: stays untagged even though the title says Cornerstone
+    assert repo.update_event_metadata(name, tag="")["success"]
+    assert _event(repo, name)["tag"] is None

@@ -21,6 +21,29 @@ from utils.formatting import (
 logger = logging.getLogger(__name__)
 
 
+_AUTO_TAG_PATTERNS = [
+    ("Grand Contest", re.compile(r"\bgrand\s+contest\b", re.I)),
+    ("Cornerstone", re.compile(r"\bcornerstone\b", re.I)),
+    ("Local", re.compile(r"\blocal\b", re.I)),
+]
+
+
+def guess_event_tag(*names: str) -> str | None:
+    """Event type implied by the event's title, e.g. "Sydney Cornerstone" -> Cornerstone."""
+    for tag, pattern in _AUTO_TAG_PATTERNS:
+        if tag in EVENT_TAGS and any(pattern.search(n or "") for n in names):
+            return tag
+    return None
+
+
+def resolve_event_tag(overrides: dict, *names: str) -> str | None:
+    """Admin's choice wins (including an explicit "None"); otherwise guess from the title."""
+    if "tag" in overrides:
+        tag = overrides.get("tag")
+        return tag if tag in EVENT_TAGS else None
+    return guess_event_tag(*names)
+
+
 class EventRepository:
     """Data access for event JSON/CSV files."""
 
@@ -254,9 +277,9 @@ class EventRepository:
         if event_date is not None:
             entry["event_date"] = event_date if event_date else None
         if tag is not None:
-            if tag == "":
-                entry.pop("tag", None)
-            elif tag in EVENT_TAGS:
+            if tag == "" or tag in EVENT_TAGS:
+                # "" is stored on purpose: the admin chose "None", which also
+                # stops the title-based auto tag from coming back.
                 entry["tag"] = tag
             else:
                 return {"success": False, "error": "Tag must be one of: " + ", ".join(EVENT_TAGS)}
@@ -435,7 +458,7 @@ class EventRepository:
                                 "has_top8": top8_json is not None,
                                 "has_full": full_json is not None,
                                 "rating": overrides.get("rating", EVENT_RATINGS.get(folder.name, 1)),
-                                "tag": overrides.get("tag") if overrides.get("tag") in EVENT_TAGS else None,
+                                "tag": resolve_event_tag(overrides, display_name, folder.name),
                                 "event_date": event_date,
                                 "event_date_display": event_date_display,
                                 "winner_username": winner_username,

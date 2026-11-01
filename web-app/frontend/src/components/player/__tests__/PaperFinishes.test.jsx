@@ -33,4 +33,12 @@ describe('PaperFinishes', () => {
     expect(screen.getByRole('link', { name: 'LinCon' })).toHaveAttribute('href', '/top-8/LinCon%20May%2014-16%202026')
     expect(screen.getByText('Druid · Mar 2026')).toBeInTheDocument()
   })
+
+  it('shows a hand-added result as a chip that does not link', () => {
+    const manual = { folder: 'manual-3', manual: true, manual_id: 3, event: 'Store Champs', label: 'Winner', place: 1, event_date_display: 'Oct 4, 2026', title: 'Winner · Store Champs' }
+    renderWithRouter(<PaperFinishChips finishes={[manual, ...FINISHES]} />)
+    expect(screen.getByText('Store Champs')).toBeInTheDocument()
+    expect(screen.getAllByRole('link')).toHaveLength(2)
+    expect(screen.getByText('Store Champs').closest('a')).toBeNull()
+  })
 })

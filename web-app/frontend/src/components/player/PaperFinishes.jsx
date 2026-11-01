@@ -93,6 +93,19 @@ function Trophy({ label, size = 15 }) {
 }
 
 /**
+ * An imported finish opens its event's Top 8 page; one an admin added by
+ * hand has no event page, so it is plain text.
+ */
+function FinishLink({ finish, children, ...props }) {
+  if (finish.manual) return <span {...props}>{children}</span>
+  return (
+    <Link to={`/top-8/${encodeURIComponent(finish.folder)}`} {...props}>
+      {children}
+    </Link>
+  )
+}
+
+/**
  * The hero card's paper finishes: one chip per event, best first, each
  * opening that event's Top 8 page. Long event names are cut short on the
  * chip; hovering shows the full title.
@@ -103,15 +116,15 @@ export function PaperFinishChips({ finishes = [] }) {
     <ul className="flex flex-wrap gap-2" aria-label="Paper tournament finishes">
       {finishes.map((f) => (
         <li key={f.folder} className="min-w-0 max-w-full">
-          <Link
-            to={`/top-8/${encodeURIComponent(f.folder)}`}
-            title={f.title}
+          <FinishLink
+            finish={f}
+            title={[f.title, f.manual && f.event_date_display].filter(Boolean).join(' · ')}
             className="flex items-center gap-1.5 sm:gap-2 max-w-full px-2.5 sm:px-3 py-1 rounded-full bg-bg-raised border border-secondary/40 text-xs sm:text-sm hover:border-secondary"
           >
             <Trophy label={f.label} size={14} />
             <strong className={`whitespace-nowrap ${FINISH_COLOURS[f.label] || 'text-text-primary'}`}>{f.label}</strong>
             <span className="text-text-muted truncate">{f.event}</span>
-          </Link>
+          </FinishLink>
         </li>
       ))}
     </ul>
@@ -131,12 +144,12 @@ export function PaperFinishesSection({ finishes = [] }) {
               <Trophy label={f.label} />
               <strong className={FINISH_COLOURS[f.label] || 'text-text-primary'}>{f.label}</strong>
             </span>
-            <Link
-              to={`/top-8/${encodeURIComponent(f.folder)}`}
-              className="font-semibold text-text-primary hover:text-secondary flex-1 min-w-[12rem]"
+            <FinishLink
+              finish={f}
+              className={`font-semibold text-text-primary flex-1 min-w-[12rem] ${f.manual ? '' : 'hover:text-secondary'}`}
             >
               {f.event}
-            </Link>
+            </FinishLink>
             <span className="text-sm text-text-muted">
               {[f.avatar, f.event_date_display].filter(Boolean).join(' · ')}
             </span>
@@ -144,7 +157,7 @@ export function PaperFinishesSection({ finishes = [] }) {
         ))}
       </ul>
       <p className="text-xs text-text-muted">
-        From the events on the Top 8 page, matched to this profile by name. Wrong name, or a finish missing? Let an admin know.
+        From the events on the Top 8 page, matched to this profile by name, and results added by an admin. Wrong name, or a finish missing? Let an admin know.
       </p>
     </section>
   )

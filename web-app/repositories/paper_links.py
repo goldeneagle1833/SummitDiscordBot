@@ -9,6 +9,8 @@ Three small tables in match_records.db:
   (an organiser uploading every Top 8 deck under their own account).
 - paper_badge_events: whether an event on the Top 8 page awards badges at
   all, when an admin has switched it from its default.
+- paper_manual_finishes: a result an admin typed in by hand for an event
+  that is not on the Top 8 page (event name, date, placement, avatar).
 """
 
 import datetime
@@ -59,6 +61,18 @@ class PaperLinkRepository:
             CREATE TABLE IF NOT EXISTS paper_badge_events (
                 folder TEXT PRIMARY KEY,
                 awards_badges INTEGER NOT NULL,
+                set_by TEXT,
+                set_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS paper_manual_finishes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                event TEXT NOT NULL,
+                event_date TEXT,
+                place INTEGER NOT NULL,
+                avatar TEXT,
                 set_by TEXT,
                 set_at TEXT NOT NULL
             )
@@ -167,3 +181,49 @@ class PaperLinkRepository:
         )
         conn.commit()
         conn.close()
+
+    # -- manual results ---------------------------------------------------
+
+    _MANUAL_COLUMNS = ("id", "user_id", "event", "event_date", "place", "avatar", "set_by", "set_at")
+
+    def get_manual_finishes(self) -> list[dict]:
+        conn = self._get_connection()
+        rows = conn.execute(
+            f"SELECT {', '.join(self._MANUAL_COLUMNS)} FROM paper_manual_finishes ORDER BY id"
+        ).fetchall()
+        conn.close()
+        return [dict(zip(self._MANUAL_COLUMNS, r)) for r in rows]
+
+    def add_manual_finish(self, user_id: str, event: str, event_date: str | None, place: int,
+                          avatar: str | None = None, set_by: str | None = None) -> int:
+        conn = self._get_connection()
+        cur = conn.execute(
+            """INSERT INTO paper_manual_finishes (user_id, event, event_date, place, avatar, set_by, set_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (str(user_id), event, event_date or None, int(place), avatar or None, set_by, _now()),
+        )
+        conn.commit()
+        new_id = cur.lastrowid
+        conn.close()
+        return new_id
+
+    def update_manual_finish(self, finish_id: int, user_id: str, event: str, event_date: str | None,
+                             place: int, avatar: str | None = None, set_by: str | None = None) -> bool:
+        conn = self._get_connection()
+        cur = conn.execute(
+            """UPDATE paper_manual_finishes SET user_id = ?, event = ?, event_date = ?, place = ?,
+                   avatar = ?, set_by = ?, set_at = ? WHERE id = ?""",
+            (str(user_id), event, event_date or None, int(place), avatar or None, set_by, _now(), int(finish_id)),
+        )
+        conn.commit()
+        changed = cur.rowcount > 0
+        conn.close()
+        return changed
+
+    def delete_manual_finish(self, finish_id: int) -> bool:
+        conn = self._get_connection()
+        cur = conn.execute("DELETE FROM paper_manual_finishes WHERE id = ?", (int(finish_id),))
+        conn.commit()
+        changed = cur.rowcount > 0
+        conn.close()
+        return changed

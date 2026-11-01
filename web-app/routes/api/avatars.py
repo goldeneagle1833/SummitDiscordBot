@@ -12,6 +12,7 @@ from urllib.parse import unquote
 from flask import Blueprint, jsonify, request
 
 from repositories.card_catalog import CardCatalogRepository
+from services.data_release import released_connection
 from services.elo_gap import pre_match_sql
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS, AVATAR_IMAGES_DIR
 from utils.formatting import generate_pseudonym
@@ -186,7 +187,7 @@ def get_season_stats():
     """Return game counts per season (events from elo.db + configured season filters)."""
     results = []
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
         for season in _get_all_seasons():
             total = 0
@@ -472,12 +473,21 @@ def reset_rows_cache():
         _rows_cache.clear()
 
 
+def _release_cutoff(cur):
+    """The batch-release cutoff of the cursor's connection (None = live data).
+
+    Part of the rows cache key, so the public Avatars page (released batches
+    only) and the live Top Players endpoints never share cached rows.
+    """
+    return getattr(cur.connection, "release_cutoff", None)
+
+
 def _collect_discord_rows_with_players(cur, event_filter, play_draw=False, pre_elo=False):
     """Like _collect_discord_rows but also includes player IDs and names.
 
     Cached until the database changes; see _query_discord_rows_with_players.
     """
-    return _cached_rows(("discord", event_filter, play_draw, pre_elo),
+    return _cached_rows(("discord", event_filter, play_draw, pre_elo, _release_cutoff(cur)),
                         lambda: _query_discord_rows_with_players(cur, event_filter, play_draw, pre_elo))
 
 
@@ -566,7 +576,7 @@ def _query_discord_rows_with_players(cur, event_filter, play_draw=False, pre_elo
 
 def _collect_external_rows_with_players(cur, source_filter, event_start=None, event_end=None):
     """Like _collect_external_rows but also includes player IDs and names (avatar-only decks, cached)."""
-    return _cached_rows(("external", source_filter, event_start, event_end),
+    return _cached_rows(("external", source_filter, event_start, event_end, _release_cutoff(cur)),
                         lambda: _query_external_rows_with_players(cur, source_filter, event_start, event_end))
 
 
@@ -767,7 +777,7 @@ def get_all_avatars():
         event_start, event_end = _get_event_date_range(event_filter)
 
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
 
         avatar_stats = {}
@@ -1013,7 +1023,7 @@ def get_avatar(avatar_name):
         event_start, event_end = _get_event_date_range(event_filter)
 
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
 
         all_rows = []
@@ -1497,7 +1507,7 @@ def get_avatar_popularity(avatar_name):
         return jsonify({"avatar_name": avatar_name, "timeline": [], "total_days": 0})
 
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
 
         all_rows = []
@@ -1637,7 +1647,7 @@ def get_all_avatars_popularity():
         return jsonify({"avatars": {}})
 
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
 
         all_rows = []
@@ -1800,7 +1810,7 @@ def get_avatar_elo_matrix(avatar_name):
 
     # 2) Collect match rows with player IDs and deck data
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
 
         event_filter = request.args.get("event", "all")
@@ -1931,7 +1941,7 @@ def get_avatars_elo_breakdown():
 
     # 2) Collect all match rows with player IDs and deck data
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
         if source in ("all", "discord"):
             rows, use_new = _collect_discord_rows_with_players(cur, "all")
@@ -2078,7 +2088,7 @@ def get_elo_breakdown_matches():
 
     all_rows = []
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
         source_filter = "(source = 'Discord' OR source IS NULL)" if source in ("all", "discord") else "source = ?"
         params = [] if source in ("all", "discord") else [source]
@@ -2231,7 +2241,7 @@ def get_avatar_deck_composition(avatar_name):
         card_elements = {}
 
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
 
         all_rows = []
@@ -2385,7 +2395,7 @@ def get_play_draw_stats():
         archive_where, archive_params = " AND event_id = ?", (event_id,)
 
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
 
         all_rows = []
@@ -2536,7 +2546,7 @@ def get_avatar_matchups(avatar_name):
         event_start, event_end = _get_event_date_range(event_filter)
 
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
 
         all_rows = []
@@ -2735,7 +2745,7 @@ def get_elo_bracket_matrix():
 
     # 2) Collect match rows with player IDs
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
         if source in ("all", "discord"):
             rows, use_new = _collect_discord_rows_with_players(cur, event_filter, play_draw=True, pre_elo=True)

@@ -17,6 +17,7 @@ from flask import Blueprint, jsonify, request
 from repositories.card_catalog import CardCatalogRepository
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS
 from utils.auth import is_admin
+from services.data_release import cutoff_timestamp, released_connection
 from routes.api.cards import _build_card_image_lookup, _find_card_image, _get_event_date_range
 
 logger = logging.getLogger(__name__)
@@ -127,7 +128,8 @@ def get_creator_popular_cards():
         except ValueError:
             return jsonify([])
 
-    result = _cached(("popular", event_filter, source_filter),
+    # Keyed by the release cutoff so a new batch shows up right away.
+    result = _cached(("popular", event_filter, source_filter, cutoff_timestamp()),
                      lambda: _build_popular_cards(event_filter, source_filter))
     if result is None:
         return jsonify({"error": "Failed to load card data"}), 500
@@ -191,7 +193,7 @@ def _build_popular_cards(event_filter, source_filter):
                 if card_name not in cards_in_deck:
                     card_stats[card_name]["decks_with_card"] += 1
                     cards_in_deck.add(card_name)
-    conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    conn = released_connection(MATCH_RECORDS_DB_PATH)
     cur = conn.cursor()
 
     def _parse_deck_rows(rows, dual_column=True):
@@ -355,7 +357,7 @@ def get_card_history():
     if source_filter not in ("discord", "web", "all"):
         source_filter = "all"
 
-    totals, per_card = _cached(("history", source_filter), lambda: _build_card_history(source_filter))
+    totals, per_card = _cached(("history", source_filter, cutoff_timestamp()), lambda: _build_card_history(source_filter))
     card_months = per_card.get(card_name, {})
 
     result = []
@@ -391,7 +393,7 @@ def _build_card_history(source_filter):
     totals = defaultdict(int)  # month -> decks
     per_card = defaultdict(lambda: defaultdict(int))  # card -> month -> decks with it
 
-    conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    conn = released_connection(MATCH_RECORDS_DB_PATH)
     cur = conn.cursor()
 
     def _process_rows(rows, dual_column=True):

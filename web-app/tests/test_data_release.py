@@ -11,12 +11,12 @@ def _utc(*args):
 
 
 def test_release_follows_meta_report_clock():
-    # Before 01:00 UTC on Nov 1 the October batch isn't out yet
-    assert dr.released_through(_utc(2026, 11, 1, 0, 30)) == date(2026, 9, 30)
-    assert dr.next_release(_utc(2026, 11, 1, 0, 30)) == date(2026, 11, 1)
-    # From 01:00 UTC all of October is released
-    assert dr.released_through(_utc(2026, 11, 1, 1, 0)) == date(2026, 10, 31)
-    assert dr.next_release(_utc(2026, 11, 1, 1, 0)) == date(2026, 11, 15)
+    # Before 00:00 UTC on Nov 1 the October batch isn't out yet
+    assert dr.released_through(_utc(2026, 10, 31, 23, 30)) == date(2026, 9, 30)
+    assert dr.next_release(_utc(2026, 10, 31, 23, 30)) == date(2026, 11, 1)
+    # From 00:00 UTC all of October is released
+    assert dr.released_through(_utc(2026, 11, 1, 0, 0)) == date(2026, 10, 31)
+    assert dr.next_release(_utc(2026, 11, 1, 0, 0)) == date(2026, 11, 15)
     # Nov 1-14 comes out on the 15th, Nov 15-30 on Dec 1
     assert dr.released_through(_utc(2026, 11, 15, 2, 0)) == date(2026, 11, 14)
     assert dr.next_release(_utc(2026, 11, 15, 2, 0)) == date(2026, 12, 1)

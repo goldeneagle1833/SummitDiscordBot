@@ -73,9 +73,9 @@ def get_avatar_image_files():
 def get_avatar_filters():
     """Return available events and sources for avatar page filtering.
 
-    The running season is listed for admins only, except with
-    ``?include_active=1``: the Top Players page shows the current season to
-    everyone (the home leaderboard links there for each avatar).
+    The running season is listed for everyone: its games only show up to the
+    latest batch release (see services/data_release.py). ``?include_active=1``
+    is still accepted from older clients and changes nothing.
     """
     events = []
     sources = []
@@ -95,12 +95,8 @@ def get_avatar_filters():
                 FROM events
                 ORDER BY start_date DESC
             """)
-            user_admin = is_admin()
             for row in cur.fetchall():
                 active = bool(row[4])
-                # Only admins can see active events (Top Players asks for it for everyone)
-                if active and not user_admin and not include_active:
-                    continue
                 events.append({
                     "event_id": row[0],
                     "event_name": row[1],
@@ -763,9 +759,6 @@ def get_all_avatars():
     event_filter = request.args.get("event", "all")
     source_filter = request.args.get("source", "all")
 
-    # Only admins can query the active event
-    if event_filter == "current" and not is_admin():
-        event_filter = "all"
 
     if not MATCH_RECORDS_DB_PATH.exists():
         logger.warning(f"Database not found at {MATCH_RECORDS_DB_PATH}")
@@ -1013,9 +1006,6 @@ def get_avatar(avatar_name):
     event_filter = request.args.get("event", "all")
     source_filter = request.args.get("source", "all")
 
-    # Only admins can query the active event
-    if event_filter == "current" and not is_admin():
-        event_filter = "all"
 
     # Determine event date range for external match filtering
     event_start, event_end = None, None
@@ -2369,9 +2359,6 @@ def get_play_draw_stats():
     cutoff_date = PLAY_DRAW_CUTOFF
     event_filter = request.args.get("event", "all")
 
-    # Only admins can query the active event
-    if event_filter == "current" and not is_admin():
-        event_filter = "all"
 
     # Which tables to read, and the extra WHERE clause for each.
     # None means "skip this table".
@@ -2536,9 +2523,6 @@ def get_avatar_matchups(avatar_name):
     event_filter = request.args.get("event", "all")
     source_filter = request.args.get("source", "all")
 
-    # Only admins can query the active event
-    if event_filter == "current" and not is_admin():
-        event_filter = "all"
 
     # Determine event date range for external match filtering
     event_start, event_end = None, None
@@ -2720,9 +2704,6 @@ def get_elo_bracket_matrix():
     source = request.args.get("source", "discord")
     event_filter = request.args.get("event", "all")
 
-    # Only admins can query the active event
-    if event_filter == "current" and not is_admin():
-        event_filter = "all"
 
     if not MATCH_RECORDS_DB_PATH.exists() or not ELO_DB_PATH.exists():
         return jsonify({"brackets": [], "rows": []})

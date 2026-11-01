@@ -125,14 +125,48 @@ def _forget_alert(pairing_id, player_id):
 
 
 def build_alert_message(player_name, avatar, opponent_name, match_type, table_url=None) -> str:
+    """The alert's wording (the card's description, also what the database keeps)."""
     emoji, label = match_type_presentation(match_type)
     message = (
         f"{emoji} **{player_name}** is playing **{avatar}** in a {label} game "
         f"against **{opponent_name}**!"
     )
     if table_url:
-        message += f"\n🎮 [Watch the live game]({table_url})"
+        message += f"\n\n🎮 [Watch the live game]({table_url})"
     return message
+
+
+_ALERT_COLORS = {
+    "ranked": discord.Color.gold(),
+    "rumble": discord.Color.orange(),
+    "points": discord.Color.orange(),
+}
+
+
+def build_alert_embed(
+    player_name, avatar, opponent_name, match_type, table_url=None, thumbnail_url=None,
+) -> discord.Embed:
+    """The alert as a Discord card. The link is only ever the spectator table URL."""
+    emoji, label = match_type_presentation(match_type)
+    embed = discord.Embed(
+        title=f"{emoji} {label} game in progress",
+        description=build_alert_message(player_name, avatar, opponent_name, match_type, table_url),
+        color=_ALERT_COLORS.get(match_type or "ranked", discord.Color.blurple()),
+    )
+    if table_url:
+        embed.url = table_url
+    if thumbnail_url:
+        embed.set_thumbnail(url=thumbnail_url)
+    embed.set_footer(text="This post is removed once the result is reported.")
+    return embed
+
+
+def _player_picture(bot, player_id):
+    try:
+        user = bot.get_user(player_id)
+        return str(user.display_avatar.url) if user else None
+    except Exception:
+        return None
 
 
 async def _get_channel(bot, channel_id):
@@ -158,10 +192,13 @@ async def send_avatar_alert(
 
         table_url = get_pairing_table(pairing_id) if match_type != "limited" else None
         content = build_alert_message(player_name, avatar, opponent_name, match_type, table_url)
+        embed = build_alert_embed(
+            player_name, avatar, opponent_name, match_type, table_url,
+            thumbnail_url=_player_picture(bot, player_id),
+        )
         message = await channel.send(
-            content,
+            embed=embed,
             allowed_mentions=discord.AllowedMentions.none(),
-            suppress_embeds=True,
         )
         save_avatar_alert(pairing_id, player_id, opponent_id, channel_id, message.id, content)
         logger.info("Avatar alert sent to %s channel for %s (pairing %s)", avatar, player_id, pairing_id)

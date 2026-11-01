@@ -190,9 +190,12 @@ async def test_alert_names_the_avatar_but_never_the_deck(avatar_channels):
     _save_pairing()
     bot, channel, _ = _channel_bot()
     assert await _alert(bot)
-    text = channel.send.await_args.args[0]
-    assert text == "⚔️ **Bruce** is playing **Sorcerer** in a Ranked game against **Geoffrey**!"
-    assert CURIOSA not in text
+    assert not channel.send.await_args.args  # sent as a card, not plain text
+    embed = channel.send.await_args.kwargs["embed"]
+    assert embed.title == "⚔️ Ranked game in progress"
+    assert embed.description == "⚔️ **Bruce** is playing **Sorcerer** in a Ranked game against **Geoffrey**!"
+    assert embed.url is None
+    assert CURIOSA not in str(embed.to_dict())
     bot.get_channel.assert_called_with(9001)
 
 
@@ -204,9 +207,11 @@ async def test_alert_links_the_live_table(avatar_channels):
     set_pairing_table(77, "https://playsorceryonline.com/?table=K7QF&join=spectator")
     bot, channel, _ = _channel_bot()
     await _alert(bot)
-    assert channel.send.await_args.args[0].endswith(
-        "\n🎮 [Watch the live game](https://playsorceryonline.com/?table=K7QF&join=spectator)"
+    embed = channel.send.await_args.kwargs["embed"]
+    assert embed.description.endswith(
+        "\n\n🎮 [Watch the live game](https://playsorceryonline.com/?table=K7QF&join=spectator)"
     )
+    assert embed.url == "https://playsorceryonline.com/?table=K7QF&join=spectator"
 
 
 @pytest.mark.parametrize("status", ["reported", "cancelled", "expired"])

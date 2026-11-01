@@ -1,8 +1,7 @@
 """Popular Cards API (the page used to be creator-only "Creator Stats").
 
-Public with the same season limits creators had: the running season is never
-offered on its own (only finished events, past season ranges, and all-time).
-Admins can still ask for the running season.
+Public. The running season is offered too: like every season, its games only
+show up to the latest batch release (see services/data_release.py).
 """
 
 import json
@@ -16,7 +15,6 @@ from flask import Blueprint, jsonify, request
 
 from repositories.card_catalog import CardCatalogRepository
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS
-from utils.auth import is_admin
 from services.data_release import cutoff_timestamp, released_connection
 from routes.api.cards import _build_card_image_lookup, _find_card_image, _get_event_date_range
 
@@ -61,7 +59,7 @@ def _active_event_ids():
 def get_creator_filters():
     """Return available past events and sources for the Popular Cards filter dropdown.
 
-    Same format as /api/avatars/filters but excludes active events (admins see them).
+    Same format as /api/avatars/filters, running season included.
     """
     events = []
 
@@ -76,11 +74,8 @@ def get_creator_filters():
                 FROM events
                 ORDER BY start_date DESC
             """)
-            user_admin = is_admin()
             for row in cur.fetchall():
                 active = bool(row[4])
-                if active and not user_admin:
-                    continue  # The running season is admin-only
                 events.append({
                     "event_id": row[0],
                     "event_name": row[1],
@@ -111,7 +106,8 @@ def get_creator_popular_cards():
 
     Query params:
     - event: event_id or season filter ID (e.g. "season_gothic_1"). Omit for all data.
-      "current" and the running season's event_id are admin-only.
+      "current" or the running season's event_id give the running season,
+      up to the latest batch release.
     - source: "discord" | "web" | "all" (default: "all")
     """
     event_filter = request.args.get("event", "all")
@@ -119,8 +115,9 @@ def get_creator_popular_cards():
     if source_filter not in ("discord", "web", "all"):
         source_filter = "all"
 
-    if not is_admin() and (event_filter == "current" or event_filter in _active_event_ids()):
-        return jsonify({"error": "The current season isn't public yet"}), 403
+    # The running season lives in match_records, not the archive
+    if event_filter in _active_event_ids():
+        event_filter = "current"
 
     if event_filter not in ("all", "current") and not event_filter.startswith("season_"):
         try:

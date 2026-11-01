@@ -16,6 +16,7 @@ import config
 from cogs.lfg.state import pending_match_reports, processed_matches, processed_matches_lock
 from cogs.lfg.helpers import (
     correction_tip,
+    match_type_presentation,
     scrub_urls,
     send_milestone_announcement,
     generate_ladder_challenge_announcement,
@@ -34,7 +35,7 @@ from repositories.limited_repo import (
 )
 from services.limited_service import limited_winner_report, get_run_summary
 from utils.deck_checker import clean_deck_url
-from cogs.lfg.player_report import is_report_player_item, report_player_only_view
+from cogs.lfg.player_report import is_report_player_item, report_player_button, report_player_only_view
 
 logger = logging.getLogger("discord_bot")
 
@@ -671,23 +672,263 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     return match_id
 
 
+def claim_pending_confirmation(confirmation_id: int) -> bool:
+    """Delete a pending confirmation, returning True only for the caller that removed it.
+
+    Lets a double-clicked Dispute run its reset once.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.execute("DELETE FROM pending_confirmations WHERE id = ?", (confirmation_id,))
+    conn.commit()
+    claimed = cursor.rowcount > 0
+    conn.close()
+    return claimed
+
+
+def _active_pairing_for_dispute(data: dict):
+    """The pairing a disputed report belongs to, if it is still open for reporting."""
+    pairing_id = data.get("pairing_id")
+    guild_id = data.get("guild_id")
+    if not pairing_id or not guild_id:
+        return None
+    try:
+        if data.get("match_type") == "limited":
+            pairing = get_limited_pairing_by_id(guild_id, pairing_id)
+        else:
+            pairing = get_pairing_by_id(guild_id, pairing_id)
+    except Exception as e:
+        logger.error(f"Could not load pairing {pairing_id} for dispute reset: {e}")
+        return None
+    if not pairing or pairing.get("status") != "active":
+        return None
+    return pairing
+
+
+def _dispute_reset_card_details(data: dict, pairing: dict, card: dict | None):
+    """Per-player deck URL and run id for the fresh match cards.
+
+    Prefers the original match card, then the pairing, then the disputed report.
+    """
+    details = {}
+    for player_id in (data["reporter_id"], data["opponent_id"]):
+        deck_url = None
+        run_id = 0
+        if card:
+            if player_id == card.get("player1_id"):
+                deck_url, run_id = card.get("player1_deck_url"), card.get("player1_run_id") or 0
+            elif player_id == card.get("player2_id"):
+                deck_url, run_id = card.get("player2_deck_url"), card.get("player2_run_id") or 0
+        if not deck_url and pairing:
+            if player_id == pairing.get("player1_id"):
+                deck_url = pairing.get("player1_deck_url")
+            elif player_id == pairing.get("player2_id"):
+                deck_url = pairing.get("player2_deck_url")
+        is_winner = player_id == data["winner_id"]
+        if not deck_url:
+            deck_url = data.get("winner_deck_url") if is_winner else data.get("loser_deck_url")
+        if not run_id:
+            run_id = (data.get("winner_run_id") if is_winner else data.get("loser_run_id")) or 0
+        details[player_id] = (deck_url, run_id)
+    return details
+
+
+def _dispute_reset_message(*, is_disputer, other_name, other_mention, deck_url, match_type, in_public_channel, self_mention=None):
+    emoji, label = match_type_presentation(match_type)
+    if is_disputer:
+        why = (
+            f"You disputed **{other_name}**'s report, so nothing was recorded and no ELO changed."
+        )
+    else:
+        why = (
+            f"**{other_name}** disputed your report, so nothing was recorded and no ELO changed."
+        )
+    lines = [f"{emoji} **{label} Match: Report Again**", ""]
+    if in_public_channel and self_mention:
+        lines[0] = f"{self_mention} {lines[0]}"
+    lines.append(why)
+    lines.append(
+        "The match is open again. Agree on the result with your opponent, then either of you can use "
+        "**Report Result** below and the other confirms."
+    )
+    lines.append("")
+    lines.append(f"**Opponent:** {other_mention}")
+    if deck_url and not in_public_channel:
+        lines.append(f"**Your Deck:** <{deck_url}>")
+    lines.append("")
+    lines.append(correction_tip())
+    return "\n".join(lines)
+
+
+async def reset_report_after_dispute(bot, data: dict) -> bool:
+    """Put a disputed match back to unreported and hand both players fresh report buttons.
+
+    Nothing is recorded and no ELO moves: the pairing simply stays active.
+    The old match card messages lose their Report Result / Cancel buttons
+    (Report Player stays) and each player gets a new match card.
+
+    Returns False when there is no open pairing to reset (e.g. ladder
+    challenges or a pairing that expired), so the caller can fall back to
+    the older "start a new report" guidance.
+    """
+    pairing = _active_pairing_for_dispute(data)
+    if not pairing:
+        return False
+
+    pairing_id = data["pairing_id"]
+    match_type = data.get("match_type") or "ranked"
+    guild_id = data.get("guild_id")
+
+    old_card = None
+    try:
+        old_card = load_match_card_for_pairing(pairing_id, match_type)
+    except Exception as e:
+        logger.warning(f"Could not load match card for pairing {pairing_id}: {e}")
+
+    details = _dispute_reset_card_details(data, pairing, old_card)
+
+    # Retire the old match card messages so only the fresh buttons work.
+    try:
+        await edit_match_card_messages(
+            bot, pairing_id, match_type,
+            "**Report disputed.** Fresh report buttons were sent for this match.",
+        )
+    except Exception as e:
+        logger.warning(f"Could not edit old match cards for pairing {pairing_id}: {e}")
+    delete_match_cards_for_pairing(pairing_id, match_type)
+
+    ladder_info = (old_card or {}).get("ladder_info") or data.get("ladder_info")
+    match_start_time = (old_card or {}).get("match_start_time") or data.get("match_start_time")
+
+    names = {
+        data["reporter_id"]: data.get("reporter_global") or "Your opponent",
+        data["opponent_id"]: data.get("opponent_global") or "Your opponent",
+    }
+
+    sent_any = False
+    for player_id in (data["reporter_id"], data["opponent_id"]):
+        other_id = data["opponent_id"] if player_id == data["reporter_id"] else data["reporter_id"]
+        deck_url, run_id = details[player_id]
+        other_deck_url, other_run_id = details[other_id]
+        is_disputer = player_id == data["opponent_id"]
+
+        view = create_match_card_view(
+            bot=bot,
+            pairing_id=pairing_id,
+            player1_id=player_id,
+            player1_global=names[player_id],
+            player2_id=other_id,
+            player2_global=names[other_id],
+            player1_deck_url=deck_url,
+            player2_deck_url=other_deck_url,
+            match_start_time=match_start_time,
+            guild_id=guild_id,
+            ladder_info=ladder_info,
+            match_type=match_type,
+            player1_run_id=run_id,
+            player2_run_id=other_run_id,
+        )
+        view.add_item(report_player_button(player_id, other_id, pairing_id, match_type))
+
+        message_kwargs = dict(
+            is_disputer=is_disputer,
+            other_name=names[other_id],
+            other_mention=f"<@{other_id}>",
+            deck_url=deck_url,
+            match_type=match_type,
+        )
+        try:
+            user = await bot.fetch_user(player_id)
+        except Exception as e:
+            logger.error(f"Could not fetch user {player_id} for dispute reset: {e}")
+            continue
+
+        try:
+            msg = await user.send(
+                _dispute_reset_message(in_public_channel=False, **message_kwargs), view=view
+            )
+            update_match_card_message_ref(view.card_id, msg.id, msg.channel.id)
+            sent_any = True
+            continue
+        except discord.HTTPException:
+            pass
+        except Exception as e:
+            logger.error(f"Error sending dispute reset card to {player_id}: {e}")
+
+        try:
+            channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+            if channel:
+                msg = await channel.send(
+                    scrub_urls(
+                        _dispute_reset_message(
+                            in_public_channel=True, self_mention=user.mention, **message_kwargs
+                        )
+                    ),
+                    view=view,
+                )
+                update_match_card_message_ref(view.card_id, msg.id, msg.channel.id)
+                sent_any = True
+        except Exception as e:
+            logger.error(f"Could not post dispute reset card for {player_id} in fallback channel: {e}")
+
+    logger.info(
+        f"Dispute reset pairing {pairing_id} ({match_type}) for "
+        f"{data['reporter_id']} vs {data['opponent_id']}; cards sent: {sent_any}"
+    )
+    return sent_any
+
+
 async def _execute_match_dispute(interaction: discord.Interaction, confirmation_id: int, data: dict):
-    """Process a dispute."""
+    """Process a dispute: nothing is recorded, and the match goes back to unreported."""
     bot = interaction.client
 
-    await interaction.response.send_message(
-        f"You have disputed the match report. This dispute will not log an entry.\n\n"
-        f"To submit a corrected report, use `!challenge @{data['reporter_global']}` to trigger a new report.",
-        ephemeral=True,
-    )
+    if not claim_pending_confirmation(confirmation_id):
+        await interaction.response.send_message(
+            "This match confirmation has expired or was already processed.",
+            ephemeral=True,
+        )
+        return
+
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except discord.errors.NotFound:
+        pass
 
     try:
         await interaction.message.edit(
             content=(
-                f"Match report disputed by {data['opponent_global']}. No entry was logged.\n\n"
-                f"To submit a corrected report, use `!challenge @opponent` to trigger a new report."
+                f"Match report disputed by {data['opponent_global']}. No entry was logged."
             ),
             view=None,
+        )
+    except Exception:
+        pass
+
+    pending_match_reports.pop((data["reporter_id"], data["opponent_id"]), None)
+
+    reset = False
+    try:
+        reset = await reset_report_after_dispute(bot, data)
+    except Exception as e:
+        logger.error(f"Dispute reset failed for confirmation {confirmation_id}: {e}", exc_info=True)
+
+    if reset:
+        try:
+            await interaction.followup.send(
+                "You disputed the match report. Nothing was recorded and no ELO changed.\n\n"
+                f"The match is open again: you and {data['reporter_global']} both have fresh "
+                "**Report Result** buttons. Agree on the result, then either of you reports it.",
+                ephemeral=True,
+            )
+        except Exception:
+            pass
+        return
+
+    # No open pairing to reset (ladder challenge, expired pairing): original guidance.
+    try:
+        await interaction.followup.send(
+            f"You have disputed the match report. This dispute will not log an entry.\n\n"
+            f"To submit a corrected report, use `!challenge @{data['reporter_global']}` to trigger a new report.",
+            ephemeral=True,
         )
     except Exception:
         pass
@@ -711,9 +952,6 @@ async def _execute_match_dispute(interaction: discord.Interaction, confirmation_
             )
     except Exception:
         pass
-
-    pending_match_reports.pop((data["reporter_id"], data["opponent_id"]), None)
-    delete_pending_confirmation(confirmation_id)
 
 
 # ──────────────────────────────────────────────

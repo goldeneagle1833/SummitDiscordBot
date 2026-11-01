@@ -1,7 +1,7 @@
 """Batch data release for public stats pages (Avatars, Popular Cards).
 
 These pages follow the Meta Report schedule: data comes out in half-month
-batches on the Meta Report publish days (00:00 UTC on the 1st and 15th), so a
+batches on the Meta Report publish days (00:01 UTC on the 1st and 15th), so a
 page shows games only up to the end of the newest released period, never live.
 
 ``released_connection`` opens match_records.db with temporary views named after

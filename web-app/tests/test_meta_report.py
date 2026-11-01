@@ -540,12 +540,12 @@ def test_dm_toggle_needs_a_discord_login(client, api_repo):
     assert client.put("/api/meta-reports/dm", json={"on": False}).get_json()["subscribed"] is False
 
 
-def test_report_today_rolls_over_at_midnight_utc():
+def test_report_today_rolls_over_at_0001_utc():
     from datetime import datetime, timezone
     utc = timezone.utc
-    assert meta_report.report_today(datetime(2026, 10, 14, 23, 59, tzinfo=utc)) == date(2026, 10, 14)
-    assert meta_report.report_today(datetime(2026, 10, 15, 0, 0, tzinfo=utc)) == date(2026, 10, 15)
-    # Not due until 00:00 UTC on publish day.
+    assert meta_report.report_today(datetime(2026, 10, 15, 0, 0, 59, tzinfo=utc)) == date(2026, 10, 14)
+    assert meta_report.report_today(datetime(2026, 10, 15, 0, 1, tzinfo=utc)) == date(2026, 10, 15)
+    # Not due until 00:01 UTC on publish day.
     assert latest(meta_report.report_today(datetime(2026, 10, 14, 23, 30, tzinfo=utc))) == "2026-09-a"
     assert latest(meta_report.report_today(datetime(2026, 10, 15, 0, 5, tzinfo=utc))) == "2026-09-b"
 

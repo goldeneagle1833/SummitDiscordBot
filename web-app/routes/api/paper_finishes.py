@@ -6,6 +6,7 @@ each top cut result matched a Summit player and record the admin's calls
 event's badges on or off). See services/paper_finishes.py for the rules.
 """
 
+import datetime
 import logging
 
 from flask import Blueprint, jsonify, request, session
@@ -134,4 +135,63 @@ def set_paper_event():
         return jsonify({"success": False, "error": "folder and awards_badges are required"}), 400
     PaperLinkRepository().set_event_awards(folder, bool(data["awards_badges"]), set_by=str(_admin()[1]))
     _log("paper_event_badges", target_name=folder, details="on" if data["awards_badges"] else "off")
+    return jsonify({"success": True}), 200
+
+
+def _manual_fields(data):
+    """(fields, error) for a hand-entered result from the request body."""
+    user_id = paper_finishes.bare_id(data.get("user_id"))
+    event = (data.get("event") or "").strip()
+    event_date = (data.get("event_date") or "").strip() or None
+    avatar = (data.get("avatar") or "").strip() or None
+    try:
+        place = int(data.get("place") or 1)
+    except (TypeError, ValueError):
+        place = 0
+    if not user_id or not event:
+        return None, "Pick a player and type the event name"
+    if place not in paper_finishes.MANUAL_PLACES:
+        return None, "Pick a placement"
+    if len(event) > 120 or (avatar and len(avatar) > 60):
+        return None, "Event or avatar name is too long"
+    if event_date:
+        try:
+            datetime.date.fromisoformat(event_date)
+        except ValueError:
+            return None, "Date must look like 2026-11-01"
+    return {"user_id": user_id, "event": event, "event_date": event_date, "place": place, "avatar": avatar}, None
+
+
+@paper_finishes_bp.route("/admin/paper-finishes/manual", methods=["POST"])
+@require_admin
+def add_manual_result():
+    """Add a result by hand for an event that is not on the Top 8 page."""
+    fields, error = _manual_fields(_body())
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+    new_id = PaperLinkRepository().add_manual_finish(**fields, set_by=str(_admin()[1]))
+    _log("paper_manual_added", target_id=fields["user_id"], target_name=fields["event"],
+         details=paper_finishes.finish_label(fields["place"]))
+    return jsonify({"success": True, "id": new_id}), 200
+
+
+@paper_finishes_bp.route("/admin/paper-finishes/manual/<int:finish_id>", methods=["PUT"])
+@require_admin
+def edit_manual_result(finish_id):
+    fields, error = _manual_fields(_body())
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+    if not PaperLinkRepository().update_manual_finish(finish_id, **fields, set_by=str(_admin()[1])):
+        return jsonify({"success": False, "error": "That result no longer exists"}), 404
+    _log("paper_manual_edited", target_id=fields["user_id"], target_name=fields["event"],
+         details=paper_finishes.finish_label(fields["place"]))
+    return jsonify({"success": True}), 200
+
+
+@paper_finishes_bp.route("/admin/paper-finishes/manual/<int:finish_id>", methods=["DELETE"])
+@require_admin
+def delete_manual_result(finish_id):
+    if not PaperLinkRepository().delete_manual_finish(finish_id):
+        return jsonify({"success": False, "error": "That result no longer exists"}), 404
+    _log("paper_manual_removed", target_name=str(finish_id))
     return jsonify({"success": True}), 200

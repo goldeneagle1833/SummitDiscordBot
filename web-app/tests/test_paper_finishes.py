@@ -153,3 +153,41 @@ def test_event_profiles_route(setup, elo_db, client):
     entries = client.get("/api/paper-finishes/event/LinCon May 14-16 2026").get_json()["entries"]
     assert entries[1]["player"]["user_id"] == "2" and entries[1]["status"] == "assigned"
     assert client.get("/api/paper-finishes/event/Nope").get_json()["entries"] == []
+
+
+def test_manual_results(setup, elo_db, admin_session):
+    client = admin_session
+    _player(elo_db, "1", "Avaloneer")
+    _event(setup, "LinCon May 14-16 2026", [_deck("x", "Someone"), _deck("w", "Avaloneer")])
+
+    # Missing player or event, bad placement or date are refused.
+    assert client.post("/api/admin/paper-finishes/manual", json={"event": "Store night"}).status_code == 400
+    assert client.post("/api/admin/paper-finishes/manual", json={"user_id": "1", "event": "X", "place": 3}).status_code == 400
+    assert client.post("/api/admin/paper-finishes/manual",
+                       json={"user_id": "1", "event": "X", "event_date": "soon"}).status_code == 400
+
+    # Placement defaults to Winner.
+    res = client.post("/api/admin/paper-finishes/manual",
+                      json={"user_id": "google_1", "event": "Store Champs", "event_date": "2026-10-04", "avatar": "Druid"})
+    assert res.status_code == 200
+    manual_id = res.get_json()["id"]
+
+    finishes = client.get("/api/paper-finishes").get_json()["finishes"]["1"]
+    assert [f["label"] for f in finishes] == ["Winner", "Finalist"]
+    assert finishes[0]["manual"] is True and finishes[0]["event"] == "Store Champs"
+    assert finishes[0]["event_date_display"] == "Oct 4, 2026" and finishes[0]["avatar"] == "Druid"
+    assert finishes[1]["folder"] == "LinCon May 14-16 2026"
+
+    review = client.get("/api/admin/paper-finishes").get_json()
+    assert review["manual"][0]["player"]["user_id"] == "1" and review["manual"][0]["label"] == "Winner"
+
+    res = client.put(f"/api/admin/paper-finishes/manual/{manual_id}",
+                     json={"user_id": "1", "event": "Store Champs", "event_date": "2026-10-04", "place": 8})
+    assert res.status_code == 200
+    finishes = client.get("/api/paper-finishes").get_json()["finishes"]["1"]
+    assert [f["label"] for f in finishes] == ["Finalist", "Top 8"]
+
+    assert client.delete(f"/api/admin/paper-finishes/manual/{manual_id}").status_code == 200
+    assert client.delete(f"/api/admin/paper-finishes/manual/{manual_id}").status_code == 404
+    finishes = client.get("/api/paper-finishes").get_json()["finishes"]["1"]
+    assert [f["label"] for f in finishes] == ["Finalist"]

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
+import { waitFor } from '@testing-library/react'
+import * as api from '@/api/paperFinishes'
 import { screen, fireEvent } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
 import PaperBadges from '../PaperBadges'
@@ -9,6 +11,10 @@ const row = (over) => ({
   name_key: 'someone', player: { user_id: '1', name: 'Someone' }, candidates: [], earns_badge: true,
   ...over,
 })
+
+vi.mock('@/api/players', () => ({
+  searchPlayers: vi.fn(() => Promise.resolve({ players: [{ user_id: '9', display_name: 'Geoffrey' }] })),
+}))
 
 vi.mock('@/api/paperFinishes', () => ({
   getPaperFinishesReview: vi.fn(() => Promise.resolve({
@@ -22,7 +28,13 @@ vi.mock('@/api/paperFinishes', () => ({
       row({ folder: 'a', event: 'SCG Con Atlanta', place: 3, names: ['Paladin'], player: { user_id: '3', name: 'paladin_of_io' } }),
     ],
     links: [],
+    manual: [
+      { manual_id: 7, folder: 'manual-7', manual: true, event: 'Store Champs', event_date: '2026-10-04', event_date_display: 'Oct 4, 2026', place: 2, label: 'Finalist', avatar: '', player: { user_id: '2', name: 'Avaloneer' }, set_by: 'Bruce' },
+    ],
   })),
+  addManualPaperResult: vi.fn(() => Promise.resolve({ success: true })),
+  updateManualPaperResult: vi.fn(() => Promise.resolve({ success: true })),
+  deleteManualPaperResult: vi.fn(() => Promise.resolve({ success: true })),
   linkPaperName: vi.fn(), rejectPaperName: vi.fn(), unlinkPaperName: vi.fn(),
   assignPaperResult: vi.fn(), clearPaperResult: vi.fn(), setPaperEventBadges: vi.fn(),
   getPaperFinishes: vi.fn(),
@@ -46,5 +58,40 @@ describe('PaperBadges search', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Events/ }))
     expect(screen.getByText('LinCon')).toBeInTheDocument()
     expect(screen.queryByText('SCG Con Atlanta')).not.toBeInTheDocument()
+  })
+})
+
+describe('PaperBadges manual results', () => {
+  it('adds a result for a chosen player, Winner by default', async () => {
+    renderWithRouter(<PaperBadges />)
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add a result by hand' }))
+    expect(screen.getByText('Store Champs')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add result' }))
+    expect(screen.getByText('Pick a player first.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose player' }))
+    fireEvent.change(screen.getByPlaceholderText('Search Summit players...'), { target: { value: 'geo' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Geoffrey' }, { timeout: 2000 }))
+    fireEvent.change(screen.getByPlaceholderText('e.g. Store Championship'), { target: { value: 'Card Shop Open' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add result' }))
+    await waitFor(() => expect(api.addManualPaperResult).toHaveBeenCalledWith({
+      user_id: '9', event: 'Card Shop Open', event_date: null, place: 1, avatar: null,
+    }))
+  })
+
+  it('edits and removes a hand-added result', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderWithRouter(<PaperBadges />)
+    fireEvent.click(await screen.findByRole('tab', { name: /Added by hand/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(screen.getByDisplayValue('Store Champs')).toBeInTheDocument()
+    fireEvent.change(screen.getByDisplayValue('Finalist'), { target: { value: '4' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(api.updateManualPaperResult).toHaveBeenCalledWith(7, {
+      user_id: '2', event: 'Store Champs', event_date: '2026-10-04', place: 4, avatar: null,
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(api.deleteManualPaperResult).toHaveBeenCalledWith(7))
   })
 })

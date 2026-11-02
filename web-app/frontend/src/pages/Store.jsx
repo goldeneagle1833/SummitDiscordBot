@@ -129,7 +129,7 @@ function ProductGallery({ product }) {
 // to their store in a new tab instead of going in the cart.
 export const SUMMIT_SHIRTS = {
   url: 'https://critapparel.com/collections/sorcerersummit',
-  image: '/static/images/store/summit-shirts.jpg',
+  image: '/static/images/store/summit-shirts.png',
 }
 
 function ShirtsCard() {
@@ -142,8 +142,8 @@ function ShirtsCard() {
     >
       <img
         src={SUMMIT_SHIRTS.image}
-        alt="Sorcerers Summit T-shirt designs"
-        className="w-full aspect-[3/2] object-cover"
+        alt="Sorcerers Summit T-shirt"
+        className="w-full aspect-[3/2] object-contain bg-gradient-to-br from-bg-elevated to-bg-surface"
       />
       <div className="p-4 flex flex-col flex-1">
         <h2 className="font-semibold text-text-primary">Summit T-Shirts</h2>

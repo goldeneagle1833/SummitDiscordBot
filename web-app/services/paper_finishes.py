@@ -23,6 +23,10 @@ How a name becomes a Summit player, first rule that applies wins:
    players share, nor one an admin marked "not this player".
 Anything else waits on the admin page, with close names offered to confirm.
 
+An admin can also type in a result by hand for an event that is not on the
+Top 8 page (a local or store event): player, event name, date, placement.
+Those show next to the others, as a chip that does not link anywhere.
+
 Nothing is stored except the admin decisions: finishes are worked out from
 the event files when read, like the season honours.
 """
@@ -37,6 +41,7 @@ import threading
 import unicodedata
 
 import webapp_config
+from utils.formatting import format_date_display
 from repositories.events import EventRepository
 from repositories.paper_links import PaperLinkRepository
 
@@ -319,6 +324,29 @@ def _resolve(result: dict, index: dict, linked: dict, rejected: dict, assignment
 
 EARNS_BADGE = {"assigned", "linked", "auto"}
 
+# Placements an admin can pick for a hand-entered result.
+MANUAL_PLACES = (1, 2, 4, 8, 16, 32, 64)
+
+
+def manual_finish(row: dict) -> dict:
+    """A hand-entered result in the same shape as an imported finish."""
+    place = int(row["place"])
+    label = finish_label(place)
+    return {
+        "folder": f"manual-{row['id']}",
+        "event": row["event"],
+        "event_date": row.get("event_date"),
+        "event_date_display": format_date_display(row.get("event_date")),
+        "rating": None,
+        "place": place,
+        "label": label,
+        "cut_size": None,
+        "avatar": row.get("avatar") or "",
+        "title": f"{label} · {row['event']}",
+        "manual": True,
+        "manual_id": row["id"],
+    }
+
 
 def _awards_on(event_settings: dict, events: list[dict]) -> set:
     return {
@@ -363,6 +391,9 @@ def get_finishes_by_player() -> dict:
                     "place", "label", "cut_size", "avatar",
                 )
             } | {"title": f"{result['label']} · {result['event']}"}
+
+    for row in PaperLinkRepository().get_manual_finishes():
+        by_player.setdefault(bare_id(row["user_id"]), {})[("manual", row["id"])] = manual_finish(row)
 
     out = {}
     for user_id, finishes in by_player.items():
@@ -471,7 +502,12 @@ def admin_review() -> dict:
         {**link, "player": who(bare_id(link["user_id"]))}
         for link in PaperLinkRepository().get_name_links()
     ]
-    return {"events": event_rows, "results": rows, "links": links}
+    manual = [
+        {**manual_finish(row), "player": who(bare_id(row["user_id"])), "set_by": row["set_by"], "set_at": row["set_at"]}
+        for row in PaperLinkRepository().get_manual_finishes()
+    ]
+    manual.sort(key=lambda m: (m["event_date"] or "", m["manual_id"]), reverse=True)
+    return {"events": event_rows, "results": rows, "links": links, "manual": manual}
 
 
 def reset_cache():

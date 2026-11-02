@@ -10,6 +10,9 @@ import {
   assignPaperResult,
   clearPaperResult,
   setPaperEventBadges,
+  addManualPaperResult,
+  updateManualPaperResult,
+  deleteManualPaperResult,
 } from '@/api/paperFinishes'
 import { resetPaperFinishesCache } from '@/components/player/PaperFinishes'
 
@@ -36,7 +39,20 @@ const TABS = [
   { id: 'matched', label: 'Badges given' },
   { id: 'none', label: 'No match' },
   { id: 'events', label: 'Events' },
+  { id: 'manual', label: 'Added by hand' },
 ]
+
+const PLACES = [
+  [1, 'Winner'],
+  [2, 'Finalist'],
+  [4, 'Top 4'],
+  [8, 'Top 8'],
+  [16, 'Top 16'],
+  [32, 'Top 32'],
+  [64, 'Top 64'],
+]
+
+const EMPTY_FORM = { player: null, event: '', event_date: '', place: 1, avatar: '' }
 
 function tabFor(row) {
   if (['auto', 'linked', 'assigned'].includes(row.status)) return 'matched'
@@ -129,12 +145,153 @@ function ResultRow({ row, act }) {
   )
 }
 
+/**
+ * Results for events that are not on the Top 8 page: pick a player, type the
+ * event, pick a placement (Winner unless changed). Each shows on the
+ * player's profile like an imported finish, and can be edited or removed.
+ */
+function ManualResults({ rows, act, busy }) {
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [editing, setEditing] = useState(null)
+  const [formError, setFormError] = useState(null)
+  const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }))
+  const input = 'h-10 w-full rounded-lg border border-border bg-bg-raised px-3 text-sm text-text-primary'
+
+  const reset = () => {
+    setForm(EMPTY_FORM)
+    setEditing(null)
+    setFormError(null)
+  }
+
+  const save = async (e) => {
+    e.preventDefault()
+    if (!form.player) return setFormError('Pick a player first.')
+    if (!form.event.trim()) return setFormError('Type the event name.')
+    const body = {
+      user_id: form.player.user_id,
+      event: form.event.trim(),
+      event_date: form.event_date || null,
+      place: Number(form.place),
+      avatar: form.avatar.trim() || null,
+    }
+    const ok = await act(() => (editing ? updateManualPaperResult(editing, body) : addManualPaperResult(body)))
+    if (ok) reset()
+  }
+
+  const edit = (row) => {
+    setEditing(row.manual_id)
+    setFormError(null)
+    setForm({
+      player: row.player,
+      event: row.event,
+      event_date: row.event_date || '',
+      place: row.place,
+      avatar: row.avatar || '',
+    })
+  }
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={save} className="bg-bg-surface border border-border rounded-xl p-4 space-y-3" aria-label="Add a result by hand">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-semibold text-text-primary">{editing ? 'Edit result' : 'Add a result by hand'}</h2>
+          <p className="text-xs text-text-muted">For events that are not on the Top 8 page. Shows on the player's profile like the others.</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.6fr)_10rem_9rem_minmax(0,1fr)] gap-3 items-end">
+          <div className="space-y-1">
+            <span className="block text-xs text-text-muted">Player</span>
+            <div className="flex flex-wrap items-center gap-2 min-h-10">
+              {form.player && <strong className="text-secondary text-sm" data-testid="manual-player">{form.player.name}</strong>}
+              <PlayerPicker
+                label={form.player ? 'Change' : 'Choose player'}
+                onPick={(p) => setForm((f) => ({ ...f, player: { user_id: p.user_id, name: p.display_name } }))}
+              />
+            </div>
+          </div>
+          <label className="space-y-1">
+            <span className="block text-xs text-text-muted">Event name</span>
+            <input value={form.event} onChange={set('event')} maxLength={120} placeholder="e.g. Store Championship" className={input} />
+          </label>
+          <label className="space-y-1">
+            <span className="block text-xs text-text-muted">Date</span>
+            <input type="date" value={form.event_date} onChange={set('event_date')} className={input} />
+          </label>
+          <label className="space-y-1">
+            <span className="block text-xs text-text-muted">Placement</span>
+            <select value={form.place} onChange={set('place')} className={input}>
+              {PLACES.map(([place, label]) => (
+                <option key={place} value={place}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="block text-xs text-text-muted">Avatar (optional)</span>
+            <input value={form.avatar} onChange={set('avatar')} maxLength={60} placeholder="e.g. Druid" className={input} />
+          </label>
+        </div>
+        {formError && <p className="text-accent-red text-sm">{formError}</p>}
+        <div className="flex gap-2">
+          <button type="submit" disabled={busy} className="px-4 h-10 rounded-lg text-sm font-semibold bg-secondary text-black disabled:opacity-60">
+            {editing ? 'Save changes' : 'Add result'}
+          </button>
+          {(editing || form.player || form.event) && (
+            <button type="button" onClick={reset} className="px-4 h-10 rounded-lg text-sm border border-border hover:border-text-muted">
+              Cancel
+            </button>
+          )}
+        </div>
+      </form>
+
+      <ul className={`bg-bg-surface border border-border rounded-xl divide-y divide-border ${busy ? 'opacity-60' : ''}`}>
+        {rows.length === 0 && <li className="px-4 py-6 text-sm text-text-muted">No results added by hand yet.</li>}
+        {rows.map((row) => (
+          <li key={row.manual_id} className="grid grid-cols-1 md:grid-cols-[7rem_minmax(0,1.6fr)_minmax(0,1fr)_auto] gap-x-4 gap-y-2 px-4 py-3 items-center">
+            <div className="text-sm">
+              <strong className="text-text-primary">{row.label}</strong>
+              <div className="text-xs text-text-muted">{row.avatar}</div>
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm text-text-primary break-words">{row.event}</div>
+              <div className="text-xs text-text-muted">{row.event_date_display || 'No date'}</div>
+            </div>
+            <div className="text-sm min-w-0">
+              <Link to={`/player/${row.player.user_id}`} className="font-semibold text-secondary hover:underline">
+                {row.player.name}
+              </Link>
+              {row.set_by && <div className="text-xs text-text-muted">Added by {row.set_by}</div>}
+            </div>
+            <div className="flex gap-2">
+              <button type="button" className="px-2.5 py-1 rounded-lg border border-border hover:border-secondary text-sm" onClick={() => edit(row)}>
+                Edit
+              </button>
+              <button
+                type="button"
+                className="px-2.5 py-1 rounded-lg border border-border hover:border-accent-red text-sm"
+                onClick={() => {
+                  if (window.confirm(`Remove ${row.label} · ${row.event} from ${row.player.name}?`)) {
+                    act(() => deleteManualPaperResult(row.manual_id))
+                    if (editing === row.manual_id) reset()
+                  }
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export default function PaperBadges() {
   usePageTitle('Paper Tournament Badges')
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [tab, setTab] = useState('look')
   const [busy, setBusy] = useState(false)
+  const [playerQuery, setPlayerQuery] = useState('')
+  const [eventQuery, setEventQuery] = useState('')
 
   const load = useCallback(() => {
     getPaperFinishesReview()
@@ -153,8 +310,11 @@ export default function PaperBadges() {
       await call()
       resetPaperFinishesCache()
       load()
+      setError(null)
+      return true
     } catch (e) {
       setError(e.message)
+      return false
     } finally {
       setBusy(false)
     }
@@ -168,6 +328,28 @@ export default function PaperBadges() {
     return out
   }, [data])
 
+  // The search boxes narrow every tab: player against the paper names, who
+  // posted the deck and the Summit player (matched or suggested); event
+  // against the event's name.
+  const filtered = useMemo(() => {
+    const player = playerQuery.trim().toLowerCase()
+    const event = eventQuery.trim().toLowerCase()
+    const eventHit = (name) => !event || (name || '').toLowerCase().includes(event)
+    const playerHit = (row) =>
+      !player ||
+      [...row.names, row.posted_by, row.player?.name, ...row.candidates.map((c) => c.name)]
+        .some((n) => (n || '').toLowerCase().includes(player))
+    const keep = (rows) => rows.filter((row) => eventHit(row.event) && playerHit(row))
+    return {
+      look: keep(groups.look),
+      matched: keep(groups.matched),
+      none: keep(groups.none),
+      events: (data?.events || []).filter((ev) => eventHit(ev.name)),
+      manual: (data?.manual || []).filter((m) => eventHit(m.event) && (!player || (m.player?.name || '').toLowerCase().includes(player))),
+    }
+  }, [groups, data, playerQuery, eventQuery])
+  const searching = Boolean(playerQuery.trim() || eventQuery.trim())
+
   if (error && !data) return <p className="text-accent-red">{error}</p>
   if (!data) return <p className="text-text-muted">Loading results...</p>
 
@@ -177,7 +359,16 @@ export default function PaperBadges() {
     <div className="max-w-6xl mx-auto space-y-6">
       <div>
         <Link to="/admin" className="text-sm text-text-muted hover:text-text-primary">← Admin</Link>
-        <h1 className="text-2xl font-display text-secondary mt-1">Paper Tournament Badges</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-1">
+          <h1 className="text-2xl font-display text-secondary">Paper Tournament Badges</h1>
+          <button
+            type="button"
+            onClick={() => setTab('manual')}
+            className="px-4 h-10 rounded-lg text-sm font-semibold border border-secondary text-secondary hover:bg-secondary hover:text-black"
+          >
+            + Add a result by hand
+          </button>
+        </div>
         <p className="text-sm text-text-muted mt-1 max-w-3xl">
           Every top cut on the Top 8 page, matched to Summit players by name. A matched player gets a badge on their
           profile (Winner, Finalist, Top 4, Top 8) from the order of the event's Top 8 list, so reorder an event there
@@ -198,6 +389,25 @@ export default function PaperBadges() {
         ))}
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+        <input
+          type="search"
+          value={playerQuery}
+          onChange={(e) => setPlayerQuery(e.target.value)}
+          placeholder="Search player name..."
+          aria-label="Search player name"
+          className="h-10 rounded-lg border border-border bg-bg-raised px-3 text-sm text-text-primary"
+        />
+        <input
+          type="search"
+          value={eventQuery}
+          onChange={(e) => setEventQuery(e.target.value)}
+          placeholder="Search event name..."
+          aria-label="Search event name"
+          className="h-10 rounded-lg border border-border bg-bg-raised px-3 text-sm text-text-primary"
+        />
+      </div>
+
       <div className="flex flex-wrap gap-2" role="tablist">
         {TABS.map((t) => (
           <button
@@ -209,25 +419,32 @@ export default function PaperBadges() {
             className={`px-4 h-10 rounded-lg text-sm font-semibold border ${tab === t.id ? 'bg-secondary text-black border-secondary' : 'border-border text-text-primary hover:border-secondary'}`}
           >
             {t.label}
-            {t.id !== 'events' && <span className="ml-1.5 opacity-70">{groups[t.id].length}</span>}
+            {((t.id !== 'events' && t.id !== 'manual') || searching || (t.id === 'manual' && filtered.manual.length > 0)) && <span className="ml-1.5 opacity-70">{filtered[t.id].length}</span>}
           </button>
         ))}
       </div>
 
       {error && <p className="text-accent-red text-sm">{error}</p>}
 
-      {tab !== 'events' && (
+      {tab !== 'events' && tab !== 'manual' && (
         <ul className={`bg-bg-surface border border-border rounded-xl divide-y divide-border ${busy ? 'opacity-60' : ''}`}>
-          {groups[tab].length === 0 && <li className="px-4 py-6 text-sm text-text-muted">Nothing here.</li>}
-          {groups[tab].map((row) => (
+          {filtered[tab].length === 0 && (
+            <li className="px-4 py-6 text-sm text-text-muted">{searching ? 'Nothing matches your search.' : 'Nothing here.'}</li>
+          )}
+          {filtered[tab].map((row) => (
             <ResultRow key={`${row.folder}-${row.place}`} row={row} act={act} />
           ))}
         </ul>
       )}
 
+      {tab === 'manual' && <ManualResults rows={filtered.manual} act={act} busy={busy} />}
+
       {tab === 'events' && (
         <ul className="bg-bg-surface border border-border rounded-xl divide-y divide-border">
-          {data.events.map((ev) => (
+          {filtered.events.length === 0 && (
+            <li className="px-4 py-6 text-sm text-text-muted">Nothing matches your search.</li>
+          )}
+          {filtered.events.map((ev) => (
             <li key={ev.folder} className="flex flex-wrap items-center gap-3 px-4 py-3">
               <div className="flex-1 min-w-[14rem]">
                 <Link to={`/top-8/${encodeURIComponent(ev.folder)}`} className="font-semibold text-text-primary hover:text-secondary">

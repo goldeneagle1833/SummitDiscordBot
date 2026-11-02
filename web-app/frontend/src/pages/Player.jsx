@@ -75,10 +75,10 @@ export default function Player() {
 
   // Profile tab, kept in the URL so a tab can be linked to
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab = searchParams.get('tab') || 'overview'
+  const tab = searchParams.get('tab') || 'matches'
   const setTab = (id) => {
     const next = new URLSearchParams(searchParams)
-    if (id === 'overview') next.delete('tab')
+    if (id === 'matches') next.delete('tab')
     else next.set('tab', id)
     setSearchParams(next, { replace: true })
   }
@@ -185,7 +185,7 @@ export default function Player() {
     { id: 'matches', label: 'Matches' },
     hasPostseason && { id: 'postseason', label: 'Postseason' },
   ].filter(Boolean)
-  const activeTab = tabs.some((t) => t.id === tab) ? tab : 'overview'
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : 'matches'
 
   const settingsItems = [
     { label: 'Featured deck', onClick: () => setShowFeaturedModal(true) },
@@ -233,6 +233,16 @@ export default function Player() {
         onReport={data.is_owner ? () => setShowReportModal(true) : undefined}
         settingsItems={data.is_owner ? settingsItems : []}
         onPostseason={() => setTab('postseason')}
+        featured={(
+          <FeaturedDeck
+            playerId={playerId}
+            isOwner={Boolean(data.is_owner)}
+            onEdit={() => setShowFeaturedModal(true)}
+            recentDecks={data.recent_decks || []}
+            refreshKey={featuredKey}
+            onLoaded={setFeaturedDeckState}
+          />
+        )}
       />
 
       <PendingMatches
@@ -273,13 +283,6 @@ export default function Player() {
             stats={stats}
             statsType={statsType}
             onStatsTypeChange={setStatsType}
-          />
-          <FeaturedDeck
-            playerId={playerId}
-            isOwner={Boolean(data.is_owner)}
-            onEdit={() => setShowFeaturedModal(true)}
-            refreshKey={featuredKey}
-            onLoaded={setFeaturedDeckState}
           />
           {sectionVisible('elo_history') && (
             <EloHistory eloHistory={data.elo_history} currentElo={data.elo} open />
@@ -428,6 +431,7 @@ export default function Player() {
         <FeaturedDeckModal
           playerId={playerId}
           current={featuredDeck}
+          recentDecks={data.recent_decks || []}
           onClose={() => setShowFeaturedModal(false)}
           onSaved={() => setFeaturedKey((k) => k + 1)}
         />

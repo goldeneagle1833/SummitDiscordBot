@@ -1,7 +1,8 @@
 """Repository for player reports in match_records.db (web app side).
 
 Players file these from the Discord bot's **Report Player** button on a match
-message. The admin log page lists them under Blocked Users.
+message, or a partner (Play Sorcery Online) files them through the partner API
+with ``source`` set. The admin log page lists them under Blocked Users.
 """
 
 import json
@@ -9,6 +10,20 @@ import sqlite3
 from pathlib import Path
 
 from webapp_config import MATCH_RECORDS_DB_PATH
+
+
+# Same values as discord-bot/cogs/lfg/player_report.py REPORT_REASONS.
+REPORT_REASONS = [
+    "voice_refused",
+    "left_early",
+    "no_show",
+    "toxic",
+    "stalling",
+    "wrong_result",
+    "deck_mismatch",
+    "cheating",
+    "other",
+]
 
 
 class PlayerReportsRepository:
@@ -38,6 +53,11 @@ class PlayerReportsRepository:
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             )
         """)
+        # Migration: where the report came from (NULL = the Discord bot)
+        try:
+            conn.execute("ALTER TABLE player_reports ADD COLUMN source TEXT")
+        except Exception:
+            pass
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_player_reports_reported_id
             ON player_reports (reported_id)
@@ -63,7 +83,7 @@ class PlayerReportsRepository:
         cur.execute(
             """
             SELECT id, reporter_id, reporter_name, reported_id, reported_name,
-                   pairing_id, match_type, reasons, details, created_at
+                   pairing_id, match_type, reasons, details, source, created_at
             FROM player_reports
             ORDER BY created_at DESC, id DESC
             LIMIT ? OFFSET ?
@@ -77,3 +97,43 @@ class PlayerReportsRepository:
             rows.append(entry)
         conn.close()
         return rows, total
+
+    def save_report(
+        self,
+        *,
+        reporter_id: str,
+        reported_id: str,
+        reasons: list[str],
+        details: str | None = None,
+        reporter_name: str | None = None,
+        reported_name: str | None = None,
+        pairing_id: int | None = None,
+        match_type: str | None = None,
+        source: str | None = None,
+    ) -> int:
+        """Store a player report and return its id."""
+        conn = self._get_connection()
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO player_reports (
+                    reporter_id, reporter_name, reported_id, reported_name,
+                    pairing_id, match_type, reasons, details, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(reporter_id),
+                    reporter_name,
+                    str(reported_id),
+                    reported_name,
+                    pairing_id or None,
+                    match_type,
+                    json.dumps(list(reasons or [])),
+                    (details or "").strip() or None,
+                    source,
+                ),
+            )
+            conn.commit()
+            return cur.lastrowid
+        finally:
+            conn.close()

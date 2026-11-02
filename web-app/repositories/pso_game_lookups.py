@@ -1,4 +1,4 @@
-"""Answers from Sorcery Online's one-time game lookup (Season 8 backfill).
+"""Answers from Play Sorcery Online's one-time game lookup (Season 8 backfill).
 
 PSO's ``/api/internal/summit/game-lookup`` matches a Summit match to the PSO
 game it came from. It is a one-time backfill, so every answer is kept here

@@ -11,13 +11,17 @@ from aiohttp import web
 import discord
 
 import config
-from cogs.lfg.queue import LIMITED_RUN_REQUIRED_MESSAGE, _process_queue_join
+from cogs.lfg.queue import LIMITED_RUN_REQUIRED_MESSAGE, _process_queue_join, remember_voice_answers
 from cogs.lfg.queue_definitions import enabled_queue_definitions, queue_definition, queue_is_enabled
 from cogs.lfg.voice import (
     DEFAULT_VOICE,
+    VOICE_HOLD_SECONDS,
     VOICE_PREFERENCES,
+    entry_voice_flexible,
+    normalize_voice_flexible,
     normalize_voice_preference,
     queue_has_voice_choice,
+    willing_voice_choices,
 )
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
 from repositories.limited_repo import get_active_arena_run
@@ -152,14 +156,25 @@ async def _status(bot, user_id):
                 "voice_options": queue_has_voice_choice(queue_type),
                 "voice_choices": list(VOICE_PREFERENCES) if queue_has_voice_choice(queue_type) else [],
                 "default_voice": DEFAULT_VOICE,
+                # Joins may send voice_flexible: true ("also OK with the other choice").
+                "voice_flexible_supported": queue_has_voice_choice(queue_type),
+                "voice_hold_seconds": VOICE_HOLD_SECONDS if queue_has_voice_choice(queue_type) else 0,
             }
+            # waiting_by_voice counts first choices, as before; waiting_willing counts
+            # everyone who would play each choice (first choice or "also OK").
             waiting_by_voice = dict.fromkeys(VOICE_PREFERENCES, 0)
+            waiting_willing = dict.fromkeys(VOICE_PREFERENCES, 0)
             for entry in entries:
                 waiting_by_voice[normalize_voice_preference(entry.get("voice")) or DEFAULT_VOICE] += 1
+                for choice in willing_voice_choices(entry.get("voice"), entry_voice_flexible(entry)):
+                    waiting_willing[choice] += 1
             queue["waiting_by_voice"] = waiting_by_voice
+            queue["waiting_willing"] = waiting_willing
             queue["voice"] = None
+            queue["voice_flexible"] = False
             if queue_type in joined and queue_has_voice_choice(queue_type):
                 queue["voice"] = normalize_voice_preference(joined[queue_type].get("voice")) or DEFAULT_VOICE
+                queue["voice_flexible"] = entry_voice_flexible(joined[queue_type])
             queues.append(queue)
     result = pending_web_matches.get(user_id)
     if result:
@@ -185,7 +200,7 @@ def _pick(payload, *keys, default=None):
 
 
 def _result_fields(payload):
-    """Normalize a Sorcery Online result payload.
+    """Normalize a Play Sorcery Online result payload.
 
     Accepts both snake_case (queue_type) and camelCase (queueType) keys —
     the provisioning payload Summit sends *to* SO is camelCase, so SO may
@@ -252,6 +267,8 @@ async def start_matchmaking_api(bot):
         )
         if voice is None:
             raise web.HTTPBadRequest(text="voice must be one of: voice, no_voice")
+        # Optional: also OK with the other voice choice. Left out means only ``voice``.
+        voice_flexible = queue_has_voice_choice(queue_type) and normalize_voice_flexible(payload.get("voice_flexible"))
         deck_url = str(payload.get("deck_url") or "").strip() or None
         run_id = None
         if definition["deck_mode"] == "required" and not deck_url:
@@ -276,10 +293,12 @@ async def start_matchmaking_api(bot):
             is_valid, message, _total, _budget = await validate_deck_points(deck_url)
             if not is_valid:
                 raise web.HTTPBadRequest(text=message)
+        if queue_has_voice_choice(queue_type):
+            remember_voice_answers(user_id, voice, voice_flexible)
         interaction = WebsiteInteraction(bot, member, guild)
         await _process_queue_join(
             bot, interaction, queue_type, duration, deck_url,
-            run_id=run_id, origin="sorcery_online", voice=voice,
+            run_id=run_id, origin="sorcery_online", voice=voice, voice_flexible=voice_flexible,
         )
         if avatar_required and DECK_UNREADABLE_MESSAGE in interaction.followup.messages:
             raise web.HTTPBadRequest(text=DECK_UNREADABLE_MESSAGE)
@@ -322,13 +341,13 @@ async def start_matchmaking_api(bot):
         )
         fields = _result_fields(payload)
         logger.info("SO report_result normalized fields: %s", fields)
-        # Not sent today, but take a replay link if Sorcery Online includes one
+        # Not sent today, but take a replay link if Play Sorcery Online includes one
         replay_url = _pick(payload, "replay_url", "replayUrl")
         if replay_url and fields["queue_type"] != "limited":
             try:
                 set_pairing_replay(int(request.match_info["pairing_id"]), replay_url)
             except Exception as exc:
-                logger.warning("Could not save Sorcery Online replay link: %r", exc)
+                logger.warning("Could not save Play Sorcery Online replay link: %r", exc)
         try:
             result = await record_sorcery_online_result(
                 bot,
@@ -347,13 +366,13 @@ async def start_matchmaking_api(bot):
                 status=404,
             )
         except RuntimeError as exc:
-            logger.error("Could not record Sorcery Online result: %s", exc)
+            logger.error("Could not record Play Sorcery Online result: %s", exc)
             return web.json_response(
                 {"error": str(exc), "code": "RECORDING_FAILED"},
                 status=409,
             )
         except Exception as exc:
-            logger.error("Could not record Sorcery Online result: %s", exc, exc_info=True)
+            logger.error("Could not record Play Sorcery Online result: %s", exc, exc_info=True)
             return web.json_response(
                 {"error": "Could not record match result", "code": "INTERNAL_ERROR"},
                 status=500,

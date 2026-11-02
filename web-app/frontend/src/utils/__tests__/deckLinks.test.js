@@ -15,7 +15,7 @@ describe('deckLinks', () => {
     expect(getPsoDeckId(null)).toBeNull()
   })
 
-  it('tells Curiosa and Sorcery Online links apart', () => {
+  it('tells Curiosa and Play Sorcery Online links apart', () => {
     expect(getDeckSource('https://sorcerytcg.com/decks/clx1abc23')).toBe('curiosa')
     expect(getDeckSource('https://curiosa.io/decks/clx1abc23?tab=view')).toBe('curiosa')
     expect(getDeckSource('https://playsorceryonline.com/?deck=pD-1gXa3cg8c')).toBe('sorcery_online')
@@ -24,7 +24,7 @@ describe('deckLinks', () => {
 
   it('labels the View link by where the deck lives', () => {
     expect(getDeckSourceLabel('https://sorcerytcg.com/decks/clx1abc23')).toBe('Curiosa')
-    expect(getDeckSourceLabel('https://playsorceryonline.com/?deck=pD-1gXa3cg8c')).toBe('Sorcery Online')
+    expect(getDeckSourceLabel('https://playsorceryonline.com/?deck=pD-1gXa3cg8c')).toBe('Play Sorcery Online')
     expect(getDeckSourceLabel('https://example.com/deck')).toBe('deck site')
   })
 

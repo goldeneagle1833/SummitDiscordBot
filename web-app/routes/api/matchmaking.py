@@ -1,4 +1,4 @@
-"""Authenticated relay between Sorcery Online and the loopback bot API."""
+"""Authenticated relay between Play Sorcery Online and the loopback bot API."""
 
 import logging
 import os

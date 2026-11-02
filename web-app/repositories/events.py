@@ -9,7 +9,7 @@ import time
 import unicodedata
 from pathlib import Path
 
-from webapp_config import TOP_8_DIR, EVENT_RATINGS
+from webapp_config import TOP_8_DIR, EVENT_RATINGS, EVENT_TAGS
 from utils.formatting import (
     format_event_name,
     extract_year_from_name,
@@ -19,6 +19,29 @@ from utils.formatting import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+_AUTO_TAG_PATTERNS = [
+    ("Grand Contest", re.compile(r"\bgrand\s+contest\b", re.I)),
+    ("Cornerstone", re.compile(r"\bcornerstone\b", re.I)),
+    ("Local", re.compile(r"\blocal\b", re.I)),
+]
+
+
+def guess_event_tag(*names: str) -> str | None:
+    """Event type implied by the event's title, e.g. "Sydney Cornerstone" -> Cornerstone."""
+    for tag, pattern in _AUTO_TAG_PATTERNS:
+        if tag in EVENT_TAGS and any(pattern.search(n or "") for n in names):
+            return tag
+    return None
+
+
+def resolve_event_tag(overrides: dict, *names: str) -> str | None:
+    """Admin's choice wins (including an explicit "None"); otherwise guess from the title."""
+    if "tag" in overrides:
+        tag = overrides.get("tag")
+        return tag if tag in EVENT_TAGS else None
+    return guess_event_tag(*names)
 
 
 class EventRepository:
@@ -226,8 +249,8 @@ class EventRepository:
         overrides = self._load_metadata_overrides()
         return overrides.get(folder, {}).get("description", "")
 
-    def update_event_metadata(self, folder: str, name: str | None = None, rating: int | None = None, description: str | None = None, event_date: str | None = None) -> dict:
-        """Update display name, rating, description, and/or date for an event.
+    def update_event_metadata(self, folder: str, name: str | None = None, rating: int | None = None, description: str | None = None, event_date: str | None = None, tag: str | None = None) -> dict:
+        """Update display name, rating, description, date, and/or tag for an event.
 
         Args:
             folder: The event folder name.
@@ -235,6 +258,7 @@ class EventRepository:
             rating: New star rating 1-3 (or None to keep current).
             description: Event description text (or None to keep current).
             event_date: ISO date string override (or None to keep current).
+            tag: Event type from EVENT_TAGS, "" to clear, or None to keep current.
 
         Returns:
             dict with "success" bool and optional "error" string.
@@ -252,6 +276,13 @@ class EventRepository:
             entry["description"] = description
         if event_date is not None:
             entry["event_date"] = event_date if event_date else None
+        if tag is not None:
+            if tag == "" or tag in EVENT_TAGS:
+                # "" is stored on purpose: the admin chose "None", which also
+                # stops the title-based auto tag from coming back.
+                entry["tag"] = tag
+            else:
+                return {"success": False, "error": "Tag must be one of: " + ", ".join(EVENT_TAGS)}
 
         overrides[folder] = entry
 
@@ -427,6 +458,7 @@ class EventRepository:
                                 "has_top8": top8_json is not None,
                                 "has_full": full_json is not None,
                                 "rating": overrides.get("rating", EVENT_RATINGS.get(folder.name, 1)),
+                                "tag": resolve_event_tag(overrides, display_name, folder.name),
                                 "event_date": event_date,
                                 "event_date_display": event_date_display,
                                 "winner_username": winner_username,

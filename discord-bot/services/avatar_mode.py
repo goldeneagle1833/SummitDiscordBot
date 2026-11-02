@@ -35,7 +35,7 @@ AVATAR_QUEUE_TYPES = ("ranked",)
 
 DECK_REQUIRED_MESSAGE = (
     "This season rates every avatar separately, so ranked games need a deck link. "
-    "Paste your Curiosa or Sorcery Online deck link and join again."
+    "Paste your Curiosa or Play Sorcery Online deck link and join again."
 )
 DECK_UNREADABLE_MESSAGE = (
     "Couldn't read an avatar from that deck link. Check the link (and that the deck "

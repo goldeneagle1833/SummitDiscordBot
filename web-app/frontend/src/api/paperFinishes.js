@@ -1,4 +1,4 @@
-import { get, post } from './client'
+import { get, post, put, del } from './client'
 
 // Paper tournament finishes: Top 8 page results matched to Summit profiles
 export const getPaperFinishes = () => get('/api/paper-finishes')
@@ -17,6 +17,12 @@ export const clearPaperResult = (folder, deckId) =>
   post('/api/admin/paper-finishes/assign', { folder, deck_id: deckId, clear: true })
 export const setPaperEventBadges = (folder, awardsBadges) =>
   post('/api/admin/paper-finishes/event', { folder, awards_badges: awardsBadges })
+
+// Results an admin types in by hand for events not on the Top 8 page
+// ({ user_id, event, event_date, place, avatar }; place 1 = Winner)
+export const addManualPaperResult = (result) => post('/api/admin/paper-finishes/manual', result)
+export const updateManualPaperResult = (id, result) => put(`/api/admin/paper-finishes/manual/${id}`, result)
+export const deleteManualPaperResult = (id) => del(`/api/admin/paper-finishes/manual/${id}`)
 
 // One event's Top 8 entries with the Summit profile each one matched
 export const getEventProfiles = (folder) =>

@@ -1,6 +1,6 @@
 """Find the Summit voice channel a set of players is talking in.
 
-Sorcery Online polls this (through the web app relay) so a live game can
+Play Sorcery Online polls this (through the web app relay) so a live game can
 show how many people are listening in and offer a one-click join link.
 Everything is read from the bot's guild cache, so a lookup costs no
 Discord API calls; only the invite link is fetched, and it is cached.
@@ -55,7 +55,7 @@ async def _invite_url(channel):
     try:
         invite = await channel.create_invite(
             max_age=INVITE_MAX_AGE,
-            reason="Sorcery Online listen-in link",
+            reason="Play Sorcery Online listen-in link",
         )
     except discord.HTTPException as exc:
         logger.warning("Could not create a listen-in invite for %s: %s", channel, exc)

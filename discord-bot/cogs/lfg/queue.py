@@ -17,10 +17,15 @@ from cogs.lfg.voice import (
     VOICE,
     VOICE_LABELS,
     NO_VOICE,
+    WILL_PLAY_NO_VOICE,
+    WILL_PLAY_VOICE,
+    VOICE_HOLD_SECONDS,
+    entry_voice_flexible,
     normalize_voice_preference,
     queue_has_voice_choice,
     resolve_match_voice,
-    voice_from_checkboxes,
+    voice_choice_from_checkboxes,
+    voice_choice_label,
 )
 from cogs.lfg.persistent_confirm import create_match_card_view, update_match_card_message_ref
 from cogs.lfg.pairing_messages import (
@@ -32,8 +37,11 @@ from cogs.lfg.pairing_messages import (
     send_pairing_messages,
 )
 from utils.constants import SORCERY_NICKNAMES
+from cogs.lfg.avatar_alert import add_avatar_alert_checkbox, alert_ticked, send_avatar_alert
 from utils.database import save_pairing, set_pairing_avatars, get_pairing_ban, pairing_ban_message
-from repositories.elo_repo import set_pairing_replay
+from repositories.recent_decks_repo import get_recent_decks, recent_deck_summary
+from repositories.voice_answers_repo import get_voice_answers, save_voice_answers
+from repositories.elo_repo import set_pairing_replay, set_pairing_table
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
 from services.card_points_service import validate_deck_points
 from services.limited_service import auto_start_arena_run
@@ -77,14 +85,17 @@ def run_in_background(coro, label):
 async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, players, voice=False):
     """Provision seats and publish stable results for website-origin players."""
     # Limited pairings have their own ids, so only queue pairings keep a replay
-    on_replay_url = None
+    on_replay_url = on_table_url = None
     if queue_type != "limited":
         def on_replay_url(url):
             set_pairing_replay(pairing_id, url)
 
+        def on_table_url(url):
+            set_pairing_table(pairing_id, url)
+
     provisioned_links = await provision_sorcery_online_match(
         guild_id, pairing_id, queue_type, players, voice=voice,
-        on_replay_url=on_replay_url,
+        on_replay_url=on_replay_url, on_table_url=on_table_url,
     ) or {}
     result_id_base = f"{guild_id}:{pairing_id}"
     matched_at = int(time.time() * 1000)
@@ -188,40 +199,57 @@ def get_last_unreported_pairing(user_id: int, guild_id: int):
     return None
 
 
-VOICE_CHECKBOX_DESCRIPTIONS = {
-    VOICE: "Play on voice chat",
-    NO_VOICE: "Play without voice chat",
-}
+# Join-modal voice answers: (value, label). Players tick every kind of game they're willing to play.
+VOICE_CHECKBOX_OPTIONS = (
+    (WILL_PLAY_VOICE, "Are you willing to play this match with voice on Discord?"),
+    (WILL_PLAY_NO_VOICE, "Are you willing to play this match without voice?"),
+)
 
 
-def build_voice_select():
-    """Voice-preference checkboxes for every queue's join modal.
+def build_voice_select(last_answers=None):
+    """Voice checkboxes for every queue's join modal: tick each kind of game you're willing to play.
 
-    Players pick one; ticking none joins as voice, so joining still takes no
-    extra clicks.
+    At least one must be ticked, so every player answers. Both ticked is Either:
+    voice first, then no voice after the voice hold. ``last_answers`` (willing
+    with voice, willing without voice) from the player's last join are ticked.
     """
+    defaults = dict(zip((WILL_PLAY_VOICE, WILL_PLAY_NO_VOICE), last_answers or (False, False)))
     return discord.ui.CheckboxGroup(
-        required=False,
-        min_values=0,
-        max_values=1,
+        required=True,
+        min_values=1,
+        max_values=2,
         options=[
-            discord.CheckboxGroupOption(
-                label=VOICE_LABELS[value],
-                value=value,
-                description=VOICE_CHECKBOX_DESCRIPTIONS[value],
-            )
-            for value in (VOICE, NO_VOICE)
+            discord.CheckboxGroupOption(label=label, value=value, default=bool(defaults.get(value)))
+            for value, label in VOICE_CHECKBOX_OPTIONS
         ],
     )
 
 
-def add_voice_select(modal):
+def load_voice_answers(user_id):
+    """The player's last voice answers, or None (first join, or unavailable)."""
+    if not user_id:
+        return None
+    try:
+        return get_voice_answers(user_id)
+    except Exception as e:
+        logger.warning("Could not load voice answers for %s: %s", user_id, e)
+        return None
+
+
+def remember_voice_answers(user_id, voice, voice_flexible):
+    """Store what the player said they're willing to play, for their next join modal."""
+    try:
+        save_voice_answers(user_id, voice == VOICE or voice_flexible, voice == NO_VOICE or voice_flexible)
+    except Exception as e:
+        logger.warning("Could not save voice answers for %s: %s", user_id, e)
+
+
+def add_voice_select(modal, last_answers=None):
     """Put the voice checkboxes just above the modal's duration field and return them."""
-    select = build_voice_select()
+    select = build_voice_select(last_answers)
     modal.remove_item(modal.timeframe)
     modal.add_item(discord.ui.Label(
-        text="Voice chat",
-        description="Pick voice or no voice. None ticked joins as voice.",
+        text="Voice chat (tick at least one)",
         component=select,
     ))
     modal.add_item(modal.timeframe)
@@ -243,8 +271,92 @@ def add_season_rules_notice(modal):
 
 
 def selected_voice(select):
-    """The chosen preference from the voice checkboxes, defaulting to voice."""
-    return voice_from_checkboxes(select.values if select is not None else None)
+    """(first choice, also OK with the other) from the voice checkboxes, defaulting to voice only."""
+    return voice_choice_from_checkboxes(select.values if select is not None else None)
+
+
+# Discord allows at most five rows in a modal.
+MODAL_MAX_ROWS = 5
+RECENT_DECKS_DESCRIPTION = "Or paste a different deck link below."
+
+
+def load_recent_decks(user_id):
+    """The player's recent decks for the join modal ([] when unavailable)."""
+    if not user_id:
+        return []
+    try:
+        return get_recent_decks(user_id)
+    except Exception as e:
+        logger.warning("Could not load recent decks for %s: %s", user_id, e)
+        return []
+
+
+def recent_deck_option_label(deck):
+    return (deck.get("deck_name") or deck.get("avatar") or "Unnamed deck")[:100]
+
+
+def add_recent_decks_select(modal, recent_decks, before):
+    """Put a "Recent decks" dropdown just above ``before`` and return it (None when no decks).
+
+    Only the player sees their own modal, so their deck names are fine here.
+    If the modal is full, the season rules line moves from the top of the modal
+    into this dropdown's description so the dropdown still fits.
+    """
+    if not recent_decks:
+        return None
+    description = RECENT_DECKS_DESCRIPTION
+    items = list(modal.children)
+    if len(items) >= MODAL_MAX_ROWS:
+        notice = next((item for item in items if isinstance(item, discord.ui.TextDisplay)), None)
+        if notice is None:
+            return None
+        items.remove(notice)
+        description = f"{SEASON_RULES_NOTICE.replace('**', '')}. {description}"
+    select = discord.ui.Select(
+        placeholder="Pick a deck you've played recently",
+        required=False,
+        min_values=0,
+        max_values=1,
+        options=[
+            discord.SelectOption(
+                label=recent_deck_option_label(deck),
+                value=str(index),
+                description=recent_deck_summary(deck)[:100],
+            )
+            for index, deck in enumerate(recent_decks[:25])
+        ],
+    )
+    label = discord.ui.Label(text="Recent decks", description=description[:100], component=select)
+    position = items.index(before)
+    items.insert(position, label)
+    modal.clear_items()
+    for item in items:
+        modal.add_item(item)
+    return select
+
+
+def add_join_extras(modal, recent_decks, deck_field):
+    """Recent decks dropdown above the deck link, avatar alert checkbox at the bottom.
+
+    Room for the alert is kept first, since the deck link field still lets a
+    player use any deck. Returns (recent_decks_select, alert_checkbox).
+    """
+    alert = add_avatar_alert_checkbox(modal)
+    select = add_recent_decks_select(modal, recent_decks, deck_field)
+    return select, alert
+
+
+def chosen_deck(typed_url, select, recent_decks):
+    """(deck_url, known_avatar): a pasted link wins over the dropdown pick."""
+    if typed_url:
+        return clean_deck_url(typed_url.strip()), None
+    if select is not None and select.values:
+        try:
+            deck = recent_decks[int(select.values[0])]
+        except (ValueError, IndexError):
+            return None, None
+        return deck["url"], deck.get("avatar")
+    return None, None
 
 
 class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
@@ -265,30 +377,42 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
         max_length=3,
     )
 
-    def __init__(self, bot, is_button_join=True, queue_type="ranked"):
+    def __init__(self, bot, is_button_join=True, queue_type="ranked", recent_decks=None, voice_answers=None):
         super().__init__()
         self.bot = bot
         self.is_button_join = (
             is_button_join  # True if from button, False if from !lfg command
         )
         self.queue_type = queue_type
+        self.recent_decks = [] if queue_type == "limited" else list(recent_decks or [])
         if needs_avatar(queue_type):
             # Avatar-mode season: the deck link is how the avatar is known
-            self.deck_url.required = True
             self.deck_url.label = "Deck URL (required: sets your avatar)"
-            self.deck_url.placeholder = "Curiosa or Sorcery Online deck link"
+            self.deck_url.placeholder = "Curiosa or Play Sorcery Online deck link"
+            # A recent deck pick counts as the deck, so the link is only
+            # required when there's nothing to pick from (checked on submit).
+            self.deck_url.required = not self.recent_decks
         # Keep the voice choice next to the deck URL, above the duration.
-        self.voice_select = add_voice_select(self)
+        self.voice_select = add_voice_select(self, voice_answers)
         if queue_type in SEASON_RULES_QUEUES:
             add_season_rules_notice(self)
+        if queue_type == "limited":
+            self.recent_decks_select = self.alert_checkbox = None
+        else:
+            self.recent_decks_select, self.alert_checkbox = add_join_extras(
+                self, self.recent_decks, self.deck_url
+            )
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
         timeframe_value = parse_queue_timeframe(self.timeframe.value)
-        voice = selected_voice(self.voice_select)
+        voice, voice_flexible = selected_voice(self.voice_select)
+        remember_voice_answers(interaction.user.id, voice, voice_flexible)
 
-        deck_url = clean_deck_url(self.deck_url.value.strip()) if self.deck_url.value else None
+        deck_url, deck_avatar = chosen_deck(
+            self.deck_url.value, self.recent_decks_select, self.recent_decks
+        )
 
         # For limited queue, player must have an active arena run.
         # If none exists, attempt to auto-create one from the provided DraftSorcery URL.
@@ -331,6 +455,9 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             deck_url,
             run_id,
             voice=voice,
+            voice_flexible=voice_flexible,
+            alert_avatar=alert_ticked(self.alert_checkbox),
+            deck_avatar=deck_avatar,
         )
 
 
@@ -414,7 +541,7 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
 
     deck_url = discord.ui.TextInput(
         label="Deck URL (required)",
-        placeholder="Curiosa, Sorcery Online, or DraftSorcery deck link",
+        placeholder="Curiosa, Play Sorcery Online, or DraftSorcery deck link",
         required=True,
         max_length=200,
     )
@@ -427,21 +554,32 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
         max_length=3,
     )
 
-    def __init__(self, bot):
+    def __init__(self, bot, recent_decks=None, voice_answers=None):
         super().__init__()
         self.bot = bot
-        self.voice_select = add_voice_select(self)
+        self.recent_decks = list(recent_decks or [])
+        # A recent deck pick counts as the deck (checked on submit)
+        self.deck_url.required = not self.recent_decks
+        if self.recent_decks:
+            self.deck_url.label = "Deck URL"
+        self.voice_select = add_voice_select(self, voice_answers)
+        self.recent_decks_select, self.alert_checkbox = add_join_extras(
+            self, self.recent_decks, self.deck_url
+        )
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
-        voice = selected_voice(self.voice_select)
-        deck_url = clean_deck_url(self.deck_url.value.strip())
+        voice, voice_flexible = selected_voice(self.voice_select)
+        remember_voice_answers(interaction.user.id, voice, voice_flexible)
+        deck_url, deck_avatar = chosen_deck(
+            self.deck_url.value, self.recent_decks_select, self.recent_decks
+        )
         if not deck_url or not any(host in deck_url.lower() for host in (
             "curiosa.io", "sorcerytcg.com", "draftsorcery.com", "playsorceryonline.com"
         )):
             await interaction.followup.send(
-                "Please provide a valid deck URL (Curiosa, Sorcery Online, or DraftSorcery).",
+                "Please provide a valid deck URL (Curiosa, Play Sorcery Online, or DraftSorcery).",
                 ephemeral=True,
             )
             return
@@ -464,15 +602,28 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
             timeframe_value,
             deck_url,
             voice=voice,
+            voice_flexible=voice_flexible,
+            alert_avatar=alert_ticked(self.alert_checkbox),
+            deck_avatar=deck_avatar,
         )
 
 
 async def _process_queue_join(
     bot, interaction, queue_type, timeframe_value, deck_url, run_id=None, origin="discord",
-    voice=DEFAULT_VOICE,
+    voice=DEFAULT_VOICE, alert_avatar=False, deck_avatar=None, voice_flexible=False, voice_hold=True,
 ):
-    """Handle queue join flow after modal validation."""
+    """Handle queue join flow after modal validation.
+
+    ``alert_avatar``: the player ticked "Alert my avatar's channel"; when the
+    match is made the bot posts in that avatar's channel. ``deck_avatar`` is
+    the avatar already known for the deck (a recent-deck pick), so it needn't
+    be read again.
+    """
+    # Limited decks come from a draft run, so Limited has no avatar alert
+    alert_avatar = bool(alert_avatar) and queue_type != "limited"
     voice = normalize_voice_preference(voice) or DEFAULT_VOICE
+    # "Also OK with the other" only means something where players choose voice
+    voice_flexible = bool(voice_flexible) and queue_has_voice_choice(queue_type)
 
     class FakeContext:
         def __init__(self, bot, interaction):
@@ -526,7 +677,9 @@ async def _process_queue_join(
             return
 
         lfg_cog.clean_expired_lfg()
-        matched_user_id = lfg_cog.check_if_someone_is_lfg(ctx, queue_type, voice=voice)
+        matched_user_id = lfg_cog.check_if_someone_is_lfg(
+            ctx, queue_type, voice=voice, voice_flexible=voice_flexible, voice_hold=voice_hold
+        )
 
         if matched_user_id and matched_user_id != interaction.user.id:
             matched_entry = lfg_queue.get(matched_user_id, {}).get("queues", {}).get(queue_type, {})
@@ -536,10 +689,14 @@ async def _process_queue_join(
             matched_run_id = int(matched_entry.get("run_id") or 0)
             matched_user_origin = matched_entry.get("origin", "discord")
             matched_join_avatar = matched_entry.get("avatar")
+            matched_alert_avatar = bool(matched_entry.get("alert_avatar"))
+            matched_deck_avatar = matched_entry.get("deck_avatar")
             match_type = lfg_cog.resolve_match_type(queue_type, matched_queue_type)
             # Limited has no voice choice, so its match-found DM says neither voice nor no voice.
             match_voice = (
-                resolve_match_voice(voice, matched_entry.get("voice"))
+                resolve_match_voice(
+                    voice, matched_entry.get("voice"), voice_flexible, entry_voice_flexible(matched_entry)
+                )
                 if queue_has_voice_choice(queue_type) else None
             )
 
@@ -597,6 +754,8 @@ async def _process_queue_join(
             matched_run_id = None
             matched_user_origin = None
             matched_join_avatar = None
+            matched_alert_avatar = False
+            matched_deck_avatar = None
             match_type = None
             match_voice = False
             lfg_cog.add_to_lfg_queue(
@@ -608,6 +767,9 @@ async def _process_queue_join(
                 origin=origin,
                 voice=voice,
                 avatar=join_avatar,
+                alert_avatar=alert_avatar,
+                deck_avatar=deck_avatar,
+                voice_flexible=voice_flexible,
             )
 
     if matched_user_id:
@@ -703,11 +865,11 @@ async def _process_queue_join(
             )
             return
 
-        # The pairing is saved: answer now, then do the slow Discord/Sorcery Online
+        # The pairing is saved: answer now, then do the slow Discord/Play Sorcery Online
         # work (deck re-reads, seats, DMs, roles, announcements) in the background.
         async def finish_pairing():
             nonlocal joiner_avatar, matched_avatar
-            # Sorcery Online seats first: the DMs and website result carry their links
+            # Play Sorcery Online seats first: the DMs and website result carry their links
             provisioned_links = await provision_match_and_publish_results(
                 interaction.guild.id,
                 pairing_id,
@@ -820,6 +982,30 @@ async def _process_queue_join(
                 pairing_id=pairing_id,
             )
 
+            # Players who ticked "Alert my avatar's channel"
+            for alert_player in (
+                {
+                    "player_id": interaction.user.id, "player_name": joiner_global,
+                    "opponent_id": matched_user_id, "opponent_name": matched_global,
+                    "avatar": joiner_avatar or join_avatar or deck_avatar, "deck_url": deck_url,
+                    "wanted": alert_avatar,
+                },
+                {
+                    "player_id": matched_user_id, "player_name": matched_global,
+                    "opponent_id": interaction.user.id, "opponent_name": joiner_global,
+                    "avatar": matched_avatar or matched_join_avatar or matched_deck_avatar,
+                    "deck_url": matched_user_deck_url,
+                    "wanted": matched_alert_avatar,
+                },
+            ):
+                if alert_player.pop("wanted") and match_type != "limited":
+                    run_in_background(
+                        send_avatar_alert(
+                            bot, pairing_id=pairing_id, match_type=match_type, **alert_player
+                        ),
+                        f"avatar alert for {alert_player['player_id']}",
+                    )
+
             await lfg_cog.update_lfg_status()
 
             where = (
@@ -852,7 +1038,17 @@ async def _process_queue_join(
         if join_avatar:
             deck_msg += f"\n**Avatar:** {join_avatar} (locked when your match is made)"
         if queue_has_voice_choice(queue_type):
-            deck_msg += f"\n**Voice:** {VOICE_LABELS[voice]}"
+            deck_msg += f"\n**Voice:** {voice_choice_label(voice, voice_flexible)}"
+            if voice_flexible and voice == VOICE:
+                deck_msg += (
+                    f"\n-# Waiting {VOICE_HOLD_SECONDS} seconds for a voice player first, "
+                    "then a no-voice player can be paired with you."
+                )
+        if alert_avatar:
+            deck_msg += (
+                "\n**Avatar channel alert:** on" if deck_url
+                else "\n**Avatar channel alert:** needs a deck link, so it's off this time"
+            )
         await interaction.followup.send(
             f"You've joined the **{queue_label}** queue for {timeframe_value} minutes!{deck_msg}",
             ephemeral=True,
@@ -873,7 +1069,7 @@ async def _process_queue_join(
                 logger.error(f"Failed to update LFG status after queue join: {e}")
 
             # A no-voice player with no match: ask waiting voice players if they'd play without voice
-            if voice == NO_VOICE and queue_has_voice_choice(queue_type):
+            if voice == NO_VOICE and not voice_flexible and queue_has_voice_choice(queue_type):
                 try:
                     await offer_no_voice_game(bot, queue_type, interaction.user.id)
                 except Exception as e:
@@ -940,9 +1136,16 @@ class JoinQueueButtons(discord.ui.View):
         if queue_type == "limited":
             modal = LimitedQueueModal(self.bot)
         elif queue_type == "points":
-            modal = PointsQueueModal(self.bot)
+            modal = PointsQueueModal(
+                self.bot, recent_decks=load_recent_decks(interaction.user.id),
+                voice_answers=load_voice_answers(interaction.user.id),
+            )
         else:
-            modal = DeckURLModal(self.bot, is_button_join=True, queue_type=queue_type)
+            modal = DeckURLModal(
+                self.bot, is_button_join=True, queue_type=queue_type,
+                recent_decks=load_recent_decks(interaction.user.id),
+                voice_answers=load_voice_answers(interaction.user.id),
+            )
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(

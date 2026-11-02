@@ -126,7 +126,7 @@ async def validate_deck_points(deck_url: str) -> tuple[bool, str, int, int]:
     if "playsorceryonline.com" in deck_url.lower():
         deck_data = await _fetch_sorcery_online_deck(deck_url)
         if not deck_data:
-            return False, "Could not fetch deck data from Sorcery Online. Check the URL and try again.", 0, max_budget
+            return False, "Could not fetch deck data from Play Sorcery Online. Check the URL and try again.", 0, max_budget
     elif "draftsorcery.com" in deck_url.lower():
         deck_data = await _fetch_draftsorcery_deck(deck_url)
         if not deck_data:

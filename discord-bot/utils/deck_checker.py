@@ -75,7 +75,7 @@ def clean_deck_url(url: str) -> str:
     """
     if not url or not isinstance(url, str):
         return url
-    # A Sorcery Online deck link keeps only its deck id
+    # A Play Sorcery Online deck link keeps only its deck id
     pso_id = get_pso_deck_id(url)
     if pso_id:
         return pso_deck_url(pso_id)
@@ -275,7 +275,7 @@ def _append_deck_to_file(legacy_deck: dict, name: str) -> None:
 
 
 def scrape_Curosa(deck_url, name):
-    """Fetch deck data from sorcerytcg.com or Sorcery Online and save to file.
+    """Fetch deck data from sorcerytcg.com or Play Sorcery Online and save to file.
 
     Retries once after 30 seconds only if the sorcerytcg.com API returns a
     400 error.
@@ -283,7 +283,7 @@ def scrape_Curosa(deck_url, name):
     if get_pso_deck_id(deck_url):
         legacy_deck = fetch_sorcery_online_deck(deck_url)
         if not legacy_deck:
-            print("Sorcery Online did not return valid deck data.")
+            print("Play Sorcery Online did not return valid deck data.")
             return "{}"
         _append_deck_to_file(legacy_deck, name)
         return json.dumps(legacy_deck)

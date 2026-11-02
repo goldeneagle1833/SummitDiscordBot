@@ -1,4 +1,4 @@
-"""Idempotent Sorcery Online result delivery into Summit's match pipeline."""
+"""Idempotent Play Sorcery Online result delivery into Summit's match pipeline."""
 
 import asyncio
 import datetime
@@ -82,7 +82,7 @@ def _ensure_callback_table():
 def _save_callback(guild_id, pairing_id, queue_type, outcome,
                    reporter_id, winner_id, loser_id, match_id,
                    played_cards, raw_players):
-    """Append an audit row for a Sorcery Online callback.
+    """Append an audit row for a Play Sorcery Online callback.
 
     This is bookkeeping only. It must never turn an already-recorded match
     into an error response (SO would retry and see a confusing duplicate),
@@ -117,7 +117,7 @@ def _save_callback(guild_id, pairing_id, queue_type, outcome,
             conn.close()
     except sqlite3.Error:
         logger.error(
-            "Could not store Sorcery Online callback audit row for pairing %s (%s)",
+            "Could not store Play Sorcery Online callback audit row for pairing %s (%s)",
             pairing_id, outcome, exc_info=True,
         )
 
@@ -140,7 +140,7 @@ def _recorded_callback_match_id(guild_id, pairing_id, queue_type):
             conn.close()
     except sqlite3.Error:
         logger.error(
-            "Could not check Sorcery Online callback state for pairing %s",
+            "Could not check Play Sorcery Online callback state for pairing %s",
             pairing_id, exc_info=True,
         )
         return None
@@ -210,7 +210,7 @@ async def _notify_sorcery_online_match_recorded(
 ):
     """Best-effort Discord delivery for a result reported outside Discord.
 
-    Sorcery Online callbacks do not have a live Discord interaction, so the
+    Play Sorcery Online callbacks do not have a live Discord interaction, so the
     normal confirmation follow-up cannot reach either player. Send both
     players an explicit Summit Bot DM and fall back to the DM-disabled channel
     independently if either delivery fails.
@@ -230,12 +230,12 @@ async def _notify_sorcery_online_match_recorded(
         (
             winner_id,
             f"✅ **{label} Match Recorded** — You defeated **{loser_name}** on "
-            f"Sorcery Online. **Match ID: #{match_id}**{tips}",
+            f"Play Sorcery Online. **Match ID: #{match_id}**{tips}",
         ),
         (
             loser_id,
             f"✅ **{label} Match Recorded** — **{winner_name}** defeated you on "
-            f"Sorcery Online. **Match ID: #{match_id}**{tips}",
+            f"Play Sorcery Online. **Match ID: #{match_id}**{tips}",
         ),
     )
 
@@ -244,13 +244,13 @@ async def _notify_sorcery_online_match_recorded(
             user = await bot.fetch_user(user_id)
             await user.send(message)
             logger.info(
-                "Sent Sorcery Online match result DM to %s for match %s",
+                "Sent Play Sorcery Online match result DM to %s for match %s",
                 user_id, match_id,
             )
             continue
         except Exception as exc:
             logger.warning(
-                "Could not DM Sorcery Online match result to %s: %s",
+                "Could not DM Play Sorcery Online match result to %s: %s",
                 user_id, exc,
             )
 
@@ -260,7 +260,7 @@ async def _notify_sorcery_online_match_recorded(
                 await fallback_channel.send(scrub_urls(f"<@{user_id}> {message}"))
             except Exception as exc:
                 logger.error(
-                    "Could not send Sorcery Online match result fallback for %s: %s",
+                    "Could not send Play Sorcery Online match result fallback for %s: %s",
                     user_id, exc,
                 )
 
@@ -302,7 +302,7 @@ async def record_sorcery_online_result(
         if stored_type != queue_type:
             raise ValueError("Queue type does not match this pairing")
         if outcome not in _VALID_OUTCOMES:
-            raise ValueError("Invalid Sorcery Online outcome")
+            raise ValueError("Invalid Play Sorcery Online outcome")
 
         played_cards = _normalize_played_cards(players)
         logger.info(
@@ -411,7 +411,7 @@ async def record_sorcery_online_result(
             "match_start_time": card.get("match_start_time"),
             "first_player": first_player,
             "match_time": _minutes_since(pairing.get("created_at")),
-            "match_comment": "Automatically reported by Sorcery Online",
+            "match_comment": "Automatically reported by Play Sorcery Online",
             "winner_deck_url": decks.get(winner_id),
             "loser_deck_url": decks.get(loser_id),
             "ladder_info": card.get("ladder_info") or {},

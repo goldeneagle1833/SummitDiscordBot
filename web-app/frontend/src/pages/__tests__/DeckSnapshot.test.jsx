@@ -56,7 +56,7 @@ describe('DeckSnapshot', () => {
     expect(screen.queryByRole('button', { name: /Try this Deck/i })).not.toBeInTheDocument()
   })
 
-  it('links a Sorcery Online deck back to its deckbuilder instead of the launcher', async () => {
+  it('links a Play Sorcery Online deck back to its deckbuilder instead of the launcher', async () => {
     // A PSO-hosted deck keeps its PSO id, which is not a Curiosa id, so the
     // "Try this Deck" launcher (which imports from Curiosa) must not be offered.
     get.mockResolvedValue(snapshot({
@@ -65,7 +65,7 @@ describe('DeckSnapshot', () => {
 
     renderWithRouter(<DeckSnapshot />)
 
-    const link = await screen.findByRole('link', { name: /Open in Sorcery Online/i })
+    const link = await screen.findByRole('link', { name: /Open in Play Sorcery Online/i })
     expect(link).toHaveAttribute('href', 'https://playsorceryonline.com/?deck=pD-1gXa3cg8c')
     expect(screen.queryByRole('button', { name: /Try this Deck/i })).not.toBeInTheDocument()
   })

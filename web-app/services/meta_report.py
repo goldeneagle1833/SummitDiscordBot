@@ -1,7 +1,7 @@
 """Meta Report: a twice-monthly look at what the Summit plays and wins with.
 
 Each report covers one half-month period (the 1st-14th, or the 15th-month end)
-and comes out at 01:00 UTC the day after the period ends, in step with the
+and comes out at 00:01 UTC the day after the period ends, in step with the
 two-week batches of ranked card data Play Sorcery Online releases for Card Win
 Rates at 00:00 UTC on the 1st and 15th:
 
@@ -49,7 +49,7 @@ from repositories.meta_reports import MetaReportRepository
 
 logger = logging.getLogger(__name__)
 
-PUBLISH_HOUR_UTC = 1       # reports come out at 01:00 UTC on the 1st and 15th
+PUBLISH_DELAY = timedelta(minutes=1)  # reports come out at 00:01 UTC on the 1st and 15th, just after PSO's data
 BATCH_RELEASE_START = date(2026, 11, 1)  # first batch release (all of October)
 BATCH_FIRST_MONTH = (2026, 10)           # from here, halves split at the 14th, not the 15th
 MIN_ARCHETYPE_GAMES = 20   # deck-games before an Avatar + element pair is listed...
@@ -145,13 +145,13 @@ def latest_due_period(today: date) -> Period:
 
 
 def report_today(now: datetime | None = None) -> date:
-    """Today's date on the report clock: UTC, rolling over at 01:00 UTC.
+    """Today's date on the report clock: UTC, rolling over at 00:01 UTC (PUBLISH_DELAY after midnight).
 
-    Before 01:00 UTC on the 1st or 15th it is still the day before, so the
+    Before that hour on the 1st or 15th it is still the day before, so the
     new period isn't due yet.
     """
     now = now or datetime.now(timezone.utc)
-    return (now.astimezone(timezone.utc) - timedelta(hours=PUBLISH_HOUR_UTC)).date()
+    return (now.astimezone(timezone.utc) - PUBLISH_DELAY).date()
 
 
 def _utc_day(timestamp: str | None) -> str | None:

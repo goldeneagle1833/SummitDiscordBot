@@ -175,7 +175,7 @@ def _active_event_window():
 
 
 def _attach_replays(entries: list[dict], player_id: str) -> None:
-    """Add each match_records match's Sorcery Online replay link where the viewer may see it."""
+    """Add each match_records match's Play Sorcery Online replay link where the viewer may see it."""
     ids = sorted({e["match_id"] for e in entries})
     if not ids:
         return
@@ -2980,9 +2980,12 @@ def set_hidden_avatars(player_id):
 
 
 # ---------------------------------------------------------------------------
-# Featured deck: a public deck the player chose to show on their profile.
-# Only ever a link the player pasted themselves - never a deck from their
-# ranked games.
+# Featured deck: a deck the player chose to show on their profile.
+#
+# Only ever one the player picked themselves. The site never chooses one:
+# an automatic "most-played public deck" pick (Oct 2026) showed private
+# decks, because the deck sites hand out some private decks too, so it was
+# removed and its picks cleared.
 # ---------------------------------------------------------------------------
 
 # A kept-updated deck is re-read from its site at most this often
@@ -2992,10 +2995,7 @@ _featured_refresh_lock = threading.Lock()
 
 
 def _fetch_featured_deck(url: str) -> dict:
-    """Read a deck from sorcerytcg.com or Sorcery Online, or {} if it can't be.
-
-    Both sites only hand out public decks, so a deck we can read is public.
-    """
+    """Read a deck from sorcerytcg.com or Sorcery Online, or {} if it can't be."""
     from services.curiosa import CuriosaService
 
     try:
@@ -3017,6 +3017,17 @@ def _refresh_featured_deck(player_id: str, url: str) -> None:
     finally:
         with _featured_refresh_lock:
             _featured_refreshing.discard(player_id)
+
+
+def _start_featured_refresh(player_id: str, url: str) -> None:
+    """Re-read a kept-updated deck in the background, once at a time per player."""
+    with _featured_refresh_lock:
+        if player_id in _featured_refreshing:
+            return
+        _featured_refreshing.add(player_id)
+    threading.Thread(
+        target=_refresh_featured_deck, args=(player_id, url), daemon=True
+    ).start()
 
 
 def _featured_deck_is_stale(checked_at: str | None) -> bool:
@@ -3066,32 +3077,23 @@ def _owner_or_admin(player_id):
 
 @players_bp.route("/player/<player_id>/featured-deck", methods=["GET"])
 def get_featured_deck(player_id):
-    """The player's featured deck, or {"deck": null} when they have not set one."""
+    """The deck the player chose to feature, or {"deck": null} when they chose none."""
     player_id_normalized = str(player_id).removeprefix("google_")
     featured = UserProfileRepository().get_featured_deck(player_id_normalized)
-    if not featured or not featured["deck"]:
+    if not featured or featured["source"] != "manual" or not featured["url"] or not featured["deck"]:
         return jsonify({"deck": None})
 
     # A kept-updated deck is re-read in the background; this answer uses the
     # saved copy so the profile never waits on the deck site.
     if featured["auto_update"] and _featured_deck_is_stale(featured["checked_at"]):
-        with _featured_refresh_lock:
-            start = player_id_normalized not in _featured_refreshing
-            if start:
-                _featured_refreshing.add(player_id_normalized)
-        if start:
-            threading.Thread(
-                target=_refresh_featured_deck,
-                args=(player_id_normalized, featured["url"]),
-                daemon=True,
-            ).start()
+        _start_featured_refresh(player_id_normalized, featured["url"])
 
     return jsonify({"deck": _featured_deck_payload(featured)})
 
 
 @players_bp.route("/player/<player_id>/featured-deck", methods=["PUT"])
 def set_featured_deck(player_id):
-    """Feature a public deck on the player's profile (owner or admin)."""
+    """Feature a deck on the player's profile (owner or admin)."""
     player_id_normalized, error = _owner_or_admin(player_id)
     if error:
         return error
@@ -3126,7 +3128,7 @@ def clear_featured_deck(player_id):
 
 @players_bp.route("/player/<player_id>/card-stats")
 def player_card_stats(player_id):
-    """One player's played-card stats from Sorcery Online games.
+    """One player's played-card stats from Play Sorcery Online games.
 
     Private by default: the owner and admins always see it, everyone else
     only when the player turned on the "card_stats" profile section.

@@ -78,7 +78,7 @@ New `400` responses (body is `{"error": "<message>"}`, suitable to show the play
 
 | Situation                                   | Message                                                                                                                      |
 |---------------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
-| Ranked join with no `deck_url` in Avatar mode | `This season rates every avatar separately, so ranked games need a deck link. Paste your Curiosa or Sorcery Online deck link and join again.` |
+| Ranked join with no `deck_url` in Avatar mode | `This season rates every avatar separately, so ranked games need a deck link. Paste your Curiosa or Play Sorcery Online deck link and join again.` |
 | Link given but no avatar could be read      | `Couldn't read an avatar from that deck link. Check the link (and that the deck is public) and try again.`                   |
 
 ## 3. Match results — no change

@@ -1,4 +1,4 @@
-"""Who may see a match's Sorcery Online replay link.
+"""Who may see a match's Play Sorcery Online replay link.
 
 A replay shows both players' decks, and ranked deck lists stay private. The
 two players in the match and admins always see it; everyone else only when

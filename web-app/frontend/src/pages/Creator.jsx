@@ -9,6 +9,7 @@ import { useAuth } from '@/context/AuthContext'
 import Spinner from '@/components/ui/Spinner'
 import CardImagePopup from '@/components/deck/CardImagePopup'
 import usePageTitle from '@/hooks/usePageTitle'
+import DataReleaseNote from '@/components/ui/DataReleaseNote'
 
 export default function Creator() {
   usePageTitle('Popular Cards')
@@ -141,10 +142,10 @@ export default function Creator() {
   return (
     <div>
       <h1 className="text-2xl font-display text-secondary mb-2">Popular Cards</h1>
-      <p className="text-text-muted text-sm mb-6">
-        How often each card shows up in decklists reported to the Summit. The running season
-        is included in All Events and gets its own entry once it ends.
+      <p className="text-text-muted text-sm mb-2">
+        How often each card shows up in decklists reported to the Summit.
       </p>
+      <DataReleaseNote className="mb-6" />
 
       {/* Filters - same layout as Avatar Winrates */}
       <div className="flex flex-wrap justify-center gap-4 mb-6">

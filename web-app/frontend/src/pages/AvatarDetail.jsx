@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext'
 import AvatarImageAdmin from '@/components/ui/AvatarImageAdmin'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
+import DataReleaseNote from '@/components/ui/DataReleaseNote'
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -454,6 +455,7 @@ export default function AvatarDetail() {
             <div>
               <h1 className="text-2xl sm:text-3xl font-semibold capitalize">{avatar.name}</h1>
               <div className="text-text-muted">{avatar.total_matches} matches played</div>
+              <DataReleaseNote className="mt-1" />
               {isAdmin && imgSrc && (
                 <AvatarImageAdmin
                   avatarName={avatar.name}

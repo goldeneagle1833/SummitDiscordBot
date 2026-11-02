@@ -246,4 +246,4 @@ There are none today across roughly 120 tables. Each rebuild in Phase 3 is a cha
 
 **Verification performed after the changes**
 
-Leaderboard, events, store, streamers and the SPA all returned the same status and payload sizes through Cloudflare as before. The bot processed a Sorcery Online match during the work with no errors. Leaderboard responses take ~25 s both before and after; that is pre-existing (see 3.1 and 3.2).
+Leaderboard, events, store, streamers and the SPA all returned the same status and payload sizes through Cloudflare as before. The bot processed a Play Sorcery Online match during the work with no errors. Leaderboard responses take ~25 s both before and after; that is pre-existing (see 3.1 and 3.2).

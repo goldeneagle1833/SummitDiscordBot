@@ -15,6 +15,7 @@ import Spinner from "@/components/ui/Spinner";
 import PageTabs from "@/components/ui/PageTabs";
 import { AVATAR_TABS } from "@/utils/pageTabs";
 import usePageTitle from "@/hooks/usePageTitle";
+import DataReleaseNote from "@/components/ui/DataReleaseNote";
 
 const SORT_OPTIONS = [
   { value: "avatar-score", label: "Avatar Score" },
@@ -416,6 +417,7 @@ export default function Avatars() {
           Global statistics from all matches reported with decklists, sorted by{" "}
           {SORT_LABELS[sortBy]}
         </p>
+        <DataReleaseNote className="mt-1" />
         {seasonStats.length > 0 && (
           <p className="text-xs text-text-muted mt-1">
             {seasonStats.map((s, i) => (

@@ -139,7 +139,7 @@ def community():
 def deck_link_previews():
     """Link previews for deck pages (?url=...&url=...), like Discord embeds.
 
-    Only sorcerytcg.com / Sorcery Online deck links are fetched, so this can't
+    Only sorcerytcg.com / Play Sorcery Online deck links are fetched, so this can't
     be used to fetch arbitrary pages; at most 12 per call, cached by the service.
     """
     from services.curiosa import is_deck_url

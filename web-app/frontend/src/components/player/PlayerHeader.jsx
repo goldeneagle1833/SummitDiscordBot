@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import PostseasonName, { useBracketMarks } from '@/components/player/BracketMarks'
 import { AvatarHonourBadge, useAvatarHonours } from '@/components/player/AvatarHonours'
-import { PaperFinishBadge, usePaperFinishes } from '@/components/player/PaperFinishes'
+import { PaperFinishChips, usePaperFinishes } from '@/components/player/PaperFinishes'
 
 function initials(name) {
   const parts = String(name || '?').replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/)
@@ -112,11 +112,12 @@ function PostseasonBadge({ label, entries = [], onClick }) {
 
 /**
  * The profile's hero card: name, avatar ratings, postseason badge, the
- * headline ELO / rank / record, the period picker and the owner's actions.
+ * headline ELO / rank / record, the period picker, the owner's actions and
+ * the featured deck tile.
  */
 export default function PlayerHeader({
   data, playerId, headline = {}, avatarEntries = [], eventFilter, pastEvents, onEventChange,
-  canSeeLifetime, onReport, settingsItems = [], onPostseason,
+  canSeeLifetime, onReport, settingsItems = [], onPostseason, featured = null,
 }) {
   const marks = useBracketMarks(playerId)
   const honours = useAvatarHonours(playerId)
@@ -156,10 +157,15 @@ export default function PlayerHeader({
               />
             )}
             <AvatarHonourBadge honours={honours} onClick={onPostseason} />
-            <PaperFinishBadge finishes={paperFinishes} />
           </div>
         </div>
       </div>
+
+      {paperFinishes.length > 0 && (
+        <div className="basis-full -mt-2 lg:order-last">
+          <PaperFinishChips finishes={paperFinishes} />
+        </div>
+      )}
 
       {avatarEntries.length > 0 && (
         <ul className="basis-full flex flex-wrap gap-2 -mt-2 lg:order-last" aria-label="Event ELO per avatar">
@@ -212,6 +218,8 @@ export default function PlayerHeader({
           </div>
         )}
       </div>
+
+      {featured}
     </section>
   )
 }

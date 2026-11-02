@@ -244,7 +244,7 @@ describe('BracketTree', () => {
       />,
     )
 
-    await userEvent.click(screen.getByRole('button', { name: /open table on sorcery online/i }))
+    await userEvent.click(screen.getByRole('button', { name: /open table on play sorcery online/i }))
     expect(onOpenTable).toHaveBeenCalledWith(expect.objectContaining({ match_no: 1 }))
   })
 
@@ -258,7 +258,7 @@ describe('BracketTree', () => {
     )
     expect(screen.getByText(/Table opens once Eight submit a decklist/)).toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: /open table on sorcery online/i }),
+      screen.queryByRole('button', { name: /open table on play sorcery online/i }),
     ).not.toBeInTheDocument()
   })
 
@@ -283,7 +283,7 @@ describe('BracketTree', () => {
     renderWithRouter(<BracketTree rounds={rounds([match()])} />)
     expect(screen.queryByText('Join your table')).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: /open table on sorcery online/i }),
+      screen.queryByRole('button', { name: /open table on play sorcery online/i }),
     ).not.toBeInTheDocument()
   })
 

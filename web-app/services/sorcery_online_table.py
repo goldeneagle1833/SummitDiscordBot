@@ -1,11 +1,11 @@
-"""Sorcery Online table provisioning for "Try this Deck".
+"""Play Sorcery Online table provisioning for "Try this Deck".
 
 The Discord bot provisions a preloaded table for both players when the LFG
 queue makes a pairing (see ``discord-bot/services/sorcery_online_matchmaking.py``).
 This module asks for the same thing, except only the visitor's seat carries a
 deck — the second seat is left open for whoever they invite.
 
-Sorcery Online validates ``players`` as "at least 2 elements", so a genuine
+Play Sorcery Online validates ``players`` as "at least 2 elements", so a genuine
 one-seat request is rejected outright; the open seat is how a solo launch is
 expressed.
 """
@@ -24,7 +24,7 @@ import webapp_config
 logger = logging.getLogger(__name__)
 
 DEFAULT_ENDPOINT = "https://playsorceryonline.com/api/internal/summit-matchmaking/matches"
-# (connect, read) — Sorcery Online imports the deck before answering, so the
+# (connect, read) — Play Sorcery Online imports the deck before answering, so the
 # read budget is generous while a dead host still fails fast.
 REQUEST_TIMEOUT_S = (3, 15)
 QUEUE_TYPE = "testing"
@@ -33,7 +33,7 @@ BRACKET_QUEUE_TYPE = "ranked"
 # Limited top cut games are played as Limited, with the drafted decks.
 LIMITED_BRACKET_QUEUE_TYPE = "limited"
 OPEN_SEAT_NAME = "Open Seat"
-# Sorcery Online reads a missing voiceType as voice but skips its voice
+# Play Sorcery Online reads a missing voiceType as voice but skips its voice
 # prompt, so every table says explicitly. "voice" matches the LFG queue's
 # default; the bot sends "no_voice" for no-voice pairings.
 DEFAULT_VOICE_TYPE = "voice"
@@ -48,14 +48,14 @@ _recent_lock = threading.Lock()
 
 
 class DeckTable(NamedTuple):
-    """The two seat links Sorcery Online hands back for a provisioned table."""
+    """The two seat links Play Sorcery Online hands back for a provisioned table."""
 
     game_url: str
     invite_url: str | None
 
 
 class TableUnavailable(Exception):
-    """Sorcery Online could not provision a table for this deck."""
+    """Play Sorcery Online could not provision a table for this deck."""
 
 
 def endpoint() -> str:
@@ -63,7 +63,7 @@ def endpoint() -> str:
 
 
 def is_configured() -> bool:
-    """True when the shared Sorcery Online integration key is available."""
+    """True when the shared Play Sorcery Online integration key is available."""
     return bool((webapp_config.DRAFT_SORCERY_API_KEY or "").strip() and endpoint())
 
 
@@ -105,7 +105,7 @@ def provision_deck_table(deck_url: str, *, display_name: str, player_id: str | N
     api_key = (webapp_config.DRAFT_SORCERY_API_KEY or "").strip()
     url = endpoint()
     if not api_key or not url:
-        raise TableUnavailable("Sorcery Online provisioning is not configured")
+        raise TableUnavailable("Play Sorcery Online provisioning is not configured")
 
     seat_id = str(player_id) if player_id else f"web-{uuid.uuid4().hex[:16]}"
     open_seat_id = f"web-open-{uuid.uuid4().hex[:16]}"
@@ -136,21 +136,21 @@ def provision_deck_table(deck_url: str, *, display_name: str, player_id: str | N
             timeout=REQUEST_TIMEOUT_S,
         )
     except requests.RequestException as exc:
-        logger.warning("Sorcery Online table request failed: %r", exc)
-        raise TableUnavailable("Could not reach Sorcery Online. Try again in a moment.")
+        logger.warning("Play Sorcery Online table request failed: %r", exc)
+        raise TableUnavailable("Could not reach Play Sorcery Online. Try again in a moment.")
 
     if response.status_code != 200:
         logger.warning(
-            "Sorcery Online table request returned %s: %s",
+            "Play Sorcery Online table request returned %s: %s",
             response.status_code, response.text[:500],
         )
-        raise TableUnavailable("Sorcery Online could not open a table for this deck.")
+        raise TableUnavailable("Play Sorcery Online could not open a table for this deck.")
 
     try:
         players = (response.json() or {}).get("players") or []
     except ValueError:
-        logger.warning("Sorcery Online table response was not JSON: %s", response.text[:500])
-        raise TableUnavailable("Sorcery Online returned an unexpected response.")
+        logger.warning("Play Sorcery Online table response was not JSON: %s", response.text[:500])
+        raise TableUnavailable("Play Sorcery Online returned an unexpected response.")
 
     seats = {
         str(p.get("discordUserId")): p["gameUrl"]
@@ -160,10 +160,10 @@ def provision_deck_table(deck_url: str, *, display_name: str, player_id: str | N
     game_url = seats.pop(seat_id, None)
     if not game_url:
         logger.warning(
-            "Sorcery Online table response had no seat link for the visitor: %s",
+            "Play Sorcery Online table response had no seat link for the visitor: %s",
             response.text[:500],
         )
-        raise TableUnavailable("Sorcery Online did not return a table link.")
+        raise TableUnavailable("Play Sorcery Online did not return a table link.")
     # Whatever is left is the open seat — handy as an invite, but the table
     # still works without it, so a missing one isn't worth failing over.
     return DeckTable(game_url=game_url, invite_url=seats.pop(open_seat_id, None))
@@ -177,10 +177,10 @@ def provision_match_table(pairing_id: str, players: list[dict], queue_type: str 
     is that player's own, so handing a player the wrong link would sit them in
     the wrong chair.
 
-    ``queue_type`` is the kind of game Sorcery Online sets up: ranked for
+    ``queue_type`` is the kind of game Play Sorcery Online sets up: ranked for
     the season top cut, limited for a Limited top cut.
 
-    The replay url is stable and comes back with the table, but Sorcery Online
+    The replay url is stable and comes back with the table, but Play Sorcery Online
     only serves it once a game has actually been saved.
 
     Raises TableUnavailable when the integration is unconfigured or Sorcery
@@ -189,7 +189,7 @@ def provision_match_table(pairing_id: str, players: list[dict], queue_type: str 
     api_key = (webapp_config.DRAFT_SORCERY_API_KEY or "").strip()
     url = endpoint()
     if not api_key or not url:
-        raise TableUnavailable("Sorcery Online provisioning is not configured")
+        raise TableUnavailable("Play Sorcery Online provisioning is not configured")
     if len(players) != 2:
         raise TableUnavailable("A table needs exactly two players")
 
@@ -218,22 +218,22 @@ def provision_match_table(pairing_id: str, players: list[dict], queue_type: str 
             timeout=REQUEST_TIMEOUT_S,
         )
     except requests.RequestException as exc:
-        logger.warning("Sorcery Online table request failed: %r", exc)
-        raise TableUnavailable("Could not reach Sorcery Online. Try again in a moment.")
+        logger.warning("Play Sorcery Online table request failed: %r", exc)
+        raise TableUnavailable("Could not reach Play Sorcery Online. Try again in a moment.")
 
     if response.status_code != 200:
         logger.warning(
-            "Sorcery Online table request returned %s: %s",
+            "Play Sorcery Online table request returned %s: %s",
             response.status_code, response.text[:500],
         )
-        raise TableUnavailable("Sorcery Online could not open a table for this match.")
+        raise TableUnavailable("Play Sorcery Online could not open a table for this match.")
 
     try:
         body = response.json() or {}
         returned = body.get("players") or []
     except ValueError:
-        logger.warning("Sorcery Online table response was not JSON: %s", response.text[:500])
-        raise TableUnavailable("Sorcery Online returned an unexpected response.")
+        logger.warning("Play Sorcery Online table response was not JSON: %s", response.text[:500])
+        raise TableUnavailable("Play Sorcery Online returned an unexpected response.")
 
     # Seats come back per player and not necessarily in the order we sent them,
     # so match them by id rather than position.
@@ -246,10 +246,10 @@ def provision_match_table(pairing_id: str, players: list[dict], queue_type: str 
     missing = [str(p["user_id"]) for p in players if str(p["user_id"]) not in seats]
     if missing:
         logger.warning(
-            "Sorcery Online table response was missing seats for %s: %s",
+            "Play Sorcery Online table response was missing seats for %s: %s",
             missing, response.text[:500],
         )
-        raise TableUnavailable("Sorcery Online did not return a seat for both players.")
+        raise TableUnavailable("Play Sorcery Online did not return a seat for both players.")
 
     replay_url = body.get("replayUrl") or body.get("replay_url")
     return {

@@ -69,7 +69,7 @@ def build_pairing_embed(payload: dict, player: dict) -> discord.Embed:
     if not player.get("deck_submitted"):
         steps.append("Submit your decklist on the bracket page.")
     steps.append("Reach out to your opponent to set a time to play.")
-    steps.append("Open your Sorcery Online table from the bracket page.")
+    steps.append("Open your Play Sorcery Online table from the bracket page.")
     steps.append("After the game, report the result on the bracket page; your opponent confirms it.")
     embed.add_field(
         name="Next steps",
@@ -134,7 +134,7 @@ def build_channel_embed(payload: dict) -> discord.Embed | None:
     if bracket_url:
         embed.add_field(
             name="Bracket",
-            value=f"Decklists, Sorcery Online tables and result reporting: {bracket_url}",
+            value=f"Decklists, Play Sorcery Online tables and result reporting: {bracket_url}",
             inline=False,
         )
     embed.set_footer(text=f"Check your DMs for your match details. {elo_note(payload)}")

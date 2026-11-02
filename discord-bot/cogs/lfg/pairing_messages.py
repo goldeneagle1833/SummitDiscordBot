@@ -35,7 +35,7 @@ WEB_MATCH_TTL_SECONDS = 30 * 60
 class PrivateSeatLinkButton(discord.ui.Button):
     def __init__(self, user_id, game_url):
         super().__init__(
-            label="Open my Sorcery Online seat", style=discord.ButtonStyle.success
+            label="Open my Play Sorcery Online seat", style=discord.ButtonStyle.success
         )
         self.user_id = int(user_id)
         self.game_url = game_url
@@ -47,7 +47,7 @@ class PrivateSeatLinkButton(discord.ui.Button):
             )
             return
         await interaction.response.send_message(
-            f"Your private Sorcery Online seat: <{self.game_url}>",
+            f"Your private Play Sorcery Online seat: <{self.game_url}>",
             ephemeral=True,
         )
 
@@ -59,7 +59,7 @@ class PrivateSeatLinkView(discord.ui.View):
 
 
 def match_delivery_extras(provisioned_links, reporter_id, other_id, is_voice_match=False):
-    """Add Sorcery Online details only after both private seats were provisioned.
+    """Add Play Sorcery Online details only after both private seats were provisioned.
 
     The voice room link is shown for voice matches only, whether or not the
     seats were provisioned.
@@ -70,12 +70,12 @@ def match_delivery_extras(provisioned_links, reporter_id, other_id, is_voice_mat
     if not reporter_game_url or not other_game_url:
         return None, None, "", "", voice_text
     reporter_game_text = (
-        f"\n\n🎴 **Play on Sorcery Online:** <{reporter_game_url}>"
+        f"\n\n🎴 **Play Sorcery Online:** <{reporter_game_url}>"
         if reporter_game_url
         else ""
     )
     other_game_text = (
-        f"\n\n🎴 **Play on Sorcery Online:** <{other_game_url}>"
+        f"\n\n🎴 **Play Sorcery Online:** <{other_game_url}>"
         if other_game_url
         else ""
     )
@@ -385,7 +385,7 @@ async def send_pairing_messages(
     overrides the default "<Label> Match Found!" title.  ``voice`` is True/False
     for Ranked/Casual queue matches: the title says voice or no voice, and only
     voice matches get the room link.  None (direct challenges) leaves both out
-    unless Sorcery Online seats were provisioned.  Returns a
+    unless Play Sorcery Online seats were provisioned.  Returns a
     :class:`PairingDelivery` saying which players had to be reached through
     the DM-disabled channel.
     """

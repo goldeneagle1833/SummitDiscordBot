@@ -45,6 +45,8 @@ from cogs.lfg.pairing_messages import (
 from cogs.lfg.queue_definitions import enabled_queue_definitions, queue_notes_text
 from cogs.lfg.voice import (
     DEFAULT_VOICE,
+    count_waiting_for_voice,
+    voice_waiting_line,
     entry_voice_flexible,
     holding_for_voice,
     normalize_voice_preference,
@@ -1040,11 +1042,19 @@ class LFGCog(commands.Cog):
             for definition in enabled_queue_definitions():
                 # A count, not a list of players: with voice holds and voice/no-voice
                 # choices, someone listed as waiting may not be a match for you yet.
-                waiting = sum(
-                    1 for user_data in lfg_queue.values()
+                active_entries = [
+                    user_data["queues"][definition["type"]]
+                    for user_data in lfg_queue.values()
                     if self._queue_entry_active(user_data.get("queues", {}).get(definition["type"]), now)
-                )
+                ]
+                waiting = len(active_entries)
                 details = [f"`{waiting} waiting`"] if waiting else []
+                # Say when someone would play on voice, so voice players jump in.
+                # No-voice queues are never called out.
+                if queue_has_voice_choice(definition["type"]):
+                    voice_line = voice_waiting_line(count_waiting_for_voice(active_entries))
+                    if voice_line:
+                        details.append(voice_line)
                 note = f' ({definition["status_note"]})' if definition.get("status_note") else ""
                 embed.add_field(
                     name=f'{definition.get("status_emoji", definition["emoji"])} {definition["label"]} Queue{note}',

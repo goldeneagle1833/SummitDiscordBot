@@ -4,7 +4,8 @@ The web app settles bracket results. When a bracket is published, or a
 result fills both seats of the next match, it posts the new pairings to the
 bot's loopback API. This module DMs each player who they play, in which
 round, and where to go, then posts the pairings in the Top Cut channel (the
-Limited top 8 channel for a Limited bracket).
+Limited top 8 channel for a Limited bracket). A community bracket - one a
+player runs for their own event - is DMed only, never posted in a channel.
 """
 
 import logging
@@ -29,8 +30,18 @@ def is_limited(payload: dict) -> bool:
     return any(p.get("format") == "limited" for p in payload.get("pairings") or [])
 
 
+def is_community(payload: dict) -> bool:
+    if payload.get("community"):
+        return True
+    return any(p.get("community") for p in payload.get("pairings") or [])
+
+
 def elo_note(payload: dict) -> str:
     """What a bracket game does to ELO, for the embed footers."""
+    if is_community(payload):
+        if is_limited(payload):
+            return "Limited bracket games count toward lifetime Limited ELO."
+        return "Community bracket games do not affect ELO."
     if is_limited(payload):
         return "Limited top cut games count toward lifetime Limited ELO."
     return "Top cut games do not affect ELO."

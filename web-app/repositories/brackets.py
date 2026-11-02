@@ -41,8 +41,8 @@ class BracketRepository:
             INSERT INTO brackets (
                 slug, name, description, entrant_count, bracket_size, status,
                 seeded_from, elo_event_name, confirm_hours, created_by,
-                created_at, updated_at, set_name, format
-            ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)
+                created_at, updated_at, set_name, format, kind
+            ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data["slug"],
@@ -58,6 +58,7 @@ class BracketRepository:
                 now,
                 data.get("set_name"),
                 data.get("format") or "constructed",
+                data.get("kind") or "official",
             ),
         )
         bracket_id = cur.lastrowid

@@ -106,6 +106,15 @@ TICKET_HOLDER_ROLE_IDS = {
     if r.strip() and r.strip() != "0"
 }
 
+# Who may create community brackets: these Discord roles, or when none are
+# set, the server role with this name (looked up with the bot token).
+BRACKET_ORGANIZER_ROLE_IDS = {
+    r.strip()
+    for r in os.environ.get("BRACKET_ORGANIZER_ROLE_IDS", "").split(",")
+    if r.strip() and r.strip() != "0"
+}
+BRACKET_ORGANIZER_ROLE_NAME = os.environ.get("BRACKET_ORGANIZER_ROLE_NAME", "Bracket Organizer")
+
 # Admin Discord IDs - full access to all features in production
 # Set via ADMIN_IDS env var as comma-separated list
 ADMINS = [id.strip() for id in os.environ.get("ADMIN_IDS", "").split(",") if id.strip()]

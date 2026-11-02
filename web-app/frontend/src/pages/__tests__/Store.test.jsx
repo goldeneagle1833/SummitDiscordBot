@@ -202,6 +202,25 @@ describe('Store storefront tabs', () => {
     expect(screen.queryByRole('link', { name: 'Apply to have a storefront' })).not.toBeInTheDocument()
   })
 
+  it('links to the Summit shirts in a new tab on the Summit Store tab only', async () => {
+    renderStore()
+    const link = await screen.findByRole('link', { name: /Summit T-Shirts/ })
+    expect(link).toHaveAttribute('href', 'https://critapparel.com/collections/sorcerersummit')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
+    expect(screen.getByText('Fire Token')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('tab', { name: /Explorer Store/ }))
+    expect(screen.queryByRole('link', { name: /Summit T-Shirts/ })).not.toBeInTheDocument()
+  })
+
+  it('still shows the shirts link when the Summit Store has nothing else for sale', async () => {
+    getProducts.mockResolvedValue({ products: [MAT] })
+    renderStore()
+    expect(await screen.findByRole('link', { name: /Summit T-Shirts/ })).toBeInTheDocument()
+    expect(screen.queryByText(/Nothing for sale/)).not.toBeInTheDocument()
+  })
+
   it('shows one storefront at a time', async () => {
     renderStore()
     expect(await screen.findByText('Fire Token')).toBeInTheDocument()

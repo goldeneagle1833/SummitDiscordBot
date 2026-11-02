@@ -2341,8 +2341,8 @@ export default function DeckBuilder() {
             )}
           </div>
 
-          {/* Stats */}
-          <DeckStats cards={allCards} />
+          {/* Stats: mainboard only, the sideboard is not part of the deck */}
+          <DeckStats cards={mainboard} />
 
           {/* Filter panel */}
           <FilterPanel filters={filters} setFilter={setFilter} resetFilters={resetFilters} allCards={allCards} />

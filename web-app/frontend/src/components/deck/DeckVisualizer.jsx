@@ -463,7 +463,6 @@ export default function DeckVisualizer({ cards, spellbook, atlas, sideboard }) {
   }
   if (sideboard) sideboardCards = sideboard
 
-  const allCards = [...mainCards, ...sideboardCards]
   const withImages = mainCards.filter((c) => c.image)
   const groups = useMemo(() => buildGroups(mainCards, groupBy), [mainCards, groupBy])
 
@@ -482,8 +481,10 @@ export default function DeckVisualizer({ cards, spellbook, atlas, sideboard }) {
 
   return (
     <div className="space-y-4">
-      {/* Deck Stats — uses spellbook only for mana averages */}
-      <DeckStatsBar cards={allCards} spellbookCards={spellbookCards} />
+      {/* Deck Stats: main deck only (Spellbook + Atlas). Collection cards are
+          shown below but are not part of the deck, so they stay out of every
+          count, donut and average. Mana uses the Spellbook alone. */}
+      <DeckStatsBar cards={mainCards} spellbookCards={spellbookCards} />
 
       {/* Group By Controls */}
       <div className="flex items-center gap-2">

@@ -41,4 +41,12 @@ describe('PaperFinishes', () => {
     expect(screen.getAllByRole('link')).toHaveLength(2)
     expect(screen.getByText('Store Champs').closest('a')).toBeNull()
   })
+
+  it('links a badges-only event to its sorcerytcg.com page', () => {
+    const f = { folder: 'sorcery-cmt1', badge_only: true, event_url: 'https://sorcerytcg.com/events/cmt1', event: 'Columbus Champs', label: 'Top 4', place: 3, title: 'Top 4 · Columbus Champs' }
+    renderWithRouter(<PaperFinishChips finishes={[f]} />)
+    const link = screen.getByText('Columbus Champs').closest('a')
+    expect(link).toHaveAttribute('href', 'https://sorcerytcg.com/events/cmt1')
+    expect(link).toHaveAttribute('target', '_blank')
+  })
 })

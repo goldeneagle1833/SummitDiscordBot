@@ -13,6 +13,9 @@ import {
   addManualPaperResult,
   updateManualPaperResult,
   deleteManualPaperResult,
+  importBadgeOnlyEvent,
+  updateBadgeOnlyEvent,
+  deleteBadgeOnlyEvent,
 } from '@/api/paperFinishes'
 import { resetPaperFinishesCache } from '@/components/player/PaperFinishes'
 
@@ -40,7 +43,10 @@ const TABS = [
   { id: 'none', label: 'No match' },
   { id: 'events', label: 'Events' },
   { id: 'manual', label: 'Added by hand' },
+  { id: 'nodecks', label: 'No deck lists' },
 ]
+
+const CUTS = [2, 4, 8, 16, 32, 64, 128]
 
 const PLACES = [
   [1, 'Winner'],
@@ -72,6 +78,28 @@ function PaperName({ row }) {
   )
 }
 
+/**
+ * Where an event's name goes: its Top 8 page, or for a badges-only event
+ * (not on the Top 8 page) its sorcerytcg.com page in a new tab.
+ */
+function EventLink({ event, className, children }) {
+  if (event.badge_only) {
+    return (
+      <a href={event.event_url} target="_blank" rel="noopener noreferrer" className={className}>
+        {children}
+        <span className="ml-1.5 text-[10px] uppercase tracking-wide text-text-muted" title="No deck lists. Gives badges only, not listed on the Top 8 page.">
+          No decks
+        </span>
+      </a>
+    )
+  }
+  return (
+    <Link to={`/top-8/${encodeURIComponent(event.folder)}`} className={className}>
+      {children}
+    </Link>
+  )
+}
+
 function ResultRow({ row, act }) {
   const paperName = row.names[0] || ''
   const btn = 'px-2.5 py-1 rounded-lg border text-sm'
@@ -82,9 +110,9 @@ function ResultRow({ row, act }) {
         <div className="text-xs text-text-muted">{row.avatar}</div>
       </div>
       <div className="min-w-0">
-        <Link to={`/top-8/${encodeURIComponent(row.folder)}`} className="text-sm text-text-primary hover:text-secondary">
+        <EventLink event={row} className="text-sm text-text-primary hover:text-secondary">
           {row.event}
-        </Link>
+        </EventLink>
         <div className="text-xs text-text-muted">{row.event_date_display}</div>
       </div>
       <PaperName row={row} />
@@ -284,6 +312,156 @@ function ManualResults({ rows, act, busy }) {
   )
 }
 
+/**
+ * sorcerytcg.com events whose players posted no deck lists: paste the event
+ * link and its standings are read for profile badges only. They are never
+ * listed on the Top 8 page, Deck Archetypes, Popular Cards or anywhere else;
+ * their top cut shows in the other tabs here like any event.
+ */
+function NoDeckEvents({ rows, act, busy }) {
+  const [url, setUrl] = useState('')
+  const [name, setName] = useState('')
+  const [cut, setCut] = useState('auto')
+  const [notice, setNotice] = useState(null)
+  const [formError, setFormError] = useState(null)
+  const [editing, setEditing] = useState(null)
+  const input = 'h-10 w-full rounded-lg border border-border bg-bg-raised px-3 text-sm text-text-primary'
+  const btn = 'px-2.5 py-1 rounded-lg border text-sm'
+
+  const save = async (e) => {
+    e.preventDefault()
+    setNotice(null)
+    if (!/sorcerytcg\.com\/events\//i.test(url)) return setFormError('Paste a sorcerytcg.com event link, like https://sorcerytcg.com/events/...')
+    setFormError(null)
+    let result = null
+    const ok = await act(async () => {
+      result = await importBadgeOnlyEvent({ event_url: url.trim(), name: name.trim() || undefined, top_cut: cut })
+    })
+    if (ok && result) {
+      setNotice(`${result.updated ? 'Updated' : 'Added'} ${result.name}: ${result.players} players, top ${result.top_cut} get badges.`)
+      setUrl('')
+      setName('')
+      setCut('auto')
+    }
+  }
+
+  const saveEdit = async (e) => {
+    e.preventDefault()
+    const ok = await act(() =>
+      updateBadgeOnlyEvent(editing.event_id, {
+        name: editing.name.trim(),
+        event_date: editing.event_date || null,
+        top_cut: Number(editing.top_cut),
+      }),
+    )
+    if (ok) setEditing(null)
+  }
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={save} className="bg-bg-surface border border-border rounded-xl p-4 space-y-3" aria-label="Add an event with no deck lists">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-semibold text-text-primary">Add a sorcerytcg.com event with no deck lists</h2>
+          <p className="text-xs text-text-muted">Badges only: the event is not listed on the Top 8 page or anywhere else.</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_10rem] gap-3 items-end">
+          <label className="space-y-1">
+            <span className="block text-xs text-text-muted">Event link</span>
+            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://sorcerytcg.com/events/..." className={input} />
+          </label>
+          <label className="space-y-1">
+            <span className="block text-xs text-text-muted">Name (optional)</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Uses the event's own name" className={input} />
+          </label>
+          <label className="space-y-1">
+            <span className="block text-xs text-text-muted">Badges for</span>
+            <select value={cut} onChange={(e) => setCut(e.target.value)} className={input}>
+              <option value="auto">Event's top cut</option>
+              {CUTS.map((c) => (
+                <option key={c} value={c}>Top {c}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {formError && <p className="text-accent-red text-sm">{formError}</p>}
+        {notice && <p className="text-secondary text-sm" role="status">{notice}</p>}
+        <button type="submit" disabled={busy} className="px-4 h-10 rounded-lg text-sm font-semibold bg-secondary text-black disabled:opacity-60">
+          {busy ? 'Reading standings...' : 'Add event'}
+        </button>
+      </form>
+
+      <ul className={`bg-bg-surface border border-border rounded-xl divide-y divide-border ${busy ? 'opacity-60' : ''}`}>
+        {rows.length === 0 && <li className="px-4 py-6 text-sm text-text-muted">No events without deck lists yet.</li>}
+        {rows.map((row) =>
+          editing?.event_id === row.event_id ? (
+            <li key={row.event_id} className="px-4 py-3">
+              <form onSubmit={saveEdit} className="grid grid-cols-1 sm:grid-cols-[minmax(0,2fr)_10rem_9rem_auto] gap-3 items-end" aria-label={`Edit ${row.name}`}>
+                <label className="space-y-1">
+                  <span className="block text-xs text-text-muted">Name</span>
+                  <input value={editing.name} maxLength={120} onChange={(e) => setEditing((x) => ({ ...x, name: e.target.value }))} className={input} />
+                </label>
+                <label className="space-y-1">
+                  <span className="block text-xs text-text-muted">Date</span>
+                  <input type="date" value={editing.event_date || ''} onChange={(e) => setEditing((x) => ({ ...x, event_date: e.target.value }))} className={input} />
+                </label>
+                <label className="space-y-1">
+                  <span className="block text-xs text-text-muted">Badges for</span>
+                  <select value={editing.top_cut} onChange={(e) => setEditing((x) => ({ ...x, top_cut: e.target.value }))} className={input}>
+                    {CUTS.map((c) => (
+                      <option key={c} value={c}>Top {c}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="flex gap-2">
+                  <button type="submit" disabled={busy} className="px-4 h-10 rounded-lg text-sm font-semibold bg-secondary text-black disabled:opacity-60">Save</button>
+                  <button type="button" onClick={() => setEditing(null)} className="px-4 h-10 rounded-lg text-sm border border-border hover:border-text-muted">Cancel</button>
+                </div>
+              </form>
+            </li>
+          ) : (
+            <li key={row.event_id} className="grid grid-cols-1 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1.6fr)_auto] gap-x-4 gap-y-2 px-4 py-3 items-center">
+              <div className="min-w-0">
+                <a href={row.event_url} target="_blank" rel="noopener noreferrer" className="font-semibold text-text-primary hover:text-secondary break-words">
+                  {row.name}
+                </a>
+                <div className="text-xs text-text-muted">
+                  {[row.event_date_display || 'No date', `${row.players} players`, `Top ${row.top_cut} get badges`].join(' · ')}
+                </div>
+              </div>
+              <div className="text-xs text-text-muted min-w-0 break-words">
+                {row.top_cut_names.map((n, i) => `${i + 1}. ${n}`).join('  ')}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className={`${btn} border-border hover:border-secondary`} onClick={() => setEditing({ ...row })}>
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  title="Read the standings from sorcerytcg.com again"
+                  className={`${btn} border-border hover:border-secondary`}
+                  onClick={() => act(() => importBadgeOnlyEvent({ event_url: row.event_url }))}
+                >
+                  Re-sync
+                </button>
+                <button
+                  type="button"
+                  className={`${btn} border-border hover:border-accent-red`}
+                  onClick={() => {
+                    if (window.confirm(`Remove ${row.name}? Its badges come off every profile.`)) act(() => deleteBadgeOnlyEvent(row.event_id))
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            </li>
+          ),
+        )}
+      </ul>
+    </div>
+  )
+}
+
 export default function PaperBadges() {
   usePageTitle('Paper Tournament Badges')
   const [data, setData] = useState(null)
@@ -346,6 +524,9 @@ export default function PaperBadges() {
       none: keep(groups.none),
       events: (data?.events || []).filter((ev) => eventHit(ev.name)),
       manual: (data?.manual || []).filter((m) => eventHit(m.event) && (!player || (m.player?.name || '').toLowerCase().includes(player))),
+      nodecks: (data?.badge_only || []).filter(
+        (ev) => eventHit(ev.name) && (!player || ev.top_cut_names.some((n) => (n || '').toLowerCase().includes(player))),
+      ),
     }
   }, [groups, data, playerQuery, eventQuery])
   const searching = Boolean(playerQuery.trim() || eventQuery.trim())
@@ -372,7 +553,8 @@ export default function PaperBadges() {
         <p className="text-sm text-text-muted mt-1 max-w-3xl">
           Every top cut on the Top 8 page, matched to Summit players by name. A matched player gets a badge on their
           profile (Winner, Finalist, Top 4, Top 8) from the order of the event's Top 8 list, so reorder an event there
-          if a finish is wrong.
+          if a finish is wrong. Events with no deck lists can be added from sorcerytcg.com under No deck lists: they
+          give badges the same way but are not listed anywhere.
         </p>
       </div>
 
@@ -419,14 +601,14 @@ export default function PaperBadges() {
             className={`px-4 h-10 rounded-lg text-sm font-semibold border ${tab === t.id ? 'bg-secondary text-black border-secondary' : 'border-border text-text-primary hover:border-secondary'}`}
           >
             {t.label}
-            {((t.id !== 'events' && t.id !== 'manual') || searching || (t.id === 'manual' && filtered.manual.length > 0)) && <span className="ml-1.5 opacity-70">{filtered[t.id].length}</span>}
+            {((t.id !== 'events' && t.id !== 'manual' && t.id !== 'nodecks') || searching || (t.id !== 'events' && filtered[t.id].length > 0)) && <span className="ml-1.5 opacity-70">{filtered[t.id].length}</span>}
           </button>
         ))}
       </div>
 
       {error && <p className="text-accent-red text-sm">{error}</p>}
 
-      {tab !== 'events' && tab !== 'manual' && (
+      {!['events', 'manual', 'nodecks'].includes(tab) && (
         <ul className={`bg-bg-surface border border-border rounded-xl divide-y divide-border ${busy ? 'opacity-60' : ''}`}>
           {filtered[tab].length === 0 && (
             <li className="px-4 py-6 text-sm text-text-muted">{searching ? 'Nothing matches your search.' : 'Nothing here.'}</li>
@@ -439,6 +621,8 @@ export default function PaperBadges() {
 
       {tab === 'manual' && <ManualResults rows={filtered.manual} act={act} busy={busy} />}
 
+      {tab === 'nodecks' && <NoDeckEvents rows={filtered.nodecks} act={act} busy={busy} />}
+
       {tab === 'events' && (
         <ul className="bg-bg-surface border border-border rounded-xl divide-y divide-border">
           {filtered.events.length === 0 && (
@@ -447,9 +631,9 @@ export default function PaperBadges() {
           {filtered.events.map((ev) => (
             <li key={ev.folder} className="flex flex-wrap items-center gap-3 px-4 py-3">
               <div className="flex-1 min-w-[14rem]">
-                <Link to={`/top-8/${encodeURIComponent(ev.folder)}`} className="font-semibold text-text-primary hover:text-secondary">
+                <EventLink event={ev} className="font-semibold text-text-primary hover:text-secondary">
                   {ev.name}
-                </Link>
+                </EventLink>
                 <div className="text-xs text-text-muted">
                   {[ev.event_date_display, ev.has_pairings ? 'Registered names' : 'Deck owner names', !ev.default_on && 'Off by default (Summit or TTS event)'].filter(Boolean).join(' · ')}
                 </div>

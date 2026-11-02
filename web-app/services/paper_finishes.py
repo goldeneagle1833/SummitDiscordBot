@@ -27,6 +27,12 @@ An admin can also type in a result by hand for an event that is not on the
 Top 8 page (a local or store event): player, event name, date, placement.
 Those show next to the others, as a chip that does not link anywhere.
 
+A sorcerytcg.com event whose players posted no decks can be imported for
+badges only. Its standings and registered names are kept in the database,
+not as a folder on the Top 8 page, so it never shows in any event list; its
+top cut matches players exactly like a Top 8 event, and its chip links to
+the event's sorcerytcg.com page.
+
 Nothing is stored except the admin decisions: finishes are worked out from
 the event files when read, like the season honours.
 """
@@ -93,7 +99,18 @@ def finish_rank(place: int) -> int:
     return place
 
 
+BADGE_ONLY_PREFIX = "sorcery-"
+
+
+def badge_only_folder(event_id: str) -> str:
+    """The key a badges-only event's results go by (never a Top 8 folder name)."""
+    return f"{BADGE_ONLY_PREFIX}{event_id}"
+
+
 def event_default_on(event: dict) -> bool:
+    # A badges-only event was imported on purpose, so it is on to start with.
+    if event.get("badge_only"):
+        return True
     return not (_ONLINE_EVENT.search(event["folder"]) or _ONLINE_EVENT.search(event.get("name") or ""))
 
 
@@ -196,13 +213,7 @@ def _event_results(repo: EventRepository, event: dict) -> list[dict]:
     return results
 
 
-def _all_results() -> tuple[list[dict], list[dict]]:
-    """(events with a top cut, every top cut result), cached on the event files."""
-    repo = EventRepository()
-    key = ("events", _events_signature(repo))
-    with _cache_lock:
-        if key in _cache:
-            return _cache[key]
+def _top8_results(repo: EventRepository) -> tuple[list[dict], list[dict]]:
     events, results = [], []
     for event in repo.get_all_events():
         if not event.get("has_top8"):
@@ -211,11 +222,93 @@ def _all_results() -> tuple[list[dict], list[dict]]:
         if rows:
             events.append(event)
             results.extend(rows)
+    return events, results
+
+
+def badge_only_top_cut(row: dict) -> list[dict]:
+    """The standings of a badges-only event that finished inside its cut."""
+    standings = sorted(row.get("standings") or [], key=lambda p: p.get("standing") or 9999)
+    return standings[: int(row.get("top_cut") or 0)]
+
+
+def _badge_only_results() -> tuple[list[dict], list[dict]]:
+    """Badges-only events (stored in the database) in the same shape as Top 8 ones."""
+    events, results = [], []
+    for row in PaperLinkRepository().get_badge_only_events():
+        folder = badge_only_folder(row["event_id"])
+        event = {
+            "folder": folder,
+            "name": row["name"],
+            "event_date": row.get("event_date"),
+            "event_date_display": format_date_display(row.get("event_date")),
+            "rating": 1,
+            "badge_only": True,
+            "event_url": row["event_url"],
+            "event_id": row["event_id"],
+        }
+        cut = badge_only_top_cut(row)
+        if not cut:
+            continue
+        events.append(event)
+        for place, player in enumerate(cut, start=1):
+            names = [n for n in (player.get("display_name"), player.get("username")) if n and n != "Unknown"]
+            results.append(
+                {
+                    "folder": folder,
+                    "event": row["name"],
+                    "event_date": event["event_date"],
+                    "event_date_display": event["event_date_display"],
+                    "rating": 1,
+                    "place": place,
+                    "label": finish_label(place),
+                    "cut_size": len(cut),
+                    # No deck: the registration id is what an admin's call on
+                    # this one result is stored against.
+                    "deck_id": player.get("registration_id") or f"place-{place}",
+                    "deck_name": "",
+                    "avatar": "",
+                    "names": names,
+                    "name_source": "registration",
+                    "posted_by": "",
+                    "shared_uploader": False,
+                    "badge_only": True,
+                    "event_url": row["event_url"],
+                }
+            )
+    return events, results
+
+
+def _all_results() -> tuple[list[dict], list[dict]]:
+    """(events with a top cut, every top cut result), cached on the event files
+    and the badges-only events."""
+    repo = EventRepository()
+    key = ("events", _events_signature(repo), PaperLinkRepository().badge_only_signature())
+    with _cache_lock:
+        if key in _cache:
+            return _cache[key]
+    events, results = _top8_results(repo)
+    extra_events, extra_results = _badge_only_results()
+    events += extra_events
+    results += extra_results
     with _cache_lock:
         for k in [k for k in _cache if k[0] == "events"]:
             del _cache[k]
         _cache[key] = (events, results)
     return events, results
+
+
+def top8_event_ids() -> dict:
+    """{sorcerytcg.com event id: Top 8 folder} for Top 8 events imported from their page."""
+    repo = EventRepository()
+    out = {}
+    for event in repo.get_all_events():
+        try:
+            history = repo._load_match_history(event["folder"]) or {}
+        except Exception:
+            history = {}
+        if history.get("event_id"):
+            out[history["event_id"]] = event["folder"]
+    return out
 
 
 # -- Summit players -------------------------------------------------------
@@ -391,6 +484,8 @@ def get_finishes_by_player() -> dict:
                     "place", "label", "cut_size", "avatar",
                 )
             } | {"title": f"{result['label']} · {result['event']}"}
+            if result.get("badge_only"):
+                finishes[key] |= {"badge_only": True, "event_url": result["event_url"]}
 
     for row in PaperLinkRepository().get_manual_finishes():
         by_player.setdefault(bare_id(row["user_id"]), {})[("manual", row["id"])] = manual_finish(row)
@@ -495,9 +590,27 @@ def admin_review() -> dict:
             "awards_badges": e["folder"] in on,
             "default_on": event_default_on(e),
             "has_pairings": any(r["folder"] == e["folder"] and r["name_source"] == "registration" for r in results),
+            "badge_only": bool(e.get("badge_only")),
+            "event_url": e.get("event_url"),
         }
         for e in events
     ]
+    badge_only = []
+    for row in PaperLinkRepository().get_badge_only_events():
+        cut = badge_only_top_cut(row)
+        badge_only.append({
+            "event_id": row["event_id"],
+            "folder": badge_only_folder(row["event_id"]),
+            "name": row["name"],
+            "event_url": row["event_url"],
+            "event_date": row.get("event_date"),
+            "event_date_display": format_date_display(row.get("event_date")),
+            "top_cut": row["top_cut"],
+            "players": len(row.get("standings") or []),
+            "top_cut_names": [p.get("display_name") or p.get("username") or "Unknown" for p in cut],
+            "set_by": row.get("set_by"),
+            "set_at": row.get("set_at"),
+        })
     links = [
         {**link, "player": who(bare_id(link["user_id"]))}
         for link in PaperLinkRepository().get_name_links()
@@ -507,7 +620,7 @@ def admin_review() -> dict:
         for row in PaperLinkRepository().get_manual_finishes()
     ]
     manual.sort(key=lambda m: (m["event_date"] or "", m["manual_id"]), reverse=True)
-    return {"events": event_rows, "results": rows, "links": links, "manual": manual}
+    return {"events": event_rows, "results": rows, "links": links, "manual": manual, "badge_only": badge_only}
 
 
 def reset_cache():

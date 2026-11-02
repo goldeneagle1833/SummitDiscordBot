@@ -66,6 +66,9 @@ def waiting_voice_players(queue_type, no_voice_player_id, now=None, skip_ids=())
         entry = user_data.get("queues", {}).get(queue_type)
         if not entry or entry.get("ladder_info") or _entry_voice(entry) != VOICE:
             continue
+        # Also OK without voice: the voice hold pairs them on its own, no need to ask
+        if entry.get("voice_flexible"):
+            continue
         if _minutes_left(entry, now) <= 0:
             continue
         if (user_id, no_voice_player_id, queue_type) in sent_offers:

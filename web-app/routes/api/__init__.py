@@ -21,6 +21,7 @@ from routes.api.misc import misc_bp
 from routes.api.streamers import streamers_bp
 from routes.api.external_matches import external_matches_bp
 from routes.api.partner_blocks import partner_blocks_bp
+from routes.api.partner_kudos import partner_kudos_bp
 from routes.api.admin import admin_bp
 from routes.api.match_reporting import match_reporting_bp
 from routes.api.curios import curios_bp
@@ -57,6 +58,7 @@ api_bp.register_blueprint(misc_bp)
 api_bp.register_blueprint(streamers_bp)
 api_bp.register_blueprint(external_matches_bp)
 api_bp.register_blueprint(partner_blocks_bp)
+api_bp.register_blueprint(partner_kudos_bp)
 api_bp.register_blueprint(admin_bp)
 api_bp.register_blueprint(match_reporting_bp, url_prefix="/match-report")
 api_bp.register_blueprint(curios_bp, url_prefix="/curios")

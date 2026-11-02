@@ -122,6 +122,13 @@ def spotlight():
     return jsonify(get_daily_spotlight())
 
 
+@misc_bp.route("/kudos-spotlight")
+def kudos_spotlight():
+    """Today's Player of the Day picked from kudos (positive player reports)."""
+    from services.spotlight import get_kudos_player_of_the_day
+    return jsonify(get_kudos_player_of_the_day())
+
+
 @misc_bp.route("/event-spotlight")
 def event_spotlight():
     """Get a random recent top-8 event for the homepage carousel."""

@@ -181,9 +181,21 @@ export function PromoCarousel() {
       get('/api/event-spotlight').then(d => d.success && d.event_spotlight ? d.event_spotlight : null).catch(() => null),
       get('/api/recent-event').then(d => d.event || null).catch(() => null),
       get('/api/deck-rec/staff-pick').then(d => d.success && d.staff_pick ? d.staff_pick : null).catch(() => null),
+      get('/api/kudos-spotlight').then(d => d.success && d.kudos_spotlight ? d.kudos_spotlight : null).catch(() => null),
     ]
-    Promise.all(promises).then(([banners, spotlight, eventSpotlight, newEvent, staffPick]) => {
+    Promise.all(promises).then(([banners, spotlight, eventSpotlight, newEvent, staffPick, kudosSpotlight]) => {
       const slides = []
+
+      // Player of the Day from kudos (positive player reports) leads the carousel.
+      if (kudosSpotlight) {
+        slides.push({
+          key: 'kudos-spotlight', badge: kudosSpotlight.badge_text, color: kudosSpotlight.color,
+          title: kudosSpotlight.title, subtitle: kudosSpotlight.subtitle, link: kudosSpotlight.link,
+          thumbnail: kudosSpotlight.image_url || null, analyticsType: 'spotlight_kudos_player_of_the_day',
+          extra: `👏 ${kudosSpotlight.kudos?.credit || 'Kudos from an opponent'}`,
+          cta: 'View profile',
+        })
+      }
 
       if (newEvent) {
         slides.push({
@@ -368,12 +380,15 @@ export function PromoCarousel() {
                   {item.subtitle}
                 </p>
               )}
+              {item.extra && (
+                <p className="text-xs sm:text-sm text-secondary mt-1.5 sm:mt-2">{item.extra}</p>
+              )}
               <div className="flex items-center gap-3 mt-3 sm:mt-4 shrink-0">
                 <span className={`inline-block text-[10px] font-semibold px-2.5 py-0.5 ${badgeStyle} rounded-full uppercase tracking-wider`}>
                   {item.badge}
                 </span>
                 <span className="inline-flex items-center gap-1 text-xs font-medium text-secondary group-hover:text-secondary-light transition-colors">
-                  Learn more <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
+                  {item.cta || 'Learn more'} <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
                 </span>
               </div>
             </div>

@@ -19,6 +19,7 @@ from cogs.lfg.helpers import (
     scrub_urls,
 )
 from cogs.lfg.persistent_confirm import update_match_card_message_ref
+from cogs.lfg.player_kudos import kudos_button
 from cogs.lfg.player_report import report_player_button
 from utils.database import (
     delete_pairing_announcement,
@@ -267,9 +268,10 @@ async def _send_reporter(
 
 
 def _report_player_view(other, reporter, pairing_id, match_type, view=None):
-    """The other player's message gets just the Report Player button."""
+    """The other player's message gets just the Report Player and Give Kudos buttons."""
     view = view or discord.ui.View(timeout=None)
     view.add_item(report_player_button(other.user_id, reporter.user_id, pairing_id, match_type))
+    view.add_item(kudos_button(other.user_id, reporter.user_id, pairing_id))
     return view
 
 
@@ -412,6 +414,7 @@ async def send_pairing_messages(
     match_card_view.add_item(
         report_player_button(reporter.user_id, other.user_id, pairing_id, match_type)
     )
+    match_card_view.add_item(kudos_button(reporter.user_id, other.user_id, pairing_id))
 
     reporter_fell_back = await _send_reporter(
         bot,

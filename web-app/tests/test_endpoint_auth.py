@@ -196,6 +196,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.misc.youtube_videos",
     "api.misc.spotlight",
     "api.misc.event_spotlight",
+    "api.misc.kudos_spotlight",
 
     # -- Streamers (public read-only) --
     "api.streamers.list_streamers",

@@ -88,7 +88,6 @@ export default function PlayerReportsSection() {
                           moderation={e.moderation}
                           sourceKind="report"
                           sourceRef={e.id}
-                          defaultReason={`Player report #${e.id}: ${(e.reasons ?? []).map(r => REASON_LABELS[r] ?? r).join('; ')}`}
                           playerReason={e.reasons?.length
                             ? `Reported after a match: ${e.reasons.map(r => REASON_LABELS[r] ?? r).join('; ')}`
                             : 'Reported after a match'}
@@ -132,7 +131,6 @@ export default function PlayerReportsSection() {
                         moderation={e.moderation}
                         sourceKind="report"
                         sourceRef={e.id}
-                        defaultReason={`Player report #${e.id}: ${(e.reasons ?? []).map(r => REASON_LABELS[r] ?? r).join('; ')}`}
                         playerReason={e.reasons?.length
                           ? `Reported after a match: ${e.reasons.map(r => REASON_LABELS[r] ?? r).join('; ')}`
                           : 'Reported after a match'}

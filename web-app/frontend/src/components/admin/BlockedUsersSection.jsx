@@ -74,7 +74,6 @@ export default function BlockedUsersSection() {
                           moderation={e.moderation}
                           sourceKind="block"
                           sourceRef={e.blocker_id}
-                          defaultReason={`Blocked by ${e.blocker_name}${e.reason ? `: ${e.reason}` : ''}`}
                           playerReason="Blocked by other players"
                         />
                       </div>
@@ -101,7 +100,6 @@ export default function BlockedUsersSection() {
                         moderation={e.moderation}
                         sourceKind="block"
                         sourceRef={e.blocker_id}
-                        defaultReason={`Blocked by ${e.blocker_name}${e.reason ? `: ${e.reason}` : ''}`}
                         playerReason="Blocked by other players"
                       />
                     </td>

@@ -1682,7 +1682,8 @@ def moderate_player():
 
     Body: action ("timeout" | "ban" | "pairing_block"), user_id, minutes
     (timeout), duration ("24h" | "48h" | "72h" | "lifetime", pairing block),
-    reason (required for a pairing block; the player is DMed it),
+    reason (required, 3+ characters; the player is DMed it, and for a
+    timeout or ban it also goes in the Discord audit log),
     source_kind ("block" | "report"), source_ref, and confirm: true.
     The admin panel only sends confirm after its confirmation dialog.
     """
@@ -1690,7 +1691,8 @@ def moderate_player():
         PAIRING_BLOCK_DURATIONS, ModerationRepository, set_pairing_block,
     )
     from services.discord_moderation import (
-        ModerationError, ban_user, is_discord_id, timeout_member,
+        ModerationError, ban_user, delete_dm, is_discord_id, player_dm_embed,
+        send_dm, timeout_member,
     )
 
     data = request.get_json(silent=True) or {}
@@ -1711,17 +1713,19 @@ def moderate_player():
         except (TypeError, ValueError):
             return jsonify({"success": False, "error": "minutes is required for a timeout"}), 400
 
+    if not reason or len(reason) < 3:
+        return jsonify({"success": False, "error": "A reason is required; it is sent to the player"}), 400
+
     admin_id, admin_name = _get_admin_info()
     target_name = _player_name_resolver()(user_id)
     duration_label = None
     bot_done = True
+    dm_sent = None
 
     if action == "pairing_block":
         duration = data.get("duration")
         if duration not in PAIRING_BLOCK_DURATIONS:
             return jsonify({"success": False, "error": "Pick 24 hours, 48 hours, 72 hours or lifetime"}), 400
-        if not reason or len(reason) < 3:
-            return jsonify({"success": False, "error": "A reason is required; it is sent to the player"}), 400
         if not is_discord_id(user_id):
             return jsonify({"success": False, "error": "Not a Discord account."}), 400
         duration_label = set_pairing_block(
@@ -1730,14 +1734,27 @@ def moderate_player():
         )
         bot_done = False  # the bot pulls them from the queue and DMs them
     else:
-        audit_reason = f"{reason or 'Summit block/report'} (by {admin_name} on the website)"
+        tag = f"report #{source_ref}, " if source_kind == "report" and (source_ref or "").isdigit() else ""
+        suffix = f" ({tag}by {admin_name} on the website)"
+        audit_reason = reason[: 400 - len(suffix)] + suffix
+        sent = None
         try:
             if action == "timeout":
                 timeout_member(user_id, minutes, audit_reason)
+                sent = send_dm(user_id, player_dm_embed("timeout", reason, minutes))
             else:
-                ban_user(user_id, audit_reason)
+                if not is_discord_id(user_id):
+                    raise ModerationError("Not a Discord account.")
+                # DM first: once banned they share no server with the bot.
+                sent = send_dm(user_id, player_dm_embed("ban", reason))
+                try:
+                    ban_user(user_id, audit_reason)
+                except ModerationError:
+                    delete_dm(sent)
+                    raise
         except ModerationError as e:
             return jsonify({"success": False, "error": str(e)}), 400
+        dm_sent = sent is not None
 
     repo = ModerationRepository()
     repo.log_action(
@@ -1754,7 +1771,11 @@ def moderate_player():
         details=reason,
     )
     logger.info("Admin %s: %s %s (%s)", admin_name, action, user_id, minutes or duration_label)
-    return jsonify({"success": True, "moderation": repo.latest_by_target([user_id]).get(user_id)}), 200
+    return jsonify({
+        "success": True,
+        "moderation": repo.latest_by_target([user_id]).get(user_id),
+        "dm_sent": dm_sent,
+    }), 200
 
 
 # ---------------------------------------------------------------------------

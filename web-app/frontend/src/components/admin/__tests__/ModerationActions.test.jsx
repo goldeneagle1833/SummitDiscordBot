@@ -16,7 +16,7 @@ const PROPS = {
   moderation: null,
   sourceKind: 'report',
   sourceRef: 5,
-  defaultReason: 'Player report #5: toxic',
+  playerReason: 'Reported after a match: Rude',
 }
 
 describe('ModerationActions', () => {
@@ -25,6 +25,7 @@ describe('ModerationActions', () => {
   it('asks for confirmation before timing out, then shows the result', async () => {
     post.mockResolvedValue({
       success: true,
+      dm_sent: true,
       moderation: { action: 'timeout', duration_minutes: 10080, by_name: 'Bruce', via: 'web', created_at: '2026-10-31 20:00:00' },
     })
     const user = userEvent.setup()
@@ -39,10 +40,28 @@ describe('ModerationActions', () => {
 
     expect(post).toHaveBeenCalledWith('/api/admin/moderation', expect.objectContaining({
       action: 'timeout', user_id: PROPS.userId, minutes: 10080, confirm: true,
-      reason: 'Player report #5: toxic', source_kind: 'report', source_ref: 5,
+      reason: 'Reported after a match: Rude', source_kind: 'report', source_ref: 5,
     }))
     expect(await screen.findByText(/Timed out 1 week by Bruce/)).toBeInTheDocument()
+    expect(screen.getByText('They were DMed the reason.')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('ban asks for a reason the player will see, and needs one', async () => {
+    post.mockResolvedValue({ success: true, dm_sent: false, moderation: { action: 'ban', by_name: 'Bruce', via: 'web', created_at: '2026-10-31 20:00:00' } })
+    const user = userEvent.setup()
+    render(<ModerationActions {...PROPS} />)
+    await user.click(screen.getByRole('button', { name: 'Ban' }))
+    expect(screen.getByText(/sent to the player/)).toBeInTheDocument()
+    const box = screen.getByRole('textbox')
+    await user.clear(box)
+    expect(screen.getByRole('button', { name: 'Confirm ban' })).toBeDisabled()
+    await user.type(box, 'Cheating in ranked')
+    await user.click(screen.getByRole('button', { name: 'Confirm ban' }))
+    expect(post).toHaveBeenCalledWith('/api/admin/moderation', expect.objectContaining({
+      action: 'ban', reason: 'Cheating in ranked', confirm: true,
+    }))
+    expect(await screen.findByText(/Couldn't DM them/)).toBeInTheDocument()
   })
 
   it('cancel does nothing', async () => {

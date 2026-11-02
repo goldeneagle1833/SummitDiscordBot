@@ -29,6 +29,13 @@ def _resp(status):
     return resp
 
 
+@pytest.fixture(autouse=True)
+def _no_real_dms():
+    """Discord DMs go through requests.post; never hit Discord in tests."""
+    with patch("services.discord_moderation.requests.post", return_value=_resp(403)) as post:
+        yield post
+
+
 class TestModerationRoute:
     URL = "/api/admin/moderation"
 
@@ -117,3 +124,57 @@ class TestModerationRoute:
                                                             reason="")).status_code == 400
         assert admin_session.post(self.URL, json=self._body(action="pairing_block", duration="1y",
                                                             reason="no show")).status_code == 400
+
+
+def _dm_ok(url, **kw):
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"id": "chan1"} if url.endswith("/users/@me/channels") else {"id": "msg1"}
+    return resp
+
+
+class TestReasonGoesToThePlayer:
+    URL = "/api/admin/moderation"
+    BODY = {"user_id": DISCORD_ID, "reason": "Spamming the LFG channel",
+            "source_kind": "report", "source_ref": "1", "confirm": True}
+
+    def test_timeout_and_ban_need_a_reason(self, admin_session, match_db):
+        with patch("webapp_config.DISCORD_BOT_TOKEN", "tok"), \
+             patch("services.discord_moderation.requests.patch") as patch_call, \
+             patch("services.discord_moderation.requests.put") as put_call:
+            for action in ("timeout", "ban"):
+                body = dict(self.BODY, action=action, minutes=60, reason=" a ")
+                resp = admin_session.post(self.URL, json=body)
+                assert resp.status_code == 400 and "reason" in resp.get_json()["error"]
+        patch_call.assert_not_called()
+        put_call.assert_not_called()
+
+    def test_timeout_dms_the_reason_and_puts_it_in_the_audit_log(self, admin_session, match_db, _no_real_dms):
+        _no_real_dms.side_effect = _dm_ok
+        with patch("webapp_config.DISCORD_BOT_TOKEN", "tok"), \
+             patch("services.discord_moderation.requests.patch", return_value=_resp(200)) as call:
+            resp = admin_session.post(self.URL, json=dict(self.BODY, action="timeout", minutes=60))
+        assert resp.status_code == 200 and resp.get_json()["dm_sent"] is True
+        assert "Spamming%20the%20LFG%20channel" in call.call_args.kwargs["headers"]["X-Audit-Log-Reason"]
+        open_dm, message = _no_real_dms.call_args_list
+        assert open_dm.kwargs["json"] == {"recipient_id": DISCORD_ID}
+        embed = message.kwargs["json"]["embeds"][0]
+        assert "timed out" in embed["title"]
+        assert {f["name"]: f["value"] for f in embed["fields"]}["Reason"] == "Spamming the LFG channel"
+
+    def test_ban_dms_first_and_takes_the_dm_back_if_refused(self, admin_session, match_db, _no_real_dms):
+        _no_real_dms.side_effect = _dm_ok
+        with patch("webapp_config.DISCORD_BOT_TOKEN", "tok"), \
+             patch("services.discord_moderation.requests.put", return_value=_resp(403)), \
+             patch("services.discord_moderation.requests.delete") as delete:
+            resp = admin_session.post(self.URL, json=dict(self.BODY, action="ban"))
+        assert resp.status_code == 400
+        assert _no_real_dms.call_count == 2
+        assert delete.call_args.args[0].endswith("/channels/chan1/messages/msg1")
+
+    def test_closed_dms_still_ban(self, admin_session, match_db):
+        with patch("webapp_config.DISCORD_BOT_TOKEN", "tok"), \
+             patch("services.discord_moderation.requests.put", return_value=_resp(204)) as call:
+            resp = admin_session.post(self.URL, json=dict(self.BODY, action="ban"))
+        assert resp.status_code == 200 and resp.get_json()["dm_sent"] is False
+        call.assert_called_once()

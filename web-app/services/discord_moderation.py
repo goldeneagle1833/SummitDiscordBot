@@ -94,3 +94,72 @@ def ban_user(user_id: str, reason: str | None = None):
     except requests.RequestException as e:
         raise ModerationError(f"Could not reach Discord: {e}") from e
     _check(resp, "ban")
+
+
+# ── telling the player ───────────────────────────────────────────────
+
+TIMEOUT_LABELS = {60: "1 hour", 1440: "1 day", 10080: "1 week", 40320: "28 days"}
+SERVER_NAME = "the Sorcerers Summit Discord"
+
+
+def player_dm_embed(action: str, reason: str, minutes: int | None = None) -> dict:
+    """The DM a player gets when timed out or banned (same as the bot's).
+
+    Only the reason the admin typed; never who reported or blocked them.
+    """
+    if action == "timeout":
+        until = datetime.now(timezone.utc) + timedelta(minutes=int(minutes or 0))
+        unix = int(until.timestamp())
+        embed = {
+            "title": f"You've been timed out in {SERVER_NAME}",
+            "description": "You can't chat, react or join voice in the server until it ends.",
+            "color": 0xE67E22,
+            "fields": [
+                {"name": "Length", "value": TIMEOUT_LABELS.get(int(minutes or 0), f"{minutes} minutes"), "inline": True},
+                {"name": "Ends", "value": f"<t:{unix}:f> (<t:{unix}:R>)", "inline": True},
+            ],
+        }
+    else:
+        embed = {"title": f"You've been banned from {SERVER_NAME}", "color": 0xE74C3C, "fields": []}
+    embed["fields"].append({"name": "Reason", "value": (reason or "-")[:1024], "inline": False})
+    embed["footer"] = {"text": "If you think this is a mistake, please contact a server admin."}
+    return embed
+
+
+def send_dm(user_id: str, embed: dict) -> tuple[str, str] | None:
+    """DM a player. Returns (channel_id, message_id), or None if it failed
+    (DMs closed, no shared server). Never raises."""
+    try:
+        headers = _headers(None)
+        resp = requests.post(
+            f"{DISCORD_API}/users/@me/channels",
+            headers=headers, json={"recipient_id": str(user_id)}, timeout=REQUEST_TIMEOUT,
+        )
+        if resp.status_code not in (200, 201):
+            logger.warning("Moderation DM to %s: opening DM returned %s", user_id, resp.status_code)
+            return None
+        channel_id = resp.json()["id"]
+        resp = requests.post(
+            f"{DISCORD_API}/channels/{channel_id}/messages",
+            headers=headers, json={"embeds": [embed]}, timeout=REQUEST_TIMEOUT,
+        )
+        if resp.status_code not in (200, 201):
+            logger.warning("Moderation DM to %s returned %s", user_id, resp.status_code)
+            return None
+        return channel_id, resp.json()["id"]
+    except Exception as e:
+        logger.warning("Moderation DM to %s failed: %s", user_id, e)
+        return None
+
+
+def delete_dm(sent: tuple[str, str] | None):
+    """Take back a DM (used when a ban is refused after the player was told)."""
+    if not sent:
+        return
+    try:
+        requests.delete(
+            f"{DISCORD_API}/channels/{sent[0]}/messages/{sent[1]}",
+            headers=_headers(None), timeout=REQUEST_TIMEOUT,
+        )
+    except Exception as e:
+        logger.warning("Could not delete moderation DM: %s", e)

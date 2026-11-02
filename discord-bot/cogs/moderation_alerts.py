@@ -6,9 +6,11 @@ land in match_records.db, so this cog polls for new rows and DMs each one
 once (``moderation_alerts`` remembers what was sent).
 
 Each DM has **Timeout** and **Ban** buttons for the blocked / reported
-player. Pressing one never acts straight away: it posts a confirm prompt
-(with a duration picker for timeouts) and only **Confirm** does it. The
-buttons are DynamicItems so they still work after a bot restart.
+player. Pressing one never acts straight away: it opens a form (a duration
+picker for timeouts, plus a reason) and only **Submit** does it. The reason
+is DMed to the player and goes in the Discord audit log; it never names who
+reported or blocked them. The buttons are DynamicItems so they still work
+after a bot restart.
 
 Timeout and Ban are Discord's own: timeout mutes them in the Summit server,
 ban removes them from it. **Pairing Block** is the ``!ban`` pairing-service
@@ -100,6 +102,50 @@ def format_duration(minutes) -> str:
 # ── doing the action ─────────────────────────────────────────────────
 
 
+def player_dm_embed(action: str, *, reason: str, minutes: int | None = None, server: str | None = None):
+    """The DM a player gets when they are timed out or banned.
+
+    Only the reason the admin typed; never who reported or blocked them.
+    """
+    server = server or "the Sorcerers Summit Discord"
+    if action == "timeout":
+        until = discord.utils.utcnow() + datetime.timedelta(minutes=int(minutes or DEFAULT_TIMEOUT_MINUTES))
+        embed = discord.Embed(
+            title=f"You've been timed out in {server}",
+            description="You can't chat, react or join voice in the server until it ends.",
+            color=discord.Color.orange(),
+        )
+        embed.add_field(name="Length", value=format_duration(minutes), inline=True)
+        unix = int(until.timestamp())
+        embed.add_field(name="Ends", value=f"<t:{unix}:f> (<t:{unix}:R>)", inline=True)
+    else:
+        embed = discord.Embed(
+            title=f"You've been banned from {server}",
+            color=discord.Color.red(),
+        )
+    embed.add_field(name="Reason", value=(reason or "-")[:1024], inline=False)
+    embed.set_footer(text="If you think this is a mistake, please contact a server admin.")
+    return embed
+
+
+def audit_log_reason(reason: str | None, source_kind: str | None, source_ref: str | None, by: str) -> str:
+    """Reason shown in Discord's audit log: the admin's reason, the report number, who did it."""
+    text = (reason or "Summit block/report alert").strip()
+    tag = f"report #{source_ref}" if source_kind == KIND_REPORT and str(source_ref or "").isdigit() else None
+    suffix = f" ({tag}, by {by})" if tag else f" (by {by})"
+    return text[: 500 - len(suffix)] + suffix
+
+
+async def _dm_player(client, target_id: int, embed):
+    """DM the player. Returns the message, or None if their DMs are closed."""
+    try:
+        user = client.get_user(int(target_id)) or await client.fetch_user(int(target_id))
+        return await user.send(embed=embed)
+    except (discord.Forbidden, discord.HTTPException, discord.NotFound) as e:
+        logger.warning(f"Could not DM moderation notice to {target_id}: {e}")
+        return None
+
+
 async def perform_moderation(
     client,
     *,
@@ -111,29 +157,53 @@ async def perform_moderation(
     source_kind: str | None = None,
     source_ref: str | None = None,
     target_name: str | None = None,
+    notify_player: bool = True,
 ) -> tuple[bool, str]:
-    """Time out or ban ``target_id`` in the Summit server. Returns (ok, message)."""
+    """Time out or ban ``target_id`` in the Summit server. Returns (ok, message).
+
+    With ``notify_player`` the player is DMed the action and ``reason``. A ban
+    DM goes first (once banned they share no server with the bot, so a DM
+    would fail) and is deleted again if Discord refuses the ban.
+    """
     guild = client.get_guild(_guild_id())
     if guild is None:
         return False, "I can't find the Summit server right now. Try again in a minute."
 
-    audit_reason = (reason or "Summit block/report alert")[:500]
     by = _display(moderator)
+    audit_reason = audit_log_reason(reason, source_kind, source_ref, by)
+    server = getattr(guild, "name", None)
+    server = server if isinstance(server, str) and server else None
+    dm = None
     try:
         if action == "timeout":
             minutes = int(minutes or DEFAULT_TIMEOUT_MINUTES)
             member = guild.get_member(int(target_id))
             if member is None:
                 member = await guild.fetch_member(int(target_id))
-            await member.timeout(datetime.timedelta(minutes=minutes), reason=f"{audit_reason} (by {by})")
+            await member.timeout(datetime.timedelta(minutes=minutes), reason=audit_reason)
             target_name = target_name or _display(member)
             done = f"Timed out **{target_name}** for {format_duration(minutes)}."
+            if notify_player:
+                dm = await _dm_player(
+                    client, target_id,
+                    player_dm_embed("timeout", reason=reason, minutes=minutes, server=server),
+                )
         elif action == "ban":
-            await guild.ban(
-                discord.Object(id=int(target_id)),
-                reason=f"{audit_reason} (by {by})",
-                delete_message_seconds=0,
-            )
+            if notify_player:
+                dm = await _dm_player(client, target_id, player_dm_embed("ban", reason=reason, server=server))
+            try:
+                await guild.ban(
+                    discord.Object(id=int(target_id)),
+                    reason=audit_reason,
+                    delete_message_seconds=0,
+                )
+            except discord.HTTPException:
+                if dm is not None:
+                    try:
+                        await dm.delete()
+                    except discord.HTTPException:
+                        pass
+                raise
             done = f"Banned **{target_name or target_id}** from the server."
         else:
             return False, "Unknown action."
@@ -146,6 +216,9 @@ async def perform_moderation(
         )
     except discord.HTTPException as e:
         return False, f"Discord returned an error: {e}"
+
+    if notify_player:
+        done += " They were DMed the reason." if dm is not None else " I couldn't DM them (their DMs are closed)."
 
     try:
         log_moderation_action(
@@ -173,61 +246,65 @@ async def perform_moderation(
     return True, done
 
 
-# ── confirm prompt ───────────────────────────────────────────────────
+# ── reason form (the confirm step) ───────────────────────────────────
 
 
-class ModerationConfirmView(discord.ui.View):
-    """Second step: pick a duration (timeouts) and press Confirm."""
+class ModerationReasonModal(discord.ui.Modal):
+    """Timeout / Ban form: duration (timeouts) and a reason, then Submit.
 
-    def __init__(self, *, action, target_id, target_name, source_kind, source_ref, reason):
-        super().__init__(timeout=600)
+    Discord supplies Cancel and Submit, so Submit is the confirm step. The
+    reason is DMed to the player and goes in the audit log.
+    """
+
+    def __init__(self, *, action, target_id, target_name, source_kind, source_ref, default_reason=""):
+        verb = "Time out" if action == "timeout" else "Ban"
+        super().__init__(title=f"{verb} {target_name}"[:45], timeout=600)
         self.action = action
         self.target_id = int(target_id)
         self.target_name = target_name
         self.source_kind = source_kind
         self.source_ref = source_ref
-        self.reason = reason
-        self.minutes = DEFAULT_TIMEOUT_MINUTES
 
+        self.duration = None
         if action == "timeout":
             self.duration = discord.ui.Select(
                 placeholder="How long?",
+                min_values=1,
+                max_values=1,
+                required=True,
                 options=[
                     discord.SelectOption(label=label, value=str(m), default=m == DEFAULT_TIMEOUT_MINUTES)
                     for m, label in TIMEOUT_CHOICES
                 ],
-                row=0,
             )
-            self.duration.callback = self._pick_duration
-            self.add_item(self.duration)
+            self.add_item(discord.ui.Label(
+                text="How long",
+                description="They can't chat, react or join voice until it ends.",
+                component=self.duration,
+            ))
 
-        confirm = discord.ui.Button(
-            label="Confirm timeout" if action == "timeout" else "Confirm ban",
-            style=discord.ButtonStyle.danger,
-            row=1,
+        self.reason = discord.ui.TextInput(
+            label="Reason (sent to the player)",
+            style=discord.TextStyle.paragraph,
+            placeholder=(
+                "Why are they being timed out? They get this in a DM."
+                if action == "timeout"
+                else "Why are they being banned? They get this in a DM before the ban."
+            ),
+            default=(default_reason or "")[:1000] or None,
+            required=True,
+            min_length=3,
+            max_length=1000,
         )
-        confirm.callback = self._confirm
-        cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.secondary, row=1)
-        cancel.callback = self._cancel
-        self.add_item(confirm)
-        self.add_item(cancel)
+        self.add_item(self.reason)
 
-    def prompt(self) -> str:
-        who = f"**{self.target_name}** (<@{self.target_id}>)"
-        if self.action == "timeout":
-            return (
-                f"Time out {who} in the Summit Discord? Pick how long, then press Confirm.\n"
-                "They can't chat, react or join voice until it ends."
-            )
-        return f"Ban {who} from the Summit Discord? This removes them from the server."
+    @property
+    def minutes(self) -> int:
+        if self.duration is not None and self.duration.values:
+            return int(self.duration.values[0])
+        return DEFAULT_TIMEOUT_MINUTES
 
-    async def _pick_duration(self, interaction: discord.Interaction):
-        self.minutes = int(self.duration.values[0])
-        for option in self.duration.options:
-            option.default = option.value == self.duration.values[0]
-        await interaction.response.edit_message(view=self)
-
-    async def _confirm(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction):
         if not can_moderate(interaction.client, interaction.user):
             await interaction.response.send_message("Only admins can do this.", ephemeral=True)
             return
@@ -238,19 +315,23 @@ class ModerationConfirmView(discord.ui.View):
             target_id=self.target_id,
             moderator=interaction.user,
             minutes=self.minutes,
-            reason=self.reason,
+            reason=self.reason.value.strip(),
             source_kind=self.source_kind,
             source_ref=self.source_ref,
             target_name=self.target_name,
         )
-        self.stop()
-        await interaction.edit_original_response(
-            content=message if ok else f"Not done: {message}", view=None
-        )
+        text = message if ok else f"Not done: {message}"
+        if ok:
+            text += f"\nReason: {self.reason.value.strip()[:1500]}"
+        await interaction.followup.send(text)
 
-    async def _cancel(self, interaction: discord.Interaction):
-        self.stop()
-        await interaction.response.edit_message(content="Cancelled. Nothing was changed.", view=None)
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        logger.error(f"ModerationReasonModal error: {error}", exc_info=True)
+        msg = f"Something went wrong: {error}"
+        if interaction.response.is_done():
+            await interaction.followup.send(msg, ephemeral=True)
+        else:
+            await interaction.response.send_message(msg, ephemeral=True)
 
 
 # ── pairing block form ───────────────────────────────────────────────
@@ -353,28 +434,18 @@ class PersistentModerationButton(
             await interaction.response.send_modal(modal)
             return
         target_name = await resolve_name(interaction.client, self.target_id)
-        view = ModerationConfirmView(
+        modal = ModerationReasonModal(
             action=self.action,
             target_id=self.target_id,
             target_name=target_name,
             source_kind=self.kind,
             source_ref=self.ref,
-            reason=self._reason(),
+            default_reason=self._player_reason(),
         )
-        await interaction.response.send_message(view.prompt(), view=view)
-
-    def _reason(self) -> str:
-        if self.kind == KIND_REPORT and self.ref.isdigit():
-            report = get_report(int(self.ref))
-            if report:
-                labels = [REASON_LABELS.get(r, r) for r in report["reasons"]]
-                text = "; ".join(labels) or (report.get("details") or "")
-                return f"Player report #{self.ref}: {text}"[:500]
-            return f"Player report #{self.ref}"
-        return "Blocked by another player"
+        await interaction.response.send_modal(modal)
 
     def _player_reason(self) -> str:
-        """Starting text for the pairing block reasoning, which the player sees.
+        """Starting text for the reason box, which the player sees.
 
         Never names who reported or blocked them.
         """

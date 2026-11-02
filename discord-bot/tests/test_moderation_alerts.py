@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cogs.moderation_alerts as mod
 from cogs.moderation_alerts import (
     ModerationAlertsCog,
-    ModerationConfirmView,
+    ModerationReasonModal,
     PersistentModerationButton,
     moderation_view,
     perform_moderation,
@@ -135,13 +135,14 @@ def test_button_custom_id_round_trips_through_the_template():
 
 
 @pytest.mark.asyncio
-async def test_pressing_ban_only_asks_for_confirmation():
+async def test_pressing_ban_opens_a_reason_form_and_does_nothing_yet():
     create_moderation_tables()
+    _report(reasons=["toxic"])
     button = PersistentModerationButton("ban", REPORTED, "report", "1")
     interaction = MagicMock()
     interaction.user.id = OWNER
     interaction.client.get_user.return_value = MagicMock(global_name="Opponent")
-    interaction.response.send_message = AsyncMock()
+    interaction.response.send_modal = AsyncMock()
     guild = MagicMock()
     guild.ban = AsyncMock()
     interaction.client.get_guild.return_value = guild
@@ -149,10 +150,28 @@ async def test_pressing_ban_only_asks_for_confirmation():
     await button.callback(interaction)
 
     guild.ban.assert_not_awaited()
-    text = interaction.response.send_message.await_args.args[0]
-    view = interaction.response.send_message.await_args.kwargs["view"]
-    assert "Ban" in text and isinstance(view, ModerationConfirmView)
-    assert [c.label for c in view.children] == ["Confirm ban", "Cancel"]
+    modal = interaction.response.send_modal.await_args.args[0]
+    assert isinstance(modal, ModerationReasonModal)
+    assert modal.title == "Ban Opponent"
+    assert modal.duration is None
+    assert modal.reason.label == "Reason (sent to the player)"
+    assert modal.reason.required and modal.reason.min_length == 3
+    assert modal.reason.default.startswith("Reported after a match: was rude")
+    assert "Reporter" not in modal.reason.default
+
+
+@pytest.mark.asyncio
+async def test_block_reason_never_names_the_blocker():
+    create_moderation_tables()
+    button = PersistentModerationButton("timeout", REPORTED, "block", str(REPORTER))
+    interaction = MagicMock()
+    interaction.user.id = OWNER
+    interaction.client.get_user.return_value = MagicMock(global_name="Opponent")
+    interaction.response.send_modal = AsyncMock()
+    await button.callback(interaction)
+    modal = interaction.response.send_modal.await_args.args[0]
+    assert modal.reason.default == "Blocked by other players"
+    assert str(REPORTER) not in modal.reason.default
 
 
 @pytest.mark.asyncio
@@ -166,13 +185,58 @@ async def test_strangers_cant_press_the_buttons():
     assert "Only admins" in interaction.response.send_message.await_args.args[0]
 
 
-def test_timeout_prompt_has_a_duration_picker_defaulting_to_one_day():
-    view = ModerationConfirmView(action="timeout", target_id=REPORTED, target_name="Opponent",
-                                 source_kind="report", source_ref="1", reason="x")
-    select = view.children[0]
-    assert [o.label for o in select.options] == ["1 hour", "1 day", "1 week", "28 days"]
-    assert [o.default for o in select.options] == [False, True, False, False]
-    assert view.minutes == 1440
+def test_timeout_form_has_a_duration_picker_defaulting_to_one_day():
+    modal = ModerationReasonModal(action="timeout", target_id=REPORTED, target_name="Opponent",
+                                  source_kind="report", source_ref="1", default_reason="x")
+    assert modal.title == "Time out Opponent"
+    assert [o.label for o in modal.duration.options] == ["1 hour", "1 day", "1 week", "28 days"]
+    assert [o.default for o in modal.duration.options] == [False, True, False, False]
+    assert modal.minutes == 1440
+
+
+@pytest.mark.asyncio
+async def test_submitting_the_timeout_form_times_them_out_with_the_typed_reason():
+    create_moderation_tables()
+    member = MagicMock(global_name="Opponent")
+    member.timeout = AsyncMock()
+    guild = MagicMock()
+    guild.name = "Sorcerers Summit"
+    guild.get_member.return_value = member
+    player = MagicMock()
+    player.send = AsyncMock()
+    modal = ModerationReasonModal(action="timeout", target_id=REPORTED, target_name="Opponent",
+                                  source_kind="report", source_ref="1", default_reason="x")
+    interaction = MagicMock()
+    interaction.user = MagicMock(id=OWNER, global_name="Bruce")
+    interaction.client.get_guild.return_value = guild
+    interaction.client.get_user.return_value = player
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    with patch.object(type(modal.duration), "values", property(lambda self: ["60"])), \
+         patch.object(type(modal.reason), "value", property(lambda self: "  Spamming the LFG channel  ")):
+        await modal.on_submit(interaction)
+
+    assert member.timeout.await_args.args[0].total_seconds() == 3600
+    assert member.timeout.await_args.kwargs["reason"] == "Spamming the LFG channel (report #1, by Bruce)"
+    embed = player.send.await_args.kwargs["embed"]
+    assert embed.title == "You've been timed out in Sorcerers Summit"
+    assert {f.name: f.value for f in embed.fields}["Reason"] == "Spamming the LFG channel"
+    text = interaction.followup.send.await_args.args[0]
+    assert "1 hour" in text and "DMed" in text
+    [row] = get_actions_for_target(REPORTED)
+    assert row["reason"] == "Spamming the LFG channel"
+
+
+@pytest.mark.asyncio
+async def test_strangers_cant_submit_the_form():
+    modal = ModerationReasonModal(action="ban", target_id=REPORTED, target_name="Opponent",
+                                  source_kind="report", source_ref="1")
+    interaction = MagicMock()
+    interaction.user.id = 999
+    interaction.client.get_guild.return_value.get_member.return_value = None
+    interaction.response.send_message = AsyncMock()
+    await modal.on_submit(interaction)
+    assert "Only admins" in interaction.response.send_message.await_args.args[0]
 
 
 # ── doing it ─────────────────────────────────────────────────────────
@@ -187,6 +251,7 @@ async def test_timeout_times_them_out_and_logs_it():
     guild.get_member.return_value = member
     client = MagicMock()
     client.get_guild.return_value = guild
+    client.get_user.return_value.send = AsyncMock()
     moderator = MagicMock(id=OWNER, global_name="Bruce")
 
     ok, msg = await perform_moderation(client, action="timeout", target_id=REPORTED,
@@ -205,11 +270,69 @@ async def test_ban_bans_by_id_even_if_they_left():
     guild.ban = AsyncMock()
     client = MagicMock()
     client.get_guild.return_value = guild
+    client.get_user.return_value.send = AsyncMock()
     ok, _ = await perform_moderation(client, action="ban", target_id=REPORTED,
                                      moderator=MagicMock(id=OWNER, global_name="Bruce"))
     assert ok
     assert guild.ban.await_args.args[0].id == REPORTED
     assert get_actions_for_target(REPORTED)[0]["action"] == "ban"
+
+
+@pytest.mark.asyncio
+async def test_ban_dms_the_reason_before_banning():
+    create_moderation_tables()
+    order = []
+    player = MagicMock()
+    player.send = AsyncMock(side_effect=lambda **kw: order.append("dm") or MagicMock())
+    guild = MagicMock()
+    guild.name = "Sorcerers Summit"
+    guild.ban = AsyncMock(side_effect=lambda *a, **kw: order.append("ban"))
+    client = MagicMock()
+    client.get_guild.return_value = guild
+    client.get_user.return_value = player
+    ok, msg = await perform_moderation(client, action="ban", target_id=REPORTED,
+                                       moderator=MagicMock(id=OWNER, global_name="Bruce"),
+                                       reason="Cheating", source_kind="block", source_ref=str(REPORTER))
+    assert ok and order == ["dm", "ban"] and "DMed" in msg
+    embed = player.send.await_args.kwargs["embed"]
+    assert embed.title == "You've been banned from Sorcerers Summit"
+    assert guild.ban.await_args.kwargs["reason"] == "Cheating (by Bruce)"
+
+
+@pytest.mark.asyncio
+async def test_refused_ban_deletes_the_dm_again():
+    create_moderation_tables()
+    sent = MagicMock()
+    sent.delete = AsyncMock()
+    player = MagicMock()
+    player.send = AsyncMock(return_value=sent)
+    guild = MagicMock()
+    guild.ban = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "no"))
+    client = MagicMock()
+    client.get_guild.return_value = guild
+    client.get_user.return_value = player
+    ok, _ = await perform_moderation(client, action="ban", target_id=REPORTED,
+                                     moderator=MagicMock(id=OWNER, global_name="Bruce"), reason="Cheating")
+    assert not ok
+    sent.delete.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_closed_dms_still_time_them_out():
+    create_moderation_tables()
+    member = MagicMock(global_name="Opponent")
+    member.timeout = AsyncMock()
+    guild = MagicMock()
+    guild.get_member.return_value = member
+    player = MagicMock()
+    player.send = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "closed"))
+    client = MagicMock()
+    client.get_guild.return_value = guild
+    client.get_user.return_value = player
+    ok, msg = await perform_moderation(client, action="timeout", target_id=REPORTED, minutes=60,
+                                       moderator=MagicMock(id=OWNER, global_name="Bruce"), reason="Rude")
+    assert ok and "couldn't DM" in msg
+    member.timeout.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -219,6 +342,7 @@ async def test_discord_refusing_is_reported_and_not_logged():
     guild.ban = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "no"))
     client = MagicMock()
     client.get_guild.return_value = guild
+    client.get_user.return_value.send = AsyncMock()
     ok, msg = await perform_moderation(client, action="ban", target_id=REPORTED,
                                        moderator=MagicMock(id=OWNER, global_name="Bruce"))
     assert not ok and "Ban Members" in msg

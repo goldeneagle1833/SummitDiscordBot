@@ -22,8 +22,8 @@ export const PAIRING_CHOICES = [
 const TITLES = { timeout: 'Time out', ban: 'Ban', pairing_block: 'Block from pairing' }
 const CONFIRM = { timeout: 'Confirm timeout', ban: 'Confirm ban', pairing_block: 'Confirm pairing block' }
 const BLURBS = {
-  timeout: "They can't chat, react or join voice in the Summit Discord until it ends.",
-  ban: 'This bans them from the Summit Discord.',
+  timeout: "They can't chat, react or join voice in the Summit Discord until it ends. The bot DMs them the reason.",
+  ban: 'This bans them from the Summit Discord. The bot DMs them the reason first.',
   pairing_block: "They can't join the LFG queue, the website queue or challenges until it ends. The bot DMs them the reason.",
 }
 
@@ -55,7 +55,7 @@ function ConfirmDialog({ action, userName, userId, defaultReason, onCancel, onCo
   const [duration, setDuration] = useState('24h')
   const [reason, setReason] = useState(defaultReason ?? '')
   const isPairing = action === 'pairing_block'
-  const needsReason = isPairing && reason.trim().length < 3
+  const needsReason = reason.trim().length < 3
 
   return (
     <div
@@ -105,13 +105,14 @@ function ConfirmDialog({ action, userName, userId, defaultReason, onCancel, onCo
 
         <label className="block space-y-1">
           <span className="text-xs text-text-muted">
-            {isPairing ? 'Reason (sent to the player)' : 'Reason (shows in the Discord audit log)'}
+            {isPairing ? 'Reason (sent to the player)' : 'Reason (sent to the player and kept in the Discord audit log)'}
           </span>
           <textarea
             value={reason}
             onChange={e => setReason(e.target.value)}
-            maxLength={isPairing ? 1000 : 400}
-            rows={2}
+            placeholder="Don't name who reported or blocked them."
+            maxLength={1000}
+            rows={3}
             className="w-full bg-bg-elevated border border-border rounded px-2 py-1.5 text-sm text-text-primary"
           />
         </label>
@@ -145,7 +146,10 @@ function ConfirmDialog({ action, userName, userId, defaultReason, onCancel, onCo
 
 /**
  * Timeout / Ban (Discord) and Pairing Block (!ban) buttons for a blocked or
- * reported player, each with a confirm dialog. Shows the last action taken (from the website or the bot's DM).
+ * reported player, each with a confirm dialog and a reason box. The reason is
+ * DMed to the player, so it starts from ``playerReason``, which never names
+ * who reported or blocked them. Shows the last action taken (from the website
+ * or the bot's DM).
  */
 export default function ModerationActions({
   userId,
@@ -154,19 +158,20 @@ export default function ModerationActions({
   moderation,
   sourceKind,
   sourceRef,
-  defaultReason,
   playerReason,
 }) {
   const [current, setCurrent] = useState(moderation ?? null)
   const [pending, setPending] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [dmNote, setDmNote] = useState(null)
 
   const close = () => { setPending(null); setError(null) }
 
   const confirm = ({ minutes, duration, reason }) => {
     setBusy(true)
     setError(null)
+    setDmNote(null)
     post('/api/admin/moderation', {
       action: pending,
       user_id: userId,
@@ -179,6 +184,8 @@ export default function ModerationActions({
     })
       .then(d => {
         setCurrent(d.moderation ?? { action: pending, duration_minutes: minutes })
+        if (d.dm_sent === true) setDmNote('They were DMed the reason.')
+        else if (d.dm_sent === false) setDmNote("Couldn't DM them (their DMs are closed).")
         setPending(null)
       })
       .catch(e => setError(e.message))
@@ -214,12 +221,13 @@ export default function ModerationActions({
         <span className="text-xs text-text-muted opacity-70">No Discord account</span>
       )}
       {summary && <div className="text-xs text-text-muted">{summary}</div>}
+      {dmNote && <div className="text-xs text-text-muted">{dmNote}</div>}
       {pending && (
         <ConfirmDialog
           action={pending}
           userId={userId}
           userName={userName}
-          defaultReason={pending === 'pairing_block' ? (playerReason ?? '') : defaultReason}
+          defaultReason={playerReason ?? ''}
           busy={busy}
           error={error}
           onCancel={close}

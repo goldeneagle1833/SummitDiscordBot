@@ -199,7 +199,7 @@ class PlayerKudosRepository:
             match = self.find_kudos_match(giver_id, receiver_id, None)
         if not match:
             if self.has_recent_match(giver_id, receiver_id, pairing_id):
-                raise KudosError("already_given", "Kudos were already given for this match")
+                raise KudosError("already_given", "This opponent was already applauded for this match")
             raise KudosError(
                 "no_match",
                 f"No recorded match between these players in the last {KUDOS_WINDOW_DAYS} days",
@@ -230,7 +230,7 @@ class PlayerKudosRepository:
             conn.commit()
             return {"kudos_id": cur.lastrowid, "match_id": int(match["match_id"])}
         except sqlite3.IntegrityError:
-            raise KudosError("already_given", "Kudos were already given for this match")
+            raise KudosError("already_given", "This opponent was already applauded for this match")
         finally:
             conn.close()
 

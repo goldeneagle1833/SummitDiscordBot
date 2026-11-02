@@ -192,7 +192,7 @@ export function PromoCarousel() {
           key: 'kudos-spotlight', badge: kudosSpotlight.badge_text, color: kudosSpotlight.color,
           title: kudosSpotlight.title, subtitle: kudosSpotlight.subtitle, link: kudosSpotlight.link,
           thumbnail: kudosSpotlight.image_url || null, analyticsType: 'spotlight_kudos_player_of_the_day',
-          extra: `👏 ${kudosSpotlight.kudos?.credit || 'Kudos from an opponent'}`,
+          extra: `👏 ${kudosSpotlight.kudos?.credit || 'Applauded by an opponent'}`,
           cta: 'View profile',
         })
       }

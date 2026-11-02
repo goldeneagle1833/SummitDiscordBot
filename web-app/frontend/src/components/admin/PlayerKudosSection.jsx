@@ -62,7 +62,7 @@ export default function PlayerKudosSection() {
         ) : error ? (
           <div className="px-4 py-6 text-sm text-accent-red">{error}</div>
         ) : entries.length === 0 ? (
-          <div className="px-4 py-6 text-sm text-text-muted">No kudos yet.</div>
+          <div className="px-4 py-6 text-sm text-text-muted">No applause yet.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

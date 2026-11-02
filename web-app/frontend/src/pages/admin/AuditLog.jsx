@@ -63,9 +63,9 @@ export default function AuditLog() {
           </div>
         </div>
       </AdminCollapsible>
-      <AdminCollapsible title="Player Kudos" subtitle="Positive player reports; these feed the homepage Player of the Day">
+      <AdminCollapsible title="Player Applause" subtitle="Players applauding their opponents; these feed the homepage Player of the Day">
         <div className="space-y-2">
-          <p className="text-xs text-text-muted">Given from the Give Kudos button on Discord match messages or from Play Sorcery Online. Hide one to keep it off the homepage.</p>
+          <p className="text-xs text-text-muted">Given from the Applaud button on Discord match messages or from Play Sorcery Online. Hide one to keep it off the homepage.</p>
           <PlayerKudosSection />
         </div>
       </AdminCollapsible>

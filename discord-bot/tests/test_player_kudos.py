@@ -177,9 +177,9 @@ async def test_submitting_saves_the_kudos_and_tells_the_opponent():
     [row] = _rows()
     assert row["giver_name"] == "Giver" and row["receiver_name"] == "Opponent"
     assert row["message"] == "Explained Rubble for me, thanks!"
-    assert "Kudos sent" in interaction.response.send_message.await_args.args[0]
+    assert "You applauded" in interaction.response.send_message.await_args.args[0]
     dm = interaction.client.get_user.return_value.send.await_args.args[0]
-    assert "**Giver** gave you kudos" in dm
+    assert "**Giver** applauded you" in dm
     assert "Helped me learn" in dm
 
 

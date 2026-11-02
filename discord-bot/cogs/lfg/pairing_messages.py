@@ -268,7 +268,7 @@ async def _send_reporter(
 
 
 def _report_player_view(other, reporter, pairing_id, match_type, view=None):
-    """The other player's message gets just the Report Player and Give Kudos buttons."""
+    """The other player's message gets just the Report Player and Applaud buttons."""
     view = view or discord.ui.View(timeout=None)
     view.add_item(report_player_button(other.user_id, reporter.user_id, pairing_id, match_type))
     view.add_item(kudos_button(other.user_id, reporter.user_id, pairing_id))

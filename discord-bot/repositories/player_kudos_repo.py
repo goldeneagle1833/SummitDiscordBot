@@ -138,7 +138,7 @@ def _find_kudos_match(giver_id, receiver_id, pairing_id=None):
             f"SELECT 1 FROM match_records m WHERE {where} LIMIT 1", params
         ).fetchone()
         if played:
-            raise KudosError("already_given", "Kudos were already given for this match")
+            raise KudosError("already_given", "This opponent was already applauded for this match")
         return None
 
 
@@ -187,4 +187,4 @@ def save_player_kudos(
             )
             return cur.lastrowid
     except sqlite3.IntegrityError:
-        raise KudosError("already_given", "Kudos were already given for this match")
+        raise KudosError("already_given", "This opponent was already applauded for this match")

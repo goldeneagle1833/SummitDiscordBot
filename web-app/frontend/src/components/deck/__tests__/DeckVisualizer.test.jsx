@@ -108,4 +108,44 @@ describe('DeckVisualizer rarity breakdown', () => {
     expect(within(panelFor('Spellbook rarity')).getByText('Unique').nextSibling).toHaveTextContent('1')
     expect(within(panelFor('Atlas rarity')).getByText('Unique').nextSibling).toHaveTextContent('1')
   })
+
+  it('leaves Collection cards out of the rarity counts', () => {
+    render(
+      <DeckVisualizer
+        spellbook={[spell('Bolt', 'Ordinary', { quantity: 2 })]}
+        atlas={[site('Plains', 'Ordinary')]}
+        sideboard={[
+          spell('Heirloom', 'Unique', { quantity: 3 }),
+          spell('Zap', 'Ordinary'),
+          site('Court', 'Unique'),
+        ]}
+      />,
+    )
+
+    const spells = panelFor('Spellbook rarity')
+    expect(within(spells).getByText('Ordinary').nextSibling).toHaveTextContent('2')
+    expect(within(spells).queryByText('Unique')).not.toBeInTheDocument()
+    const sites = panelFor('Atlas rarity')
+    expect(within(sites).getByText('Ordinary').nextSibling).toHaveTextContent('1')
+    expect(within(sites).queryByText('Unique')).not.toBeInTheDocument()
+  })
+})
+
+describe('DeckVisualizer stats ignore the Collection', () => {
+  it('counts only Spellbook and Atlas cards in the totals', () => {
+    render(
+      <DeckVisualizer
+        spellbook={[spell('Bolt', 'Ordinary', { quantity: 2, type: 'Minion', elements: 'Fire' })]}
+        atlas={[site('Plains', 'Ordinary', { elements: 'Earth' })]}
+        sideboard={[spell('Zap', 'Ordinary', { quantity: 5, elements: 'Water' })]}
+      />,
+    )
+
+    // 2 + 1 in the deck; the 5 in the Collection are not counted.
+    expect(screen.getByText('Cards:').nextSibling).toHaveTextContent('3')
+    expect(screen.getByText('Spell:Minion:').nextSibling).toHaveTextContent('0 : 2')
+    expect(screen.queryByText('Water')).not.toBeInTheDocument()
+    // The Collection itself is still shown.
+    expect(screen.getByText(/collection \(5\)/i)).toBeInTheDocument()
+  })
 })

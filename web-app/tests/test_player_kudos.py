@@ -140,7 +140,7 @@ class TestPlayerOfTheDay:
         assert spot["badge_text"] == "PLAYER OF THE DAY"
         assert spot["link"] == "/player/222"
         assert "Explained the rules, so kind" in spot["subtitle"]
-        assert spot["kudos"]["credit"] == "Kudos from Alice"
+        assert spot["kudos"]["credit"] == "Applauded by Alice"
         assert spot["kudos"]["reasons"] == ["Good sport, win or lose"]
 
         # The random spotlight doesn't also show a stats Player of the Day today.
@@ -154,7 +154,7 @@ class TestPlayerOfTheDay:
         _backdate_kudos(match_db, 1)
         spot = client.get("/api/kudos-spotlight").get_json()["kudos_spotlight"]
         assert "Secret Al" not in spot["subtitle"]
-        assert spot["kudos"]["credit"] == "Kudos from an opponent"
+        assert spot["kudos"]["credit"] == "Applauded by an opponent"
         assert spot["kudos"]["giver_name"] is None
 
         [row], _ = PlayerKudosRepository(match_db).get_all_kudos()

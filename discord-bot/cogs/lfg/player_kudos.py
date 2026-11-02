@@ -1,4 +1,6 @@
-"""The **Give Kudos** button that sits on every match message.
+"""The **Applaud** button that sits on every match message.
+
+Shown to players as "Applaud"; the code and tables still say "kudos".
 
 The friendly opposite of Report Player: a player thanks their opponent,
 ticks why (good sport, great on voice, ...) and can add a short public
@@ -36,9 +38,9 @@ KUDOS_REASONS = [
 KUDOS_LABELS = dict(KUDOS_REASONS)
 
 NO_RESULT_YET = (
-    "You can give kudos once this match's result has been reported and confirmed."
+    "You can applaud your opponent once this match's result has been reported and confirmed."
 )
-ALREADY_GIVEN = "You already gave kudos for this match. Thanks for spreading the good vibes!"
+ALREADY_GIVEN = "You already applauded your opponent for this match. Thanks for spreading the good vibes!"
 
 
 def _player_name(user) -> str:
@@ -47,17 +49,17 @@ def _player_name(user) -> str:
 
 def _receiver_dm_text(giver_name, reasons, message, anonymous) -> str:
     who = "Someone you played" if anonymous else f"**{giver_name}**"
-    lines = [f"👏 {who} gave you kudos after your match!"]
+    lines = [f"👏 {who} applauded you after your match!"]
     for value in reasons:
         if value in KUDOS_LABELS:
             lines.append(f"• {KUDOS_LABELS[value]}")
     if message:
         lines.append(f"> {message}")
-    lines.append("Players with kudos can be picked as Player of the Day on sorcererssummit.com.")
+    lines.append("Applauded players can be picked as Player of the Day on sorcererssummit.com.")
     return "\n".join(lines)
 
 
-class PlayerKudosModal(discord.ui.Modal, title="Give Kudos"):
+class PlayerKudosModal(discord.ui.Modal, title="Applaud Your Opponent"):
     def __init__(self, *, receiver_id: int, pairing_id: int, receiver_name: str | None = None):
         super().__init__()
         self.receiver_id = receiver_id
@@ -99,7 +101,7 @@ class PlayerKudosModal(discord.ui.Modal, title="Give Kudos"):
         anonymous = ANONYMOUS_VALUE in list(self.privacy.values)
         if not reasons and not message:
             await interaction.response.send_message(
-                "No kudos sent. Tick at least one box or write a message.", ephemeral=True
+                "Nothing sent. Tick at least one box or write a message.", ephemeral=True
             )
             return
 
@@ -131,7 +133,7 @@ class PlayerKudosModal(discord.ui.Modal, title="Give Kudos"):
         except Exception as e:
             logger.error(f"Failed to save kudos: {e}", exc_info=True)
             await interaction.response.send_message(
-                "Something went wrong saving your kudos. Please try again.", ephemeral=True
+                "Something went wrong saving your applause. Please try again.", ephemeral=True
             )
             return
 
@@ -140,7 +142,7 @@ class PlayerKudosModal(discord.ui.Modal, title="Give Kudos"):
             interaction.user.id, self.receiver_id, self.pairing_id, reasons,
         )
         await interaction.response.send_message(
-            f"👏 Kudos sent to {receiver_name or 'your opponent'}. Thanks for making the Summit a friendly place!",
+            f"👏 You applauded {receiver_name or 'your opponent'}. Thanks for making the Summit a friendly place!",
             ephemeral=True,
         )
 
@@ -167,7 +169,7 @@ class PersistentKudosButton(
         self.pairing_id = int(pairing_id or 0)
         super().__init__(
             discord.ui.Button(
-                label="Give Kudos",
+                label="Applaud",
                 style=discord.ButtonStyle.success,
                 emoji="👏",
                 custom_id=f"{KUDOS_PREFIX}{self.giver_id}:{self.receiver_id}:{self.pairing_id}",

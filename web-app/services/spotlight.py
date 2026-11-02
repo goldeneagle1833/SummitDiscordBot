@@ -308,7 +308,7 @@ def get_kudos_player_of_the_day() -> dict:
             else:
                 subtitle = "Thanked by an opponent after a match."
             others = pick["giver_count"] - 1
-            credit = f"Kudos from {giver or 'an opponent'}"
+            credit = f"Applauded by {giver or 'an opponent'}"
             if others > 0:
                 credit += f" and {others} other{'s' if others > 1 else ''} this week"
 

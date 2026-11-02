@@ -1,11 +1,12 @@
-# Summit Player Kudos API (for Play Sorcery Online)
+# Summit Applaud API (for Play Sorcery Online)
 
-Kudos are the friendly opposite of **Report Player**: after a game, a player thanks their
-opponent and says why (good sport, great on voice, helped me learn, ...). On Discord this
-is the 👏 **Give Kudos** button on the Summit match message. This endpoint lets Play Sorcery
-Online do the same from inside PSO.
+**Applaud** is the friendly opposite of **Report Player**: after a game, a player applauds
+their opponent and says why (good sport, great on voice, helped me learn, ...). On Discord
+this is the 👏 **Applaud** button on the Summit match message. This endpoint lets Play Sorcery
+Online do the same from inside PSO. Players see the word "Applaud"; the endpoint and field
+names still say "kudos" (the feature's earlier name), and they stay that way.
 
-Kudos go into the same Summit list as the Discord button. Players who receive kudos can be
+Applause goes into the same Summit list as the Discord button. Applauded players can be
 picked as the **Player of the Day** on the sorcererssummit.com homepage, which shows the
 reason (and, unless the giver asked otherwise, who gave it).
 
@@ -36,7 +37,7 @@ Always send the giving player's own ID from their PSO login, never an ID the pla
 
 ---
 
-## Give kudos: `POST /api/player-kudos`
+## Applaud an opponent: `POST /api/player-kudos`
 
 ### Request
 
@@ -61,8 +62,8 @@ Content-Type: application/json
 
 | Field           | Required | Description                                                                 |
 |-----------------|----------|-----------------------------------------------------------------------------|
-| `giver_id`      | yes      | Discord user ID of the player giving kudos                                  |
-| `receiver_id`   | yes      | Discord user ID of the opponent being thanked (must differ from the giver)  |
+| `giver_id`      | yes      | Discord user ID of the player applauding                                     |
+| `receiver_id`   | yes      | Discord user ID of the opponent being applauded (must differ from the giver)  |
 | `reasons`       | see note | List of reason codes from the table below                                   |
 | `message`       | see note | Short thank-you in the player's own words, up to 200 characters. **Public**: it can be shown on the Summit homepage. |
 | `anonymous`     | no       | `true` keeps the giver's name off the website. Default `false` (the giver is named, since it's praise). Admins always see who gave it. |
@@ -70,7 +71,7 @@ Content-Type: application/json
 | `receiver_name` | no       | Same, for the receiver                                                      |
 | `pairing_id`    | no       | Summit `pairingId` from the table Summit opened, if there was one            |
 
-**Note:** send at least one reason **or** a message. Kudos with neither are rejected,
+**Note:** send at least one reason **or** a message. Applause with neither is rejected,
 same as the Discord form.
 
 ### Reason codes
@@ -87,17 +88,17 @@ same as the Discord form.
 
 ### Only opponents you actually played
 
-Kudos are tied to a **recorded Summit match** between the two players:
+Applause is tied to a **recorded Summit match** between the two players:
 
 - The two must have a match on record (a reported and confirmed Summit result) from the
   last **14 days**. With `pairing_id`, Summit uses that pairing's match; if that pairing has
   no recorded result, any recent match between the two counts.
-- Each player can give **one** kudos per match. A second game between the same two players
+- Each player can applaud **once** per match. A second game between the same two players
   means a second chance.
-- Both players can thank each other for the same match.
+- Both players can applaud each other for the same match.
 
-PSO should only show a Give Kudos option for opponents the player just finished a Summit
-game with. Casual PSO games that never reached Summit can't get kudos.
+PSO should only show an Applaud option for opponents the player just finished a Summit
+game with. Casual PSO games that never reached Summit can't be applauded.
 
 ### Responses
 
@@ -114,13 +115,13 @@ result hasn't been reported yet):
 { "success": false, "code": "no_match", "error": "No recorded match between these players in the last 14 days" }
 ```
 
-`409` when the giver already gave kudos for that match:
+`409` when the giver already applauded that opponent for that match:
 
 ```json
-{ "success": false, "code": "already_given", "error": "Kudos were already given for this match" }
+{ "success": false, "code": "already_given", "error": "This opponent was already applauded for this match" }
 ```
 
-`400` for bad input (missing IDs, giving yourself kudos, unknown reason codes, a message over
+`400` for bad input (missing IDs, applauding yourself, unknown reason codes, a message over
 200 characters, `anonymous` that isn't `true`/`false`, a non-integer `pairing_id`). Unknown
 reasons also return the allowed list:
 
@@ -132,10 +133,10 @@ reasons also return the allowed list:
 
 ## What happens next
 
-- Summit admins see every kudos on the admin log page (**Player Kudos**), tagged
+- Summit admins see every applause on the admin log page (**Player Applause**), tagged
   "via Play Sorcery Online", and can hide one from the homepage.
-- Each day the homepage **Player of the Day** is picked from players who received kudos in
-  the previous 7 days (today's kudos count from tomorrow). Players thanked by more different
+- Each day the homepage **Player of the Day** is picked from players applauded in
+  the previous 7 days (today's applause counts from tomorrow). Players applauded by more different
   people have a better chance, and the same player isn't picked several days in a row when
   others are available. The slide shows the player, the thank-you message or reasons, and
   the giver's name unless they chose `anonymous`.

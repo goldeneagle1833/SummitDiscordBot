@@ -182,7 +182,7 @@ def is_report_player_item(item) -> bool:
 
 
 def is_player_feedback_item(item) -> bool:
-    """Report Player or Give Kudos: the buttons that outlive the match."""
+    """Report Player or Applaud: the buttons that outlive the match."""
     from cogs.lfg.player_kudos import is_kudos_item
 
     return is_report_player_item(item) or is_kudos_item(item)

@@ -53,7 +53,7 @@ def give_player_kudos():
     if not giver_id or not receiver_id:
         return jsonify({"success": False, "error": "giver_id and receiver_id are required"}), 400
     if giver_id == receiver_id:
-        return jsonify({"success": False, "error": "A player cannot give kudos to themselves"}), 400
+        return jsonify({"success": False, "error": "A player cannot applaud themselves"}), 400
 
     reasons = data.get("reasons") or []
     if not isinstance(reasons, list):

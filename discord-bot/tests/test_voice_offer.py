@@ -249,3 +249,26 @@ async def test_a_no_voice_join_without_a_match_sends_offers(mock_bot, mock_inter
         await _process_queue_join(mock_bot, mock_interaction, "rumble", 30, None, voice=VOICE)
         await asyncio.gather(*queue_mod._background_tasks)
         offer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_flexible_join_is_queued_as_flexible_and_sends_no_offers(mock_bot, mock_interaction):
+    import asyncio
+
+    from cogs.lfg import queue as queue_mod
+    from cogs.lfg.queue import _process_queue_join
+
+    lfg_cog = mock_bot.get_cog.return_value
+    lfg_cog.check_if_someone_is_lfg.return_value = None
+    lfg_cog.update_lfg_status = AsyncMock()
+    with patch("cogs.lfg.queue.offer_no_voice_game", AsyncMock()) as offer, \
+         patch("cogs.lfg.queue.ranked_block_message", return_value=None):
+        await _process_queue_join(
+            mock_bot, mock_interaction, "testing", 30, None, voice=NO_VOICE, voice_flexible=True
+        )
+        await asyncio.gather(*queue_mod._background_tasks)
+        # A no-voice-first player who is OK with voice was already free to pair with voice players
+        offer.assert_not_awaited()
+    assert lfg_cog.check_if_someone_is_lfg.call_args.kwargs["voice_flexible"] is True
+    assert lfg_cog.check_if_someone_is_lfg.call_args.kwargs["voice_hold"] is True
+    assert lfg_cog.add_to_lfg_queue.call_args.kwargs["voice_flexible"] is True

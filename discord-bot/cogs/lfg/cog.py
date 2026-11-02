@@ -3,7 +3,6 @@ from discord.ext import commands, tasks
 import datetime
 import logging
 import random
-from random import randrange
 import asyncio
 import sqlite3
 
@@ -46,7 +45,8 @@ from cogs.lfg.pairing_messages import (
 from cogs.lfg.queue_definitions import enabled_queue_definitions, queue_notes_text
 from cogs.lfg.voice import (
     DEFAULT_VOICE,
-    VOICE_ICONS,
+    entry_voice_flexible,
+    holding_for_voice,
     normalize_voice_preference,
     resolve_match_voice,
     queue_has_voice_choice,
@@ -80,7 +80,6 @@ from utils.database import (
     is_pairing_banned,
     pairing_ban_message,
 )
-from utils.constants import SORCERY_NICKNAMES
 from utils.deck_checker import clean_deck_url
 from utils.text import find_best_command_match
 from services.avatar_mode import (
@@ -177,6 +176,7 @@ class LFGCog(commands.Cog):
         self.cleanup_old_limited_leaderboard_messages.start()  # Clean up old limited leaderboard on startup
         self.cleanup_database_pairings.start()  # Clean up old pairings periodically
         self.check_scheduled_event_end.start()  # End the season at its scheduled time
+        self.release_voice_holds.start()  # Pair voice-first players whose voice hold ran out
 
     def cog_unload(self):
         """Clean up when cog is unloaded"""
@@ -186,6 +186,7 @@ class LFGCog(commands.Cog):
         self.cleanup_old_limited_leaderboard_messages.cancel()
         self.cleanup_database_pairings.cancel()
         self.check_scheduled_event_end.cancel()
+        self.release_voice_holds.cancel()
 
     @tasks.loop(count=1)
     async def cleanup_old_status_messages(self):
@@ -668,6 +669,19 @@ class LFGCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error refreshing avatar alerts: {e}")
 
+    @tasks.loop(seconds=5)
+    async def release_voice_holds(self):
+        """Voice-first, no-voice-OK players whose hold ran out pair with a waiting no-voice player."""
+        try:
+            from cogs.lfg.voice_hold import release_voice_holds
+            await release_voice_holds(self.bot)
+        except Exception as e:
+            logger.error(f"Error releasing voice holds: {e}", exc_info=True)
+
+    @release_voice_holds.before_loop
+    async def before_release_voice_holds(self):
+        await self.bot.wait_until_ready()
+
     @check_expired_queue.before_loop
     async def before_check_expired_queue(self):
         """Wait for bot to be ready before starting the loop"""
@@ -1024,19 +1038,13 @@ class LFGCog(commands.Cog):
             )
 
             for definition in enabled_queue_definitions():
-                details = []
-                for user_data in lfg_queue.values():
-                    entry = user_data.get("queues", {}).get(definition["type"])
-                    if not entry:
-                        continue
-                    time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
-                    time_remaining = entry["timeframe"] - time_elapsed
-                    placeholder = SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]
-                    voice_icon = (
-                        VOICE_ICONS.get(entry.get("voice"), VOICE_ICONS[DEFAULT_VOICE])
-                        if queue_has_voice_choice(definition["type"]) else ""
-                    )
-                    details.append(f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min` {voice_icon}")
+                # A count, not a list of players: with voice holds and voice/no-voice
+                # choices, someone listed as waiting may not be a match for you yet.
+                waiting = sum(
+                    1 for user_data in lfg_queue.values()
+                    if self._queue_entry_active(user_data.get("queues", {}).get(definition["type"]), now)
+                )
+                details = [f"`{waiting} waiting`"] if waiting else []
                 note = f' ({definition["status_note"]})' if definition.get("status_note") else ""
                 embed.add_field(
                     name=f'{definition.get("status_emoji", definition["emoji"])} {definition["label"]} Queue{note}',
@@ -1232,17 +1240,23 @@ class LFGCog(commands.Cog):
             return "testing"
         return "ranked"
 
-    def check_if_someone_is_lfg(self, ctx, queue_type="ranked", voice=DEFAULT_VOICE):
+    def check_if_someone_is_lfg(
+        self, ctx, queue_type="ranked", voice=DEFAULT_VOICE, voice_flexible=False, voice_hold=True
+    ):
         """Find a player in queue compatible with the given queue_type.
         All queue types use FIFO order (oldest first) with anti-rematch for ranked/limited.
         Casual (testing): No pairing restrictions, FIFO order (oldest first).
-        Every queue but Limited only pairs players with the same voice choice
-        (voice or no voice); Limited pairs anyone.
+        Every queue but Limited only pairs players who share a voice choice they'd
+        play (see cogs/lfg/voice.py); Limited pairs anyone. Among those, a partner
+        that makes a voice match comes first. A no-voice match is never made for a
+        voice-first, no-voice-OK player inside their voice hold: the joiner holds
+        unless ``voice_hold`` is False (the hold sweep re-joining them).
         Returns user_id if a valid match is found, None otherwise.
         """
         now = datetime.datetime.now()
         best_match = None
-        best_timestamp = None
+        best_key = None
+        joiner_holding = voice_hold and holding_for_voice(voice, voice_flexible, now, now)
 
         # Casual (testing), rumble, limited, and omens (points) have no pairing restrictions
         is_casual = queue_type in ("testing", "rumble", "limited", "points")
@@ -1276,10 +1290,21 @@ class LFGCog(commands.Cog):
                 logger.info(f"Skipping {user_id} - pairing ban")
                 continue
 
-            if queue_has_voice_choice(queue_type) and not voice_preferences_compatible(
-                voice, entry.get("voice")
-            ):
-                continue
+            makes_voice_match = False
+            if queue_has_voice_choice(queue_type):
+                their_flexible = entry_voice_flexible(entry)
+                if not voice_preferences_compatible(
+                    voice, entry.get("voice"), voice_flexible, their_flexible
+                ):
+                    continue
+                makes_voice_match = resolve_match_voice(
+                    voice, entry.get("voice"), voice_flexible, their_flexible
+                )
+                if not makes_voice_match and (
+                    joiner_holding
+                    or holding_for_voice(entry.get("voice"), their_flexible, timestamp, now)
+                ):
+                    continue
 
             # Ranked/Limited: skip if they played each other in their last match
             if not is_casual and self.check_last_match_opponent(ctx.author.id, user_id):
@@ -1288,16 +1313,25 @@ class LFGCog(commands.Cog):
                 )
                 continue
 
-            # All queue types: FIFO - match with oldest player
-            if best_timestamp is None or timestamp < best_timestamp:
-                best_timestamp = timestamp
+            # Voice matches first, then FIFO - match with oldest player
+            key = (not makes_voice_match, timestamp)
+            if best_key is None or key < best_key:
+                best_key = key
                 best_match = user_id
 
         return best_match
 
+    @staticmethod
+    def _queue_entry_active(entry, now):
+        """Whether a queue entry is still within its queue time."""
+        if not entry:
+            return False
+        return (now - entry["timestamp"]).total_seconds() < entry["timeframe"] * 60
+
     def add_to_lfg_queue(
         self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None, run_id=None,
-        origin="discord", voice=DEFAULT_VOICE, avatar=None, alert_avatar=False, deck_avatar=None
+        origin="discord", voice=DEFAULT_VOICE, avatar=None, alert_avatar=False, deck_avatar=None,
+        voice_flexible=False,
     ):
         queue_entry = {
             "timestamp": datetime.datetime.now(),
@@ -1306,6 +1340,8 @@ class LFGCog(commands.Cog):
             "origin": origin,
             "voice": normalize_voice_preference(voice) or DEFAULT_VOICE,
         }
+        if voice_flexible and queue_has_voice_choice(queue_type):
+            queue_entry["voice_flexible"] = True
         if avatar:
             # Avatar mode: read from the deck at join; re-read when the match is made
             queue_entry["avatar"] = avatar
@@ -1665,7 +1701,9 @@ class LFGCog(commands.Cog):
                     matched_user_origin = matched_entry.get("origin", "discord")
                     matched_join_avatar = matched_entry.get("avatar")
                     matched_queue_type = "ranked"
-                    match_voice = resolve_match_voice(voice, matched_entry.get("voice"))
+                    match_voice = resolve_match_voice(
+                        voice, matched_entry.get("voice"), False, entry_voice_flexible(matched_entry)
+                    )
 
                     # Adjust ladder multipliers based on ELO difference
                     challenger_elo = get_user_event_elo(user_id)

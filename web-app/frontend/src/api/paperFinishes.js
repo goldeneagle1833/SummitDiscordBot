@@ -27,3 +27,11 @@ export const deleteManualPaperResult = (id) => del(`/api/admin/paper-finishes/ma
 // One event's Top 8 entries with the Summit profile each one matched
 export const getEventProfiles = (folder) =>
   get(`/api/paper-finishes/event/${encodeURIComponent(folder)}`)
+
+// sorcerytcg.com events with no deck lists, kept for profile badges only and
+// never listed on the Top 8 page ({ event_url, name?, top_cut? })
+export const importBadgeOnlyEvent = (body) => post('/api/admin/paper-finishes/badge-only', body)
+export const updateBadgeOnlyEvent = (eventId, body) =>
+  put(`/api/admin/paper-finishes/badge-only/${encodeURIComponent(eventId)}`, body)
+export const deleteBadgeOnlyEvent = (eventId) =>
+  del(`/api/admin/paper-finishes/badge-only/${encodeURIComponent(eventId)}`)

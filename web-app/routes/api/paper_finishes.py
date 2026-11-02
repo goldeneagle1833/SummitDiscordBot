@@ -195,3 +195,115 @@ def delete_manual_result(finish_id):
         return jsonify({"success": False, "error": "That result no longer exists"}), 404
     _log("paper_manual_removed", target_name=str(finish_id))
     return jsonify({"success": True}), 200
+
+
+# -- badges-only events from sorcerytcg.com ---------------------------------
+
+BADGE_ONLY_CUTS = (2, 4, 8, 16, 32, 64, 128)
+
+
+def _top_cut(value):
+    try:
+        cut = int(value)
+    except (TypeError, ValueError):
+        return None
+    return cut if cut in BADGE_ONLY_CUTS else None
+
+
+@paper_finishes_bp.route("/admin/paper-finishes/badge-only", methods=["POST"])
+@require_admin
+def import_badge_only_event():
+    """Read a sorcerytcg.com event's standings for profile badges only.
+
+    No decks are fetched and nothing goes on the Top 8 page. Importing an
+    event that is already here reads its standings again and keeps the
+    name and cut an admin set, unless new ones are given.
+    """
+    from services.curiosa import CuriosaService
+
+    data = _body()
+    event_url = (data.get("event_url") or "").strip()
+    event_id = CuriosaService.get_event_id_from_url(event_url) if event_url else None
+    if not event_id:
+        return jsonify({"success": False, "error": "Paste a sorcerytcg.com event link (sorcerytcg.com/events/...)"}), 400
+    name = (data.get("name") or "").strip()
+    if len(name) > 120:
+        return jsonify({"success": False, "error": "Event name is too long"}), 400
+    top_cut = None
+    if data.get("top_cut") not in (None, "", "auto"):
+        top_cut = _top_cut(data.get("top_cut"))
+        if not top_cut:
+            return jsonify({"success": False, "error": "Pick a top cut size"}), 400
+
+    folder = paper_finishes.top8_event_ids().get(event_id)
+    if folder:
+        return jsonify({
+            "success": False,
+            "error": f'This event is already on the Top 8 page as "{folder}", so it gives badges from there.',
+        }), 409
+
+    try:
+        discovery = CuriosaService().fetch_event_deck_ids(event_url, with_decks=False)
+    except Exception as e:
+        logger.warning("Badges-only import of %s failed: %s", event_url, e)
+        return jsonify({"success": False, "error": f"Could not read the event from sorcerytcg.com: {e}"}), 502
+
+    standings = [
+        {k: p.get(k) for k in ("registration_id", "display_name", "username", "standing", "wins", "losses", "draws")}
+        for p in discovery.get("match_history") or []
+    ]
+    if not standings:
+        return jsonify({"success": False, "error": "No standings found for this event yet (has it been played?)."}), 422
+
+    repo = PaperLinkRepository()
+    existing = next((e for e in repo.get_badge_only_events() if e["event_id"] == event_id), None)
+    name = name or (existing or {}).get("name") or discovery.get("event_name") or "Imported event"
+    top_cut = top_cut or (existing or {}).get("top_cut") or discovery.get("top_cut_size") or 8
+    event_date = (existing or {}).get("event_date") or discovery.get("event_date")
+    repo.save_badge_only_event(
+        event_id, event_url, name, event_date, top_cut, standings, set_by=str(_admin()[1]),
+    )
+    _log("paper_badge_only_resynced" if existing else "paper_badge_only_imported",
+         target_name=name, details=f"{event_id}, top {top_cut}")
+    return jsonify({
+        "success": True,
+        "event_id": event_id,
+        "name": name,
+        "event_date": event_date,
+        "top_cut": top_cut,
+        "players": len(standings),
+        "updated": bool(existing),
+    }), 200
+
+
+@paper_finishes_bp.route("/admin/paper-finishes/badge-only/<event_id>", methods=["PUT"])
+@require_admin
+def edit_badge_only_event(event_id):
+    """Change a badges-only event's name, date or top cut size."""
+    data = _body()
+    name = (data.get("name") or "").strip()
+    event_date = (data.get("event_date") or "").strip() or None
+    top_cut = _top_cut(data.get("top_cut"))
+    if not name or len(name) > 120:
+        return jsonify({"success": False, "error": "Type the event name"}), 400
+    if not top_cut:
+        return jsonify({"success": False, "error": "Pick a top cut size"}), 400
+    if event_date:
+        try:
+            datetime.date.fromisoformat(event_date)
+        except ValueError:
+            return jsonify({"success": False, "error": "Date must look like 2026-11-01"}), 400
+    if not PaperLinkRepository().update_badge_only_event(event_id, name, event_date, top_cut, set_by=str(_admin()[1])):
+        return jsonify({"success": False, "error": "That event is not here any more"}), 404
+    _log("paper_badge_only_edited", target_name=name, details=f"{event_id}, top {top_cut}")
+    return jsonify({"success": True}), 200
+
+
+@paper_finishes_bp.route("/admin/paper-finishes/badge-only/<event_id>", methods=["DELETE"])
+@require_admin
+def delete_badge_only_event(event_id):
+    """Remove a badges-only event and the badges it gave."""
+    if not PaperLinkRepository().delete_badge_only_event(event_id, paper_finishes.badge_only_folder(event_id)):
+        return jsonify({"success": False, "error": "That event is not here any more"}), 404
+    _log("paper_badge_only_removed", target_name=event_id)
+    return jsonify({"success": True}), 200

@@ -11,9 +11,14 @@ Three small tables in match_records.db:
   all, when an admin has switched it from its default.
 - paper_manual_finishes: a result an admin typed in by hand for an event
   that is not on the Top 8 page (event name, date, placement, avatar).
+- paper_badge_only_events: a sorcerytcg.com event imported for profile
+  badges only. Its players posted no decks, so it is kept here with its
+  standings instead of as a folder on the Top 8 page, and nothing that
+  lists events (Top 8, Deck Archetypes, Popular Cards, Deck Rec) sees it.
 """
 
 import datetime
+import json
 import sqlite3
 from pathlib import Path
 
@@ -73,6 +78,18 @@ class PaperLinkRepository:
                 event_date TEXT,
                 place INTEGER NOT NULL,
                 avatar TEXT,
+                set_by TEXT,
+                set_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS paper_badge_only_events (
+                event_id TEXT PRIMARY KEY,
+                event_url TEXT NOT NULL,
+                name TEXT NOT NULL,
+                event_date TEXT,
+                top_cut INTEGER NOT NULL,
+                standings TEXT NOT NULL,
                 set_by TEXT,
                 set_at TEXT NOT NULL
             )
@@ -225,5 +242,75 @@ class PaperLinkRepository:
         cur = conn.execute("DELETE FROM paper_manual_finishes WHERE id = ?", (int(finish_id),))
         conn.commit()
         changed = cur.rowcount > 0
+        conn.close()
+        return changed
+
+    # -- badges-only events ---------------------------------------------
+
+    _BADGE_ONLY_COLUMNS = ("event_id", "event_url", "name", "event_date", "top_cut", "standings", "set_by", "set_at")
+
+    def get_badge_only_events(self) -> list[dict]:
+        """Every badges-only event, standings decoded, newest first."""
+        conn = self._get_connection()
+        rows = conn.execute(
+            f"SELECT {', '.join(self._BADGE_ONLY_COLUMNS)} FROM paper_badge_only_events"
+            " ORDER BY event_date DESC, set_at DESC"
+        ).fetchall()
+        conn.close()
+        out = []
+        for r in rows:
+            row = dict(zip(self._BADGE_ONLY_COLUMNS, r))
+            try:
+                row["standings"] = json.loads(row["standings"] or "[]")
+            except ValueError:
+                row["standings"] = []
+            out.append(row)
+        return out
+
+    def badge_only_signature(self) -> tuple:
+        """Changes whenever a badges-only event is added, changed or removed."""
+        conn = self._get_connection()
+        row = conn.execute("SELECT COUNT(*), MAX(set_at) FROM paper_badge_only_events").fetchone()
+        conn.close()
+        return tuple(row)
+
+    def save_badge_only_event(self, event_id: str, event_url: str, name: str, event_date: str | None,
+                              top_cut: int, standings: list[dict], set_by: str | None = None):
+        """Add the event, or replace its name, date, cut and standings if already here."""
+        conn = self._get_connection()
+        conn.execute(
+            """INSERT INTO paper_badge_only_events
+                   (event_id, event_url, name, event_date, top_cut, standings, set_by, set_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(event_id) DO UPDATE SET event_url = excluded.event_url,
+                   name = excluded.name, event_date = excluded.event_date, top_cut = excluded.top_cut,
+                   standings = excluded.standings, set_by = excluded.set_by, set_at = excluded.set_at""",
+            (event_id, event_url, name, event_date or None, int(top_cut), json.dumps(standings), set_by, _now()),
+        )
+        conn.commit()
+        conn.close()
+
+    def update_badge_only_event(self, event_id: str, name: str, event_date: str | None, top_cut: int,
+                                set_by: str | None = None) -> bool:
+        conn = self._get_connection()
+        cur = conn.execute(
+            """UPDATE paper_badge_only_events SET name = ?, event_date = ?, top_cut = ?, set_by = ?, set_at = ?
+               WHERE event_id = ?""",
+            (name, event_date or None, int(top_cut), set_by, _now(), event_id),
+        )
+        conn.commit()
+        changed = cur.rowcount > 0
+        conn.close()
+        return changed
+
+    def delete_badge_only_event(self, event_id: str, folder: str) -> bool:
+        """Remove the event and the admin calls made on its results."""
+        conn = self._get_connection()
+        cur = conn.execute("DELETE FROM paper_badge_only_events WHERE event_id = ?", (event_id,))
+        changed = cur.rowcount > 0
+        if changed:
+            conn.execute("DELETE FROM paper_result_assignments WHERE folder = ?", (folder,))
+            conn.execute("DELETE FROM paper_badge_events WHERE folder = ?", (folder,))
+        conn.commit()
         conn.close()
         return changed

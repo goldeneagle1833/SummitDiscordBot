@@ -31,6 +31,9 @@ vi.mock('@/api/paperFinishes', () => ({
     manual: [
       { manual_id: 7, folder: 'manual-7', manual: true, event: 'Store Champs', event_date: '2026-10-04', event_date_display: 'Oct 4, 2026', place: 2, label: 'Finalist', avatar: '', player: { user_id: '2', name: 'Avaloneer' }, set_by: 'Bruce' },
     ],
+    badge_only: [
+      { event_id: 'cmt1', folder: 'sorcery-cmt1', name: 'Columbus Store Champs', event_url: 'https://sorcerytcg.com/events/cmt1', event_date: '2026-10-25', event_date_display: 'Oct 25, 2026', top_cut: 4, players: 12, top_cut_names: ['Avaloneer', 'Kevin F', 'Ptg', 'Sam'] },
+    ],
   })),
   addManualPaperResult: vi.fn(() => Promise.resolve({ success: true })),
   updateManualPaperResult: vi.fn(() => Promise.resolve({ success: true })),
@@ -38,6 +41,9 @@ vi.mock('@/api/paperFinishes', () => ({
   linkPaperName: vi.fn(), rejectPaperName: vi.fn(), unlinkPaperName: vi.fn(),
   assignPaperResult: vi.fn(), clearPaperResult: vi.fn(), setPaperEventBadges: vi.fn(),
   getPaperFinishes: vi.fn(),
+  importBadgeOnlyEvent: vi.fn(() => Promise.resolve({ success: true, name: 'Dayton Locals', players: 9, top_cut: 8, updated: false })),
+  updateBadgeOnlyEvent: vi.fn(() => Promise.resolve({ success: true })),
+  deleteBadgeOnlyEvent: vi.fn(() => Promise.resolve({ success: true })),
 }))
 
 describe('PaperBadges search', () => {
@@ -93,5 +99,31 @@ describe('PaperBadges manual results', () => {
     }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
     await waitFor(() => expect(api.deleteManualPaperResult).toHaveBeenCalledWith(7))
+  })
+
+  it('adds, edits and removes an event with no deck lists', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderWithRouter(<PaperBadges />)
+    fireEvent.click(await screen.findByRole('tab', { name: /No deck lists/ }))
+    const link = screen.getByRole('link', { name: 'Columbus Store Champs' })
+    expect(link).toHaveAttribute('href', 'https://sorcerytcg.com/events/cmt1')
+    expect(screen.getByText(/12 players · Top 4 get badges/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add event' }))
+    expect(await screen.findByText(/Paste a sorcerytcg.com event link/)).toBeInTheDocument()
+    expect(api.importBadgeOnlyEvent).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByPlaceholderText('https://sorcerytcg.com/events/...'), { target: { value: 'https://sorcerytcg.com/events/cmt2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add event' }))
+    await waitFor(() => expect(api.importBadgeOnlyEvent).toHaveBeenCalledWith({ event_url: 'https://sorcerytcg.com/events/cmt2', name: undefined, top_cut: 'auto' }))
+    expect(await screen.findByText(/Added Dayton Locals: 9 players, top 8 get badges/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.change(screen.getByDisplayValue('Columbus Store Champs'), { target: { value: 'Columbus Champs' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.updateBadgeOnlyEvent).toHaveBeenCalledWith('cmt1', { name: 'Columbus Champs', event_date: '2026-10-25', top_cut: 4 }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(api.deleteBadgeOnlyEvent).toHaveBeenCalledWith('cmt1'))
   })
 })

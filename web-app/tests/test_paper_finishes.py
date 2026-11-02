@@ -191,3 +191,129 @@ def test_manual_results(setup, elo_db, admin_session):
     assert client.delete(f"/api/admin/paper-finishes/manual/{manual_id}").status_code == 404
     finishes = client.get("/api/paper-finishes").get_json()["finishes"]["1"]
     assert [f["label"] for f in finishes] == ["Finalist"]
+
+
+# -- badges-only events from sorcerytcg.com ---------------------------------
+
+def _seat(result):
+    return {"round": {"number": 1, "phase": {"structure": "Swiss"}}, "result": {"result": result, "score": 3 if result == "Win" else 0}}
+
+
+def _sorcery_player(reg_id, name, username, wins):
+    return {
+        "id": reg_id,
+        "status": "Ready",
+        "user": {"displayname": name, "username": username},
+        "seats": [_seat("Win") for _ in range(wins)] + [_seat("Loss")],
+    }
+
+
+@pytest.fixture()
+def sorcery_event(monkeypatch):
+    """A deck-less sorcerytcg.com event: no snapshots may be fetched."""
+    from services.curiosa import CuriosaService
+
+    event = {
+        "title": "Store Champs Columbus",
+        "startsAt": "2026-10-25T14:00:00Z",
+        "topcut": {"size": 4},
+        "players": [
+            _sorcery_player("r1", "Avaloneer", "avaloneer", 4),
+            _sorcery_player("r2", "Kevin F", "kevinf", 3),
+            _sorcery_player("r3", "Peter The Great", "ptg", 2),
+            _sorcery_player("r4", "Someone Else", "someone", 1),
+            _sorcery_player("r5", "Fifth Place", "fifth", 0),
+        ],
+    }
+
+    def no_snapshots(*_a, **_k):
+        raise AssertionError("a badges-only import must not fetch deck snapshots")
+
+    monkeypatch.setattr(CuriosaService, "_fetch_event_trpc", lambda self, _id: event)
+    monkeypatch.setattr(CuriosaService, "_fetch_page_html", staticmethod(lambda _url: ""))
+    monkeypatch.setattr(CuriosaService, "_fetch_player_snapshots_batch", no_snapshots)
+    return event
+
+
+URL = "https://sorcerytcg.com/events/cmtstorechamps01"
+
+
+def test_fetch_standings_without_decks(sorcery_event):
+    from services.curiosa import CuriosaService
+
+    data = CuriosaService().fetch_event_deck_ids(URL, with_decks=False)
+    assert data["players"] == [] and data["errors"] == []
+    assert data["top_cut_size"] == 4 and data["event_date"] == "2026-10-25"
+    assert [p["display_name"] for p in data["match_history"]] == [
+        "Avaloneer", "Kevin F", "Peter The Great", "Someone Else", "Fifth Place",
+    ]
+
+
+def test_badge_only_import_gives_badges_and_is_listed_nowhere(setup, elo_db, admin_session, sorcery_event):
+    from repositories.events import EventRepository
+
+    client = admin_session
+    _player(elo_db, "1", "Avaloneer")
+    _player(elo_db, "2", "Peter The Great")
+    _player(elo_db, "5", "Fifth Place")  # outside the top 4: no badge
+
+    assert client.post("/api/admin/paper-finishes/badge-only", json={"event_url": "https://example.com/x"}).status_code == 400
+    res = client.post("/api/admin/paper-finishes/badge-only", json={"event_url": URL})
+    assert res.status_code == 200, res.get_json()
+    body = res.get_json()
+    assert body["name"] == "Store Champs Columbus" and body["top_cut"] == 4 and body["players"] == 5
+
+    finishes = client.get("/api/paper-finishes").get_json()["finishes"]
+    assert sorted(finishes) == ["1", "2"]
+    win = finishes["1"][0]
+    assert win["label"] == "Winner" and win["event"] == "Store Champs Columbus"
+    assert win["badge_only"] is True and win["event_url"] == URL
+    assert win["event_date_display"] == "Oct 25, 2026"
+    assert finishes["2"][0]["label"] == "Top 4"
+
+    # Nothing that lists events sees it.
+    assert EventRepository().get_all_events() == []
+    assert list(setup.iterdir()) == []  # no folder on the Top 8 page
+    listed = client.get("/api/top-8-events").get_json()
+    assert "Store Champs" not in json.dumps(listed)
+
+    review = client.get("/api/admin/paper-finishes").get_json()
+    assert review["badge_only"][0]["top_cut_names"] == ["Avaloneer", "Kevin F", "Peter The Great", "Someone Else"]
+    event_row = next(e for e in review["events"] if e["badge_only"])
+    assert event_row["awards_badges"] is True
+    kevin = next(r for r in review["results"] if r["names"][0] == "Kevin F")
+    assert kevin["status"] == "unmatched" and kevin["deck_id"] == "r2"
+
+    # Admin calls work on these results like any other.
+    folder = event_row["folder"]
+    assert client.post("/api/admin/paper-finishes/assign", json={"folder": folder, "deck_id": "r2", "user_id": "5"}).status_code == 200
+    assert client.get("/api/paper-finishes").get_json()["finishes"]["5"][0]["label"] == "Finalist"
+
+    # Edit: rename and widen the cut.
+    eid = body["event_id"]
+    assert client.put(f"/api/admin/paper-finishes/badge-only/{eid}", json={"name": "Columbus Store Champs", "top_cut": 3}).status_code == 400
+    assert client.put(f"/api/admin/paper-finishes/badge-only/{eid}",
+                      json={"name": "Columbus Store Champs", "event_date": "2026-10-25", "top_cut": 8}).status_code == 200
+    finishes = client.get("/api/paper-finishes").get_json()["finishes"]
+    assert finishes["5"][0]["event"] == "Columbus Store Champs"
+    assert sorted(finishes) == ["1", "2", "5"]
+
+    # Re-sync keeps the admin's name and cut.
+    res = client.post("/api/admin/paper-finishes/badge-only", json={"event_url": URL})
+    assert res.get_json()["updated"] is True and res.get_json()["name"] == "Columbus Store Champs"
+    assert res.get_json()["top_cut"] == 8
+
+    # Remove takes the badges (and the admin call on it) away.
+    assert client.delete(f"/api/admin/paper-finishes/badge-only/{eid}").status_code == 200
+    assert client.delete(f"/api/admin/paper-finishes/badge-only/{eid}").status_code == 404
+    assert client.get("/api/paper-finishes").get_json()["finishes"] == {}
+
+
+def test_badge_only_refuses_event_already_on_top8(setup, elo_db, admin_session, sorcery_event):
+    path = setup / "Store Champs Columbus"
+    path.mkdir()
+    (path / "Store Champs Columbustop8.json").write_text(json.dumps([_deck("d1", "Avaloneer")]))
+    (path / "_match_history.json").write_text(json.dumps({"event_id": "cmtstorechamps01", "players": []}))
+    res = admin_session.post("/api/admin/paper-finishes/badge-only", json={"event_url": URL})
+    assert res.status_code == 409
+    assert "Top 8 page" in res.get_json()["error"]

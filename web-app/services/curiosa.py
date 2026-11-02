@@ -403,7 +403,7 @@ class CuriosaService:
         return match.group(1) if match else None
 
     def fetch_event_deck_ids(
-        self, event_url: str, on_progress=None
+        self, event_url: str, on_progress=None, with_decks: bool = True
     ) -> dict:
         """Discover all player deck IDs from a sorcerytcg.com event URL.
 
@@ -500,16 +500,16 @@ class CuriosaService:
             )
         )
 
-        if on_progress:
-            on_progress(f"Found {len(active_players)} players, fetching deck snapshots...")
-
         # Step 3: Batch-fetch playerSnapshot for all players
         player_deck_ids = []
         deck_by_registration = {}
         errors = []
         BATCH_SIZE = 10
 
-        for i in range(0, len(active_players), BATCH_SIZE):
+        if on_progress and with_decks:
+            on_progress(f"Found {len(active_players)} players, fetching deck snapshots...")
+
+        for i in range(0, len(active_players) if with_decks else 0, BATCH_SIZE):
             batch = active_players[i:i + BATCH_SIZE]
             if on_progress:
                 on_progress(

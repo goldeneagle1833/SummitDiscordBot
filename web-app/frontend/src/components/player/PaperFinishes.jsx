@@ -94,10 +94,19 @@ function Trophy({ label, size = 15 }) {
 
 /**
  * An imported finish opens its event's Top 8 page; one an admin added by
- * hand has no event page, so it is plain text.
+ * hand has no event page, so it is plain text. A badges-only event (no deck
+ * lists, not on the Top 8 page) opens its sorcerytcg.com page instead.
  */
 function FinishLink({ finish, children, ...props }) {
   if (finish.manual) return <span {...props}>{children}</span>
+  if (finish.badge_only) {
+    if (!finish.event_url) return <span {...props}>{children}</span>
+    return (
+      <a href={finish.event_url} target="_blank" rel="noopener noreferrer" {...props}>
+        {children}
+      </a>
+    )
+  }
   return (
     <Link to={`/top-8/${encodeURIComponent(finish.folder)}`} {...props}>
       {children}
@@ -157,7 +166,7 @@ export function PaperFinishesSection({ finishes = [] }) {
         ))}
       </ul>
       <p className="text-xs text-text-muted">
-        From the events on the Top 8 page, matched to this profile by name, and results added by an admin. Wrong name, or a finish missing? Let an admin know.
+        From the events on the Top 8 page and sorcerytcg.com, matched to this profile by name, and results added by an admin. Wrong name, or a finish missing? Let an admin know.
       </p>
     </section>
   )

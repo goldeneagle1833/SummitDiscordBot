@@ -1,8 +1,11 @@
 """API routes for event deck management."""
 
+import functools
 import json
 import logging
 import os
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -13,11 +16,14 @@ from flask import Blueprint, jsonify, request
 from repositories.events import EventRepository
 from utils.auth import is_admin, require_admin
 from utils.formatting import format_event_name
+from webapp_config import EVENT_TAGS
 
 # File-based job store for background Curiosa fetching.
 # Using files instead of an in-memory dict so that jobs are visible
 # across multiple Gunicorn worker processes.
-_JOBS_DIR = os.path.join(tempfile.gettempdir(), "summit_event_jobs")
+_JOBS_DIR = os.environ.get("SUMMIT_EVENT_JOBS_DIR") or os.path.join(
+    tempfile.gettempdir(), "summit_event_jobs"
+)
 os.makedirs(_JOBS_DIR, exist_ok=True)
 
 
@@ -29,11 +35,15 @@ def _job_path(job_id):
 
 
 def _write_job(job_id, data):
-    """Atomically write job status to disk."""
+    """Atomically write job status to disk.
+
+    The writing process's pid rides along so the poll can tell when the
+    worker running the job has died (see _job_died).
+    """
     path = _job_path(job_id)
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
-        json.dump(data, f)
+        json.dump({**data, "pid": os.getpid()}, f)
     os.replace(tmp, path)
 
 
@@ -54,6 +64,154 @@ def _delete_job(job_id):
     except FileNotFoundError:
         pass
 
+
+# Jobs run on a daemon thread inside the gunicorn worker that took the
+# request, so a worker recycle (max_requests) or a restart kills the job
+# mid-way and its status file says "processing" forever. A running job
+# touches its file every _JOB_HEARTBEAT_SECONDS; the poll calls it dead when
+# its worker is gone or the file has gone quiet for _JOB_STALE_SECONDS.
+_JOB_HEARTBEAT_SECONDS = 30
+_JOB_STALE_SECONDS = 180
+
+_JOB_DIED_ERROR = (
+    "This stopped part way because the web server restarted (usually a deploy). Please start it "
+    "again; an event import keeps the decks it already fetched and picks up "
+    "where it left off."
+)
+
+
+def _pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except (PermissionError, OSError):
+        return True
+    return True
+
+
+def _job_died(job_id, job):
+    """True when a processing job's worker is gone or has stopped heartbeating."""
+    if job.get("status") != "processing":
+        return False
+    pid = job.get("pid")
+    if pid and not _pid_alive(pid):
+        return True
+    try:
+        quiet_for = time.time() - os.path.getmtime(_job_path(job_id))
+    except OSError:
+        return False
+    return quiet_for > _JOB_STALE_SECONDS
+
+
+def _job_worker(fn):
+    """Run a background job function with a heartbeat on its status file."""
+    @functools.wraps(fn)
+    def run(job_id, *args, **kwargs):
+        stop = threading.Event()
+
+        def beat():
+            while not stop.wait(_JOB_HEARTBEAT_SECONDS):
+                job = _read_job(job_id)
+                if not job or job.get("status") != "processing":
+                    return
+                try:
+                    os.utime(_job_path(job_id))
+                except OSError:
+                    return
+
+        # Claim the job for this process, so the poll watches the pid that
+        # is actually running it rather than the worker that started it
+        job = _read_job(job_id)
+        if job and job.get("status") == "processing":
+            _write_job(job_id, {k: v for k, v in job.items() if k != "pid"})
+
+        threading.Thread(target=beat, daemon=True).start()
+        try:
+            return fn(job_id, *args, **kwargs)
+        finally:
+            stop.set()
+    return run
+
+
+# Jobs run in their own process, not on a thread in the gunicorn worker that
+# took the request. A worker is recycled every ~2000 requests (max_requests)
+# and an event import takes ~13 minutes (a 20s wait per deck), so a job on a
+# worker thread was regularly killed part way. The job process is in its own
+# session, so a worker recycle leaves it running; only a full service restart
+# (a deploy) stops it, and the poll reports that as above.
+_WEB_APP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_JOB_RUNNER = os.path.join(_WEB_APP_DIR, "scripts", "run_event_job.py")
+
+
+def _job_log_path(job_id):
+    return _job_path(job_id)[: -len(".json")] + ".log"
+
+
+def _start_job(target, args):
+    """Start target(*args) in a separate process; fall back to a thread."""
+    job_id = args[0]
+    try:
+        with open(_job_log_path(job_id), "ab") as log:
+            proc = subprocess.Popen(
+                [sys.executable, _JOB_RUNNER, target.__name__, json.dumps(list(args))],
+                cwd=_WEB_APP_DIR,
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                close_fds=True,
+                env={**os.environ, "SUMMIT_EVENT_JOBS_DIR": _JOBS_DIR},
+            )
+    except OSError as e:
+        logger.warning("Could not start a job process, running %s on a thread: %s",
+                       target.__name__, e)
+        threading.Thread(target=target, args=args, daemon=True).start()
+        return
+    # Reap it when it ends so it never lingers as a zombie of this worker
+    threading.Thread(target=proc.wait, daemon=True).start()
+
+
+# Decks an event import has already fetched, kept per sorcerytcg.com event so
+# a rerun after a restart only fetches the rest (each deck costs a 20s wait).
+_IMPORT_CACHE_MAX_AGE = 24 * 60 * 60
+
+
+def _import_cache_path(event_id):
+    safe_id = "".join(c for c in event_id if c.isalnum() or c in "-_")
+    return os.path.join(_JOBS_DIR, f"import-decks-{safe_id}.json")
+
+
+def _load_import_cache(event_id):
+    path = _import_cache_path(event_id)
+    try:
+        if time.time() - os.path.getmtime(path) > _IMPORT_CACHE_MAX_AGE:
+            os.remove(path)
+            return {}
+        with open(path, "r") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_import_cache(event_id, decks_by_id):
+    path = _import_cache_path(event_id)
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(decks_by_id, f)
+        os.replace(tmp, path)
+    except OSError as e:
+        logger.warning("Could not save import deck cache: %s", e)
+
+
+def _clear_import_cache(event_id):
+    try:
+        os.remove(_import_cache_path(event_id))
+    except FileNotFoundError:
+        pass
+
 logger = logging.getLogger(__name__)
 
 events_bp = Blueprint("events", __name__)
@@ -66,7 +224,7 @@ def list_top8_events():
         repo = EventRepository()
         events = repo.get_all_events()
         featured = repo.get_featured_event()
-        return jsonify({"events": events, "is_admin": is_admin(), "featured_event": featured})
+        return jsonify({"events": events, "is_admin": is_admin(), "featured_event": featured, "event_tags": EVENT_TAGS})
     except Exception as e:
         logger.exception("Error listing events: %s", e)
         return jsonify({"error": "Failed to load events"}), 500
@@ -342,7 +500,7 @@ def compare_events():
 @events_bp.route("/events/<event_folder>/metadata", methods=["PUT"])
 @require_admin
 def update_event_metadata(event_folder):
-    """Update display name and/or star rating for an event (admin only)."""
+    """Update display name, star rating, date, description and/or tag for an event (admin only)."""
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"success": False, "error": "Request body required"}), 400
@@ -351,6 +509,7 @@ def update_event_metadata(event_folder):
     rating = data.get("rating")
     description = data.get("description")
     event_date = data.get("event_date")
+    tag = data.get("tag")
 
     if name is not None and (not isinstance(name, str) or not name.strip()):
         return jsonify({"success": False, "error": "Name must be a non-empty string"}), 400
@@ -362,6 +521,9 @@ def update_event_metadata(event_folder):
     if description is not None and not isinstance(description, str):
         return jsonify({"success": False, "error": "Description must be a string"}), 400
 
+    if tag is not None and (not isinstance(tag, str) or (tag and tag not in EVENT_TAGS)):
+        return jsonify({"success": False, "error": "Tag must be one of: " + ", ".join(EVENT_TAGS)}), 400
+
     repo = EventRepository()
     result = repo.update_event_metadata(
         event_folder,
@@ -369,6 +531,7 @@ def update_event_metadata(event_folder):
         rating=rating,
         description=description.strip() if description else description,
         event_date=event_date.strip() if isinstance(event_date, str) else event_date,
+        tag=tag,
     )
 
     status = 200 if result.get("success") else 400
@@ -398,6 +561,7 @@ def reorder_event_decks(event_folder):
     return jsonify(result), status
 
 
+@_job_worker
 def _run_event_creation(job_id, title, valid_ranked, valid_bulk):
     """Background worker for event creation — fetches from Curiosa and saves."""
     try:
@@ -501,12 +665,7 @@ def create_event():
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting..."})
 
-    thread = threading.Thread(
-        target=_run_event_creation,
-        args=(job_id, title, valid_ranked, valid_bulk),
-        daemon=True,
-    )
-    thread.start()
+    _start_job(_run_event_creation, (job_id, title, valid_ranked, valid_bulk))
 
     return jsonify({"success": True, "job_id": job_id}), 202
 
@@ -520,6 +679,18 @@ def get_event_job_status(job_id):
     if not job:
         return jsonify({"error": "Job not found"}), 404
 
+    if _job_died(job_id, job):
+        logger.warning("Event job %s died while processing (%s)", job_id, job.get("progress"))
+        _delete_job(job_id)
+        return jsonify({
+            "status": "failed",
+            "result": {
+                "success": False,
+                "error": _JOB_DIED_ERROR,
+                "stopped_at": job.get("progress"),
+            },
+        })
+
     response = {"status": job["status"]}
     if "progress" in job:
         response["progress"] = job["progress"]
@@ -531,6 +702,7 @@ def get_event_job_status(job_id):
     return jsonify(response)
 
 
+@_job_worker
 def _run_event_deck_update(job_id, event_folder, table_type, urls, mode):
     """Background worker for updating event decks."""
     try:
@@ -594,12 +766,7 @@ def update_event_decks(event_folder):
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting..."})
 
-    thread = threading.Thread(
-        target=_run_event_deck_update,
-        args=(job_id, event_folder, table_type, urls, mode),
-        daemon=True,
-    )
-    thread.start()
+    _start_job(_run_event_deck_update, (job_id, event_folder, table_type, urls, mode))
 
     return jsonify({"success": True, "job_id": job_id}), 202
 
@@ -615,6 +782,7 @@ def delete_event(event_folder):
     return jsonify(result), status
 
 
+@_job_worker
 def _run_event_refresh(job_id, event_folder):
     """Background worker for refreshing event decks."""
     try:
@@ -644,16 +812,12 @@ def refresh_event(event_folder):
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Refreshing decks..."})
 
-    thread = threading.Thread(
-        target=_run_event_refresh,
-        args=(job_id, event_folder),
-        daemon=True,
-    )
-    thread.start()
+    _start_job(_run_event_refresh, (job_id, event_folder))
 
     return jsonify({"success": True, "job_id": job_id}), 202
 
 
+@_job_worker
 def _run_event_import(job_id, title, event_url):
     """Background worker for importing an event from a sorcerytcg.com URL."""
     try:
@@ -695,22 +859,29 @@ def _run_event_import(job_id, title, event_url):
         top_cut = discovery.get("top_cut_size", 8)
         on_progress(f"Found {len(deck_ids)} decks, fetching deck data...")
 
-        # Step 2: Fetch full deck data using discovered IDs
+        # Step 2: Fetch full deck data using discovered IDs, one at a time.
+        # A deck that fails is skipped and reported, never retried forever,
+        # and every fetched deck is cached so a rerun resumes from here.
+        event_id = discovery.get("event_id") or curiosa.get_event_id_from_url(event_url)
+        cache = _load_import_cache(event_id)
         total = len(deck_ids)
-        completed = [0]
-        original_rate_limit = curiosa._rate_limit
-        def _tracking_rate_limit():
-            original_rate_limit()
-            completed[0] += 1
-            _write_job(job_id, {
-                "status": "processing",
-                "progress": f"Fetching deck {completed[0]}/{total}...",
-            })
-        curiosa._rate_limit = _tracking_rate_limit
-
-        decks, failed_ids = curiosa.fetch_decks_by_ids(deck_ids)
-        if failed_ids:
-            errors.extend([f"Failed to fetch deck: {did}" for did in failed_ids])
+        decks = []
+        for n, player in enumerate(players, 1):
+            deck_id = player["deck_id"]
+            if deck_id in cache:
+                decks.append(cache[deck_id])
+                continue
+            on_progress(f"Fetching deck {n}/{total}...")
+            deck = curiosa.fetch_deck_by_id(deck_id)
+            if deck:
+                decks.append(deck)
+                cache[deck_id] = deck
+                _save_import_cache(event_id, cache)
+            else:
+                errors.append(
+                    f"Could not fetch deck {n} ({player.get('name') or deck_id}); "
+                    "it may be private or sorcerytcg.com did not answer"
+                )
 
         if not decks:
             _write_job(job_id, {
@@ -737,6 +908,7 @@ def _run_event_import(job_id, title, event_url):
         result = repo.create_event(title, top8_decks, bulk_decks)
 
         if result.get("success"):
+            _clear_import_cache(event_id)
             result["top8_added"] = len(top8_decks)
             result["bulk_added"] = len(bulk_decks) if bulk_decks else 0
             result["event_name"] = discovery["event_name"]
@@ -805,12 +977,7 @@ def import_event_from_url():
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting import..."})
 
-    thread = threading.Thread(
-        target=_run_event_import,
-        args=(job_id, title, event_url),
-        daemon=True,
-    )
-    thread.start()
+    _start_job(_run_event_import, (job_id, title, event_url))
 
     return jsonify({"success": True, "job_id": job_id}), 202
 
@@ -832,6 +999,7 @@ def get_event_match_history(event_folder: str):
         return jsonify({"error": "Failed to load match history"}), 500
 
 
+@_job_worker
 def _run_match_history_import(job_id, event_folder, event_url):
     """Background worker for importing pairings from a sorcerytcg.com URL."""
     try:
@@ -898,12 +1066,7 @@ def import_event_match_history(event_folder: str):
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting import..."})
 
-    thread = threading.Thread(
-        target=_run_match_history_import,
-        args=(job_id, event_folder, event_url),
-        daemon=True,
-    )
-    thread.start()
+    _start_job(_run_match_history_import, (job_id, event_folder, event_url))
 
     return jsonify({"success": True, "job_id": job_id}), 202
 
@@ -944,3 +1107,16 @@ def reorder_events_list():
 
     status = 200 if result.get("success") else 400
     return jsonify(result), status
+
+
+# Job functions scripts/run_event_job.py may run, by name
+JOB_TARGETS = {
+    fn.__name__: fn
+    for fn in (
+        _run_event_creation,
+        _run_event_deck_update,
+        _run_event_refresh,
+        _run_event_import,
+        _run_match_history_import,
+    )
+}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { getPlayer, resetOwnProfile, undoProfileReset } from '@/api/players'
 import { get } from '@/api/client'
@@ -10,8 +10,11 @@ import EloBrackets from '@/components/player/EloBrackets'
 import AvatarPerformance from '@/components/player/AvatarPerformance'
 import AvatarMatchups from '@/components/player/AvatarMatchups'
 import RecentDecks from '@/components/player/RecentDecks'
+import FeaturedDeck from '@/components/player/FeaturedDeck'
+import FeaturedDeckModal from '@/components/player/FeaturedDeckModal'
 import LimitedArena from '@/components/player/LimitedArena'
 import MatchHistoryTable from '@/components/player/MatchHistoryTable'
+import MatchFilters from '@/components/player/MatchFilters'
 import RecordedGames from '@/components/player/RecordedGames'
 import ExternalMatches from '@/components/player/ExternalMatches'
 import PendingMatches from '@/components/player/PendingMatches'
@@ -23,8 +26,10 @@ import EloHistory from '@/components/player/EloHistory'
 import AvatarEloHistory from '@/components/player/AvatarEloHistory'
 import PostseasonSection from '@/components/player/PostseasonSection'
 import { AvatarHonoursSection, useAvatarHonours } from '@/components/player/AvatarHonours'
+import { PaperFinishesSection, usePaperFinishes } from '@/components/player/PaperFinishes'
 import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
 import BlockListModal from '@/components/player/BlockListModal'
+import QueueSettingsModal from '@/components/player/QueueSettingsModal'
 import CardStats from '@/components/player/CardStats'
 import { useBracketMarks } from '@/components/player/BracketMarks'
 import { useAuth } from '@/context/AuthContext'
@@ -52,32 +57,44 @@ export default function Player() {
   const [externalPage, setExternalPage] = useState(1)
   const [perPage, setPerPage] = useState(15)
   const [statsType, setStatsType] = useState('ranked')
+  // Matches tab filters; a ref so every fetch (paging, period) keeps them
+  const [matchFilters, setMatchFilters] = useState({})
+  const matchFiltersRef = useRef({})
 
   // Modal state
   const [showReportModal, setShowReportModal] = useState(false)
   const [showPrivacyModal, setShowPrivacyModal] = useState(false)
   const [showBlockListModal, setShowBlockListModal] = useState(false)
+  const [showQueueSettingsModal, setShowQueueSettingsModal] = useState(false)
   const [showResetModal, setShowResetModal] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [editDeck, setEditDeck] = useState(null)
+  const [showFeaturedModal, setShowFeaturedModal] = useState(false)
+  const [featuredDeck, setFeaturedDeckState] = useState(null)
+  const [featuredKey, setFeaturedKey] = useState(0)
 
   // Profile tab, kept in the URL so a tab can be linked to
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab = searchParams.get('tab') || 'overview'
+  const tab = searchParams.get('tab') || 'matches'
   const setTab = (id) => {
     const next = new URLSearchParams(searchParams)
-    if (id === 'overview') next.delete('tab')
+    if (id === 'matches') next.delete('tab')
     else next.set('tab', id)
     setSearchParams(next, { replace: true })
   }
   const navigate = useNavigate()
   const avatarHonours = useAvatarHonours(playerId)
-  const hasPostseason = Boolean(useBracketMarks(playerId)?.entries?.length) || avatarHonours.length > 0
+  const paperFinishes = usePaperFinishes(playerId)
+  const hasPostseason =
+    Boolean(useBracketMarks(playerId)?.entries?.length) || avatarHonours.length > 0 || paperFinishes.length > 0
 
   const fetchData = useCallback(
     (ev, pg, src, cpg, pp, epg) => {
       setLoading(true)
-      getPlayer(playerId, { event: ev, source: src, page: pg, perPage: pp, casualPage: cpg, externalPage: epg })
+      getPlayer(playerId, {
+        event: ev, source: src, page: pg, perPage: pp, casualPage: cpg, externalPage: epg,
+        filters: matchFiltersRef.current,
+      })
         .then((d) => {
           setData(d)
           setError(null)
@@ -107,6 +124,12 @@ export default function Player() {
     setPerPage(r)
     setExternalPage(x)
     fetchData(e, p, s, c, r, x)
+  }
+
+  const changeMatchFilters = (next) => {
+    matchFiltersRef.current = next
+    setMatchFilters(next)
+    refetch(undefined, 1, undefined, 1)
   }
 
   const refreshCurrentPage = () => fetchData(eventFilter, page, eloSource, casualPage, perPage, externalPage)
@@ -162,11 +185,13 @@ export default function Player() {
     { id: 'matches', label: 'Matches' },
     hasPostseason && { id: 'postseason', label: 'Postseason' },
   ].filter(Boolean)
-  const activeTab = tabs.some((t) => t.id === tab) ? tab : 'overview'
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : 'matches'
 
   const settingsItems = [
+    { label: 'Featured deck', onClick: () => setShowFeaturedModal(true) },
     { label: 'Privacy settings', onClick: () => setShowPrivacyModal(true) },
     { label: 'Block list', onClick: () => setShowBlockListModal(true) },
+    /^\d+$/.test(String(playerId)) && { label: 'Queue settings', onClick: () => setShowQueueSettingsModal(true) },
     { label: data.profile_reset_at ? 'Undo Fresh Start' : 'Fresh Start', onClick: () => setShowResetModal(true) },
     authUser?.is_store_admin && { label: 'My orders', onClick: () => navigate('/store/orders') },
   ].filter(Boolean)
@@ -208,6 +233,16 @@ export default function Player() {
         onReport={data.is_owner ? () => setShowReportModal(true) : undefined}
         settingsItems={data.is_owner ? settingsItems : []}
         onPostseason={() => setTab('postseason')}
+        featured={(
+          <FeaturedDeck
+            playerId={playerId}
+            isOwner={Boolean(data.is_owner)}
+            onEdit={() => setShowFeaturedModal(true)}
+            recentDecks={data.recent_decks || []}
+            refreshKey={featuredKey}
+            onLoaded={setFeaturedDeckState}
+          />
+        )}
       />
 
       <PendingMatches
@@ -318,9 +353,12 @@ export default function Player() {
 
       {activeTab === 'matches' && (
         <div className="space-y-6">
+          <MatchFilters filters={matchFilters} data={data.match_filters} onChange={changeMatchFilters} />
+
           <MatchHistoryTable
             title="Ranked Match History"
             matches={data.matches}
+            emptyText={Object.keys(data.match_filters?.active || {}).length ? 'No ranked matches fit these filters.' : undefined}
             pagination={data.pagination}
             playerId={playerId}
             isOwner={data.is_owner}
@@ -366,6 +404,7 @@ export default function Player() {
         <div className="space-y-8">
           <AvatarHonoursSection honours={avatarHonours} />
           <PostseasonSection playerId={playerId} />
+          <PaperFinishesSection finishes={paperFinishes} />
         </div>
       )}
 
@@ -388,6 +427,16 @@ export default function Player() {
         />
       )}
 
+      {showFeaturedModal && (
+        <FeaturedDeckModal
+          playerId={playerId}
+          current={featuredDeck}
+          recentDecks={data.recent_decks || []}
+          onClose={() => setShowFeaturedModal(false)}
+          onSaved={() => setFeaturedKey((k) => k + 1)}
+        />
+      )}
+
       {showPrivacyModal && (
         <PrivacySettingsModal
           playerId={playerId}
@@ -400,6 +449,13 @@ export default function Player() {
         <BlockListModal
           playerId={playerId}
           onClose={() => setShowBlockListModal(false)}
+        />
+      )}
+
+      {showQueueSettingsModal && (
+        <QueueSettingsModal
+          playerId={playerId}
+          onClose={() => setShowQueueSettingsModal(false)}
         />
       )}
 

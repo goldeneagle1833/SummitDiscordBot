@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
+import ModerationActions from '@/components/admin/ModerationActions'
 
 const PER_PAGE = 50
 
@@ -67,6 +68,7 @@ export default function PlayerReportsSection() {
                   <th className="px-4 py-2 font-medium">What Happened</th>
                   <th className="px-4 py-2 font-medium">Feedback</th>
                   <th className="px-4 py-2 font-medium whitespace-nowrap">Date</th>
+                  <th className="px-4 py-2 font-medium hidden md:table-cell">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -78,6 +80,20 @@ export default function PlayerReportsSection() {
                     <td className="px-4 py-2">
                       <div className="text-text-primary">{e.reported_name}</div>
                       <div className="text-xs text-text-muted font-mono">{e.reported_id}</div>
+                      <div className="md:hidden mt-2">
+                        <ModerationActions
+                          userId={e.reported_id}
+                          userName={e.reported_name}
+                          canModerate={e.can_moderate}
+                          moderation={e.moderation}
+                          sourceKind="report"
+                          sourceRef={e.id}
+                          defaultReason={`Player report #${e.id}: ${(e.reasons ?? []).map(r => REASON_LABELS[r] ?? r).join('; ')}`}
+                          playerReason={e.reasons?.length
+                            ? `Reported after a match: ${e.reasons.map(r => REASON_LABELS[r] ?? r).join('; ')}`
+                            : 'Reported after a match'}
+                        />
+                      </div>
                     </td>
                     <td className="px-4 py-2">
                       <div className="text-text-primary">{e.reporter_name}</div>
@@ -94,6 +110,9 @@ export default function PlayerReportsSection() {
                       {e.match_type && (
                         <div className="text-xs mt-1 opacity-70 capitalize">{e.match_type} match</div>
                       )}
+                      {e.source === 'sorcery-online' && (
+                        <div className="text-xs mt-1 opacity-70">via Play Sorcery Online</div>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-text-muted max-w-[280px]">
                       {e.details ? (
@@ -104,6 +123,20 @@ export default function PlayerReportsSection() {
                     </td>
                     <td className="px-4 py-2 text-xs text-text-muted whitespace-nowrap">
                       {formatDate(e.created_at)}
+                    </td>
+                    <td className="px-4 py-2 hidden md:table-cell">
+                      <ModerationActions
+                        userId={e.reported_id}
+                        userName={e.reported_name}
+                        canModerate={e.can_moderate}
+                        moderation={e.moderation}
+                        sourceKind="report"
+                        sourceRef={e.id}
+                        defaultReason={`Player report #${e.id}: ${(e.reasons ?? []).map(r => REASON_LABELS[r] ?? r).join('; ')}`}
+                        playerReason={e.reasons?.length
+                          ? `Reported after a match: ${e.reasons.map(r => REASON_LABELS[r] ?? r).join('; ')}`
+                          : 'Reported after a match'}
+                      />
                     </td>
                   </tr>
                 ))}

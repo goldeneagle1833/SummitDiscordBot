@@ -197,3 +197,38 @@ def test_a_card_without_report_player_gets_no_view():
     message = MagicMock()
     message.components = []
     assert report_player_only_view(message) is None
+
+
+@pytest.mark.asyncio
+async def test_a_recorded_match_card_keeps_the_opponent_mention(monkeypatch):
+    from cogs.lfg import persistent_confirm
+
+    monkeypatch.setattr(
+        persistent_confirm,
+        "_load_match_cards_for_pairing_all",
+        lambda pairing_id, match_type=None: [
+            {"message_id": 5, "channel_id": 6, "player1_id": 10, "player2_id": 20}
+        ],
+    )
+    message = MagicMock()
+    message.components = []
+    message.edit = AsyncMock()
+    channel = MagicMock()
+    channel.fetch_message = AsyncMock(return_value=message)
+    bot = MagicMock()
+    bot.get_channel.return_value = channel
+
+    await persistent_confirm.edit_match_card_messages(
+        bot, 77, "ranked", "✅ **Match Recorded** — **Match ID: #9**\nA defeated B."
+    )
+
+    content = message.edit.await_args.kwargs["content"]
+    assert content.startswith("✅ **Match Recorded**")
+    assert content.endswith("**Opponent:** <@20>")
+
+
+def test_with_opponent_mention_skips_a_missing_opponent():
+    from cogs.lfg.persistent_confirm import with_opponent_mention
+
+    assert with_opponent_mention("**Match Cancelled**", None) == "**Match Cancelled**"
+    assert with_opponent_mention("**Match Cancelled**", 20) == "**Match Cancelled**\n**Opponent:** <@20>"

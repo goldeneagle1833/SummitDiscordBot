@@ -22,7 +22,7 @@ def _require_deck_in_avatar_mode(deck_input):
     if needs_avatar("ranked"):
         deck_input.required = True
         deck_input.label = "Your Deck URL (required: sets your avatar)"
-        deck_input.placeholder = "Curiosa or Sorcery Online deck link"
+        deck_input.placeholder = "Curiosa or Play Sorcery Online deck link"
 
 logger = logging.getLogger("discord_bot")
 

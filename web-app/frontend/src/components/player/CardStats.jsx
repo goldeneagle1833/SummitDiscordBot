@@ -97,7 +97,7 @@ function CardList({ title, cards }) {
 }
 
 /**
- * The Card Stats tab: this player's own cards from Sorcery Online's
+ * The Card Stats tab: this player's own cards from Play Sorcery Online's
  * played-card data, and how they do when each card hits the table.
  */
 export default function CardStats({ playerId, eventFilter, isOwner, isPublic }) {
@@ -134,11 +134,11 @@ export default function CardStats({ playerId, eventFilter, isOwner, isPublic }) 
       <p className="text-sm text-text-muted mr-auto">
         {data?.games ? (
           <>
-            From Sorcery Online {queueLabel}games: <strong className="text-text-primary tabular-nums">{data.games}</strong> games with card data
+            From Play Sorcery Online {queueLabel}games: <strong className="text-text-primary tabular-nums">{data.games}</strong> games with card data
             ({data.wins}-{data.losses}, {data.win_rate}%).
           </>
         ) : (
-          'From Sorcery Online games'
+          'From Play Sorcery Online games'
         )}
       </p>
       <QueuePicker value={queue} onChange={setQueue} />
@@ -162,8 +162,8 @@ export default function CardStats({ playerId, eventFilter, isOwner, isPublic }) 
         {header}
         <p className="text-sm text-text-muted">
           {queue === 'all'
-            ? 'No Sorcery Online games with card data for this period yet. Cards show up here after games played through the PSO queue.'
-            : `No ${queueLabel.trim()} Sorcery Online games with card data for this period yet.`}
+            ? 'No Play Sorcery Online games with card data for this period yet. Cards show up here after games played through the PSO queue.'
+            : `No ${queueLabel.trim()} Play Sorcery Online games with card data for this period yet.`}
         </p>
       </div>
     )

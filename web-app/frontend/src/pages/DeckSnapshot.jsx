@@ -35,8 +35,8 @@ function buildTcgPlayerUrl(cards) {
 }
 
 // Snapshots store the deck id they were scraped from. A Curiosa id can be
-// handed to Sorcery Online to preload a table, so those decks get the launch
-// button. A deck that came from Sorcery Online itself is tagged with its
+// handed to Play Sorcery Online to preload a table, so those decks get the launch
+// button. A deck that came from Play Sorcery Online itself is tagged with its
 // source: its id is a PSO id, not a Curiosa one, so it gets a plain link back
 // to the deck instead. DraftSorcery decks have no id and get neither.
 function getCuriosaDeckId(deck) {
@@ -176,7 +176,7 @@ export default function DeckSnapshot() {
                 title="Opens this deck in the Play Sorcery Online deckbuilder"
                 className="inline-flex items-center gap-1 bg-secondary hover:bg-secondary/80 text-black font-medium text-sm px-4 py-2 rounded transition-colors whitespace-nowrap"
               >
-                Open in Sorcery Online &#8599;
+                Open in Play Sorcery Online &#8599;
               </a>
             )}
             {tcgUrl && (

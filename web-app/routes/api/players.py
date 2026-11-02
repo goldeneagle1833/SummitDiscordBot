@@ -3,6 +3,8 @@
 import json
 import logging
 import sqlite3
+import threading
+from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, session, request
 
@@ -14,9 +16,10 @@ from services.replays import own_backfilled_replays, viewable_replays
 from repositories.external_matches import ExternalMatchRepository
 from repositories.user_profiles import UserProfileRepository
 from repositories.blocked_users_repo import BlockedUsersRepository
+from repositories.voice_only_repo import VoiceOnlyRepository
 from utils.auth import is_admin
-from utils.card_images import resolve_card_image
-from services.curiosa import is_deck_url, normalize_deck_url
+from utils.card_images import attach_images, resolve_card_image
+from services.curiosa import deck_url_source, is_deck_url, normalize_deck_url
 from services.avatar_elo import get_player_avatar_changes, get_player_avatar_elo
 
 logger = logging.getLogger(__name__)
@@ -172,7 +175,7 @@ def _active_event_window():
 
 
 def _attach_replays(entries: list[dict], player_id: str) -> None:
-    """Add each match_records match's Sorcery Online replay link where the viewer may see it."""
+    """Add each match_records match's Play Sorcery Online replay link where the viewer may see it."""
     ids = sorted({e["match_id"] for e in entries})
     if not ids:
         return
@@ -484,6 +487,33 @@ def get_deck_stats(player_id):
     })
 
 
+def _any_display_name(player_id):
+    """The player's name from their newest bot match in any period, or None."""
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    except sqlite3.OperationalError:
+        return None
+    try:
+        for table in ["match_records", "match_records_archive"]:
+            try:
+                row = conn.execute(
+                    f"""
+                    SELECT CASE WHEN winner_id = ? THEN winner_display_name ELSE losser_display_name END
+                    FROM {table}
+                    WHERE winner_id = ? OR losser_id = ?
+                    ORDER BY timestamp DESC LIMIT 1
+                    """,
+                    (player_id, player_id, player_id),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                continue
+            if row and row[0]:
+                return row[0]
+    finally:
+        conn.close()
+    return None
+
+
 @players_bp.route("/player/<player_id>/avatar/<avatar_name>")
 def player_avatar_stats(player_id, avatar_name):
     """Get detailed stats for a specific avatar used by a player."""
@@ -492,19 +522,41 @@ def player_avatar_stats(player_id, avatar_name):
     if player_id_str.startswith("google_"):
         player_id = player_id_str[7:]
 
-    event_filter = request.args.get("event", "lifetime")
+    event_filter = request.args.get("event") or "lifetime"
 
-    # Determine season date range if applicable
+    # Period picker, same choices as the profile: lifetime, the current event
+    # (live table), a past event (archive rows with that event_id) or a
+    # season_* date range. event_start/end date the external matches.
+    tables = ["match_records", "match_records_archive"]
+    archive_event_id = None
+    season_range = None
     event_start_date = None
     event_end_date = None
-    is_season_filter = isinstance(event_filter, str) and event_filter.startswith("season_")
-    if is_season_filter:
+    if event_filter == "current":
+        tables = ["match_records"]
+        event_start_date, event_end_date = _active_event_window()
+    elif event_filter.startswith("season_"):
+        season = next((sf for sf in SEASON_FILTERS if sf["id"] == event_filter), None)
+        if not season:
+            return jsonify({"error": "Unknown period"}), 400
+        season_range = (season["start_date"], season["end_date"])
+        event_start_date, event_end_date = season_range
+    elif event_filter != "lifetime":
         try:
-            season_id = int(event_filter.split("_")[1])
-            if season_id in SEASON_FILTERS:
-                event_start_date = SEASON_FILTERS[season_id]["start"]
-                event_end_date = SEASON_FILTERS[season_id]["end"]
-        except (ValueError, IndexError):
+            archive_event_id = int(event_filter)
+        except ValueError:
+            return jsonify({"error": "Unknown period"}), 400
+        tables = ["match_records_archive"]
+        try:
+            elo_conn = sqlite3.connect(str(ELO_DB_PATH))
+            ev_row = elo_conn.execute(
+                "SELECT start_date, end_date FROM events WHERE event_id = ?",
+                (archive_event_id,),
+            ).fetchone()
+            elo_conn.close()
+            if ev_row:
+                event_start_date, event_end_date = ev_row[0], ev_row[1]
+        except sqlite3.OperationalError:
             pass
 
     conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
@@ -512,15 +564,15 @@ def player_avatar_stats(player_id, avatar_name):
     cur = conn.cursor()
 
     all_rows = []
-    for table in ["match_records", "match_records_archive"]:
+    for table in tables:
         date_filter = ""
         params = [player_id, player_id, player_id]
-        if event_start_date:
-            date_filter += " AND timestamp >= ?"
-            params.append(event_start_date)
-        if event_end_date:
-            date_filter += " AND timestamp <= ?"
-            params.append(event_end_date)
+        if archive_event_id is not None:
+            date_filter = " AND event_id = ?"
+            params.append(archive_event_id)
+        elif season_range:
+            date_filter = " AND timestamp >= ? AND timestamp <= ?"
+            params.extend(season_range)
         try:
             cur.execute(
                 f"""
@@ -585,6 +637,21 @@ def player_avatar_stats(player_id, avatar_name):
     # Also fetch external matches
     external_repo = ExternalMatchRepository()
     external_matches_raw = external_repo.get_player_matches(str(player_id))
+    if event_filter != "lifetime":
+        def _norm_ts(value):
+            return str(value or "")[:19].replace("T", " ")
+
+        def _external_in_period(em):
+            ts = _norm_ts(em.get("timestamp"))
+            if not ts or not (event_start_date or event_end_date):
+                return False  # a period we can't date
+            if event_start_date and ts < _norm_ts(event_start_date):
+                return False
+            if event_end_date and ts > _norm_ts(event_end_date):
+                return False
+            return True
+
+        external_matches_raw = [em for em in external_matches_raw if _external_in_period(em)]
 
     wins = 0
     losses = 0
@@ -767,6 +834,9 @@ def player_avatar_stats(player_id, avatar_name):
     if all_rows:
         first = all_rows[0]
         player_name = first["winner_display_name"] if first["did_win"] else first["losser_display_name"]
+    elif event_filter != "lifetime":
+        # No games in this period: take the name from any of their games
+        player_name = _any_display_name(player_id) or player_name
 
     return jsonify({
         "player_id": player_id,
@@ -2091,6 +2161,77 @@ def player_api(player_id):
     ranked_rows = [r for r in sorted_rows if not (len(r) > 19 and r[19] in ("casual", "testing"))]
     casual_rows = [r for r in sorted_rows if len(r) > 19 and r[19] in ("casual", "testing")]
 
+    def _player_on_play(row):
+        """True on the play, False on the draw, None when the match never recorded it."""
+        did_win = bool(row[0])
+        winner_went_first = row[17] if len(row) > 17 else None
+        loser_went_first = row[18] if len(row) > 18 else None
+        if winner_went_first is not None or loser_went_first is not None:
+            went_first = winner_went_first if did_win else loser_went_first
+            if not went_first:
+                return None
+            return "y" in str(went_first).lower()
+        first_player_val = row[1]
+        if not first_player_val:
+            return None
+        return did_win if "y" in str(first_player_val).lower() else not did_win
+
+    # Matches tab filters. The choices come from every game in the period,
+    # so picking one never empties its own dropdown.
+    def _row_facts(row):
+        did_win = row[0]
+        my_avatar, _ = _extract_deck_info(row[13] if did_win else row[14]) if len(row) > 14 else (None, None)
+        opp_avatar, _ = _extract_deck_info(row[14] if did_win else row[13]) if len(row) > 14 else (None, None)
+        return {
+            "opponent_id": str(row[11]) if did_win else str(row[10]),
+            "opponent": row[5] if did_win else row[4],
+            "result": "win" if did_win else "loss",
+            "avatar": my_avatar,
+            "opponent_avatar": opp_avatar,
+            "play_draw": {True: "play", False: "draw"}.get(_player_on_play(row)),
+        }
+
+    row_facts = {id(r): _row_facts(r) for r in sorted_rows}
+    opponent_games = {}
+    opponent_names = {}
+    for r in sorted_rows:
+        facts = row_facts[id(r)]
+        if facts["opponent_id"] in ("None", ""):
+            continue
+        opponent_games[facts["opponent_id"]] = opponent_games.get(facts["opponent_id"], 0) + 1
+        opponent_names.setdefault(facts["opponent_id"], facts["opponent"] or "Unknown")
+    filter_options = {
+        "opponents": sorted(
+            ({"id": oid, "name": opponent_names[oid], "games": n} for oid, n in opponent_games.items()),
+            key=lambda o: (-o["games"], str(o["name"]).lower()),
+        ),
+        "avatars": sorted({row_facts[id(r)]["avatar"] for r in sorted_rows} - {None}),
+        "opponent_avatars": sorted({row_facts[id(r)]["opponent_avatar"] for r in sorted_rows} - {None}),
+    }
+    match_filters = {
+        "opponent_id": (request.args.get("opponent") or "").strip(),
+        "result": (request.args.get("result") or "").strip().lower(),
+        "avatar": (request.args.get("avatar") or "").strip(),
+        "opponent_avatar": (request.args.get("opponent_avatar") or "").strip(),
+        # Matches with no play/draw recorded only show under "All"
+        "play_draw": (request.args.get("play_draw") or "").strip().lower(),
+    }
+    match_filters = {k: v for k, v in match_filters.items() if v}
+
+    def _passes_filters(row):
+        facts = row_facts[id(row)]
+        return all(
+            str(facts[k] or "").lower() == v.lower() for k, v in match_filters.items()
+        )
+
+    if match_filters:
+        ranked_rows = [r for r in ranked_rows if _passes_filters(r)]
+        casual_rows = [r for r in casual_rows if _passes_filters(r)]
+
+    def _record(rows_in):
+        wins = sum(1 for r in rows_in if r[0])
+        return {"wins": wins, "losses": len(rows_in) - wins}
+
     # Get pagination parameters
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 50, type=int)
@@ -2214,28 +2355,7 @@ def player_api(player_id):
         if not show_deck_snapshots:
             has_deck_json = False
 
-        winner_went_first = row[17] if len(row) > 17 else None
-        loser_went_first = row[18] if len(row) > 18 else None
-
-        if winner_went_first is not None or loser_went_first is not None:
-            if did_win:
-                player_on_play = (
-                    winner_went_first and "y" in str(winner_went_first).lower()
-                )
-            else:
-                player_on_play = (
-                    loser_went_first and "y" in str(loser_went_first).lower()
-                )
-        else:
-            first_player_val = row[1]
-            if first_player_val:
-                fp_lower = str(first_player_val).lower()
-                if "y" in fp_lower:
-                    player_on_play = did_win
-                else:
-                    player_on_play = not did_win
-            else:
-                player_on_play = None
+        player_on_play = _player_on_play(row)
 
         return {
             "match_id": row[12],
@@ -2692,6 +2812,12 @@ def player_api(player_id):
                 "has_previous": page > 1,
                 "has_next": page < total_pages,
             },
+            "match_filters": {
+                "options": filter_options,
+                "active": match_filters,
+                "ranked": _record(ranked_rows),
+                "casual": _record(casual_rows),
+            },
             "casual_pagination": {
                 "current_page": casual_page,
                 "per_page": per_page,
@@ -2853,9 +2979,156 @@ def set_hidden_avatars(player_id):
     return jsonify({"success": True, "avatars": repo.get_hidden_avatars(player_id_normalized)})
 
 
+# ---------------------------------------------------------------------------
+# Featured deck: a deck the player chose to show on their profile.
+#
+# Only ever one the player picked themselves. The site never chooses one:
+# an automatic "most-played public deck" pick (Oct 2026) showed private
+# decks, because the deck sites hand out some private decks too, so it was
+# removed and its picks cleared.
+# ---------------------------------------------------------------------------
+
+# A kept-updated deck is re-read from its site at most this often
+FEATURED_DECK_REFRESH_SECONDS = 6 * 60 * 60
+_featured_refreshing: set[str] = set()
+_featured_refresh_lock = threading.Lock()
+
+
+def _fetch_featured_deck(url: str) -> dict:
+    """Read a deck from sorcerytcg.com or Sorcery Online, or {} if it can't be."""
+    from services.curiosa import CuriosaService
+
+    try:
+        deck = json.loads(CuriosaService().fetch_deck_data(url))
+    except (TypeError, ValueError):
+        return {}
+    has_cards = isinstance(deck, dict) and any(
+        deck.get(section) for section in ("avatar", "spellbook", "atlas")
+    )
+    return deck if has_cards else {}
+
+
+def _refresh_featured_deck(player_id: str, url: str) -> None:
+    try:
+        deck = _fetch_featured_deck(url)
+        UserProfileRepository().refresh_featured_deck(player_id, url, deck or None)
+    except Exception as e:
+        logger.warning(f"Featured deck refresh failed for {player_id}: {e}")
+    finally:
+        with _featured_refresh_lock:
+            _featured_refreshing.discard(player_id)
+
+
+def _start_featured_refresh(player_id: str, url: str) -> None:
+    """Re-read a kept-updated deck in the background, once at a time per player."""
+    with _featured_refresh_lock:
+        if player_id in _featured_refreshing:
+            return
+        _featured_refreshing.add(player_id)
+    threading.Thread(
+        target=_refresh_featured_deck, args=(player_id, url), daemon=True
+    ).start()
+
+
+def _featured_deck_is_stale(checked_at: str | None) -> bool:
+    if not checked_at:
+        return True
+    try:
+        checked = datetime.fromisoformat(checked_at)
+    except ValueError:
+        return True
+    if checked.tzinfo is None:
+        checked = checked.replace(tzinfo=timezone.utc)
+    age = (datetime.now(timezone.utc) - checked).total_seconds()
+    return age >= FEATURED_DECK_REFRESH_SECONDS
+
+
+def _featured_deck_payload(featured: dict) -> dict:
+    deck = featured["deck"]
+    # Card images resolve against the site's own image set, as in brackets
+    for section in ("avatar", "spellbook", "atlas", "sideboard"):
+        attach_images(deck.get(section))
+    avatar = deck.get("avatar") or []
+    return {
+        "url": featured["url"],
+        "source": deck_url_source(featured["url"]),
+        "name": deck.get("name") or "Featured deck",
+        "avatar": avatar[0].get("name") if avatar and isinstance(avatar[0], dict) else None,
+        "avatar_image": avatar[0].get("image") if avatar and isinstance(avatar[0], dict) else None,
+        "spellbook": deck.get("spellbook") or [],
+        "atlas": deck.get("atlas") or [],
+        "sideboard": deck.get("sideboard") or [],
+        "auto_update": featured["auto_update"],
+        "checked_at": featured["checked_at"],
+    }
+
+
+def _owner_or_admin(player_id):
+    """(normalized id, None) when the viewer may change this profile, else (None, error)."""
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return None, (jsonify({"error": "Authentication required"}), 401)
+    viewer = str(logged_in_user_id).removeprefix("google_")
+    player_id_normalized = str(player_id).removeprefix("google_")
+    if viewer != player_id_normalized and not is_admin():
+        return None, (jsonify({"error": "You can only change your own profile"}), 403)
+    return player_id_normalized, None
+
+
+@players_bp.route("/player/<player_id>/featured-deck", methods=["GET"])
+def get_featured_deck(player_id):
+    """The deck the player chose to feature, or {"deck": null} when they chose none."""
+    player_id_normalized = str(player_id).removeprefix("google_")
+    featured = UserProfileRepository().get_featured_deck(player_id_normalized)
+    if not featured or featured["source"] != "manual" or not featured["url"] or not featured["deck"]:
+        return jsonify({"deck": None})
+
+    # A kept-updated deck is re-read in the background; this answer uses the
+    # saved copy so the profile never waits on the deck site.
+    if featured["auto_update"] and _featured_deck_is_stale(featured["checked_at"]):
+        _start_featured_refresh(player_id_normalized, featured["url"])
+
+    return jsonify({"deck": _featured_deck_payload(featured)})
+
+
+@players_bp.route("/player/<player_id>/featured-deck", methods=["PUT"])
+def set_featured_deck(player_id):
+    """Feature a deck on the player's profile (owner or admin)."""
+    player_id_normalized, error = _owner_or_admin(player_id)
+    if error:
+        return error
+
+    data = request.get_json(silent=True) or {}
+    url = str(data.get("url") or "").strip()
+    if not is_deck_url(url):
+        return jsonify({"error": "Paste a sorcerytcg.com or Sorcery Online deck link"}), 400
+    url = normalize_deck_url(url)
+
+    deck = _fetch_featured_deck(url)
+    if not deck:
+        return jsonify({
+            "error": "We couldn't read that deck. Check the link and that the deck is set to public."
+        }), 400
+
+    repo = UserProfileRepository()
+    if not repo.set_featured_deck(player_id_normalized, url, deck, bool(data.get("auto_update"))):
+        return jsonify({"error": "Profile not found"}), 404
+    return jsonify({"success": True, "deck": _featured_deck_payload(repo.get_featured_deck(player_id_normalized))})
+
+
+@players_bp.route("/player/<player_id>/featured-deck", methods=["DELETE"])
+def clear_featured_deck(player_id):
+    """Take the featured deck off the player's profile (owner or admin)."""
+    player_id_normalized, error = _owner_or_admin(player_id)
+    if error:
+        return error
+    UserProfileRepository().clear_featured_deck(player_id_normalized)
+    return jsonify({"success": True})
+
+
 @players_bp.route("/player/<player_id>/card-stats")
 def player_card_stats(player_id):
-    """One player's played-card stats from Sorcery Online games.
+    """One player's played-card stats from Play Sorcery Online games.
 
     Private by default: the owner and admins always see it, everyone else
     only when the player turned on the "card_stats" profile section.
@@ -3014,6 +3287,42 @@ def unblock_user(player_id, blocked_user_id):
     repo = BlockedUsersRepository()
     removed = repo.unblock_user(block_key, str(blocked_user_id))
     return jsonify({"success": True, "removed": removed})
+
+
+def _queue_settings_key(player_id) -> tuple[str | None, str | None]:
+    """(storage key, error) for a player's queue settings: owner or admin, Discord IDs only."""
+    key = _block_list_key(player_id)
+    if key is None:
+        return None, "You can only change your own queue settings"
+    if key.startswith("google_") or not key.isdigit():
+        return None, "Queue settings are for Discord accounts"
+    return key, None
+
+
+@players_bp.route("/player/<player_id>/queue-settings", methods=["GET"])
+def get_queue_settings(player_id):
+    """A player's Discord queue settings (owner only): voice only."""
+    if session.get("user_id") is None:
+        return jsonify({"error": "Authentication required"}), 401
+    key, error = _queue_settings_key(player_id)
+    if key is None:
+        return jsonify({"error": error}), 403
+    return jsonify({"voice_only": VoiceOnlyRepository().is_voice_only(key)})
+
+
+@players_bp.route("/player/<player_id>/queue-settings", methods=["POST"])
+def set_queue_settings(player_id):
+    """Save a player's Discord queue settings (owner only)."""
+    if session.get("user_id") is None:
+        return jsonify({"error": "Authentication required"}), 401
+    key, error = _queue_settings_key(player_id)
+    if key is None:
+        return jsonify({"error": error}), 403
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data.get("voice_only"), bool):
+        return jsonify({"error": "voice_only must be true or false"}), 400
+    voice_only = VoiceOnlyRepository().set_voice_only(key, data["voice_only"])
+    return jsonify({"success": True, "voice_only": voice_only})
 
 
 @players_bp.route("/nav-prefs", methods=["GET"])

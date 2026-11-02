@@ -16,12 +16,10 @@ export function pickActiveBracket(brackets = []) {
 
 const setKey = (bracket) => (bracket?.set_name || '').trim().toLowerCase()
 
-/** Constructed (the season top cut) or Limited (a Limited season's top 8). */
-export const formatOf = (bracket) => (bracket?.format === 'limited' ? 'limited' : 'constructed')
-
 export const FORMATS = [
   { key: 'constructed', label: 'Constructed' },
   { key: 'limited', label: 'Limited' },
+  { key: 'underdog', label: 'Underdog' },
 ]
 
 /** The Summit's own top cuts, or brackets players run for their own events. */
@@ -44,6 +42,13 @@ export function pickBracketFor(brackets = [], format, kind = null) {
     pickActiveBracket(inFormat)
   )
 }
+
+/**
+ * Constructed (the season top cut), Limited (a Limited season's top 8) or
+ * Underdog (the best player on each of the season's weakest avatars).
+ */
+export const formatOf = (bracket) =>
+  FORMATS.some((f) => f.key === bracket?.format) ? bracket.format : 'constructed'
 
 /**
  * Brackets grouped by card set, in the order each set was last played (lists
@@ -74,11 +79,13 @@ const CHIP =
   'px-3 py-1 text-[11px] font-semibold uppercase tracking-wider border rounded-sm transition-colors'
 
 /**
- * Across the top of the bracket page: Constructed or Limited, then - when
- * players have run brackets of their own - the season top cut or the
- * community ones, a filter by card set, and a tab per bracket, so a viewer
- * can flip from the live top cut to an older one without a detour through a
- * list. `openFormat` says which tab is open when no bracket is on screen.
+/**
+ * Across the top of the bracket page: Constructed or Limited (plus Underdog
+ * once there is an underdog bracket), then - when players have run brackets
+ * of their own - the season top cut or the community ones, a filter by card
+ * set, and a tab per bracket, so a viewer can flip from the live top cut to
+ * an older one without a detour through a list. `openFormat` says which tab
+ * is open when no bracket is on screen.
  */
 export default function BracketSwitcher({
   brackets,
@@ -97,6 +104,13 @@ export default function BracketSwitcher({
   const hasCommunity = inFormat.some((b) => kindOf(b) === 'community')
   const currentKind = current ? kindOf(current) : 'official'
   const pool = hasCommunity ? inFormat.filter((b) => kindOf(b) === currentKind) : inFormat
+  // Constructed and Limited always; Underdog once it has a bracket to open.
+  const formats = FORMATS.filter(
+    (f) =>
+      f.key !== 'underdog' ||
+      f.key === currentFormat ||
+      brackets.some((b) => formatOf(b) === f.key),
+  )
 
   const groups = groupBrackets(pool)
   const currentKey = setKey(current)
@@ -131,7 +145,7 @@ export default function BracketSwitcher({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div role="group" aria-label="Format" className="inline-flex border border-border rounded-sm overflow-hidden">
-          {FORMATS.map((format) => {
+          {formats.map((format) => {
             const selected = format.key === currentFormat
             const live = brackets.some((b) => formatOf(b) === format.key && b.status === 'published')
             return (

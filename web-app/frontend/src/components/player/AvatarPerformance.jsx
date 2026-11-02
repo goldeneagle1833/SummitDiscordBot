@@ -56,6 +56,8 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
   const communityPeriod = period === 'current' && !isAdmin ? 'lifetime' : period
   const { imageFiles, community } = useAvatarArt(communityPeriod)
   const everyoneLabel = communityPeriod === period ? 'Everyone' : 'Everyone (all events)'
+  // The avatar page opens on the same period the profile is showing
+  const avatarLink = (name) => `/player/${playerId}/avatar/${encodeURIComponent(name)}${period && period !== 'lifetime' ? `?event=${encodeURIComponent(period)}` : ''}`
   const [sort, setSort] = useState('games')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
@@ -130,7 +132,7 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
               <AvatarArtCard
                 name={av.name}
                 imageFiles={imageFiles}
-                to={`/player/${playerId}/avatar/${encodeURIComponent(av.name)}`}
+                to={avatarLink(av.name)}
                 className="min-h-[240px]"
               >
                 <div className="flex items-start justify-between gap-3">
@@ -226,7 +228,7 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
               {sorted.map((av) => (
                 <tr key={av.name} className="border-t border-border/60">
                   <td className="py-2.5 px-5">
-                    <Link to={`/player/${playerId}/avatar/${encodeURIComponent(av.name)}`} className="font-semibold text-secondary hover:underline">
+                    <Link to={avatarLink(av.name)} className="font-semibold text-secondary hover:underline">
                       {av.name}
                     </Link>
                   </td>

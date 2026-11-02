@@ -222,3 +222,118 @@ class TestPlayerReportsRoute:
         assert entry["reported_name"] == "Opponent"
         assert entry["reasons"] == ["voice_refused", "left_early"]
         assert entry["details"] == "Left at 3 life"
+
+
+# ── Partner (PSO) read API ──────────────────────────────────
+
+
+class TestPartnerBlocksRoutes:
+    HEADERS = {"X-API-Key": "test-api-key-123"}
+
+    def _body(self, **overrides):
+        body = {"user_id": "100", "blocked_user_id": "200", "reason": "Rude in chat"}
+        body.update(overrides)
+        return body
+
+    def test_requires_api_key(self, client):
+        assert client.post("/api/blocks", json=self._body()).status_code == 401
+        assert client.delete("/api/blocks/100/200").status_code == 401
+        bad = {"X-API-Key": "nope"}
+        assert client.post("/api/blocks", json=self._body(), headers=bad).status_code == 401
+
+    def test_add_block_lands_in_profile_list(self, client, match_db):
+        resp = client.post("/api/blocks", json=self._body(), headers=self.HEADERS)
+        assert resp.status_code == 201
+        assert resp.get_json() == {"success": True, "added": True}
+
+        blocked = BlockedUsersRepository(db_path=match_db).get_blocked_users("100")
+        assert blocked == [{"blocked_user_id": "200", "reason": "Rude in chat"}]
+
+    def test_add_block_twice(self, client):
+        client.post("/api/blocks", json=self._body(), headers=self.HEADERS)
+        resp = client.post("/api/blocks", json=self._body(), headers=self.HEADERS)
+        assert resp.status_code == 200
+        assert resp.get_json()["added"] is False
+
+    def test_add_block_requires_reason(self, client):
+        resp = client.post("/api/blocks", json=self._body(reason=" "), headers=self.HEADERS)
+        assert resp.status_code == 400
+
+    def test_add_block_self_rejected(self, client):
+        resp = client.post("/api/blocks", json=self._body(blocked_user_id="100"), headers=self.HEADERS)
+        assert resp.status_code == 400
+
+    def test_add_block_missing_ids(self, client):
+        resp = client.post("/api/blocks", json=self._body(user_id=""), headers=self.HEADERS)
+        assert resp.status_code == 400
+
+    def test_remove_block(self, client, match_db):
+        BlockedUsersRepository(db_path=match_db).block_user("100", "200", reason="x")
+        resp = client.delete("/api/blocks/100/200", headers=self.HEADERS)
+        assert resp.get_json() == {"success": True, "removed": True}
+        assert BlockedUsersRepository(db_path=match_db).get_blocked_users("100") == []
+
+        resp = client.delete("/api/blocks/100/200", headers=self.HEADERS)
+        assert resp.get_json()["removed"] is False
+
+
+class TestPartnerPlayerReports:
+    HEADERS = {"X-API-Key": "test-api-key-123"}
+    URL = "/api/player-reports"
+
+    def _body(self, **overrides):
+        body = {
+            "reporter_id": "100",
+            "reported_id": "200",
+            "reporter_name": "Alice",
+            "reported_name": "Bob",
+            "reasons": ["no_show", "toxic"],
+            "details": "Never joined the table",
+            "pairing_id": 42,
+            "match_type": "ranked",
+        }
+        body.update(overrides)
+        return body
+
+    def test_requires_api_key(self, client):
+        assert client.post(self.URL, json=self._body()).status_code == 401
+
+    def test_report_lands_in_admin_list(self, client, admin_session):
+        resp = client.post(self.URL, json=self._body(), headers=self.HEADERS)
+        assert resp.status_code == 201
+        assert resp.get_json()["report_id"]
+
+        entries = admin_session.get("/api/admin/player-reports").get_json()["entries"]
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["reporter_id"] == "100"
+        assert entry["reported_id"] == "200"
+        assert entry["reasons"] == ["no_show", "toxic"]
+        assert entry["details"] == "Never joined the table"
+        assert entry["match_type"] == "ranked"
+        assert entry["source"] == "sorcery-online"
+
+    def test_details_only_is_enough(self, client):
+        resp = client.post(self.URL, json=self._body(reasons=[]), headers=self.HEADERS)
+        assert resp.status_code == 201
+
+    def test_empty_report_rejected(self, client):
+        resp = client.post(self.URL, json=self._body(reasons=[], details=""), headers=self.HEADERS)
+        assert resp.status_code == 400
+
+    def test_unknown_reason_rejected(self, client):
+        resp = client.post(self.URL, json=self._body(reasons=["rude"]), headers=self.HEADERS)
+        assert resp.status_code == 400
+        assert "toxic" in resp.get_json()["allowed_reasons"]
+
+    def test_self_report_rejected(self, client):
+        resp = client.post(self.URL, json=self._body(reported_id="100"), headers=self.HEADERS)
+        assert resp.status_code == 400
+
+    def test_missing_ids_rejected(self, client):
+        resp = client.post(self.URL, json=self._body(reported_id=""), headers=self.HEADERS)
+        assert resp.status_code == 400
+
+    def test_details_too_long_rejected(self, client):
+        resp = client.post(self.URL, json=self._body(details="x" * 1001), headers=self.HEADERS)
+        assert resp.status_code == 400

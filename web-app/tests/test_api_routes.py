@@ -450,14 +450,11 @@ class TestEventMatchHistoryRoutes:
 
         import routes.api.events as events_routes
 
-        class FakeThread:
-            def __init__(self, target, args, daemon):
-                started["args"] = args
+        def fake_start_job(target, args):
+            started["args"] = args
+            started["started"] = True
 
-            def start(self):
-                started["started"] = True
-
-        monkeypatch.setattr(events_routes.threading, "Thread", FakeThread)
+        monkeypatch.setattr(events_routes, "_start_job", fake_start_job)
 
         resp = admin_session.post("/api/events/Test Event/match-history", json={})
         assert resp.status_code == 202

@@ -283,19 +283,22 @@ class TestVoiceWebsite:
 class TestVoiceModal:
     @staticmethod
     def assert_voice_dropdown(modal):
-        labels = [item for item in modal.children if isinstance(item, discord.ui.Label)]
+        labels = [
+            item for item in modal.children
+            if isinstance(item, discord.ui.Label) and isinstance(item.component, discord.ui.CheckboxGroup)
+        ]
         assert len(labels) == 1
         select = labels[0].component
         assert select is modal.voice_select
-        assert isinstance(select, discord.ui.CheckboxGroup)
         assert [o.value for o in select.options] == [VOICE, NO_VOICE]
-        # Only one may be ticked; none ticked joins as voice.
-        assert not select.required
-        assert select.min_values == 0
-        assert select.max_values == 1
-        # Voice sits just above the duration field, which stays last.
-        assert modal.children.index(labels[0]) == len(modal.children) - 2
-        assert modal.children[-1] is modal.timeframe
+        # Every player must answer: tick voice, no voice, or both (Either).
+        assert select.required
+        assert select.min_values == 1
+        assert select.max_values == 2
+        # Voice sits just above the duration field (the avatar alert, when on, comes after).
+        rest = [item for item in modal.children[modal.children.index(labels[0]) + 1:]
+                if not (isinstance(item, discord.ui.Label) and isinstance(item.component, discord.ui.Checkbox))]
+        assert rest == [modal.timeframe]
 
     @pytest.mark.parametrize("queue_type", ["ranked", "testing"])
     def test_deck_url_modal_has_voice_checkboxes_and_season_rules(self, queue_type):

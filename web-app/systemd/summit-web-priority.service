@@ -1,0 +1,26 @@
+[Unit]
+Description=Summit Web matchmaking priority pool (LFG queue requests)
+After=network.target
+
+[Service]
+Type=notify
+User=root
+Group=root
+WorkingDirectory=/root/Summit/SummitDiscordBot/web-app
+
+EnvironmentFile=/root/Summit/SummitDiscordBot/discord-bot/.env
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+
+ExecStart=/root/Summit/SummitDiscordBot/web-app/venv/bin/gunicorn --config gunicorn_priority_config.py app:app
+Restart=always
+RestartSec=5
+
+LimitNOFILE=4096
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=summit-web-priority
+
+[Install]
+WantedBy=multi-user.target

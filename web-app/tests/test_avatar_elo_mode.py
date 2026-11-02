@@ -260,9 +260,9 @@ def test_top_players_page_lists_the_current_season_for_everyone(client, avatar_d
     monkeypatch.setattr(routes.api.avatars, "ELO_DB_PATH", avatar_db[0])
     everyone = client.get("/api/avatars/filters?include_active=1").get_json()
     assert any(e["is_active"] for e in everyone["events"])
-    # Other avatar pages still keep the running season to admins
+    # The other avatar pages list it too (their data is batch-released)
     default = client.get("/api/avatars/filters").get_json()
-    assert not any(e["is_active"] for e in default["events"])
+    assert any(e["is_active"] for e in default["events"])
 
 
 # ── Per-avatar leaderboards (PSO pulls these instead of per-player calls) ──

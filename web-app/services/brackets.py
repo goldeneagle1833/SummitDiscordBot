@@ -37,14 +37,17 @@ from services.sorcery_online_table import (
     provision_match_table,
 )
 from services.ticket_holders import ticket_holder_ids
+from services.underdog_bracket import seasons as underdog_seasons, underdog_field
 from utils.card_images import attach_images
 from utils.draftsorcery import fetch_draftsorcery_deck, is_draftsorcery_url
 
 logger = logging.getLogger(__name__)
 
-SEED_SOURCES = ("ticket_holders", "overall", "limited", "manual")
-# The season top cut is constructed; a Limited season gets its own top 8.
-FORMATS = ("constructed", "limited")
+SEED_SOURCES = ("ticket_holders", "overall", "limited", "underdog", "manual")
+# The season top cut is constructed; a Limited season gets its own top 8; the
+# underdog bracket (best player on each of the season's weakest avatars, see
+# services/underdog_bracket.py) is a constructed bracket kept apart from it.
+FORMATS = ("constructed", "limited", "underdog")
 PUBLIC_SITE_URL = "https://sorcererssummit.com"
 # Bracket games are history, not season games, so they are logged here.
 ARCHIVE_TABLE = "match_records_archive"
@@ -73,6 +76,10 @@ def is_limited(bracket: dict | None) -> bool:
 
 def is_community(bracket: dict | None) -> bool:
     return (bracket or {}).get("kind") == "community"
+
+
+def is_underdog(bracket: dict | None) -> bool:
+    return (bracket or {}).get("format") == "underdog"
 
 
 def _limited_elo(player_elo, opponent_elo, did_win, k=LIMITED_K):
@@ -145,17 +152,22 @@ class BracketService:
 
     # -- Seed pool ------------------------------------------------
 
-    def get_seed_pool(self, source: str = "ticket_holders") -> dict:
+    def get_seed_pool(self, source: str = "ticket_holders", event=None, exclude=()) -> dict:
         """Ladder standings to seed from, flagged with ticket-holder status.
 
         Mirrors the bot's leaderboard message: current-event ELO, restricted to
         players who actually played this event, best first. In an Avatar-mode
         event each player is seeded once, at their best avatar entry.
 
-        The "limited" source is the Limited season ladder instead.
+        The "limited" source is the Limited season ladder instead, and
+        "underdog" the best player on each of a season's weakest avatars
+        (``event`` picks the season, the latest by default; avatars in
+        ``exclude`` are left out).
         """
         if source == "limited":
             return self._limited_seed_pool()
+        if source == "underdog":
+            return self._underdog_seed_pool(event, exclude)
 
         data = self._leaderboard.get_event_leaderboard()
         standings = data.get("leaderboard") or []
@@ -217,6 +229,37 @@ class BracketService:
             "ticket_filter_applied": False,
         }
 
+    def _underdog_seed_pool(self, event=None, exclude=()) -> dict:
+        """The season's 8 weakest avatars, each sending its best player."""
+        field = underdog_field(event, exclude=exclude)
+        names = self._site_names([p["user_id"] for p in field["players"]])
+        players = [
+            {
+                "user_id": p["user_id"],
+                "display_name": names.get(p["user_id"]) or p["display_name"],
+                "elo": None,
+                "games": p["games"],
+                "is_ticket_holder": False,
+                "avatar": p["avatar"],
+                "wins": p["wins"],
+                "losses": p["losses"],
+                "avatar_score": p["avatar_score"],
+            }
+            for p in field["players"]
+        ]
+        return {
+            "event": field["event"],
+            "players": players,
+            "avatars": field["avatars"],
+            "min_games": field["min_games"],
+            "seasons": [
+                {"event_id": e["event_id"], "event_name": e["event_name"], "is_active": e["is_active"]}
+                for e in underdog_seasons()
+            ],
+            "ticket_roster_size": 0,
+            "ticket_filter_applied": False,
+        }
+
     # -- Draft management -----------------------------------------
 
     def create_bracket(
@@ -229,18 +272,21 @@ class BracketService:
         set_name: str | None = None,
         format: str | None = None,
         kind: str = "official",
+        event=None,
+        exclude=(),
     ) -> dict:
         """Create a draft bracket seeded with the top `size` players.
 
-        Seeding from the Limited ladder makes a Limited bracket. A community
-        bracket starts empty: its organizer adds the players.
+        Seeding from the Limited ladder makes a Limited bracket, and seeding
+        from the underdog avatars an underdog bracket for ``event``. A
+        community bracket starts empty: its organizer adds the players.
         """
         name = (name or "").strip()
         if not name:
             raise BracketError("A bracket needs a name")
         if source not in SEED_SOURCES:
             raise BracketError(f"Unknown seed source '{source}'")
-        format = format or ("limited" if source == "limited" else "constructed")
+        format = format or {"limited": "limited", "underdog": "underdog"}.get(source, "constructed")
         if format not in FORMATS:
             raise BracketError(f"Unknown format '{format}'")
         try:
@@ -270,14 +316,28 @@ class BracketService:
                     " finish or delete one first"
                 )
 
-        pool = self.get_seed_pool(source) if source != "manual" else {"players": [], "event": None}
+        pool = (
+            self.get_seed_pool(source, event, exclude) if source != "manual"
+            else {"players": [], "event": None}
+        )
         entrants = pool["players"][:size]
+        description = None
+        if source == "underdog" and entrants:
+            # Who carries which avatar, since the bracket is about the avatars.
+            description = "Best player on each of the {} weakest avatars by Avatar Score: {}.".format(
+                len(entrants),
+                "; ".join(f"{i}. {e['display_name']} ({e['avatar']})" for i, e in enumerate(entrants, 1)),
+            )
+            left_out = [a["avatar"] for a in pool.get("avatars", []) if a.get("excluded")]
+            if left_out:
+                description += f" Left out: {', '.join(left_out)}."
 
         slug = self._unique_slug(slugify(name))
         bracket_id = self._repo.create_bracket(
             {
                 "slug": slug,
                 "name": name,
+                "description": description,
                 "entrant_count": len(entrants),
                 "bracket_size": bracket_size_for(max(len(entrants), 2)),
                 "seeded_from": source,
@@ -684,7 +744,7 @@ class BracketService:
         )
 
         # Replays follow the decks: public once the bracket is done. The link
-        # is kept the moment a table opens, but Sorcery Online has nothing to
+        # is kept the moment a table opens, but Play Sorcery Online has nothing to
         # serve until a game is saved, so it is only offered on a played match.
         visible_to = finished or is_admin or is_player
         match["replay_url"] = (
@@ -771,7 +831,7 @@ class BracketService:
     TABLE_REPORTER = "sorcery-online"
 
     def record_table_result(self, bracket_id: int, match_no: int, winner_user_id: str) -> str:
-        """File the winner Sorcery Online reports for a bracket table.
+        """File the winner Play Sorcery Online reports for a bracket table.
 
         It goes in as a report the players confirm or dispute, exactly like
         one a player filed, so a wrong result can still be put right. A match
@@ -1093,7 +1153,8 @@ class BracketService:
     def finish_label(placement: int | None, format: str | None = None) -> str | None:
         """What a placement is called. Anything deeper simply made the cut.
 
-        Limited finishes say so: "Limited Champion", "Limited Top 4".
+        Limited and underdog finishes say so: "Limited Champion",
+        "Underdog Top 4".
         """
         if not placement:
             return None
@@ -1104,6 +1165,8 @@ class BracketService:
                 break
         if format == "limited":
             return f"Limited {label[0].upper()}{label[1:]}"
+        if format == "underdog":
+            return f"Underdog {label[0].upper()}{label[1:]}"
         return label
 
     def placements(self, bracket_id: int) -> dict:
@@ -1139,7 +1202,8 @@ class BracketService:
         Only finished brackets count - a run that is still going has not been
         placed yet. The name colour and yurts (wins, best) come from the
         constructed top cut; Limited finishes are counted separately under
-        limited_wins / limited_best. Every finish of either kind is in
+        limited_wins / limited_best, and underdog finishes under
+        underdog_wins / underdog_best. Every finish of either kind is in
         entries, with "finish" naming it without the Limited prefix.
         """
         marks = {}
@@ -1148,8 +1212,13 @@ class BracketService:
             if bracket["status"] != "complete" or is_community(bracket):
                 continue
 
-            limited = is_limited(bracket)
-            wins_key, best_key = ("limited_wins", "limited_best") if limited else ("wins", "best")
+            # The underdog bracket keeps its own count too, so the name colour
+            # and yurts stay the season top cut's.
+            wins_key, best_key = (
+                ("limited_wins", "limited_best") if is_limited(bracket)
+                else ("underdog_wins", "underdog_best") if is_underdog(bracket)
+                else ("wins", "best")
+            )
             placements = self.placements(bracket["bracket_id"])
             for entrant in self._repo.get_entrants(bracket["bracket_id"]):
                 user_id = str(entrant.get("user_id") or "")
@@ -1159,7 +1228,10 @@ class BracketService:
 
                 entry = marks.setdefault(
                     user_id,
-                    {"wins": 0, "best": None, "limited_wins": 0, "limited_best": None, "entries": []},
+                    {
+                        "wins": 0, "best": None, "limited_wins": 0, "limited_best": None,
+                        "underdog_wins": 0, "underdog_best": None, "entries": [],
+                    },
                 )
                 if placement == 1:
                     entry[wins_key] += 1
@@ -1179,6 +1251,7 @@ class BracketService:
         for entry in marks.values():
             entry["best_label"] = self.finish_label(entry["best"])
             entry["limited_best_label"] = self.finish_label(entry["limited_best"], "limited")
+            entry["underdog_best_label"] = self.finish_label(entry["underdog_best"], "underdog")
         return marks
 
     def get_player_postseason(self, user_id) -> list[dict]:
@@ -1291,6 +1364,9 @@ class BracketService:
             raise BracketError("Limited brackets don't go on the Top 8 page")
         if is_community(bracket):
             raise BracketError("Community brackets don't go on the Top 8 page")
+        if is_underdog(bracket):
+            # A field picked by avatar, not by results, would skew the meta.
+            raise BracketError("The underdog bracket doesn't go on the Top 8 page")
 
         entrants = self._repo.get_entrants(bracket_id)
         stored_decks = {d["seed"]: d for d in self._repo.get_decks(bracket_id)}
@@ -1349,7 +1425,7 @@ class BracketService:
     def _add_to_top8(self, bracket_id: int):
         """Publish to the Top 8 page as the final settles, without risking it."""
         bracket = self._repo.get_bracket(bracket_id=bracket_id)
-        if is_limited(bracket) or is_community(bracket):
+        if is_limited(bracket) or is_underdog(bracket) or is_community(bracket):
             return
         try:
             self.publish_to_top8(bracket_id)
@@ -1422,10 +1498,10 @@ class BracketService:
             "errors": [],
         }
 
-    # -- Sorcery Online tables ------------------------------------
+    # -- Play Sorcery Online tables ------------------------------------
 
     def open_table(self, slug: str, match_no: int, user_id: str) -> dict:
-        """Open (or re-open) the Sorcery Online table for a pairing.
+        """Open (or re-open) the Play Sorcery Online table for a pairing.
 
         Both decks are preloaded, so both players must have submitted one. The
         table is provisioned once and each player is handed only their own seat.
@@ -1441,7 +1517,7 @@ class BracketService:
         on_p1 = user_id == str(match["p1_user_id"] or "")
 
         # Already provisioned: hand back this player's seat rather than asking
-        # Sorcery Online for a second table.
+        # Play Sorcery Online for a second table.
         if match["table_provisioned_at"]:
             seat = match["table_p1_url"] if on_p1 else match["table_p2_url"]
             if seat:
@@ -1487,7 +1563,7 @@ class BracketService:
             "table_p2_url": seats.get(str(match["p2_user_id"])),
         }
 
-        # Sorcery Online hands back the replay url with the table. It only
+        # Play Sorcery Online hands back the replay url with the table. It only
         # serves a recording once a game has been saved, but the link itself is
         # stable, so keep it now and let the usual rule decide when to show it.
         # An admin who has already filed one keeps theirs.
@@ -1509,7 +1585,7 @@ class BracketService:
     REPLAY_HOSTS = ("playsorceryonline.com",)
 
     def set_replay(self, slug: str, match_no: int, replay_url: str, admin_id: str) -> dict:
-        """Attach a Sorcery Online replay to a match. Public when the bracket ends."""
+        """Attach a Play Sorcery Online replay to a match. Public when the bracket ends."""
         bracket, match = self._require_live_match(slug, match_no)
 
         replay_url = (replay_url or "").strip()
@@ -1518,7 +1594,7 @@ class BracketService:
 
         host = (urlparse(replay_url).hostname or "").lower().removeprefix("www.")
         if host not in self.REPLAY_HOSTS:
-            raise BracketError("Replay links have to be Sorcery Online links")
+            raise BracketError("Replay links have to be Play Sorcery Online links")
 
         self._repo.update_match(
             bracket["bracket_id"],
@@ -1876,7 +1952,11 @@ class BracketService:
         if is_community(bracket):
             kind = "Limited bracket game" if is_limited(bracket) else "Bracket game"
         else:
-            kind = "Limited top cut game" if is_limited(bracket) else "Top cut game"
+            kind = (
+                "Limited top cut game" if is_limited(bracket)
+                else "Underdog bracket game" if is_underdog(bracket)
+                else "Top cut game"
+            )
         return f"{kind} - {bracket['name']} - {match['round_title']}"
 
     MATCH_SOURCE = "Bracket"
@@ -2189,9 +2269,9 @@ def _entry_slot(matches: dict, seed: int) -> dict:
     if match["state"] == "reported":
         raise BracketError(f"{name}'s match has a result waiting to be confirmed")
     if match.get("table_provisioned_at"):
-        # The Sorcery Online table is keyed to this pairing and preloaded with
+        # The Play Sorcery Online table is keyed to this pairing and preloaded with
         # both decks, so it cannot be handed to somebody else.
-        raise BracketError(f"{name}'s match already has a Sorcery Online table open")
+        raise BracketError(f"{name}'s match already has a Play Sorcery Online table open")
     return {"match": match, "slot": slot, "bye": bye}
 
 

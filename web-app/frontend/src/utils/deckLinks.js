@@ -52,7 +52,7 @@ export function getDeckSource(url) {
 /** Where a deck link points, for a "View on ..." label. */
 export function getDeckSourceLabel(url) {
   const source = getDeckSource(url)
-  if (source === 'sorcery_online') return 'Sorcery Online'
+  if (source === 'sorcery_online') return 'Play Sorcery Online'
   if (source === 'curiosa') return 'Curiosa'
   return 'deck site'
 }

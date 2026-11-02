@@ -211,7 +211,7 @@ def update_match_deck():
         # Store the canonical link so the same deck groups as one on the profile
         deck_url = normalize_deck_url(deck_url)
 
-        # Fetch deck data from Curiosa or Sorcery Online
+        # Fetch deck data from Curiosa or Play Sorcery Online
         curiosa_service = CuriosaService()
         json_deck_data = curiosa_service.fetch_deck_data(deck_url)
         if json_deck_data == "{}":

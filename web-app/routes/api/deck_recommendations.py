@@ -3,7 +3,7 @@
 Endpoints:
   GET  /api/deck-rec/decks                        — list all archetype seeds
   GET  /api/deck-rec/<deck_id>/recommendations    — archetype aggregation for a seed
-  POST /api/deck-rec/<deck_id>/pso-table          — open a Sorcery Online table with the deck
+  POST /api/deck-rec/<deck_id>/pso-table          — open a Play Sorcery Online table with the deck
 """
 
 import json
@@ -660,7 +660,7 @@ def get_recommendations(deck_id: str):
 
 
 # ---------------------------------------------------------------------------
-# "Try this Deck" — open a Sorcery Online table with the deck preloaded
+# "Try this Deck" — open a Play Sorcery Online table with the deck preloaded
 # ---------------------------------------------------------------------------
 
 _DECK_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
@@ -699,7 +699,7 @@ def _resolve_deck_url(deck_id: str) -> tuple[str | None, str]:
 
 @deck_rec_bp.route("/<deck_id>/pso-table", methods=["POST"])
 def create_pso_table(deck_id: str):
-    """Provision a Sorcery Online table with this deck already loaded.
+    """Provision a Play Sorcery Online table with this deck already loaded.
 
     Same provisioning the LFG queue uses when it pairs two players, except the
     second seat is left open — the visitor gets the deck, and `invite_url` is
@@ -708,12 +708,12 @@ def create_pso_table(deck_id: str):
     if not _DECK_ID_RE.match(deck_id or ""):
         return jsonify({"error": "Invalid deck id"}), 400
     if not is_configured():
-        return jsonify({"error": "Sorcery Online is not connected right now."}), 503
+        return jsonify({"error": "Play Sorcery Online is not connected right now."}), 503
 
     try:
         deck_url, deck_name = _resolve_deck_url(deck_id)
     except Exception as e:
-        logger.exception("Error resolving deck %s for Sorcery Online: %s", deck_id, e)
+        logger.exception("Error resolving deck %s for Play Sorcery Online: %s", deck_id, e)
         return jsonify({"error": "Failed to load that deck"}), 500
     if not deck_url:
         return jsonify({"error": "Deck not found"}), 404
@@ -726,7 +726,7 @@ def create_pso_table(deck_id: str):
             "retry_after": wait_seconds,
         }), 429
 
-    # Only Discord sessions carry an id Sorcery Online recognises; Google
+    # Only Discord sessions carry an id Play Sorcery Online recognises; Google
     # logins (prefixed "google_") and anonymous visitors get a generated seat id.
     user_id = str(session.get("user_id") or "")
     display_name = session.get("username") or "Summit Player"
@@ -741,10 +741,10 @@ def create_pso_table(deck_id: str):
         return jsonify({"error": str(e)}), 502
     except Exception as e:
         release_slot(client_key)
-        logger.exception("Unexpected Sorcery Online failure for %s: %s", deck_id, e)
-        return jsonify({"error": "Could not open a Sorcery Online table."}), 502
+        logger.exception("Unexpected Play Sorcery Online failure for %s: %s", deck_id, e)
+        return jsonify({"error": "Could not open a Play Sorcery Online table."}), 502
 
-    logger.info("Opened Sorcery Online table for deck %s (%s)", deck_id, deck_name)
+    logger.info("Opened Play Sorcery Online table for deck %s (%s)", deck_id, deck_name)
     return jsonify({
         "game_url": table.game_url,
         "invite_url": table.invite_url,

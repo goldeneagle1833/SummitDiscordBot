@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { getPlayerAvatarStats } from '@/api/players'
+import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
 import StatCard from '@/components/player/StatCard'
 import CollapsibleSection from '@/components/player/CollapsibleSection'
@@ -8,6 +9,16 @@ import usePageTitle from '@/hooks/usePageTitle'
 
 export default function PlayerAvatar() {
   const { playerId, avatarName } = useParams()
+  // Period picker, kept in the URL so a filtered view can be linked to
+  const [searchParams, setSearchParams] = useSearchParams()
+  const period = searchParams.get('event') || 'lifetime'
+  const setPeriod = (value) => {
+    const next = new URLSearchParams(searchParams)
+    if (value === 'lifetime') next.delete('event')
+    else next.set('event', value)
+    setSearchParams(next, { replace: true })
+  }
+  const [events, setEvents] = useState(null)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -17,20 +28,28 @@ export default function PlayerAvatar() {
   usePageTitle(data ? `${data.avatar} - ${data.player_name}` : 'Avatar Stats')
 
   useEffect(() => {
+    get('/api/events').then(setEvents).catch(() => {})
+  }, [])
+
+  useEffect(() => {
     setLoading(true)
-    getPlayerAvatarStats(playerId, decodeURIComponent(avatarName))
-      .then(setData)
+    getPlayerAvatarStats(playerId, decodeURIComponent(avatarName), { event: period })
+      .then((d) => {
+        setData(d)
+        setError(null)
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [playerId, avatarName])
+  }, [playerId, avatarName, period])
 
-  if (loading) return <Spinner className="py-20" />
-  if (error) return <p className="text-center text-accent-red py-8">{error}</p>
+  if (loading && !data) return <Spinner className="py-20" />
+  if (error && !data) return <p className="text-center text-accent-red py-8">{error}</p>
   if (!data) return null
 
   const onPlay = data.on_play || {}
   const onDraw = data.on_draw || {}
   const knownMatchups = (data.matchups || []).filter((m) => m.opponent_avatar !== 'Unknown')
+  const pastEvents = events?.events?.filter((e) => !e.is_active) || []
 
   return (
     <div className="space-y-6">
@@ -39,14 +58,33 @@ export default function PlayerAvatar() {
       </Link>
 
       {/* Header */}
-      <div className="bg-bg-surface border border-border rounded-lg p-5">
-        <h1 className="text-2xl font-display text-text-primary">{data.avatar}</h1>
-        <p className="text-sm text-text-muted mt-1">
-          <Link to={`/player/${playerId}`} className="text-secondary hover:underline">
-            {data.player_name}
-          </Link>
-        </p>
+      <div className="bg-bg-surface border border-border rounded-lg p-5 flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-display text-text-primary">{data.avatar}</h1>
+          <p className="text-sm text-text-muted mt-1">
+            <Link to={`/player/${playerId}`} className="text-secondary hover:underline">
+              {data.player_name}
+            </Link>
+          </p>
+        </div>
+        <label className="flex flex-col gap-1 text-xs text-text-muted w-full sm:w-auto">
+          Period
+          <select
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+            className="h-11 min-w-[180px] rounded-lg border border-border bg-bg-raised px-3 text-sm text-text-primary"
+          >
+            <option value="lifetime">Lifetime</option>
+            <option value="current">Current Event</option>
+            {pastEvents.map((ev) => (
+              <option key={ev.event_id} value={String(ev.event_id)}>{ev.event_name}</option>
+            ))}
+          </select>
+        </label>
       </div>
+
+      {loading && <Spinner className="py-4" />}
+      {error && <p className="text-center text-accent-red">{error}</p>}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -149,7 +187,9 @@ export default function PlayerAvatar() {
       )}
 
       {data.total === 0 && (
-        <p className="text-center text-text-muted py-8">No matches found with this avatar.</p>
+        <p className="text-center text-text-muted py-8">
+          {period === 'lifetime' ? 'No matches found with this avatar.' : 'No matches with this avatar in this period.'}
+        </p>
       )}
     </div>
   )

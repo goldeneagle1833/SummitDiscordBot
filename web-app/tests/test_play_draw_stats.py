@@ -62,10 +62,11 @@ def test_current_event_for_admin_reads_live_table(patched, admin_session):
     assert data["play_stats"]["total"] == 2
 
 
-def test_current_event_falls_back_to_all_for_non_admin(patched):
+def test_current_event_is_public(patched):
     data = patched.get("/api/avatars/play-draw-stats?event=current").get_json()
-    assert data["event"] == "all"
-    assert data["play_stats"]["total"] == 5
+    assert data["event"] == "current"
+    assert data["play_stats"]["wins"] == 2
+    assert data["play_stats"]["total"] == 2  # same as admins: the live table, batch-released
 
 
 def test_invalid_event_is_rejected(patched):
@@ -147,10 +148,10 @@ def test_matrix_current_event_for_admin(matrix, admin_session):
     assert data["rows"] == []  # 6 games is under the 10-game row threshold
 
 
-def test_matrix_current_event_falls_back_for_non_admin(matrix):
+def test_matrix_current_event_is_public(matrix):
     data = matrix.get("/api/avatars/elo-bracket-matrix?source=discord&event=current").get_json()
-    assert data["event"] == "all"
-    assert _row(data, 1600)["overall"]["total"] == 11
+    assert data["event"] == "current"
+    assert data["rows"] == []  # same as admins: 6 games is under the 10-game row threshold
 
 
 

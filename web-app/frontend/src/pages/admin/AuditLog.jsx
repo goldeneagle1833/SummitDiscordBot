@@ -49,7 +49,7 @@ export default function AuditLog() {
       <AdminCollapsible title="Admin Actions" subtitle="Perform administrative operations">
         <AdminActionsSection />
       </AdminCollapsible>
-      <AdminCollapsible title="Blocked Users" subtitle="All block records and player reports across players">
+      <AdminCollapsible title="Blocked Users" subtitle="All block records and player reports, with Timeout, Ban and Pairing Block">
         <div className="space-y-6">
           <div className="space-y-2">
             <h3 className="text-sm font-semibold text-text-primary">Blocks</h3>
@@ -57,7 +57,7 @@ export default function AuditLog() {
           </div>
           <div className="space-y-2">
             <h3 className="text-sm font-semibold text-text-primary">Player Reports</h3>
-            <p className="text-xs text-text-muted">Filed from the Report Player button on Discord match messages.</p>
+            <p className="text-xs text-text-muted">Filed from the Report Player button on Discord match messages or from Play Sorcery Online. New blocks and reports are also DMed to the owner.</p>
             <PlayerReportsSection />
           </div>
         </div>

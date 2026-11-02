@@ -147,6 +147,10 @@ SITE_HOSTS = {
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 # Event star ratings (1-3 stars)
+# Event types an admin can tag a Top 8 event with (shown as a badge and used
+# by the Type filter on /top-8). Order here is the order shown in the UI.
+EVENT_TAGS = ["Grand Contest", "Cornerstone", "Local"]
+
 EVENT_RATINGS = {
     "ColumbusExplor2025": 1,
     "CortCup2024Stats": 2,

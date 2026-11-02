@@ -80,6 +80,9 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.get_profile_visibility",
     "api.players.set_profile_visibility",
     "api.players.set_hidden_avatars",  # owner/admin, checked in the handler
+    "api.players.get_featured_deck",  # a deck the player chose to make public
+    "api.players.set_featured_deck",  # owner/admin, checked in the handler
+    "api.players.clear_featured_deck",  # owner/admin, checked in the handler
     "api.misc.deck_link_previews",  # deck-site links only
     "api.players.reset_own_profile",
     "api.players.undo_profile_reset",
@@ -91,6 +94,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.get_blocked_users",
     "api.players.block_user",
     "api.players.unblock_user",
+    "api.players.get_queue_settings",  # owner/admin, checked in the handler
+    "api.players.set_queue_settings",
 
     # -- Card / avatar stats (public read-only) --
     "api.cards.get_cards",
@@ -132,6 +137,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.brackets.get_bracket_decks",  # visibility is applied per deck inside
     "api.brackets.get_bracket_deck",
     "api.season_badges.get_avatar_honours",
+    "api.paper_finishes.get_paper_finishes",  # Top 8 results matched to profiles; public lists
+    "api.paper_finishes.get_event_profiles",  # same, for one event's Top 8 page
 
     # -- Events / tournaments (public read-only) --
     "api.events.list_top8_events",
@@ -152,7 +159,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.deck_rec.get_deck_info",
     "api.deck_rec.get_recommendations",
     "api.deck_rec.staff_pick",
-    # Public: opens a Sorcery Online table with a public deck preloaded.
+    # Public: opens a Play Sorcery Online table with a public deck preloaded.
     # Throttled per client in services/sorcery_online_table.py.
     "api.deck_rec.create_pso_table",
 
@@ -165,6 +172,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # confirm and unsubscribe need the subscriber's secret token.
     "api.meta_reports.list_reports",
     "api.meta_reports.get_report",
+    "api.meta_reports.get_data_release",  # release dates only
     "api.meta_reports.subscribe",
     "api.meta_reports.confirm_email",
     "api.meta_reports.unsubscribe_email",

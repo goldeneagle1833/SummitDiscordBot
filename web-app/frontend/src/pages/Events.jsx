@@ -22,6 +22,25 @@ const SORT_OPTIONS = [
   { value: 'players-asc', label: 'Fewest Players' },
 ]
 
+// Event types an admin can tag an event with. The server sends its own list
+// (event_tags); this is the fallback if it doesn't.
+const DEFAULT_EVENT_TAGS = ['Grand Contest', 'Cornerstone', 'Local']
+const UNTAGGED = '__untagged__'
+const TAG_STYLES = {
+  'Grand Contest': 'text-yellow-300 bg-yellow-400/10 border-yellow-400/30',
+  Cornerstone: 'text-sky-300 bg-sky-400/10 border-sky-400/30',
+  Local: 'text-emerald-300 bg-emerald-400/10 border-emerald-400/30',
+}
+
+function EventTagBadge({ tag, className = '' }) {
+  if (!tag) return null
+  return (
+    <span className={`text-[10px] font-semibold uppercase tracking-wide border px-1.5 py-0.5 rounded shrink-0 ${TAG_STYLES[tag] || 'text-text-muted bg-white/5 border-border'} ${className}`}>
+      {tag}
+    </span>
+  )
+}
+
 function getAvatarImagePath(name, files) {
   if (!name || !files?.length) return null
   const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -93,6 +112,8 @@ export default function Events() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [yearFilter, setYearFilter] = useState('')
+  const [tagFilter, setTagFilter] = useState('')
+  const [eventTags, setEventTags] = useState(DEFAULT_EVENT_TAGS)
   const [sortBy, setSortBy] = useState('date-desc')
   const [selectedFolder, setSelectedFolder] = useState(null)
   const [featuredFolder, setFeaturedFolder] = useState(null)
@@ -152,6 +173,7 @@ export default function Events() {
         setEvents(data.events || [])
         setIsAdmin(data.is_admin || false)
         setFeaturedFolder(data.featured_event || null)
+        if (Array.isArray(data.event_tags) && data.event_tags.length) setEventTags(data.event_tags)
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
@@ -162,8 +184,13 @@ export default function Events() {
     if (yearFilter) {
       result = result.filter((ev) => getEventYear(ev) === yearFilter)
     }
+    if (tagFilter === UNTAGGED) {
+      result = result.filter((ev) => !ev.tag)
+    } else if (tagFilter) {
+      result = result.filter((ev) => ev.tag === tagFilter)
+    }
     return sortEvents(result, sortBy)
-  }, [events, yearFilter, sortBy])
+  }, [events, yearFilter, tagFilter, sortBy])
 
   // Auto-select: featured event, or first in filtered list
   const selected = useMemo(() => {
@@ -216,12 +243,13 @@ export default function Events() {
         name: editModal.name,
         rating: editModal.rating,
         event_date: editModal.event_date || null,
+        tag: editModal.tag || '',
       })
       if (result.success) {
         setEvents((prev) =>
           prev.map((e) =>
             e.folder === editModal.folder
-              ? { ...e, name: editModal.name, rating: editModal.rating, event_date: editModal.event_date || null }
+              ? { ...e, name: editModal.name, rating: editModal.rating, event_date: editModal.event_date || null, tag: editModal.tag || null }
               : e
           )
         )
@@ -331,6 +359,7 @@ export default function Events() {
                 Latest
               </span>
             )}
+            <EventTagBadge tag={event.tag} />
             {event.rating > 0 && (
               <span className="text-yellow-400 text-sm">
                 {'★'.repeat(event.rating)}{'☆'.repeat(3 - event.rating)}
@@ -386,7 +415,7 @@ export default function Events() {
                 </button>
               )}
               <button
-                onClick={() => setEditModal({ folder: event.folder, name: event.name || event.folder, rating: event.rating || 1, event_date: event.event_date || '' })}
+                onClick={() => setEditModal({ folder: event.folder, name: event.name || event.folder, rating: event.rating || 1, event_date: event.event_date || '', tag: event.tag || '' })}
                 className="p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-secondary transition-colors"
                 title="Edit event"
               >
@@ -568,6 +597,19 @@ export default function Events() {
                 {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
+            <div>
+              <label htmlFor="event-type-filter" className="text-xs text-text-muted block mb-1">Type</label>
+              <select
+                id="event-type-filter"
+                className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                value={tagFilter}
+                onChange={(e) => setTagFilter(e.target.value)}
+              >
+                <option value="">All Types</option>
+                {eventTags.map((t) => <option key={t} value={t}>{t}</option>)}
+                {isAdmin && <option value={UNTAGGED}>Untagged</option>}
+              </select>
+            </div>
             <span className="text-text-muted text-xs ml-auto self-end pb-1">
               {filtered.length} event{filtered.length !== 1 ? 's' : ''}
             </span>
@@ -675,6 +717,7 @@ export default function Events() {
                                     New
                                   </span>
                                 )}
+                                <EventTagBadge tag={event.tag} />
                               </div>
                               <div className="flex items-center gap-3 text-xs text-text-muted">
                                 {event.event_date_display && <span>{event.event_date_display}</span>}
@@ -974,6 +1017,28 @@ export default function Events() {
                   ★
                 </button>
               ))}
+            </div>
+            <label className="text-xs text-text-muted block mb-1">Event Type</label>
+            <div className="flex flex-wrap gap-1 mb-4" role="radiogroup" aria-label="Event type">
+              {[{ value: '', label: 'None' }, ...eventTags.map((t) => ({ value: t, label: t }))].map((opt) => {
+                const active = (editModal.tag || '') === opt.value
+                return (
+                  <button
+                    key={opt.value || 'none'}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => setEditModal((m) => ({ ...m, tag: opt.value }))}
+                    className={`text-xs px-2.5 py-1 rounded border transition-colors ${
+                      active
+                        ? 'bg-secondary text-black border-secondary font-semibold'
+                        : 'bg-bg-raised border-border text-text-muted hover:text-text'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                )
+              })}
             </div>
             <div className="flex justify-end gap-2">
               <button

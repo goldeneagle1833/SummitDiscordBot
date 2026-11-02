@@ -59,11 +59,13 @@ def test_open_without_login(patched):
     assert by_name["Frost Bolt"]["decks_with_card"] == 1
 
 
-def test_running_season_hidden_from_public(patched):
+def test_running_season_is_public(patched):
     events = patched.get("/api/creator/filters").get_json()["events"]
-    assert 9 not in [e["event_id"] for e in events]
-    assert patched.get("/api/creator/popular-cards?event=current").status_code == 403
-    assert patched.get("/api/creator/popular-cards?event=9").status_code == 403
+    assert 9 in [e["event_id"] for e in events]
+    current = patched.get("/api/creator/popular-cards?event=current").get_json()
+    assert {c["name"] for c in current} >= {"Fireball", "Frost Bolt"}
+    # The running season's event_id means the same as "current"
+    assert patched.get("/api/creator/popular-cards?event=9").get_json() == current
 
 
 def test_admin_can_see_running_season(patched, admin_session):

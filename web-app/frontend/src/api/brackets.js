@@ -30,8 +30,12 @@ export const adminListBrackets = (mine = false) =>
   get(`/api/admin/brackets${mine ? '?mine=1' : ''}`)
 export const adminGetBracket = (slug) => get(`/api/admin/brackets/${slug}`)
 export const adminPreviewBracket = (slug) => get(`/api/admin/brackets/${slug}/preview`)
-export const adminGetSeedPool = (source) =>
-  get(`/api/admin/brackets/seed-pool?source=${encodeURIComponent(source)}`)
+export const adminGetSeedPool = (source, event, exclude = []) =>
+  get(
+    `/api/admin/brackets/seed-pool?source=${encodeURIComponent(source)}` +
+      (event ? `&event=${encodeURIComponent(event)}` : '') +
+      (exclude.length ? `&exclude=${encodeURIComponent(exclude.join(','))}` : ''),
+  )
 export const adminSyncTickets = () => post('/api/admin/brackets/sync-tickets', {})
 export const adminCreateBracket = (body) => post('/api/admin/brackets', body)
 export const adminUpdateBracket = (slug, body) => patch(`/api/admin/brackets/${slug}`, body)

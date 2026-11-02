@@ -1,4 +1,4 @@
-"""One player's card stats from Sorcery Online played-card data.
+"""One player's card stats from Play Sorcery Online played-card data.
 
 PSO's result callbacks list the cards each player actually played in a game
 (``sorcery_online_match_callbacks.played_cards``, keyed by player id). This

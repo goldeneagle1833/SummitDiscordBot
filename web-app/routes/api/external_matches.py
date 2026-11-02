@@ -415,7 +415,7 @@ def _record_via_bot(pairing: dict, data: dict, winner_id: str, loser_id: str, so
             "pipeline": "bot",
         },
         # Match recording includes ELO and other durable bot-side work. Keep
-        # this below Sorcery Online's 35s timeout so its retry worker receives
+        # this below Play Sorcery Online's 35s timeout so its retry worker receives
         # a definite match-history receipt or error.
         timeout=float(os.getenv("MATCH_REPORT_BOT_API_TIMEOUT", "30")),
     )

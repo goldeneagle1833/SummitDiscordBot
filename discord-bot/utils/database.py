@@ -41,6 +41,7 @@ from repositories.elo_repo import (  # noqa: F401
     reset_ladder_challenge_today,
     # Pairing functions
     save_pairing,
+    set_pairing_avatars,
     get_active_pairing_for_user,
     get_pairing_by_id,
     get_opponent_from_pairing,

@@ -137,7 +137,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
   }
 
   async function handleOpenTable(match) {
-    setNotice('Opening a table on Sorcery Online…')
+    setNotice('Opening a table on Play Sorcery Online…')
     try {
       await openBracketMatchTable(slug, match.match_no)
       setNotice('Table ready — use "Join your table" on your match.')
@@ -268,6 +268,9 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
                   : ''}
             {!bracketHidden && ` · ${played}/${allMatches.length} matches played`}
           </p>
+          {bracket.format === 'underdog' && bracket.description && (
+            <p className="text-sm text-text-muted max-w-3xl mt-1">{bracket.description}</p>
+          )}
         </div>
         <div className="flex items-center gap-4">
           {canEditPairings && (
@@ -288,7 +291,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
       {canEditPairings && editingPairings && (
         <div className="bg-secondary/10 border-l-2 border-secondary px-4 py-3 text-sm">
           Drag a player onto another to swap their places. Players keep their seed and
-          decklist. Only seats that haven’t been played, reported or given a Sorcery Online
+          decklist. Only seats that haven’t been played, reported or given a Play Sorcery Online
           table can move.
         </div>
       )}
@@ -306,7 +309,11 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
           )}
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-muted">
-              {bracket.format === 'limited' ? 'Limited Champion' : 'Champion'}
+              {bracket.format === 'limited'
+                ? 'Limited Champion'
+                : bracket.format === 'underdog'
+                  ? 'Underdog Champion'
+                  : 'Champion'}
             </p>
             <p className="text-2xl font-semibold text-amber-400 leading-tight">
               {champion.user_id ? (
@@ -319,7 +326,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
             </p>
             <p className="text-sm text-text-muted">Seed {champion.seed}</p>
           </div>
-          {(bracket.event_folder || (isAdmin && bracket.status === 'complete' && bracket.format !== 'limited' && !community)) && (
+          {(bracket.event_folder || (isAdmin && bracket.status === 'complete' && (bracket.format || 'constructed') === 'constructed' && !community)) && (
             <div className="ml-auto flex flex-col items-end gap-1 text-sm">
               {bracket.event_folder && (
                 <Link

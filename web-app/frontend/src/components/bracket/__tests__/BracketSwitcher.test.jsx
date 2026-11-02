@@ -103,4 +103,19 @@ describe('BracketSwitcher community brackets', () => {
     renderWithRouter(<BracketSwitcher brackets={BRACKETS} currentSlug="gothic-s8" />)
     expect(screen.queryByRole('link', { name: /Create a bracket/ })).not.toBeInTheDocument()
   })
+
+  it('gives the underdog bracket its own tab, apart from the top cut', () => {
+    const brackets = [
+      { slug: 's8-underdog', name: 'Season 8 Underdog Bracket', status: 'published', format: 'underdog' },
+      ...BRACKETS.slice(1),
+    ]
+    renderWithRouter(<BracketSwitcher brackets={brackets} currentSlug="gothic-s8" />)
+    expect(screen.getByRole('button', { name: /Underdog/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Underdog Bracket/ })).not.toBeInTheDocument()
+  })
+
+  it('leaves the Underdog tab out until there is an underdog bracket', () => {
+    renderWithRouter(<BracketSwitcher brackets={BRACKETS} currentSlug="gothic-s8" />)
+    expect(screen.queryByRole('button', { name: /Underdog/ })).not.toBeInTheDocument()
+  })
 })

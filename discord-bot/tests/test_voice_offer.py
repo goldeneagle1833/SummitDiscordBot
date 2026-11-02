@@ -8,7 +8,13 @@ import pytest
 from cogs.lfg import voice_offer
 from cogs.lfg.state import lfg_queue
 from cogs.lfg.voice import NO_VOICE, VOICE
-from cogs.lfg.voice_offer import NoVoiceOfferView, offer_no_voice_game, waiting_voice_players
+from cogs.lfg.voice_offer import (
+    NoVoiceOfferView,
+    VoiceOnlyToggleView,
+    offer_no_voice_game,
+    waiting_voice_players,
+)
+from repositories.voice_only_repo import is_voice_only, set_voice_only, voice_only_ids
 
 NO_VOICE_ID = 500
 
@@ -157,8 +163,76 @@ class TestAnsweringTheOffer:
         assert "still in the" in interaction.edit_original_response.await_args.kwargs["content"]
 
 
+class TestVoiceOnly:
+    def test_setting_round_trip(self):
+        assert not is_voice_only(1)
+        set_voice_only(1, True)
+        set_voice_only(1, True)
+        assert is_voice_only(1)
+        assert voice_only_ids([1, 2]) == {1}
+        set_voice_only(1, False)
+        assert not is_voice_only(1)
+        assert voice_only_ids([]) == set()
+
+    @pytest.mark.asyncio
+    async def test_voice_only_players_are_not_asked(self, bot):
+        queue(1, "ranked", entry(5, VOICE))
+        queue(2, "ranked", entry(10, VOICE))
+        queue(NO_VOICE_ID, "ranked", entry(0, NO_VOICE))
+        set_voice_only(2, True)
+
+        await offer_no_voice_game(bot, "ranked", NO_VOICE_ID)
+        bot.users[1].send.assert_awaited_once()
+        assert 2 not in bot.users
+        # Still queued for voice like before
+        assert lfg_queue[2]["queues"]["ranked"]["voice"] == VOICE
+
+    @pytest.mark.asyncio
+    async def test_offer_button_marks_voice_only(self, bot):
+        queue(1, "ranked", entry(10, VOICE))
+        queue(NO_VOICE_ID, "ranked", entry(0, NO_VOICE))
+        view = NoVoiceOfferView(bot, "ranked", 1, NO_VOICE_ID)
+        interaction, pending = click(view, "voice_only")
+        await pending
+
+        assert is_voice_only(1)
+        assert lfg_queue[1]["queues"]["ranked"]["voice"] == VOICE
+        kwargs = interaction.edit_original_response.await_args.kwargs
+        assert "voice-only" in kwargs["content"]
+        assert isinstance(kwargs["view"], VoiceOnlyToggleView)
+
+    @pytest.mark.asyncio
+    async def test_toggle_button_turns_it_off_and_on(self):
+        set_voice_only(1, True)
+        view = VoiceOnlyToggleView(1, True)
+        assert view.toggle.label == "Turn off voice only"
+        interaction, pending = click(view, "toggle")
+        interaction.user.id = 1
+        await pending
+        assert not is_voice_only(1)
+        assert view.toggle.label == "Mark me as voice only"
+
+        interaction, pending = click(view, "toggle")
+        interaction.user.id = 1
+        await pending
+        assert is_voice_only(1)
+
+    @pytest.mark.asyncio
+    async def test_toggle_button_is_only_for_its_owner(self):
+        view = VoiceOnlyToggleView(1, False)
+        interaction, pending = click(view, "toggle")
+        interaction.user.id = 2
+        interaction.response.send_message = AsyncMock()
+        await pending
+        assert not is_voice_only(1)
+        interaction.response.send_message.assert_awaited_once()
+
+
 @pytest.mark.asyncio
 async def test_a_no_voice_join_without_a_match_sends_offers(mock_bot, mock_interaction):
+    import asyncio
+
+    from cogs.lfg import queue as queue_mod
     from cogs.lfg.queue import _process_queue_join
 
     lfg_cog = mock_bot.get_cog.return_value
@@ -166,9 +240,35 @@ async def test_a_no_voice_join_without_a_match_sends_offers(mock_bot, mock_inter
     lfg_cog.update_lfg_status = AsyncMock()
     with patch("cogs.lfg.queue.offer_no_voice_game", AsyncMock()) as offer, \
          patch("cogs.lfg.queue.ranked_block_message", return_value=None):
+        # Offers go out after the join reply, in the background
         await _process_queue_join(mock_bot, mock_interaction, "testing", 30, None, voice=NO_VOICE)
+        await asyncio.gather(*queue_mod._background_tasks)
         offer.assert_awaited_once_with(mock_bot, "testing", mock_interaction.user.id)
 
         offer.reset_mock()
         await _process_queue_join(mock_bot, mock_interaction, "rumble", 30, None, voice=VOICE)
+        await asyncio.gather(*queue_mod._background_tasks)
         offer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_flexible_join_is_queued_as_flexible_and_sends_no_offers(mock_bot, mock_interaction):
+    import asyncio
+
+    from cogs.lfg import queue as queue_mod
+    from cogs.lfg.queue import _process_queue_join
+
+    lfg_cog = mock_bot.get_cog.return_value
+    lfg_cog.check_if_someone_is_lfg.return_value = None
+    lfg_cog.update_lfg_status = AsyncMock()
+    with patch("cogs.lfg.queue.offer_no_voice_game", AsyncMock()) as offer, \
+         patch("cogs.lfg.queue.ranked_block_message", return_value=None):
+        await _process_queue_join(
+            mock_bot, mock_interaction, "testing", 30, None, voice=NO_VOICE, voice_flexible=True
+        )
+        await asyncio.gather(*queue_mod._background_tasks)
+        # A no-voice-first player who is OK with voice was already free to pair with voice players
+        offer.assert_not_awaited()
+    assert lfg_cog.check_if_someone_is_lfg.call_args.kwargs["voice_flexible"] is True
+    assert lfg_cog.check_if_someone_is_lfg.call_args.kwargs["voice_hold"] is True
+    assert lfg_cog.add_to_lfg_queue.call_args.kwargs["voice_flexible"] is True

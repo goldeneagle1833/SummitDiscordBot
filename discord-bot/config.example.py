@@ -38,12 +38,17 @@ DM_DISABLED_CHANNEL_ID = 000000000000000000  # Replace with your test channel ID
 DECKLISTS_CHANNEL_ID = 000000000000000000  # Replace with your test channel ID
 STORE_ORDERS_CHANNEL_ID = 000000000000000000  # Admin-only channel for paid-order pings
 MATCH_CORRECTION_CHANNEL_ID = 000000000000000000  # Where players run !correct_match
+# Private channel per avatar: stream alerts and the LFG "Alert my avatar's channel" option post here.
+# Leave empty to hide the LFG option. Example: {"Sorcerer": 000000000000000000}
+AVATAR_CHANNEL_MAP = {}
 
 # User/Role IDs
 # Replace these with your Discord user ID and test server role IDs
 OWNER_ID = 000000000000000000  # Your Discord user ID
 GUILD_ID = 000000000000000000  # Your test server (guild) ID
 SUMMIT_GUILD_ID = 000000000000000000  # Same as GUILD_ID for testing
+# Who gets block/report DMs with Timeout/Ban buttons (defaults to [OWNER_ID])
+# MODERATION_ALERT_USER_IDS = [000000000000000000]
 LEADER_ROLE_ID = 000000000000000000  # Create test roles in your test server
 FART_PLAYER_ROLE_ID = 000000000000000000  # Given to anyone who uses a fart game command
 DM_DISABLED_ROLE_ID = 000000000000000000

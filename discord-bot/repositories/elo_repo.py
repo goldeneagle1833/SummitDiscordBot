@@ -167,7 +167,7 @@ def create_db():
         cur.execute("ALTER TABLE match_records ADD COLUMN pairing_id INTEGER")
     except sqlite3.OperationalError:
         pass  # Column already exists
-    # Sorcery Online replay link for games played at a Summit-opened table
+    # Play Sorcery Online replay link for games played at a Summit-opened table
     try:
         cur.execute("ALTER TABLE match_records ADD COLUMN replay_url TEXT")
     except sqlite3.OperationalError:
@@ -437,9 +437,15 @@ def create_active_pairings_table():
         except sqlite3.OperationalError:
             pass  # Column already exists
 
-    # Migration: Sorcery Online replay link handed back with the table
+    # Migration: Play Sorcery Online replay link handed back with the table
     try:
         cur.execute("ALTER TABLE active_pairings ADD COLUMN replay_url TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Migration: Play Sorcery Online table link (the live game's shared room)
+    try:
+        cur.execute("ALTER TABLE active_pairings ADD COLUMN table_url TEXT")
     except sqlite3.OperationalError:
         pass  # Column already exists
 
@@ -1234,7 +1240,7 @@ REPLAY_HOSTS = ("playsorceryonline.com",)
 
 
 def clean_replay_url(url) -> str | None:
-    """A Sorcery Online replay link, or None for anything else."""
+    """A Play Sorcery Online replay link, or None for anything else."""
     url = str(url or "").strip()
     if not url:
         return None
@@ -1246,7 +1252,7 @@ def clean_replay_url(url) -> str | None:
 
 
 def set_pairing_replay(pairing_id: int, replay_url) -> bool:
-    """Remember a queue pairing's Sorcery Online replay link.
+    """Remember a queue pairing's Play Sorcery Online replay link.
 
     Also fills it in on the match record when the result was recorded
     first. Limited pairings live in their own table with their own ids, so
@@ -1276,7 +1282,7 @@ def set_pairing_replay(pairing_id: int, replay_url) -> bool:
 
 
 def get_pairing_replay(pairing_id: int) -> str | None:
-    """The Sorcery Online replay link saved for a queue pairing, if any."""
+    """The Play Sorcery Online replay link saved for a queue pairing, if any."""
     if not pairing_id:
         return None
     create_active_pairings_table()
@@ -1284,6 +1290,34 @@ def get_pairing_replay(pairing_id: int) -> str | None:
     try:
         row = conn.execute(
             "SELECT replay_url FROM active_pairings WHERE pairing_id = ?", (pairing_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    return row[0] if row and row[0] else None
+
+
+def set_pairing_table(pairing_id: int, table_url: str) -> bool:
+    """Remember a queue pairing's Play Sorcery Online table link (shared, not a seat link)."""
+    if not pairing_id or not table_url:
+        return False
+    create_active_pairings_table()
+    with get_db_connection("match_records.db") as conn:
+        conn.execute(
+            "UPDATE active_pairings SET table_url = ? WHERE pairing_id = ?",
+            (table_url, pairing_id),
+        )
+    return True
+
+
+def get_pairing_table(pairing_id: int) -> str | None:
+    """The Play Sorcery Online table link saved for a queue pairing, if any."""
+    if not pairing_id:
+        return None
+    create_active_pairings_table()
+    conn = sqlite3.connect("match_records.db")
+    try:
+        row = conn.execute(
+            "SELECT table_url FROM active_pairings WHERE pairing_id = ?", (pairing_id,)
         ).fetchone()
     finally:
         conn.close()
@@ -1307,6 +1341,15 @@ def get_pairing_avatars(pairing_id: int) -> dict:
     if not row:
         return {}
     return {pid: avatar for pid, avatar in ((row[0], row[1]), (row[2], row[3])) if avatar}
+
+
+def set_pairing_avatars(pairing_id: int, player1_avatar: str | None, player2_avatar: str | None) -> None:
+    """Replace the avatars locked to a pairing (the match-time deck re-read runs after pairing)."""
+    with get_db_connection("match_records.db") as conn:
+        conn.execute(
+            "UPDATE active_pairings SET player1_avatar = ?, player2_avatar = ? WHERE pairing_id = ?",
+            (player1_avatar, player2_avatar, pairing_id),
+        )
 
 
 def get_opponent_from_pairing(guild_id: int, user_id: int) -> int | None:

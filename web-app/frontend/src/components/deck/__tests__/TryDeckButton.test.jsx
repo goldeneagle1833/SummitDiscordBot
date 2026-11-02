@@ -58,7 +58,7 @@ describe('TryDeckButton', () => {
   it('closes the tab and shows the error when provisioning fails', async () => {
     const tab = mockTab()
     vi.spyOn(window, 'open').mockReturnValue(tab)
-    createPsoTable.mockRejectedValue(new Error('Sorcery Online is not connected right now.'))
+    createPsoTable.mockRejectedValue(new Error('Play Sorcery Online is not connected right now.'))
 
     render(<TryDeckButton deckId="deck123" />)
     await userEvent.click(screen.getByRole('button', { name: /Try this Deck/i }))

@@ -2,7 +2,12 @@ import { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { listBrackets, getMyBracketMatches } from '@/api/brackets'
 import Spinner from '@/components/ui/Spinner'
-import BracketSwitcher, { pickActiveBracket, pickBracketFor } from '@/components/bracket/BracketSwitcher'
+import BracketSwitcher, {
+  FORMATS,
+  formatOf,
+  pickActiveBracket,
+  pickBracketFor,
+} from '@/components/bracket/BracketSwitcher'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
 import Bracket from './Bracket'
@@ -10,14 +15,15 @@ import Bracket from './Bracket'
 /**
  * `/brackets` opens straight onto the event being played - or, between
  * events, the last one finished - with tabs to flip to any other. That is
- * the constructed top cut; `?format=limited` opens on the Limited one. A
- * format with no top cut yet opens on its newest community bracket.
+ * the constructed top cut; `?format=limited` opens on the Limited one and
+ * `?format=underdog` on the underdog bracket. A format with no top cut yet
+ * opens on its newest community bracket.
  */
 export default function Brackets() {
   usePageTitle('Season Top Cut')
   const { user } = useAuth()
   const [params] = useSearchParams()
-  const wanted = params.get('format') === 'limited' ? 'limited' : 'constructed'
+  const wanted = formatOf({ format: params.get('format') })
   const [brackets, setBrackets] = useState(null)
   const [myMatches, setMyMatches] = useState([])
   const [error, setError] = useState(null)
@@ -44,6 +50,7 @@ export default function Brackets() {
     ? pickBracketFor(brackets, wanted)
     : pickBracketFor(brackets, wanted) || pickActiveBracket(brackets)
   if (!active) {
+    const label = FORMATS.find((f) => f.key === wanted)?.label || 'Constructed'
     return (
       <div className="max-w-full px-4 py-6 space-y-5">
         <BracketSwitcher
@@ -52,11 +59,11 @@ export default function Brackets() {
           canOrganize={canOrganize}
         />
         <h1 className="text-2xl font-display text-text-primary">
-          {wanted === 'limited' ? 'Limited Brackets' : 'Season Top Cut'}
+          {wanted === 'constructed' ? 'Season Top Cut' : `${label} Brackets`}
         </h1>
         <p className="text-text-muted text-center py-12">
           {brackets.length
-            ? `No ${wanted === 'limited' ? 'Limited' : 'Constructed'} bracket has been published yet.`
+            ? `No ${label} bracket has been published yet.`
             : 'No top cut bracket has been published yet.'}
         </p>
       </div>

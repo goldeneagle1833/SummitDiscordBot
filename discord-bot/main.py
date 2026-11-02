@@ -34,6 +34,8 @@ from repositories.moderation_repo import create_moderation_tables
 from repositories.pairing_bans_repo import create_pairing_bans_table
 from repositories.voice_only_repo import create_voice_only_table
 from repositories.player_reports_repo import create_player_reports_table
+from repositories.player_kudos_repo import create_player_kudos_table
+from cogs.lfg.player_kudos import PersistentKudosButton
 from cogs.lfg.player_report import PersistentReportPlayerButton
 from cogs.lfg.persistent_confirm import (
     PersistentConfirmButton,
@@ -214,6 +216,7 @@ async def main():
         create_pairing_bans_table()
         create_voice_only_table()
         create_player_reports_table()
+        create_player_kudos_table()
         create_moderation_tables()
         # Register DynamicItem buttons so Confirm/Dispute survive bot restarts
         bot.add_dynamic_items(
@@ -223,6 +226,7 @@ async def main():
             PersistentMatchCardReportButton, PersistentMatchCardCancelButton,
             PersistentPSOConfirmButton, PersistentPSODisputeButton,
             PersistentReportPlayerButton, PersistentModerationButton,
+            PersistentKudosButton,
         )
         await setup_cogs()
         matchmaking_runner = await start_matchmaking_api(bot)

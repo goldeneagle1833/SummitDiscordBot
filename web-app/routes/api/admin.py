@@ -1611,6 +1611,58 @@ def all_player_reports():
     return jsonify({"success": True, "entries": entries, "total": total}), 200
 
 
+@admin_bp.route("/admin/player-kudos", methods=["GET"])
+@require_admin
+def all_player_kudos():
+    """List kudos (positive player reports), newest first (admin only)."""
+    from repositories.player_kudos_repo import PlayerKudosRepository
+
+    limit = min(max(1, request.args.get("limit", 100, type=int)), 200)
+    offset = max(0, request.args.get("offset", 0, type=int))
+
+    rows, total = PlayerKudosRepository().get_all_kudos(limit=limit, offset=offset)
+    resolve_name = _player_name_resolver()
+    entries = [
+        {
+            "id": row["id"],
+            "giver_id": row["giver_id"],
+            "giver_name": resolve_name(row["giver_id"], row["giver_name"]),
+            "receiver_id": row["receiver_id"],
+            "receiver_name": resolve_name(row["receiver_id"], row["receiver_name"]),
+            "match_id": row["match_id"],
+            "match_type": row["match_type"],
+            "reasons": row["reasons"],
+            "message": row["message"],
+            "anonymous": row["anonymous"],
+            "hidden": row["hidden"],
+            "source": row.get("source"),
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+    return jsonify({"success": True, "entries": entries, "total": total}), 200
+
+
+@admin_bp.route("/admin/player-kudos/<int:kudos_id>/hidden", methods=["POST"])
+@require_admin
+def set_player_kudos_hidden(kudos_id):
+    """Hide a kudos from the homepage (or show it again). Body: {"hidden": bool}."""
+    from repositories.player_kudos_repo import PlayerKudosRepository
+
+    data = request.get_json(silent=True) or {}
+    hidden = data.get("hidden", True)
+    if not isinstance(hidden, bool):
+        return jsonify({"success": False, "error": "hidden must be true or false"}), 400
+    if not PlayerKudosRepository().set_hidden(kudos_id, hidden):
+        return jsonify({"success": False, "error": "Kudos not found"}), 404
+    try:
+        from services.spotlight import clear_spotlight_cache
+        clear_spotlight_cache()
+    except Exception:
+        pass
+    return jsonify({"success": True, "hidden": hidden}), 200
+
+
 def _add_moderation(entries: list[dict], target_key: str):
     """Tag each row with whether Timeout/Ban apply and the last action taken."""
     from repositories.moderation_repo import ModerationRepository

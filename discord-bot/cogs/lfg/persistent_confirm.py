@@ -35,7 +35,8 @@ from repositories.limited_repo import (
 )
 from services.limited_service import limited_winner_report, get_run_summary
 from utils.deck_checker import clean_deck_url
-from cogs.lfg.player_report import is_report_player_item, report_player_button, report_player_only_view
+from cogs.lfg.player_kudos import kudos_button
+from cogs.lfg.player_report import is_player_feedback_item, report_player_button, report_player_only_view
 
 logger = logging.getLogger("discord_bot")
 
@@ -828,6 +829,7 @@ async def reset_report_after_dispute(bot, data: dict) -> bool:
             player2_run_id=other_run_id,
         )
         view.add_item(report_player_button(player_id, other_id, pairing_id, match_type))
+        view.add_item(kudos_button(player_id, other_id, pairing_id))
 
         message_kwargs = dict(
             is_disputer=is_disputer,
@@ -1617,10 +1619,10 @@ class PersistentMatchCardReportButton(
             opponent_run_id = data["player2_run_id"] if reporter_id == player1_id else data["player1_run_id"]
 
             # Disable buttons while reporter fills in the dropdowns
-            # (Report Player stays usable)
+            # (Report Player and Give Kudos stay usable)
             if self.view:
                 for item in self.view.children:
-                    if not is_report_player_item(item):
+                    if not is_player_feedback_item(item):
                         item.disabled = True
                 try:
                     await interaction.message.edit(view=self.view)
@@ -1737,7 +1739,7 @@ class PersistentMatchCardCancelButton(
 
             if self.view:
                 for item in self.view.children:
-                    if not is_report_player_item(item):
+                    if not is_player_feedback_item(item):
                         item.disabled = True
                 try:
                     await interaction.message.edit(

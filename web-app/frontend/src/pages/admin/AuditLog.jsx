@@ -7,6 +7,7 @@ import TransferHistorySection from '@/components/admin/TransferHistorySection'
 import MatchNotesSection from '@/components/admin/MatchNotesSection'
 import BlockedUsersSection from '@/components/admin/BlockedUsersSection'
 import PlayerReportsSection from '@/components/admin/PlayerReportsSection'
+import PlayerKudosSection from '@/components/admin/PlayerKudosSection'
 import CardPointsSection from '@/components/admin/CardPointsSection'
 import ReactionRolesSection from '@/components/admin/ReactionRolesSection'
 import AuditLogTable from '@/components/admin/AuditLogTable'
@@ -60,6 +61,12 @@ export default function AuditLog() {
             <p className="text-xs text-text-muted">Filed from the Report Player button on Discord match messages or from Play Sorcery Online. New blocks and reports are also DMed to the owner.</p>
             <PlayerReportsSection />
           </div>
+        </div>
+      </AdminCollapsible>
+      <AdminCollapsible title="Player Kudos" subtitle="Positive player reports; these feed the homepage Player of the Day">
+        <div className="space-y-2">
+          <p className="text-xs text-text-muted">Given from the Give Kudos button on Discord match messages or from Play Sorcery Online. Hide one to keep it off the homepage.</p>
+          <PlayerKudosSection />
         </div>
       </AdminCollapsible>
       <AdminCollapsible title="Audit Log" subtitle="History of administrative actions">

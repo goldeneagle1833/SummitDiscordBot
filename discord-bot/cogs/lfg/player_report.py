@@ -181,18 +181,25 @@ def is_report_player_item(item) -> bool:
     return str(getattr(item, "custom_id", "") or "").startswith(REPORT_PLAYER_PREFIX)
 
 
+def is_player_feedback_item(item) -> bool:
+    """Report Player or Give Kudos: the buttons that outlive the match."""
+    from cogs.lfg.player_kudos import is_kudos_item
+
+    return is_report_player_item(item) or is_kudos_item(item)
+
+
 def report_player_only_view(message):
-    """Return a view holding just the Report Player button from ``message``.
+    """Return a view holding just the Report Player (and Give Kudos) buttons.
 
     Used when a match message is edited to show the result, so the other
-    buttons go away but Report Player stays. Returns None if the message
-    never had one.
+    buttons go away but Report Player and Give Kudos stay. Returns None if
+    the message never had either.
     """
     try:
         old = discord.ui.View.from_message(message, timeout=None)
     except Exception:
         return None
-    keep = [item for item in old.children if is_report_player_item(item)]
+    keep = [item for item in old.children if is_player_feedback_item(item)]
     if not keep:
         return None
     view = discord.ui.View(timeout=None)

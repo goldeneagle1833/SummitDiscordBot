@@ -220,6 +220,10 @@ def get_daily_spotlight() -> dict:
         # Shuffle types so fallback order varies by day
         types = list(SPOTLIGHT_TYPES)
         rng.shuffle(types)
+        # On days with a kudos Player of the Day the homepage shows that as
+        # its own slide, so the random pick here skips the stats one.
+        if get_kudos_player_of_the_day().get("kudos_spotlight"):
+            types = [t for t in types if t != "player_of_the_day"]
 
         spotlight = None
         for spotlight_type in types:
@@ -235,6 +239,108 @@ def get_daily_spotlight() -> dict:
     except Exception:
         logger.error("Failed to generate spotlight", exc_info=True)
         return {"success": True, "spotlight": None}
+
+
+def clear_spotlight_cache() -> None:
+    """Forget today's picks in this worker (after an admin hides a kudos)."""
+    _cache.clear()
+    _KUDOS_CACHE.clear()
+
+
+# ── Kudos Player of the Day ───────────────────────────────────
+
+# Short phrases for "thanked for ..." (keys match player_kudos_repo.KUDOS_REASONS).
+_KUDOS_PHRASES = {
+    "good_sport": "being a good sport",
+    "friendly": "being friendly and fun to play",
+    "great_voice": "being great on voice",
+    "helpful": "helping opponents learn",
+    "good_pace": "playing at a good pace",
+    "fair_play": "honest, fair play",
+    "great_game": "great games",
+}
+
+_KUDOS_CACHE = {}  # {"key": (expires_at, result)}
+_KUDOS_CACHE_SECONDS = 300
+
+
+def _join_phrases(phrases: list[str]) -> str:
+    if len(phrases) <= 1:
+        return "".join(phrases)
+    return ", ".join(phrases[:-1]) + " and " + phrases[-1]
+
+
+def get_kudos_player_of_the_day() -> dict:
+    """Today's Player of the Day picked from kudos (positive player reports).
+
+    Returns {"success": True, "kudos_spotlight": dict | None}. None when
+    nobody received kudos in the last week (then the old random stats
+    Player of the Day stays in the spotlight rotation).
+    """
+    import time
+
+    from repositories.player_kudos_repo import PlayerKudosRepository, reason_labels
+
+    today = date.today().isoformat()
+    cached = _KUDOS_CACHE.get(today)
+    if cached and cached[0] > time.time():
+        return cached[1]
+
+    result = {"success": True, "kudos_spotlight": None}
+    try:
+        pick = PlayerKudosRepository().pick_player_of_the_day()
+        if pick:
+            user_id = pick["user_id"]
+            featured = pick["featured"]
+            names = _get_display_names([user_id, featured["giver_id"]])
+            name = names.get(user_id) or pick.get("receiver_name") or f"Player {user_id}"
+            giver = (
+                None if featured["anonymous"]
+                else names.get(featured["giver_id"]) or featured.get("giver_name") or "a fellow player"
+            )
+
+            phrases = [_KUDOS_PHRASES[r] for r in pick["top_reasons"][:2] if r in _KUDOS_PHRASES]
+            message = featured.get("message")
+            if message:
+                subtitle = f"\u201c{message}\u201d"
+            elif phrases:
+                subtitle = f"Thanked for {_join_phrases(phrases)}."
+            else:
+                subtitle = "Thanked by an opponent after a match."
+            others = pick["giver_count"] - 1
+            credit = f"Kudos from {giver or 'an opponent'}"
+            if others > 0:
+                credit += f" and {others} other{'s' if others > 1 else ''} this week"
+
+            avatar_info = _get_player_avatar(user_id)
+            image_url = None
+            if avatar_info and avatar_info.get("avatar"):
+                image_url = f"https://cdn.discordapp.com/avatars/{user_id}/{avatar_info['avatar']}.png?size=128"
+
+            result["kudos_spotlight"] = {
+                "type": "kudos_player_of_the_day",
+                "badge_text": "PLAYER OF THE DAY",
+                "color": "gold",
+                "title": name,
+                "subtitle": subtitle,
+                "link": f"/player/{user_id}",
+                "image_url": image_url,
+                "kudos": {
+                    "message": message,
+                    "giver_name": giver,
+                    "anonymous": featured["anonymous"],
+                    "reasons": reason_labels(featured["reasons"]),
+                    "kudos_count": pick["kudos_count"],
+                    "giver_count": pick["giver_count"],
+                    "credit": credit,
+                },
+            }
+    except Exception:
+        logger.error("Failed to pick kudos player of the day", exc_info=True)
+
+    _KUDOS_CACHE.clear()
+    _KUDOS_CACHE[today] = (time.time() + _KUDOS_CACHE_SECONDS, result)
+    return result
 
 
 # ── Type handlers ──────────────────────────────────────────────

@@ -88,6 +88,23 @@ def entry_voice_flexible(entry):
     return bool((entry or {}).get("voice_flexible"))
 
 
+def count_waiting_for_voice(entries):
+    """How many queue entries would play a voice game (voice first, or also OK with voice)."""
+    return sum(
+        1 for entry in entries
+        if entry and VOICE in willing_voice_choices(entry.get("voice"), entry_voice_flexible(entry))
+    )
+
+
+def voice_waiting_line(count):
+    """LFG status board line calling out players waiting for a voice game; empty when none."""
+    if count <= 0:
+        return ""
+    if count == 1:
+        return "🔊 **1 player waiting for a voice game!**"
+    return f"🔊 **{count} players waiting for a voice game!**"
+
+
 def holding_for_voice(pref, flexible, joined_at, now=None):
     """A voice-first, no-voice-OK player still waiting out the voice hold."""
     if not flexible or (normalize_voice_preference(pref) or DEFAULT_VOICE) != VOICE:

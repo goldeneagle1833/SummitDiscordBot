@@ -79,9 +79,9 @@ class ArticleStore:
     # Threads
     def articles_needing_thread_work(self) -> list[dict]:
         return self._rows(
-            """SELECT id, slug, title, summary, category, author_name, status,
-                      forum_thread_id, forum_locked
-               FROM articles
+            # SELECT * so newer optional columns (external_url) are picked up
+            # when present without breaking an older articles.db
+            """SELECT * FROM articles
                WHERE (status = 'approved' AND forum_thread_id IS NULL)
                   OR (forum_thread_id IS NOT NULL AND status = 'approved' AND forum_locked = 1)
                   OR (forum_thread_id IS NOT NULL AND status != 'approved' AND forum_locked = 0)
@@ -160,7 +160,8 @@ def thread_starter_text(article: dict) -> str:
     return (
         f"{article['summary']}\n\n"
         f"By **{article['author_name']}** · {article['category']}\n"
-        f"Read it here: {url}\n\n"
+        + (f"Original article: {article['external_url']}\n" if article.get("external_url") else "")
+        + f"Read it here: {url}\n\n"
         "Comment in this thread or under the article on the site. "
         "Comments show up in both places."
     )[:2000]

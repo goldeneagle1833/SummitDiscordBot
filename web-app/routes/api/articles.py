@@ -13,6 +13,8 @@ served only through ``/api/articles/<id>/pdf``.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 import uuid
 from functools import wraps
 
@@ -22,6 +24,7 @@ from werkzeug.utils import secure_filename
 import webapp_config
 from repositories.articles import ArticleRepository
 from services import article_content as content
+from services import link_previews
 from utils.auth import is_admin, require_admin
 
 logger = logging.getLogger(__name__)
@@ -34,6 +37,7 @@ WAITING_PER_AUTHOR = 3
 REVIEWER_PING_COOLDOWN_MIN = 15
 COMMENTS_PER_ARTICLE = 200
 MAX_REQUEST_BYTES = content.PDF_MAX_BYTES + 512 * 1024
+LINK_PREVIEWS_PER_10_MIN = 20
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +164,9 @@ def _read_form():
     body = content.clean_text(form.get("body"), multiline=True)
     tags = content.clean_tags(form.get("tags") or "")
     remove_pdf = str(form.get("remove_pdf") or "") in ("1", "true")
+    external_url, error = content.clean_external_url(form.get("external_url"))
+    if error:
+        return None, None, (error, 400)
 
     pdf_bytes = None
     pdf_name = None
@@ -172,10 +179,58 @@ def _read_form():
         if error:
             return None, None, (error, 400)
         pdf_name = secure_filename(upload.filename)[:100] or "article.pdf"
+    if external_url and pdf_bytes is not None:
+        return None, None, ("Attach a PDF or link an article on another site, not both.", 400)
 
     fields = dict(title=title, summary=summary, category=category, body=body,
-                  tags=tags, remove_pdf=remove_pdf, pdf_name=pdf_name)
+                  tags=tags, remove_pdf=remove_pdf, pdf_name=pdf_name,
+                  external_url=external_url)
     return fields, pdf_bytes, None
+
+
+def _fetch_link_preview(url: str) -> dict | None:
+    """The page's own preview card (title, summary, image, site name).
+    Fetched by the server with the SSRF-safe fetcher; cached for hours."""
+    try:
+        return link_previews.get_previews([url]).get(url)
+    except Exception:
+        logger.exception("Link preview failed for %s", url)
+        return None
+
+
+def _save_external(repo, article: dict, url: str | None):
+    """Store (or clear) the outside link plus the site name and image from
+    that page's preview.  The image is never taken from the client."""
+    if not url:
+        if article.get("external_url"):
+            repo.set_external(article["id"], None)
+        return
+    preview = _fetch_link_preview(url) or {}
+    image = preview.get("image")
+    if not (image and image.startswith("https://") and len(image) <= 1000):
+        image = None
+    if not preview and url == article.get("external_url"):
+        # Page unreachable right now: keep what we had for the same link
+        site, image = article.get("external_site"), article.get("external_image")
+    else:
+        site = content.site_label(url, preview.get("site_name"))
+    repo.set_external(article["id"], url, site, image)
+
+
+_preview_hits: dict[str, list[float]] = {}
+_preview_lock = threading.Lock()
+
+
+def _preview_allowed(uid: str) -> bool:
+    now = time.time()
+    with _preview_lock:
+        hits = [t for t in _preview_hits.get(uid, []) if now - t < 600]
+        if len(hits) >= LINK_PREVIEWS_PER_10_MIN:
+            _preview_hits[uid] = hits
+            return False
+        hits.append(now)
+        _preview_hits[uid] = hits
+        return True
 
 
 def _store_pdf(data: bytes) -> str:
@@ -307,6 +362,29 @@ def preview_article():
     })
 
 
+@articles_bp.route("/link-preview", methods=["POST"])
+@require_login
+def link_preview():
+    """Read another site's preview card so the editor can prefill the title,
+    summary and show the tile before submitting."""
+    data = request.get_json(silent=True) or {}
+    url, error = content.clean_external_url(data.get("url"))
+    if error or not url:
+        return jsonify({"error": error or "Paste a link first."}), 400
+    if not _preview_allowed(_user_id()):
+        return jsonify({"error": "Too many link checks. Try again in a few minutes."}), 429
+    preview = _fetch_link_preview(url) or {}
+    image = preview.get("image")
+    return jsonify({
+        "url": url,
+        "found": bool(preview),
+        "title": content.clean_text(preview.get("title"))[: content.TITLE_MAX],
+        "summary": content.clean_text(preview.get("description"))[: content.SUMMARY_MAX],
+        "image": image if image and image.startswith("https://") else None,
+        "site": content.site_label(url, preview.get("site_name")),
+    })
+
+
 @articles_bp.route("/mine", methods=["GET"])
 @require_login
 def my_articles():
@@ -327,7 +405,8 @@ def submit_article():
     if error:
         return jsonify({"error": error[0]}), error[1]
     error = content.validate_article(fields["title"], fields["summary"], fields["body"],
-                                     fields["category"], has_pdf=pdf_bytes is not None)
+                                     fields["category"], has_pdf=pdf_bytes is not None,
+                                     has_link=bool(fields["external_url"]))
     if error:
         return jsonify({"error": error}), 400
 
@@ -338,10 +417,14 @@ def submit_article():
     )
     if pdf_bytes is not None:
         repo.set_pdf(article_id, _store_pdf(pdf_bytes), fields["pdf_name"], len(pdf_bytes))
+    if fields["external_url"]:
+        _save_external(repo, repo.get(article_id), fields["external_url"])
 
     article = repo.get(article_id)
     repo.add_comment(article_id, uid, article["author_name"], "author", "", kind="submitted")
     pdf_note = " A PDF is attached." if pdf_bytes is not None else ""
+    if article.get("external_url"):
+        pdf_note += f" Links to an article on {article['external_site']}: {article['external_url']}"
     _notify_reviewers(
         repo, article, "New player article to review",
         f"**{article['title']}** by {article['author_name']}\n"
@@ -364,8 +447,11 @@ def edit_article(article_id):
     if error:
         return jsonify({"error": error[0]}), error[1]
     keeps_pdf = article["has_pdf"] and not fields["remove_pdf"]
+    if fields["external_url"] and keeps_pdf:
+        return jsonify({"error": "Remove the PDF to link an article on another site instead."}), 400
     error = content.validate_article(fields["title"], fields["summary"], fields["body"],
-                                     fields["category"], has_pdf=pdf_bytes is not None or keeps_pdf)
+                                     fields["category"], has_pdf=pdf_bytes is not None or keeps_pdf,
+                                     has_link=bool(fields["external_url"]))
     if error:
         return jsonify({"error": error}), 400
 
@@ -377,6 +463,7 @@ def edit_article(article_id):
             repo.set_pdf(article_id, _store_pdf(pdf_bytes), fields["pdf_name"], len(pdf_bytes))
         else:
             repo.set_pdf(article_id, None, None, None)
+    _save_external(repo, article, fields["external_url"])
 
     article = repo.get(article_id)
     repo.add_comment(article_id, article["author_id"], article["author_name"], "author", "", kind="submitted")

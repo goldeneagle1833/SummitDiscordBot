@@ -397,3 +397,149 @@ class TestDiscussion:
         for i in range(9):
             assert client.post(f"/api/articles/{aid}/discussion", json={"body": f"c{i}"}).status_code == 201
         assert client.post(f"/api/articles/{aid}/discussion", json={"body": "too many"}).status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# Linking an article hosted on another site
+
+EXT_URL = "https://eternaldurdles.com/functions/ogProxy?slug=pv-rule"
+EXT_PREVIEW = {
+    "title": "The PV Rule", "description": "Why the PV rule matters in Sorcery.",
+    "image": "https://eternaldurdles.com/og/pv-rule.png", "site_name": "Eternal Durdles",
+    "icon": None, "color": None,
+}
+
+
+@pytest.fixture()
+def fake_previews(monkeypatch):
+    """No network in tests: the SSRF-safe fetcher is replaced by a lookup."""
+    from services import link_previews
+    pages = {EXT_URL: EXT_PREVIEW}
+    calls = []
+
+    def fake_get_previews(urls):
+        calls.extend(urls)
+        return {u: pages.get(u) for u in urls}
+
+    monkeypatch.setattr(link_previews, "get_previews", fake_get_previews)
+    return pages, calls
+
+
+class TestExternalLinks:
+    def test_clean_external_url(self):
+        from services.article_content import clean_external_url
+        assert clean_external_url("eternaldurdles.com/x?slug=a") == ("https://eternaldurdles.com/x?slug=a", None)
+        assert clean_external_url("") == (None, None)
+        for bad in ("javascript:alert(1)", "https://user:pw@evil.com/", "https://localhost",
+                    "https://sorcererssummit.com/articles/1", "https://www.sorcererssummit.com/x",
+                    "https://a b.com/", "https://x.com/" + "a" * 600):
+            url, error = clean_external_url(bad)
+            assert url is None and error, bad
+
+    def test_preview_endpoint(self, client, articles, fake_previews):
+        assert client.post("/api/articles/link-preview", json={"url": EXT_URL}).status_code == 401
+        _login(client)
+        data = client.post("/api/articles/link-preview", json={"url": EXT_URL}).get_json()
+        assert data == {"url": EXT_URL, "found": True, "title": "The PV Rule",
+                        "summary": "Why the PV rule matters in Sorcery.",
+                        "image": "https://eternaldurdles.com/og/pv-rule.png", "site": "Eternal Durdles"}
+        missing = client.post("/api/articles/link-preview", json={"url": "https://nowhere.example.com/a"}).get_json()
+        assert missing["found"] is False and missing["site"] == "nowhere.example.com"
+        assert client.post("/api/articles/link-preview", json={"url": "ftp://x"}).status_code == 400
+
+    def test_preview_rate_limit(self, client, articles, fake_previews, monkeypatch):
+        from routes.api import articles as routes
+        monkeypatch.setattr(routes, "_preview_hits", {})
+        _login(client, uid="444444444444444444")
+        codes = [client.post("/api/articles/link-preview", json={"url": EXT_URL}).status_code
+                 for _ in range(routes.LINK_PREVIEWS_PER_10_MIN + 1)]
+        assert codes[-1] == 429 and set(codes[:-1]) == {200}
+
+    def test_submit_link_without_body_and_publish(self, client, articles, fake_previews):
+        _login(client)
+        r = _submit(client, body="", external_url=EXT_URL, title="The PV Rule",
+                    summary="A great read on the PV rule.")
+        assert r.status_code == 201, r.get_json()
+        aid = r.get_json()["id"]
+        stored = articles.get(aid)
+        assert stored["external_url"] == EXT_URL
+        assert stored["external_site"] == "Eternal Durdles"
+        assert stored["external_image"] == "https://eternaldurdles.com/og/pv-rule.png"
+        ping = [n for n in articles.notifications() if n["audience"] == "reviewer"][0]
+        assert EXT_URL in ping["body"]
+
+        _login(client, uid="111111111111111111", name="Bruce")
+        client.post(f"/api/articles/{aid}/review", json={"action": "approve"})
+        with client.session_transaction() as sess:
+            sess.clear()
+        listing = client.get("/api/articles").get_json()["articles"][0]
+        assert listing["external_url"] == EXT_URL and listing["external_site"] == "Eternal Durdles"
+        assert client.get("/api/articles?q=durdles").get_json()["total"] == 1
+        detail = client.get(f"/api/articles/{aid}").get_json()
+        assert detail["external_image"].startswith("https://")
+
+    def test_link_rules(self, client, articles, fake_previews):
+        _login(client)
+        # A written article still needs a body
+        assert _submit(client, body="short").status_code == 400
+        # Own site is refused
+        assert _submit(client, body="", external_url="https://sorcererssummit.com/articles/2").status_code == 400
+        # Link and PDF together is refused
+        r = client.post("/api/articles", data={
+            "title": "Both", "summary": "s", "category": "Strategy", "body": "",
+            "external_url": EXT_URL, "pdf": (io.BytesIO(_pdf()), "a.pdf"),
+        }, content_type="multipart/form-data")
+        assert r.status_code == 400 and "not both" in r.get_json()["error"]
+
+    def test_unreachable_page_still_saves_with_hostname(self, client, articles, fake_previews):
+        _login(client)
+        url = "https://www.someblog.example.org/post"
+        aid = _submit(client, body="", external_url=url).get_json()["id"]
+        stored = articles.get(aid)
+        assert stored["external_site"] == "someblog.example.org" and stored["external_image"] is None
+
+    def test_non_https_image_dropped(self, client, articles, fake_previews):
+        pages, _ = fake_previews
+        pages["https://plain.example.com/a"] = dict(EXT_PREVIEW, image="http://plain.example.com/i.png")
+        _login(client)
+        aid = _submit(client, body="", external_url="https://plain.example.com/a").get_json()["id"]
+        assert articles.get(aid)["external_image"] is None
+
+    def test_edit_switches_between_link_and_written(self, client, articles, fake_previews):
+        _login(client)
+        aid = _submit(client, body="", external_url=EXT_URL).get_json()["id"]
+        base = {"title": "Frog Tempo Primer", "summary": "How to pilot frogs.", "category": "Deck Guide"}
+        # Back to a written article: the link is cleared
+        r = client.post(f"/api/articles/{aid}/edit", data=dict(base, body=BODY, external_url=""),
+                        content_type="multipart/form-data")
+        assert r.status_code == 200
+        assert articles.get(aid)["external_url"] is None and articles.get(aid)["external_site"] is None
+        # And to a link again
+        client.post(f"/api/articles/{aid}/edit", data=dict(base, body="", external_url=EXT_URL),
+                    content_type="multipart/form-data")
+        assert articles.get(aid)["external_url"] == EXT_URL
+
+    def test_old_database_gets_link_columns(self, tmp_path):
+        import sqlite3
+        db = tmp_path / "old.db"
+        conn = sqlite3.connect(db)
+        # The articles table as PR #134 shipped it (no external_* columns)
+        conn.execute("""CREATE TABLE articles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT NOT NULL, title TEXT NOT NULL,
+            summary TEXT NOT NULL, category TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '',
+            body_md TEXT NOT NULL DEFAULT '', body_html TEXT NOT NULL DEFAULT '',
+            word_count INTEGER NOT NULL DEFAULT 0, reading_minutes INTEGER NOT NULL DEFAULT 1,
+            author_id TEXT NOT NULL, author_name TEXT NOT NULL, author_provider TEXT,
+            author_avatar TEXT, pdf_file TEXT, pdf_original_name TEXT, pdf_size INTEGER,
+            status TEXT NOT NULL DEFAULT 'pending', view_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL, submitted_at TEXT NOT NULL,
+            published_at TEXT, reviewed_by TEXT, reviewed_at TEXT,
+            forum_thread_id TEXT, forum_locked INTEGER NOT NULL DEFAULT 0)""")
+        conn.execute("""INSERT INTO articles (slug, title, summary, category, author_id, author_name,
+                        status, created_at, updated_at, submitted_at, published_at)
+                        VALUES ('old', 'Old', 's', 'Strategy', '1', 'A', 'approved', 'x', 'x', 'x', 'x')""")
+        conn.commit()
+        conn.close()
+        repo = ArticleRepository(db_path=db)
+        listing = repo.search_published()["articles"][0]
+        assert listing["external_url"] is None and listing["title"] == "Old"

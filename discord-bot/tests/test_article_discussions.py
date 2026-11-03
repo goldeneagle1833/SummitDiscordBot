@@ -158,3 +158,12 @@ def test_missing_db_never_created(tmp_path):
     store = ad.ArticleStore(tmp_path / "nope.db")
     assert store.discord_message_deleted(1) == 0
     assert not (tmp_path / "nope.db").exists()
+
+
+async def test_linked_article_thread_shows_original_link(setup):
+    repo, aid, cog, forum, thread, partial = setup
+    repo.set_external(aid, "https://eternaldurdles.com/x?slug=pv-rule", "Eternal Durdles", None)
+    await cog.sync_threads()
+    content = forum.create_thread.await_args.kwargs["content"]
+    assert "Original article: https://eternaldurdles.com/x?slug=pv-rule" in content
+    assert "https://sorcererssummit.com/articles/1-frog-tempo" in content

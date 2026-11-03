@@ -4,7 +4,7 @@ import {
   articlePath, articlePdfUrl, deleteArticle, formatArticleDate, getArticle,
   getReviewQueue, reviewArticle,
 } from '@/api/articles'
-import { ArticleBody, AuthorChip, CategoryBadge, StatusBadge, TagList } from '@/components/articles/ArticleBits'
+import { ArticleBody, AuthorChip, CategoryBadge, LinkedArticleTile, StatusBadge, TagList } from '@/components/articles/ArticleBits'
 import CommentThread from '@/components/articles/CommentThread'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -97,6 +97,7 @@ export default function ArticlesReview() {
                 <div className="flex items-center gap-2 mb-1">
                   <CategoryBadge category={a.category} />
                   {a.has_pdf && <span className="text-[11px] font-semibold text-red-300">PDF</span>}
+                  {a.external_url && <span className="text-[11px] font-semibold text-sky-300">Link</span>}
                   <span className="ml-auto text-xs text-text-muted">{formatArticleDate(a.submitted_at)}</span>
                 </div>
                 <p className="font-semibold text-text-primary text-sm break-words">{a.title}</p>
@@ -190,7 +191,15 @@ function ReviewPanel({ article, onBack, onChanged, onDeleted, setComments }) {
       </div>
 
       <div className="p-4 max-h-[60vh] overflow-y-auto border-b border-border">
-        {article.body_html ? <ArticleBody html={article.body_html} /> : <p className="text-sm text-text-muted">No text, PDF only.</p>}
+        {article.external_url && (
+          <div className="mb-4 max-w-md">
+            <p className="text-xs text-text-muted mb-1 break-all">Links to {article.external_url}</p>
+            <LinkedArticleTile url={article.external_url} site={article.external_site} image={article.external_image} title={article.title} />
+          </div>
+        )}
+        {article.body_html
+          ? <ArticleBody html={article.body_html} />
+          : <p className="text-sm text-text-muted">{article.external_url ? 'No note, link only.' : 'No text, PDF only.'}</p>}
       </div>
 
       <div className="p-4 border-b border-border space-y-2">

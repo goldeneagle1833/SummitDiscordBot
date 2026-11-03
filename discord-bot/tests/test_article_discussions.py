@@ -129,6 +129,22 @@ async def test_takedown_locks_thread(setup):
     assert repo.discussion(aid) == []
 
 
+async def test_creates_forum_when_missing(setup, monkeypatch):
+    repo, aid, cog, forum, thread, partial = setup
+    monkeypatch.setattr(ad, "config", MagicMock(ARTICLES_FORUM_CHANNEL_ID=0, SUMMIT_GUILD_ID=5, GUILD_ID=5))
+    guild = MagicMock()
+    guild.forums = []
+    guild.create_forum = AsyncMock(return_value=forum)
+    cog.bot.get_guild = MagicMock(return_value=guild)
+    await cog.sync_threads()
+    guild.create_forum.assert_awaited_once()
+    kwargs = guild.create_forum.await_args.kwargs
+    assert kwargs["name"] == "player-articles"
+    everyone = kwargs["overwrites"][guild.default_role]
+    assert everyone.send_messages is False and everyone.send_messages_in_threads is True
+    assert repo.get(aid)["forum_thread_id"] == "777"
+
+
 async def test_no_forum_channel_is_quiet(setup, monkeypatch):
     repo, aid, cog, forum, thread, partial = setup
     monkeypatch.setattr(ad, "config", MagicMock(ARTICLES_FORUM_CHANNEL_ID=0, SUMMIT_GUILD_ID=0, GUILD_ID=0))

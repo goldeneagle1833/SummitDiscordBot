@@ -59,7 +59,7 @@ TOP_CUT_CHANNEL_ID = 000000000000000000  # Where new bracket pairings are posted
 LIMITED_TOP_CUT_CHANNEL_ID = 000000000000000000  # Limited top 8: season-end post and Limited bracket pairings
 LIMITED_TOP_CUT_ROLE_ID = None  # Optional: a role handed to the Limited top 8 when a Limited season ends
 # Forum channel where each published player article gets a discussion thread
-# (0 = use a forum channel named 'player-articles')
+# (0 = use the forum named 'player-articles'; the bot creates it if missing)
 ARTICLES_FORUM_CHANNEL_ID = 000000000000000000
 CONTENT_CHANNEL_ID = 000000000000000000  # sorcery-content: shared links become home page banners; new Meta Reports post here
 MAGE_ROLE_ID = 000000000000000000

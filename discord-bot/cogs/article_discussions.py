@@ -208,6 +208,43 @@ class ArticleDiscussionsCog(commands.Cog):
                     return forum
         return None
 
+    def _guild(self) -> discord.Guild | None:
+        guild_id = int(getattr(config, "SUMMIT_GUILD_ID", 0) or getattr(config, "GUILD_ID", 0) or 0)
+        return self.bot.get_guild(guild_id) if guild_id else None
+
+    async def _create_forum(self) -> discord.ForumChannel | None:
+        """Make the player-articles forum the first time an article is published.
+
+        Members can reply in article posts but can't start their own posts;
+        only the bot opens one per published article.
+        """
+        guild = self._guild()
+        if guild is None:
+            return None
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(
+                send_messages=False,  # in a forum: no new posts
+                send_messages_in_threads=True,  # but replying is fine
+            ),
+            guild.me: discord.PermissionOverwrite(
+                view_channel=True, send_messages=True, send_messages_in_threads=True,
+                create_public_threads=True, manage_threads=True, manage_messages=True,
+            ),
+        }
+        try:
+            forum = await guild.create_forum(
+                name=FORUM_NAME,
+                topic="Player articles from sorcererssummit.com/articles. Comments here and "
+                      "on the site stay in sync.",
+                overwrites=overwrites,
+                reason="Player articles discussion threads",
+            )
+        except (discord.Forbidden, discord.HTTPException) as e:
+            logger.warning(f"Player articles: could not create the forum channel: {e}")
+            return None
+        logger.info(f"Player articles: created forum channel {forum.id}")
+        return forum
+
     async def _thread(self, thread_id) -> discord.Thread | None:
         thread = self.bot.get_channel(int(thread_id))
         if thread is None:
@@ -239,12 +276,12 @@ class ArticleDiscussionsCog(commands.Cog):
             return
         for article in work:
             if article["forum_thread_id"] is None:
-                forum = self._forum()
+                forum = self._forum() or await self._create_forum()
                 if forum is None:
                     if not self._warned_no_forum:
                         logger.warning(
-                            "Player articles: no forum channel (set ARTICLES_FORUM_CHANNEL_ID "
-                            f"or create a forum named '{FORUM_NAME}'); threads not created"
+                            "Player articles: no forum channel and couldn't create one (the bot "
+                            "needs Manage Channels, or set ARTICLES_FORUM_CHANNEL_ID); threads not created"
                         )
                         self._warned_no_forum = True
                     return

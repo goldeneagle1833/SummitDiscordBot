@@ -79,8 +79,9 @@ export default function DeckCardStats({ cards, avatarName }) {
       const key = nameKey(card.name)
       if (!key) continue
       const seen = byKey.get(key)
-      if (seen) seen.qty += card.qty || 0
-      else byKey.set(key, { name: card.name, qty: card.qty || 0 })
+      const qty = card.qty ?? card.quantity ?? 1
+      if (seen) seen.qty += qty
+      else byKey.set(key, { name: card.name, qty })
     }
     return byKey
   }, [cards, avatarName])

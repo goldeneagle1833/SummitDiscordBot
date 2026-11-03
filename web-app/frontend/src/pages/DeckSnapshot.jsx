@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import Spinner from '@/components/ui/Spinner'
 import CardImagePopup from '@/components/deck/CardImagePopup'
 import DeckVisualizer from '@/components/deck/DeckVisualizer'
+import DeckCardStats from '@/components/deck/DeckCardStats'
 import TryDeckButton from '@/components/deck/TryDeckButton'
 import { get } from '@/api/client'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -215,6 +216,14 @@ export default function DeckSnapshot() {
           >
             Visual
           </button>
+          <button
+            onClick={() => setViewMode('stats')}
+            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === 'stats' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
+            }`}
+          >
+            Card stats
+          </button>
         </div>
       </div>
 
@@ -238,6 +247,11 @@ export default function DeckSnapshot() {
       {/* Visual View (Deck Visualizer) */}
       {viewMode === 'visual' && (
         <DeckVisualizer spellbook={deck.spellbook} atlas={deck.atlas} sideboard={deck.sideboard} />
+      )}
+
+      {/* Card Stats (Card Win Rates for this deck's cards) */}
+      {viewMode === 'stats' && (
+        <DeckCardStats cards={[...(deck.spellbook || []), ...(deck.atlas || [])]} avatarName={avatarName} />
       )}
 
       {/* Card Image Popup */}

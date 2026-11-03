@@ -123,6 +123,29 @@ class ArticleRepository:
 
                 -- Reviewers the owner added on the blog page (on top of
                 -- ARTICLE_REVIEWER_IDS from the environment)
+                -- Public discussion under a published article. Mirrored both
+                -- ways with the article's Discord forum thread by the bot
+                -- (discord-bot/cogs/article_discussions.py).
+                CREATE TABLE IF NOT EXISTS article_public_comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    article_id INTEGER NOT NULL,
+                    source TEXT NOT NULL,              -- 'site' | 'discord'
+                    user_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    avatar TEXT,
+                    body TEXT NOT NULL,
+                    discord_message_id TEXT,           -- the Discord copy (or original)
+                    mirror_status TEXT NOT NULL DEFAULT 'pending',  -- pending | done | failed
+                    deleted INTEGER NOT NULL DEFAULT 0,
+                    mirror_deleted INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    edited_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_article_public_comments_article
+                    ON article_public_comments (article_id, deleted);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_article_public_comments_msg
+                    ON article_public_comments (discord_message_id);
+
                 CREATE TABLE IF NOT EXISTS article_reviewers (
                     user_id TEXT PRIMARY KEY,     -- Discord user ID
                     username TEXT NOT NULL,
@@ -130,6 +153,12 @@ class ArticleRepository:
                     added_at TEXT NOT NULL
                 );
             """)
+            # Discord forum thread for the article's discussion (set by the bot)
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
+            if "forum_thread_id" not in cols:
+                conn.execute("ALTER TABLE articles ADD COLUMN forum_thread_id TEXT")
+            if "forum_locked" not in cols:
+                conn.execute("ALTER TABLE articles ADD COLUMN forum_locked INTEGER NOT NULL DEFAULT 0")
             conn.commit()
         finally:
             conn.close()
@@ -526,5 +555,72 @@ class ArticleRepository:
             cur = conn.execute("DELETE FROM article_reviewers WHERE user_id = ?", (str(user_id),))
             conn.commit()
             return cur.rowcount > 0
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Public discussion
+
+    def discussion(self, article_id: int) -> list[dict]:
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                """SELECT id, source, user_id, username, avatar, body, created_at, edited_at
+                   FROM article_public_comments
+                   WHERE article_id = ? AND deleted = 0 ORDER BY created_at, id""",
+                (article_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def add_public_comment(self, article_id: int, *, source: str, user_id: str,
+                           username: str, avatar: str | None, body: str,
+                           discord_message_id: str | None = None) -> int:
+        conn = self._conn()
+        try:
+            cur = conn.execute(
+                """INSERT INTO article_public_comments
+                   (article_id, source, user_id, username, avatar, body,
+                    discord_message_id, mirror_status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (article_id, source, str(user_id), username, avatar, body,
+                 discord_message_id, "done" if source == "discord" else "pending", _now()),
+            )
+            conn.commit()
+            return cur.lastrowid
+        finally:
+            conn.close()
+
+    def get_public_comment(self, comment_id: int) -> dict | None:
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM article_public_comments WHERE id = ?", (comment_id,)
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def delete_public_comment(self, comment_id: int) -> None:
+        conn = self._conn()
+        try:
+            conn.execute(
+                "UPDATE article_public_comments SET deleted = 1 WHERE id = ?", (comment_id,)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def count_recent_public_comments(self, user_id: str, minutes: int = 60) -> int:
+        since = (datetime.datetime.now(datetime.timezone.utc)
+                 - datetime.timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        conn = self._conn()
+        try:
+            return conn.execute(
+                """SELECT COUNT(*) FROM article_public_comments
+                   WHERE user_id = ? AND source = 'site' AND created_at >= ?""",
+                (str(user_id), since),
+            ).fetchone()[0]
         finally:
             conn.close()

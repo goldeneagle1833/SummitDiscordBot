@@ -570,3 +570,81 @@ def _known_name(user_id: str) -> str | None:
         return row[0] if row and row[0] else None
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Public discussion under a published article (synced with its Discord forum
+# thread by the bot)
+
+DISCUSSION_COMMENT_MAX = 1000
+DISCUSSION_PER_HOUR = 10
+
+
+def _discussion_payload(repo, article: dict) -> dict:
+    thread_id = article.get("forum_thread_id")
+    guild = webapp_config.DISCORD_GUILD_ID
+    uid = _user_id()
+    moderator = is_article_reviewer()
+    comments = repo.discussion(article["id"])
+    for c in comments:
+        c["can_delete"] = moderator or (c["source"] == "site" and c["user_id"] == uid)
+        c.pop("user_id", None)
+    return {
+        "comments": comments,
+        "discord_thread_url": f"https://discord.com/channels/{guild}/{thread_id}" if thread_id and guild else None,
+    }
+
+
+def _published_or_404(repo, article_id):
+    article = repo.get(article_id)
+    if not article or article["status"] != "approved":
+        return None
+    return article
+
+
+@articles_bp.route("/<int:article_id>/discussion", methods=["GET"])
+def get_discussion(article_id):
+    repo = _repo()
+    article = _published_or_404(repo, article_id)
+    if not article:
+        return jsonify({"error": "Article not found"}), 404
+    return jsonify(_discussion_payload(repo, article))
+
+
+@articles_bp.route("/<int:article_id>/discussion", methods=["POST"])
+@require_login
+def post_discussion(article_id):
+    repo = _repo()
+    article = _published_or_404(repo, article_id)
+    if not article:
+        return jsonify({"error": "Article not found"}), 404
+    data = request.get_json(silent=True) or {}
+    body = content.clean_text(data.get("body"), multiline=True)
+    if not body:
+        return jsonify({"error": "Write a comment first."}), 400
+    if len(body) > DISCUSSION_COMMENT_MAX:
+        return jsonify({"error": f"Keep comments to {DISCUSSION_COMMENT_MAX} characters."}), 400
+    if repo.count_recent_public_comments(_user_id()) >= DISCUSSION_PER_HOUR:
+        return jsonify({"error": "You're commenting fast. Try again in a little while."}), 429
+    repo.add_public_comment(
+        article_id, source="site", user_id=_user_id(),
+        username=session.get("username") or "Player", avatar=_avatar_url(), body=body,
+    )
+    return jsonify(_discussion_payload(repo, article)), 201
+
+
+@articles_bp.route("/<int:article_id>/discussion/<int:comment_id>", methods=["DELETE"])
+@require_login
+def delete_discussion_comment(article_id, comment_id):
+    repo = _repo()
+    comment = repo.get_public_comment(comment_id)
+    if not comment or comment["article_id"] != article_id or comment["deleted"]:
+        return jsonify({"error": "Comment not found"}), 404
+    own = comment["source"] == "site" and comment["user_id"] == _user_id()
+    if not (own or is_article_reviewer()):
+        return jsonify({"error": "You can only delete your own comments."}), 403
+    # The bot removes the Discord copy (or, for moderators, the Discord original)
+    repo.delete_public_comment(comment_id)
+    logger.info("Article %s comment %s deleted by %s", article_id, comment_id, _user_id())
+    article = repo.get(article_id)
+    return jsonify(_discussion_payload(repo, article))

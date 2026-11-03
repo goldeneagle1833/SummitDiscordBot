@@ -27,6 +27,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.articles.article_facets",
     "api.articles.get_article",
     "api.articles.get_article_pdf",
+    "api.articles.get_discussion",  # comments on published articles only
 
     # -- Status / health --
     "api.misc.status",

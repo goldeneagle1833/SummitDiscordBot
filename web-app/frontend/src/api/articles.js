@@ -85,3 +85,8 @@ export function formatArticleDate(iso) {
 export const getArticleReviewers = () => get('/api/articles/reviewers')
 export const addArticleReviewer = (user_id, username) => post('/api/articles/reviewers', { user_id, username })
 export const removeArticleReviewer = (userId) => del(`/api/articles/reviewers/${userId}`)
+
+// Public discussion (synced with the article's Discord thread)
+export const getDiscussion = (id) => get(`/api/articles/${id}/discussion`)
+export const postDiscussion = (id, body) => post(`/api/articles/${id}/discussion`, { body })
+export const deleteDiscussionComment = (id, commentId) => del(`/api/articles/${id}/discussion/${commentId}`)

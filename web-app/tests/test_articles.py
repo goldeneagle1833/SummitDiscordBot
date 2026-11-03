@@ -340,3 +340,60 @@ class TestReviewerList:
         assert client.delete("/api/articles/reviewers/555555555555555555").status_code == 200
         _login(client, uid="555555555555555555", name="ofncj")
         assert client.get("/api/articles/review").status_code == 403
+
+
+class TestDiscussion:
+    def _published(self, client, articles):
+        _login(client)
+        aid = _submit(client).get_json()["id"]
+        _login(client, uid="111111111111111111", name="Bruce")
+        client.post(f"/api/articles/{aid}/review", json={"action": "approve"})
+        return aid
+
+    def test_comments_only_on_published_articles(self, client, articles):
+        _login(client)
+        aid = _submit(client).get_json()["id"]
+        assert client.post(f"/api/articles/{aid}/discussion", json={"body": "hi"}).status_code == 404
+        assert client.get(f"/api/articles/{aid}/discussion").status_code == 404
+
+    def test_post_list_and_queue_for_discord(self, client, articles, monkeypatch):
+        monkeypatch.setattr(webapp_config, "DISCORD_GUILD_ID", "123")
+        aid = self._published(client, articles)
+        with client.session_transaction() as sess:
+            sess.clear()
+        assert client.post(f"/api/articles/{aid}/discussion", json={"body": "hi"}).status_code == 401
+
+        _login(client, uid="444444444444444444", name="Reader")
+        r = client.post(f"/api/articles/{aid}/discussion", json={"body": "<b>Nice</b> guide"})
+        assert r.status_code == 201
+        c = r.get_json()["comments"][0]
+        assert c["body"] == "<b>Nice</b> guide"  # stored as text; React escapes it
+        assert c["can_delete"] is True and "user_id" not in c
+        stored = articles.get_public_comment(c["id"])
+        assert stored["mirror_status"] == "pending" and stored["source"] == "site"
+
+        # A Discord-side comment shows up for everyone, not deletable by readers
+        articles.add_public_comment(aid, source="discord", user_id="42", username="Disco",
+                                    avatar=None, body="From Discord", discord_message_id="6001")
+        con = __import__("sqlite3").connect(webapp_config.ARTICLES_DB_PATH)
+        con.execute("UPDATE articles SET forum_thread_id = '777' WHERE id = ?", (aid,))
+        con.commit(); con.close()
+        with client.session_transaction() as sess:
+            sess.clear()
+        d = client.get(f"/api/articles/{aid}/discussion").get_json()
+        assert [x["body"] for x in d["comments"]] == ["<b>Nice</b> guide", "From Discord"]
+        assert d["discord_thread_url"] == "https://discord.com/channels/123/777"
+        assert not any(x["can_delete"] for x in d["comments"])
+
+    def test_delete_rules_and_rate_limit(self, client, articles):
+        aid = self._published(client, articles)
+        _login(client, uid="444444444444444444", name="Reader")
+        cid = client.post(f"/api/articles/{aid}/discussion", json={"body": "first"}).get_json()["comments"][0]["id"]
+        _login(client, uid="555555555555555555", name="Other")
+        assert client.delete(f"/api/articles/{aid}/discussion/{cid}").status_code == 403
+        _login(client, uid="444444444444444444", name="Reader")
+        assert client.delete(f"/api/articles/{aid}/discussion/{cid}").status_code == 200
+        assert articles.get_public_comment(cid)["deleted"] == 1
+        for i in range(9):
+            assert client.post(f"/api/articles/{aid}/discussion", json={"body": f"c{i}"}).status_code == 201
+        assert client.post(f"/api/articles/{aid}/discussion", json={"body": "too many"}).status_code == 429

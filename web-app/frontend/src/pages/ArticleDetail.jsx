@@ -4,6 +4,7 @@ import { getArticle, listArticles, articlePdfUrl, formatArticleDate } from '@/ap
 import {
   ArticleBody, ArticleCard, AuthorChip, CategoryBadge, StatusBadge, TagList,
 } from '@/components/articles/ArticleBits'
+import Discussion from '@/components/articles/Discussion'
 import ShareLinkButton from '@/components/ui/ShareLinkButton'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -109,6 +110,8 @@ export default function ArticleDetail() {
           </div>
         )}
       </article>
+
+      {!unpublished && <Discussion articleId={article.id} />}
 
       {more.length > 0 && (
         <section className="mt-12 pt-6 border-t border-border">

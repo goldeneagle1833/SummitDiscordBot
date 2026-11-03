@@ -91,7 +91,7 @@ def mark(notification_id: int, success: bool, error: str | None = None,
 def build_message(n: dict) -> tuple[discord.Embed, discord.ui.View | None]:
     url = site_url(n.get("link_path"))
     embed = discord.Embed(
-        title=f"📝 {n['subject']}",
+        title=n["subject"],
         description=(n.get("body") or "")[:4000],
         color=ARTICLE_COLOR,
         url=url,

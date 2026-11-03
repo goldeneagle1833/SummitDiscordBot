@@ -12,7 +12,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-sys.modules.setdefault("config", MagicMock(WEB_APP_URL="https://sorcererssummit.com"))
+# Use the real config when it exists (CI copies config.example.py). Stubbing
+# it unconditionally here would leak a MagicMock config into later tests.
+try:
+    import config  # noqa: F401
+except ImportError:
+    sys.modules["config"] = MagicMock(WEB_APP_URL="https://sorcererssummit.com")
 
 from cogs import article_notifications as an  # noqa: E402
 

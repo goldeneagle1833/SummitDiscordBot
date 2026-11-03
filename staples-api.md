@@ -5,23 +5,19 @@ that are both widely played and actually help you win.
 
 Base URL: `https://sorcererssummit.com`
 
-## Authentication
+## Access
 
-Same key as `GET /api/partner/season-badges`:
-
-```
-X-API-Key: <your Summit API key>
-```
-
-(`Authorization: Bearer <key>` also works.) A missing or wrong key returns `401`.
+Open to everybody: no login and no API key. Each visitor (by IP) can make 60 calls a
+minute; past that the API answers `429`. Any website can call it from the browser
+(`Access-Control-Allow-Origin: *`).
 
 ## Request
 
 ```
-GET /api/partner/staples
-GET /api/partner/staples?season=all
-GET /api/partner/staples?season=8&type=Minion&limit=25
-GET /api/partner/staples?from=2026-10-01&through=2026-10-31&element=Fire
+GET /api/staples
+GET /api/staples?season=all
+GET /api/staples?season=8&type=Minion&limit=25
+GET /api/staples?from=2026-10-01&through=2026-10-31&element=Fire
 ```
 
 | Parameter | Description |
@@ -103,7 +99,7 @@ points. A rate is `null` when PSO has no games for it.
 | Status | Meaning |
 |--------|---------|
 | `400` | A bad parameter (message in `error`). |
-| `401` | Missing or wrong API key. |
+| `429` | Over 60 calls a minute from one visitor. |
 | `503` | Play Sorcery Online's card data could not be reached (`available: false`). |
 
 Results are cached for 10 minutes.

@@ -1,4 +1,4 @@
-"""Tests for the partner Staples API (GET /api/partner/staples).
+"""Tests for the open Staples API (GET /api/staples).
 
 PSO's card rows use the exact shape its /cards route returns (see
 tests/test_ranked_analytics.py and the vendored cardTable.ts). Seasons come
@@ -13,9 +13,6 @@ import pytest
 import webapp_config
 from services import ranked_analytics
 from services import staples as svc
-
-KEY = {"X-API-Key": "test-api-key-123"}
-
 
 def rate(games, win_rate):
     wins = round(games * win_rate)
@@ -67,8 +64,10 @@ CATALOG = [
 @pytest.fixture(autouse=True)
 def _reset():
     svc.reset_cache()
+    ranked_analytics.reset_caches()
     yield
     svc.reset_cache()
+    ranked_analytics.reset_caches()
 
 
 @pytest.fixture()
@@ -140,13 +139,20 @@ class TestWindow:
 
 
 class TestRoute:
-    def test_requires_the_partner_key(self, client, pso):
-        assert client.get("/api/partner/staples").status_code == 401
-        assert client.get("/api/partner/staples", headers={"X-API-Key": "nope"}).status_code == 401
-        assert pso == []
+    def test_open_without_a_key(self, client, pso):
+        resp = client.get("/api/staples")
+        assert resp.status_code == 200
+        assert resp.headers["Access-Control-Allow-Origin"] == "*"
+
+    def test_each_visitor_is_throttled(self, client, pso, monkeypatch):
+        monkeypatch.setattr(ranked_analytics, "MAX_REQUESTS_PER_WINDOW", 2)
+        ranked_analytics.reset_caches()
+        assert client.get("/api/staples").status_code == 200
+        assert client.get("/api/staples").status_code == 200
+        assert client.get("/api/staples").status_code == 429
 
     def test_returns_ranked_cards(self, client, pso):
-        resp = client.get("/api/partner/staples?season=all", headers=KEY)
+        resp = client.get("/api/staples?season=all")
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["success"] is True
@@ -162,7 +168,7 @@ class TestRoute:
         assert pso[0]["params"] == {"format": "constructed"}
 
     def test_only_aggregate_fields(self, client, pso):
-        data = client.get("/api/partner/staples", headers=KEY).get_json()
+        data = client.get("/api/staples").get_json()
         allowed = {"rank", "name", "cardKey", "type", "elements", "rarity", "imageUrl", "stapleScore",
                    "components", "deckShare", "inDeckWinRate", "playedWinRate", "notPlayedWinRate",
                    "playedVsNotPlayed", "openingHandWinRate", "games"}
@@ -170,24 +176,24 @@ class TestRoute:
             assert set(row) == allowed
 
     def test_limit_and_filters(self, client, pso):
-        data = client.get("/api/partner/staples?limit=2", headers=KEY).get_json()
+        data = client.get("/api/staples?limit=2").get_json()
         assert data["count"] == 2
-        data = client.get("/api/partner/staples?type=site", headers=KEY).get_json()
+        data = client.get("/api/staples?type=site").get_json()
         assert [c["name"] for c in data["cards"]] == ["Arid Desert"]
-        data = client.get("/api/partner/staples?element=multi", headers=KEY).get_json()
+        data = client.get("/api/staples?element=multi").get_json()
         assert [c["name"] for c in data["cards"]] == ["Trap Card"]
-        data = client.get("/api/partner/staples?element=none", headers=KEY).get_json()
+        data = client.get("/api/staples?element=none").get_json()
         assert [c["name"] for c in data["cards"]] == ["Lucky Charm"]
 
     def test_bad_params(self, client, pso):
         for query in ("limit=0", "limit=101", "min_games=0", "from=yesterday",
                       "from=2026-10-02&through=2026-10-01", "type=<script>"):
-            assert client.get(f"/api/partner/staples?{query}", headers=KEY).status_code == 400, query
+            assert client.get(f"/api/staples?{query}").status_code == 400, query
 
     def test_date_range_is_forwarded_and_cached(self, client, pso):
-        url = "/api/partner/staples?from=2026-10-01&through=2026-10-31"
-        assert client.get(url, headers=KEY).status_code == 200
-        assert client.get(url, headers=KEY).status_code == 200
+        url = "/api/staples?from=2026-10-01&through=2026-10-31"
+        assert client.get(url).status_code == 200
+        assert client.get(url).status_code == 200
         assert len(pso) == 1
         assert pso[0]["params"] == {"format": "constructed", "from": "2026-10-01", "through": "2026-10-31"}
 
@@ -196,6 +202,6 @@ class TestRoute:
             raise ranked_analytics.AnalyticsUnavailable("Ranked analytics is unavailable")
 
         monkeypatch.setattr(ranked_analytics, "forward", down)
-        resp = client.get("/api/partner/staples", headers=KEY)
+        resp = client.get("/api/staples")
         assert resp.status_code == 503
         assert resp.get_json()["available"] is False

@@ -1,6 +1,8 @@
-"""Partner API: the 100 staple cards of Summit ranked play.
+"""Open API: the 100 staple cards of Summit ranked play.
 
-GET /api/partner/staples, with the same API key as /api/partner/season-badges.
+GET /api/staples is open to everybody: no login and no API key (it is on the
+site gate's exempt list). It spends Play Sorcery Online's capacity, so each
+visitor is throttled and every date range is cached for 10 minutes.
 See services/staples.py for the score. Aggregate card stats only: no deck
 lists, no players.
 """
@@ -10,8 +12,7 @@ import re
 
 from flask import Blueprint, jsonify, request
 
-from services import staples
-from utils.api_auth import require_integration_api_key
+from services import ranked_analytics, staples
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +26,14 @@ def _error(message, status=400):
     return jsonify({"success": False, "error": message}), status
 
 
-@staples_bp.route("/partner/staples", methods=["GET"])
-@require_integration_api_key
-def get_partner_staples():
+def _client_key() -> str:
+    forwarded = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", "")
+    ip = forwarded.split(",")[0].strip() or request.remote_addr or "unknown"
+    return f"staples:{ip}"
+
+
+@staples_bp.route("/staples", methods=["GET"])
+def get_staples():
     """Top staple cards (default and max 100).
 
     Query params (all optional):
@@ -39,6 +45,8 @@ def get_partner_staples():
         element: Air, Earth, Fire, Water, None or Multi
     Without season/from/through, the last 90 days of released data.
     """
+    if not ranked_analytics.claim_request(_client_key()):
+        return _error("Too many requests. Try again in a minute.", 429)
     args = request.args
     limit = args.get("limit", staples.DEFAULT_LIMIT, type=int)
     if limit is None or not 1 <= limit <= staples.MAX_LIMIT:
@@ -69,5 +77,6 @@ def get_partner_staples():
         logger.error("Could not build staples: %s", exc, exc_info=True)
         return _error("Could not build staples", 500)
     response = jsonify({"success": True, **data})
-    response.headers["Cache-Control"] = "private, max-age=300"
+    response.headers["Cache-Control"] = "public, max-age=300"
+    response.headers["Access-Control-Allow-Origin"] = "*"
     return response

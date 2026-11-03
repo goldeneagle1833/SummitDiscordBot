@@ -38,6 +38,9 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "auth.google_login",
     "auth.google_callback",
 
+    # -- Staples card API (open to everybody; aggregate card stats, throttled) --
+    "api.staples.get_staples",
+
     # -- Leaderboards (public read-only) --
     "api.leaderboard.get_leaderboard",
     "api.leaderboard.get_event_leaderboard",

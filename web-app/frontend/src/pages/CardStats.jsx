@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getRankedCards, getRankedCatalog, getRankedSeasons, RANKED_ANALYTICS_ENDPOINT } from '@/api/rankedAnalytics'
 import { get } from '@/api/client'
-import { nameKey } from '@/components/analytics/format'
+import { lookupCard, nameKey } from '@/components/analytics/format'
 import CardPopularityChart from '@/components/analytics/CardPopularityChart'
 import DataReleaseNote from '@/components/ui/DataReleaseNote'
 import Spinner from '@/components/ui/Spinner'
@@ -55,6 +55,9 @@ const USAGE_COLUMNS = [
   { key: 'usageAvgCopies', label: 'Avg copies', position: 'lead', help: 'Average copies in decks that ran this card', format: (v) => v.toLocaleString() },
 ]
 const MORE_USAGE_COLUMNS = [
+  { key: 'infoElement', label: 'Element', text: true, help: 'Sort by element' },
+  { key: 'infoType', label: 'Type', text: true, help: 'Sort by card type' },
+  { key: 'infoRarity', label: 'Rarity', text: true, help: 'Sort by rarity' },
   { key: 'usageTotalCopies', label: 'Total copies', help: 'Copies across every reported deck', format: (v) => v.toLocaleString() },
   { key: 'usageCollection', label: 'Collection', help: 'Copies in decks’ collections', format: (v) => v.toLocaleString() },
   { key: 'usageDecksWith', label: 'Decks with', help: 'Reported decks that ran this card', format: (v) => v.toLocaleString() },
@@ -68,8 +71,40 @@ function usageFields(usage) {
     usageTotalCopies: usageValue(usage.count),
     usageCollection: usageValue(usage.sideboard_count || 0),
     usageDecksWith: usageValue(usage.decks_with_card),
-    usageNumber: { percent: usage.percent_of_decks, decks: usage.decks_with_card },
+    usageInfo: { type: usage.type, element: usage.element, rarity: usage.rarity },
   }
+}
+
+const KNOWN = (value) => (value && value !== 'Unknown' && value !== 'None' ? value : '')
+
+/**
+ * Element / Type / Rarity as columns (Popular Cards had them). Each holds
+ * { text, winRate: rank } so the shared sort orders them alphabetically,
+ * blanks last.
+ */
+function withCardInfo(rows, catalogIndex) {
+  const fields = [
+    ['infoElement', (meta, info) => (meta?.elements?.length ? meta.elements.filter((e) => e && e !== 'None').join(' / ') : KNOWN(info?.element))],
+    ['infoType', (meta, info) => meta?.type || KNOWN(info?.type)],
+    ['infoRarity', (meta, info) => meta?.rarity || KNOWN(info?.rarity)],
+  ]
+  const texts = rows.map((row) => {
+    const meta = lookupCard(catalogIndex, row)
+    return fields.map(([, pick]) => pick(meta, row.usageInfo) || '')
+  })
+  const ranks = fields.map((_, i) => {
+    const sorted = [...new Set(texts.map((t) => t[i]).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+    // Ranks run high to low so a descending sort reads A to Z.
+    return new Map(sorted.map((text, index) => [text, sorted.length - index]))
+  })
+  return rows.map((row, r) => {
+    const extra = {}
+    fields.forEach(([key], i) => {
+      const text = texts[r][i]
+      extra[key] = { playerGames: null, matches: null, wins: null, winRate: text ? ranks[i].get(text) : null, text }
+    })
+    return { ...row, ...extra }
+  })
 }
 
 /**
@@ -222,7 +257,10 @@ export default function CardStats() {
   const psoRows = cards?.dataAvailable === false ? EMPTY_ROWS : (cards?.cards ?? EMPTY_ROWS)
   // Extra PSO rate columns are read before the usage fields are added.
   const extraMetrics = useMemo(() => extraRateMetrics(psoRows), [psoRows])
-  const mergedRows = useMemo(() => mergeRows(psoRows, usage), [psoRows, usage])
+  const mergedRows = useMemo(
+    () => withCardInfo(mergeRows(psoRows, usage), catalogIndex),
+    [psoRows, usage, catalogIndex],
+  )
   const rows = useMemo(
     () => (collectionOnly ? mergedRows.filter((r) => r.usageCollection?.winRate) : mergedRows),
     [mergedRows, collectionOnly],

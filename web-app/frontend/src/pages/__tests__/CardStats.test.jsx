@@ -117,10 +117,27 @@ describe('CardStats', () => {
 
     await user.click(screen.getByRole('button', { name: 'More columns' }))
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent.replace(/[\u2191\u2193\u2195]/g, '').trim())
-    expect(headers.slice(-3)).toEqual(['Total copies', 'Collection', 'Decks with'])
+    expect(headers.slice(-6)).toEqual(['Element', 'Type', 'Rarity', 'Total copies', 'Collection', 'Decks with'])
     const row = screen.getByRole('row', { name: /Gravedigger/ })
     expect(within(row).getByText('40')).toBeInTheDocument()
     expect(within(row).getByText('6')).toBeInTheDocument()
+  })
+
+  it('shows Element, Type and Rarity columns that sort A to Z', async () => {
+    const user = userEvent.setup()
+    renderWithRouter(<CardStats />)
+    await screen.findByRole('row', { name: /Whirling Blades/ })
+    await user.click(screen.getByRole('button', { name: 'More columns' }))
+
+    const row = screen.getByRole('row', { name: /Gravedigger/ })
+    expect(within(row).getByText('Earth')).toBeInTheDocument()
+    expect(within(row).getByText('Minion')).toBeInTheDocument()
+    expect(within(row).getByText('Ordinary')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^Type/ }))
+    const names = screen.getAllByRole('row').slice(1).map((r) => within(r).getByRole('button', { expanded: false }).textContent)
+    // Avatar, Magic, Minion, then the card with no catalog entry
+    expect(names).toEqual(['\u25b8Imposter', '\u25b8Whirling Blades', '\u25b8Gravedigger', '\u25b8Old Relic'])
   })
 
   it('asks Summit for the same season or custom dates', async () => {

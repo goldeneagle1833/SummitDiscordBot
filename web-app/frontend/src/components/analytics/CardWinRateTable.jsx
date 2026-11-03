@@ -245,16 +245,20 @@ export default function CardWinRateTable({
   const leadUsage = usageColumns.filter((c) => c.position === 'lead')
   const trailUsage = usageColumns.filter((c) => c.position !== 'lead')
   const usageCell = (card, column) => {
-    const value = card[column.key]?.winRate
+    const cell = card[column.key]
+    const value = cell?.winRate
+    // Text columns (Element, Type, Rarity) sort by a rank and show their text.
+    const shown = column.text ? cell?.text : (value == null ? null : column.format(value))
     return (
-      <td key={column.key} className="px-3 py-2.5 text-[#c9d1d9]">
-        {value == null ? <span className="text-text-muted">—</span> : column.format(value)}
+      <td key={column.key} className="px-3 py-2.5 text-[#c9d1d9] whitespace-nowrap">
+        {shown == null || shown === '' ? <span className="text-text-muted">—</span> : shown}
       </td>
     )
   }
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[900px] border-collapse text-sm">
+      {/* Each extra column gets room so cells don't wrap; wide tables scroll sideways. */}
+      <table className="w-full border-collapse text-sm" style={{ minWidth: 900 + usageColumns.length * 110 }}>
         <thead>
           <tr className="text-left text-xs text-text-muted">
             {columns.map((column) => {

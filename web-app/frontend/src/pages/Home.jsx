@@ -13,7 +13,24 @@ import usePageTitle from '@/hooks/usePageTitle'
 import { STORE_LIVE } from '@/utils/store'
 import { getProducts } from '@/api/store'
 import { articlePath, listArticles } from '@/api/articles'
-import { categoryColors, PreviewImage } from '@/components/articles/ArticleBits'
+
+// A player article published this recently gets a slide in the carousel
+const NEW_ARTICLE_DAYS = 14
+
+/** Carousel slide for the newest published player article (or null). */
+export function articleSlide(article) {
+  if (!article) return null
+  return {
+    key: `article-${article.id}`, badge: 'NEW ARTICLE', color: 'blue',
+    title: article.title,
+    subtitle: article.summary,
+    extra: `By ${article.author_name}${article.external_site ? ` on ${article.external_site}` : ''}`,
+    link: articlePath(article),
+    thumbnail: article.external_image || null,
+    analyticsType: 'new_article',
+    cta: 'Read article',
+  }
+}
 
 const DISCORD_URL = 'https://discord.gg/ZDqHSK9VGx'
 const HERO_LOGO = '/static/images/summit-logo-hero.png'
@@ -184,8 +201,9 @@ export function PromoCarousel() {
       get('/api/recent-event').then(d => d.event || null).catch(() => null),
       get('/api/deck-rec/staff-pick').then(d => d.success && d.staff_pick ? d.staff_pick : null).catch(() => null),
       get('/api/kudos-spotlight').then(d => d.success && d.kudos_spotlight ? d.kudos_spotlight : null).catch(() => null),
+      listArticles({ days: NEW_ARTICLE_DAYS }).then(d => d.articles?.[0] || null).catch(() => null),
     ]
-    Promise.all(promises).then(([banners, spotlight, eventSpotlight, newEvent, staffPick, kudosSpotlight]) => {
+    Promise.all(promises).then(([banners, spotlight, eventSpotlight, newEvent, staffPick, kudosSpotlight, newArticle]) => {
       const slides = []
 
       // Player of the Day from kudos (positive player reports) leads the carousel.
@@ -206,6 +224,9 @@ export function PromoCarousel() {
           link: `/top-8/${newEvent.folder}`, thumbnail: null, analyticsType: 'new_event',
         })
       }
+
+      const articleItem = articleSlide(newArticle)
+      if (articleItem) slides.push(articleItem)
 
       for (const b of banners) {
         const badge = isYouTubeLink(b.link) ? 'VIDEO' : b.badge_text
@@ -464,57 +485,21 @@ function StatBar({ leaderboard, totalGames, eloKey = 'event_elo' }) {
 
 // ── YouTube Videos ────────────────────────────────────────────
 
-// A player article published this recently gets a card in the content row
-const NEW_ARTICLE_DAYS = 14
-
-export function NewArticleCard({ article }) {
-  const colors = categoryColors(article.category)
-  return (
-    <div className="bg-bg-surface border border-border rounded-soft overflow-hidden flex flex-col">
-      <Link to={articlePath(article)} className="relative block aspect-video overflow-hidden bg-gradient-to-br from-brand-panel via-bg-elevated to-bg-surface">
-        <span className={`absolute inset-x-0 top-0 h-1 ${colors.stripe}`} aria-hidden="true" />
-        {article.external_image ? (
-          <PreviewImage src={article.external_image} className="absolute inset-0 h-full" />
-        ) : (
-          <span className="absolute inset-0 flex flex-col justify-center px-5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-secondary">{article.category}</span>
-            <span className="mt-1 font-display text-xl text-text-primary leading-snug line-clamp-3">{article.title}</span>
-          </span>
-        )}
-        <span className="absolute top-3 right-3 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider bg-secondary text-bg-dark">New article</span>
-      </Link>
-      <div className="p-3">
-        <p className="text-xs text-text-muted mb-1 truncate">
-          Player Article · {article.author_name}{article.external_site ? ` · ${article.external_site}` : ''}
-        </p>
-        <Link to={articlePath(article)} className="text-sm font-medium hover:text-primary transition-colors line-clamp-2">
-          {article.title}
-        </Link>
-      </div>
-    </div>
-  )
-}
-
 function YouTubeVideos() {
   const [videos, setVideos] = useState([])
-  const [article, setArticle] = useState(null)
 
   useEffect(() => {
     get('/api/youtube-videos')
       .then((data) => setVideos(Object.values(data).filter(Boolean)))
       .catch(() => {})
-    listArticles({ days: NEW_ARTICLE_DAYS })
-      .then((d) => setArticle(d.articles?.[0] || null))
-      .catch(() => {})
   }, [])
 
-  if (!videos.length && !article) return null
+  if (!videos.length) return null
 
   return (
     <>
       <p className="text-text-muted text-sm mb-4">Or catch up on some Sorcery content:</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {article && <NewArticleCard article={article} />}
         {videos.map((v, i) => (
           <div key={i} className="bg-bg-surface border border-border rounded-soft overflow-hidden">
             <a href={v.url} target="_blank" rel="noopener noreferrer">

@@ -29,14 +29,17 @@ GET /api/staples?from=2026-10-01&through=2026-10-31&element=Fire
 | `type` | Only this card type (`Minion`, `Magic`, `Site`, `Aura`, `Artifact`...). |
 | `element` | `Air`, `Earth`, `Fire`, `Water`, `None` or `Multi`. |
 
-With no `season`, `from` or `through`, the last 90 days are used.
+With no `season`, `from` or `through`, the last 90 days up to the latest release are used.
 
 ## Where the numbers come from
 
 The same data as the Card Win Rates page: Play Sorcery Online's Summit ranked games
 (first game at each Summit matchmade ranked table, constructed). Data is released in
 batches on the 1st and 15th, so the newest games are never included;
-`releasedThrough` says how far the data goes. Only card totals are returned, never a
+`releasedThrough` says how far the data goes. Summit saves Play Sorcery Online's card
+table once per release (All time, each season and the last 90 days), so those answers
+come from Summit's own copy. Only a custom `from`/`through` range asks Play Sorcery
+Online live. Only card totals are returned, never a
 deck list or a player.
 
 ## Staple score
@@ -58,7 +61,7 @@ since every deck runs exactly one.
 ```json
 {
   "success": true,
-  "window": {"label": "Last 90 days", "from": "2026-08-05", "through": null},
+  "window": {"label": "Last 90 days", "from": "2026-08-03", "through": "2026-10-31"},
   "releasedThrough": "2026-10-31",
   "totalGames": 4800,
   "eligibleCards": 312,
@@ -102,4 +105,4 @@ points. A rate is `null` when PSO has no games for it.
 | `429` | Over 60 calls a minute from one visitor. |
 | `503` | Play Sorcery Online's card data could not be reached (`available: false`). |
 
-Results are cached for 10 minutes.
+Custom date ranges are cached for 10 minutes.

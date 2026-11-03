@@ -6,8 +6,6 @@ from the real elo.db ``events`` table the conftest builds.
 """
 
 import sqlite3
-from datetime import date
-
 import pytest
 
 import webapp_config
@@ -115,11 +113,18 @@ class TestScore:
 
 
 class TestWindow:
-    def test_default_is_last_90_days(self):
-        window = svc.resolve_window(None, None, None, today=date(2026, 11, 3))
-        assert window == {"label": "Last 90 days", "from": "2026-08-05", "through": None}
+    def test_default_is_last_90_days_up_to_the_release(self, app, monkeypatch):
+        from datetime import datetime, timezone
+        from services import card_snapshots
 
-    def test_all_time(self):
+        real = card_snapshots.latest_release
+        monkeypatch.setattr(card_snapshots, "latest_release",
+                            lambda now=None: real(datetime(2026, 11, 3, 12, tzinfo=timezone.utc)))
+        window = svc.resolve_window(None, None, None)
+        # Nov 1 released Oct 15-31, so the window ends Oct 31.
+        assert window == {"label": "Last 90 days", "from": "2026-08-03", "through": "2026-10-31"}
+
+    def test_all_time(self, app):
         assert svc.resolve_window("all", None, None)["from"] is None
 
     def test_season_from_the_events_table(self, app):
@@ -189,6 +194,13 @@ class TestRoute:
         for query in ("limit=0", "limit=101", "min_games=0", "from=yesterday",
                       "from=2026-10-02&through=2026-10-01", "type=<script>"):
             assert client.get(f"/api/staples?{query}").status_code == 400, query
+
+    def test_named_selections_are_saved_not_refetched(self, client, pso):
+        for _ in range(3):
+            assert client.get("/api/staples?season=all").status_code == 200
+            assert client.get("/api/staples").status_code == 200
+        # One PSO call for All time, one for the recent window, ever.
+        assert len(pso) == 2
 
     def test_date_range_is_forwarded_and_cached(self, client, pso):
         url = "/api/staples?from=2026-10-01&through=2026-10-31"

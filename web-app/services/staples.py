@@ -23,9 +23,8 @@ Avatars are left out (every deck has exactly one), and a card needs
 import logging
 import threading
 import time
-from datetime import date, timedelta
 
-from services import ranked_analytics
+from services import card_snapshots, ranked_analytics
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,6 @@ WEIGHTS = {"popularity": 0.5, "impact": 0.3, "win_rate": 0.2}
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 100
 DEFAULT_MIN_GAMES = 50
-DEFAULT_DAYS = 90
 # Games of "prior" used to shrink small samples toward neutral.
 IMPACT_PRIOR_GAMES = 50
 WIN_RATE_PRIOR_GAMES = 50
@@ -199,29 +197,35 @@ def _breakdown(rows: list[dict]) -> dict:
     return {"type": ordered(by_type), "element": ordered(by_element), "rarity": ordered(by_rarity)}
 
 
-def resolve_window(season: str | None, from_: str | None, through: str | None,
-                   today: date | None = None) -> dict:
+def resolve_window(season: str | None, from_: str | None, through: str | None) -> dict:
     """The date range to ask PSO for.
 
     ``season=all`` is all time, ``season=<id>`` a Summit season's dates,
     ``from``/``through`` an explicit range. With none of those, the last
-    DEFAULT_DAYS days (PSO still stops at its release cutoff).
+    90 days up to the latest release. Every one but a custom range is
+    served from our saved copy (services/card_snapshots).
     """
+    named = {s["key"]: s for s in card_snapshots.selections()}
     if season:
-        if season == "all":
-            return {"label": "All time", "from": None, "through": None}
-        for entry in ranked_analytics.list_seasons():
-            if entry["id"] == season:
-                return {"label": entry["name"], "from": entry["from"], "through": entry["through"]}
-        raise ValueError("Unknown season")
+        key = "all" if season == "all" else f"season:{season}"
+        if key not in named:
+            raise ValueError("Unknown season")
+        chosen = named[key]
+        return {"label": chosen["label"], "from": chosen["from"], "through": chosen["through"]}
     if from_ or through:
         return {"label": "Custom", "from": from_, "through": through}
-    today = today or date.today()
-    return {"label": f"Last {DEFAULT_DAYS} days",
-            "from": (today - timedelta(days=DEFAULT_DAYS)).isoformat(), "through": None}
+    recent = named["recent"]
+    return {"label": recent["label"], "from": recent["from"], "through": recent["through"]}
 
 
 def _fetch(window: dict) -> dict:
+    named = card_snapshots.find(window["from"], window["through"])
+    if named is not None:
+        body = card_snapshots.get(named)
+        if body is None:
+            raise StaplesUnavailable("Card data is unavailable")
+        return body
+    # A custom date range: ask PSO, and remember the answer for a while.
     key = (window["from"], window["through"])
     now = time.monotonic()
     with _cache_lock:

@@ -33,6 +33,7 @@ DECK_BUILDER_DB_PATH = Path(os.environ.get("DECK_BUILDER_DB_PATH", BASE_DIR / "d
 FEEDBACK_DB_PATH = Path(os.environ.get("FEEDBACK_DB_PATH", BASE_DIR / "feedback.db"))
 MONITORING_DB_PATH = Path(os.environ.get("MONITORING_DB_PATH", BASE_DIR / "monitoring.db"))
 META_REPORTS_DB_PATH = Path(os.environ.get("META_REPORTS_DB_PATH", BASE_DIR / "meta_reports.db"))
+CARD_SNAPSHOTS_DB_PATH = Path(os.environ.get("CARD_SNAPSHOTS_DB_PATH", BASE_DIR / "card_snapshots.db"))
 
 # Upload directories
 STATIC_DIR = BASE_DIR / "static"

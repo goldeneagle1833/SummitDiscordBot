@@ -21,6 +21,7 @@ from services.ranked_analytics import (
     forward,
     validate_card_key,
 )
+from services import card_snapshots
 from services import ranked_analytics as analytics_service
 
 ranked_analytics_bp = Blueprint("ranked_analytics", __name__)
@@ -57,8 +58,20 @@ def _invalid_selection(exc):
 
 @ranked_analytics_bp.route("/cards")
 def cards():
-    """Card share and win-rate table for a format and date range."""
-    return _relay("GET", "cards", params=clean_selection(request.args))
+    """Card share and win-rate table for a format and date range.
+
+    All time, each season and the recent window are served from our saved
+    copy (refreshed once per release), so a page visit does not call PSO.
+    Only custom date ranges are asked live.
+    """
+    selection = clean_selection(request.args)
+    named = card_snapshots.find(selection.get("from"), selection.get("through"))
+    if named is None:
+        return _relay("GET", "cards", params=selection)
+    body = card_snapshots.get(named)
+    if body is None:
+        return _respond(503, {"error": "Ranked analytics is unavailable", "available": False})
+    return _respond(200, body)
 
 
 @ranked_analytics_bp.route("/query-options")

@@ -9,18 +9,14 @@ from repositories.player_kudos_repo import PlayerKudosRepository
 KEY = {"X-API-Key": "test-api-key-123"}
 URL = "/api/player-kudos"
 
-_next_match_id = [1000]
-
-
 def _match(db, winner, loser, days_ago=0):
-    _next_match_id[0] += 1
-    mid = _next_match_id[0]
     conn = sqlite3.connect(str(db))
-    conn.execute(
-        "INSERT INTO match_records (match_id, winner_id, losser_id, timestamp, match_type) "
-        "VALUES (?, ?, ?, ?, 'ranked')",
-        (mid, winner, loser, (datetime.now() - timedelta(days=days_ago)).isoformat()),
+    cur = conn.execute(
+        "INSERT INTO match_records (winner_id, losser_id, timestamp, match_type) "
+        "VALUES (?, ?, ?, 'ranked')",
+        (winner, loser, (datetime.now() - timedelta(days=days_ago)).isoformat()),
     )
+    mid = cur.lastrowid  # the match ID is the rowid, as in production
     conn.commit()
     conn.close()
     return mid
@@ -175,3 +171,28 @@ class TestPlayerOfTheDay:
         # Over a few days with 5 candidates the pick moves around
         picks = {repo.pick_player_of_the_day(day + timedelta(days=n))["user_id"] for n in range(3)}
         assert len(picks) >= 2
+
+
+def test_works_with_the_production_match_records_layout(tmp_path):
+    """Production's match_records has no match_id column; the match ID is the rowid."""
+    db = tmp_path / "prod_layout.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE match_records (reporter_id INTEGER, winner_id INTEGER, losser_id INTEGER, "
+        "timestamp TEXT, json_deck_data TEXT, match_type TEXT, pairing_id INTEGER)"
+    )
+    conn.execute(
+        "INSERT INTO match_records (winner_id, losser_id, timestamp, match_type, pairing_id) "
+        "VALUES (222, 111, ?, 'ranked', 7)",
+        (datetime.now().isoformat(),),
+    )
+    conn.commit()
+    conn.close()
+    repo = PlayerKudosRepository(db)
+    saved = repo.give_kudos(giver_id="111", receiver_id="222", reasons=["good_sport"], pairing_id=7)
+    assert saved["match_id"] == 1
+    import pytest
+    from repositories.player_kudos_repo import KudosError
+    with pytest.raises(KudosError) as e:
+        repo.give_kudos(giver_id="111", receiver_id="222", reasons=["friendly"])
+    assert e.value.code == "already_given"

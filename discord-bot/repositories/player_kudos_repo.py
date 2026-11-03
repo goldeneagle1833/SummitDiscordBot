@@ -44,8 +44,26 @@ def _get_connection():
         conn.close()
 
 
+def _table_exists() -> bool:
+    """Read-only check, so it never waits on another writer's lock."""
+    conn = sqlite3.connect(DB_NAME)
+    try:
+        return conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'player_kudos'"
+        ).fetchone() is not None
+    finally:
+        conn.close()
+
+
 def create_player_kudos_table():
-    """Create the player_kudos table if it doesn't exist."""
+    """Create the player_kudos table if it doesn't exist.
+
+    Called on every kudos lookup, so it checks first with a plain read:
+    CREATE ... IF NOT EXISTS opens a write transaction and could wait up to
+    5 s for the bot's or website's write lock.
+    """
+    if _table_exists():
+        return
     with _get_connection() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS player_kudos (
@@ -84,7 +102,7 @@ def _matches_sql(conn, pairing_id):
     where = """
         ((CAST(m.winner_id AS TEXT) = :giver AND CAST(m.losser_id AS TEXT) = :receiver)
           OR (CAST(m.winner_id AS TEXT) = :receiver AND CAST(m.losser_id AS TEXT) = :giver))
-        AND m.timestamp >= :since AND m.match_id IS NOT NULL
+        AND m.timestamp >= :since
     """
     if pairing_id:
         if "pairing_id" not in cols:
@@ -121,13 +139,15 @@ def _find_kudos_match(giver_id, receiver_id, pairing_id=None):
             "giver": str(giver_id), "receiver": str(receiver_id),
             "since": since, "pairing": int(pairing_id or 0),
         }
+        # Production's match_records has no match_id column (it predates it);
+        # the match ID is SQLite's rowid, as everywhere else in the code.
         row = conn.execute(
             f"""
-            SELECT m.match_id, {pairing_col} AS pairing_id, m.match_type
+            SELECT m.rowid AS match_id, {pairing_col} AS pairing_id, m.match_type
             FROM match_records m
             WHERE {where}
               AND NOT EXISTS (SELECT 1 FROM player_kudos k
-                              WHERE k.giver_id = :giver AND k.match_id = m.match_id)
+                              WHERE k.giver_id = :giver AND k.match_id = m.rowid)
             ORDER BY m.timestamp DESC LIMIT 1
             """,
             params,

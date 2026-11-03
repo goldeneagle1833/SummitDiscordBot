@@ -66,6 +66,8 @@ def _interaction(user_id=10, name="Giver"):
     interaction.user.global_name = name
     interaction.response.send_message = AsyncMock()
     interaction.response.send_modal = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
     receiver = MagicMock(global_name="Opponent")
     receiver.send = AsyncMock()
     interaction.client.get_user.return_value = receiver
@@ -160,6 +162,26 @@ async def test_only_the_owner_can_press_it_and_only_after_the_result():
     assert modal.receiver_id == 20
 
 
+@pytest.mark.asyncio
+async def test_a_slow_database_still_opens_the_form_in_time():
+    """Discord allows 3 s; a stuck lookup must not cause "didn't respond in time"."""
+    import time
+    from unittest.mock import patch
+
+    def stuck(*args, **kwargs):
+        time.sleep(1)
+        return None
+
+    owner = _interaction(user_id=10)
+    with patch("cogs.lfg.player_kudos.find_kudos_match", stuck), \
+            patch("cogs.lfg.player_kudos.PRECHECK_TIMEOUT_SECONDS", 0.05):
+        started = time.perf_counter()
+        await PersistentKudosButton(10, 20, 1).callback(owner)
+        elapsed = time.perf_counter() - started
+    assert elapsed < 0.5
+    assert isinstance(owner.response.send_modal.await_args.args[0], PlayerKudosModal)
+
+
 # ── modal ────────────────────────────────────────────────────────────
 
 
@@ -177,7 +199,8 @@ async def test_submitting_saves_the_kudos_and_tells_the_opponent():
     [row] = _rows()
     assert row["giver_name"] == "Giver" and row["receiver_name"] == "Opponent"
     assert row["message"] == "Explained Rubble for me, thanks!"
-    assert "Kudos sent" in interaction.response.send_message.await_args.args[0]
+    interaction.response.defer.assert_awaited_once()
+    assert "Kudos sent" in interaction.followup.send.await_args.args[0]
     dm = interaction.client.get_user.return_value.send.await_args.args[0]
     assert "**Giver** gave you kudos" in dm
     assert "Helped me learn" in dm
@@ -263,3 +286,28 @@ def test_the_result_edit_keeps_report_player_and_give_kudos():
     view = report_player_only_view(message)
     assert [item.custom_id for item in view.children] == ["prp:10:20:77:ranked", "pkd:10:20:77"]
     assert all(not item.disabled for item in view.children)
+
+
+def test_works_with_the_production_match_records_layout(tmp_path, monkeypatch):
+    """Production's match_records has no match_id column; the match ID is the rowid."""
+    import repositories.player_kudos_repo as repo
+
+    db = tmp_path / "prod_layout.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE match_records (reporter_id INTEGER, winner_id INTEGER, losser_id INTEGER, "
+        "timestamp TEXT, json_deck_data TEXT, match_type TEXT, pairing_id INTEGER)"
+    )
+    conn.execute(
+        "INSERT INTO match_records (winner_id, losser_id, timestamp, match_type, pairing_id) "
+        "VALUES (20, 10, ?, 'ranked', 5)",
+        (datetime.now().isoformat(),),
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(repo, "DB_NAME", str(db))
+
+    assert repo.find_kudos_match(10, 20, 5)["match_id"] == 1
+    repo.save_player_kudos(giver_id=10, receiver_id=20, reasons=["good_sport"], pairing_id=5)
+    with pytest.raises(KudosError):
+        repo.find_kudos_match(10, 20, 5)

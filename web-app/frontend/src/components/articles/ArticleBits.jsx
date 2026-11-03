@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { articlePath, formatArticleDate, STATUS_LABELS } from '@/api/articles'
 
@@ -94,8 +95,58 @@ export function TagList({ tags, onPick, active }) {
 function Meta({ article }) {
   return (
     <span className="text-xs text-text-muted whitespace-nowrap">
-      {formatArticleDate(article.published_at)} · {article.reading_minutes} min read
+      {formatArticleDate(article.published_at)}{!article.external_url && ` · ${article.reading_minutes} min read`}
     </span>
+  )
+}
+
+/** Small "on eternaldurdles.com" marker for articles hosted elsewhere. */
+export function ExternalBadge({ site }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-semibold tracking-wide text-sky-300 bg-sky-400/15 px-1.5 py-0.5 rounded max-w-[12rem] truncate">
+      <span aria-hidden="true">↗</span>
+      <span className="truncate">{site || 'External'}</span>
+    </span>
+  )
+}
+
+/** The linked page's own preview image; hides itself if it fails to load. */
+export function PreviewImage({ src, className = '' }) {
+  const [failed, setFailed] = useState(false)
+  if (!src || failed || !src.startsWith('https://')) return null
+  return (
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+      className={`w-full object-cover bg-bg-elevated ${className}`}
+    />
+  )
+}
+
+/** Big tile for an article hosted on another site: its preview image,
+ *  site, title, summary and a button that opens the original. */
+export function LinkedArticleTile({ url, site, image, title, summary }) {
+  if (!url) return null
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer nofollow ugc"
+      className="group block overflow-hidden rounded-lg border border-border bg-bg-surface hover:border-secondary/60 transition-colors"
+    >
+      <PreviewImage src={image} className="aspect-[1.91/1]" />
+      <span className="block p-4">
+        <span className="block text-xs text-text-muted truncate">{site}</span>
+        {title && <span className="mt-1 block font-semibold text-text-primary group-hover:text-secondary break-words">{title}</span>}
+        {summary && <span className="mt-1 block text-sm text-text-muted line-clamp-3 break-words">{summary}</span>}
+        <span className="mt-3 inline-flex items-center gap-1 px-3 py-1.5 rounded-soft bg-brand-blue text-white text-sm font-medium group-hover:bg-brand-blue-light transition-colors">
+          Read on {site || 'the original site'} <span aria-hidden="true">↗</span>
+        </span>
+      </span>
+    </a>
   )
 }
 
@@ -113,10 +164,12 @@ export function ArticleCard({ article, onTag, activeTag }) {
   return (
     <article className="group relative flex flex-col bg-bg-surface border border-border rounded-lg overflow-hidden hover:border-secondary/60 transition-colors min-w-0">
       <span className={`h-1 ${categoryColors(article.category).stripe}`} aria-hidden="true" />
+      {article.external_url && <PreviewImage src={article.external_image} className="aspect-[1.91/1] border-b border-border" />}
       <div className="p-4 flex flex-col gap-2 flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <CategoryBadge category={article.category} />
           {article.has_pdf && <PdfBadge />}
+          {article.external_url && <ExternalBadge site={article.external_site} />}
         </div>
         <h3 className="text-lg font-semibold text-text-primary leading-snug group-hover:text-secondary transition-colors break-words">
           <Link to={articlePath(article)} className="after:absolute after:inset-0 focus:outline-none focus-visible:underline">
@@ -141,11 +194,13 @@ export function FeaturedArticle({ article }) {
   return (
     <article className="group relative overflow-hidden rounded-lg border border-border bg-gradient-to-br from-brand-panel via-bg-surface to-bg-surface hover:border-secondary/60 transition-colors">
       <span className={`absolute inset-y-0 left-0 w-1 ${categoryColors(article.category).stripe}`} aria-hidden="true" />
-      <div className="p-5 sm:p-7 pl-6 sm:pl-8">
-        <div className="flex items-center gap-2 mb-3">
+      <div className={article.external_url && article.external_image ? 'sm:grid sm:grid-cols-[1fr_minmax(0,40%)] sm:items-center' : ''}>
+      <div className="p-5 sm:p-7 pl-6 sm:pl-8 min-w-0">
+        <div className="flex flex-wrap items-center gap-2 mb-3">
           <span className="text-[11px] font-bold uppercase tracking-wider text-secondary">Latest article</span>
           <CategoryBadge category={article.category} />
           {article.has_pdf && <PdfBadge />}
+          {article.external_url && <ExternalBadge site={article.external_site} />}
         </div>
         <h2 className="text-2xl sm:text-3xl font-display text-text-primary group-hover:text-secondary transition-colors break-words">
           <Link to={articlePath(article)} className="after:absolute after:inset-0 focus:outline-none focus-visible:underline">
@@ -157,6 +212,10 @@ export function FeaturedArticle({ article }) {
           <span className="relative z-10 min-w-0"><AuthorChip article={article} size="md" /></span>
           <Meta article={article} />
         </div>
+      </div>
+      {article.external_url && (
+        <PreviewImage src={article.external_image} className="aspect-[1.91/1] sm:h-full sm:aspect-auto sm:max-h-64 border-t sm:border-t-0 sm:border-l border-border" />
+      )}
       </div>
     </article>
   )

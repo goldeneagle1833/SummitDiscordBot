@@ -16,6 +16,7 @@ export const articlePdfUrl = (id) => `${API_BASE_URL}/api/articles/${id}/pdf`
 
 // Authors
 export const getMyArticles = () => get('/api/articles/mine')
+export const fetchLinkPreview = (url) => post('/api/articles/link-preview', { url })
 export const previewArticle = (body) => post('/api/articles/preview', { body })
 export const deleteArticle = (id) => del(`/api/articles/${id}`)
 export const addArticleComment = (id, body) => post(`/api/articles/${id}/comments`, { body })

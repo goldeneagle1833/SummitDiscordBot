@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { getArticle, listArticles, articlePdfUrl, formatArticleDate } from '@/api/articles'
 import {
-  ArticleBody, ArticleCard, AuthorChip, CategoryBadge, StatusBadge, TagList,
+  ArticleBody, ArticleCard, AuthorChip, CategoryBadge, ExternalBadge, LinkedArticleTile, StatusBadge, TagList,
 } from '@/components/articles/ArticleBits'
 import Discussion from '@/components/articles/Discussion'
 import ShareLinkButton from '@/components/ui/ShareLinkButton'
@@ -64,13 +64,17 @@ export default function ArticleDetail() {
 
       <article className="mt-4">
         <header className="pb-5 border-b border-border">
-          <CategoryBadge category={article.category} />
+          <div className="flex flex-wrap items-center gap-2">
+            <CategoryBadge category={article.category} />
+            {article.external_url && <ExternalBadge site={article.external_site} />}
+          </div>
           <h1 className="mt-3 text-3xl sm:text-4xl font-display text-text-primary leading-tight break-words">{article.title}</h1>
           <p className="mt-3 text-lg text-text-muted break-words">{article.summary}</p>
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
             <AuthorChip article={article} size="md" />
             <span className="text-text-muted">
-              {formatArticleDate(article.published_at || article.updated_at)} · {article.reading_minutes} min read
+              {formatArticleDate(article.published_at || article.updated_at)}
+              {article.external_url ? ` · on ${article.external_site}` : ` · ${article.reading_minutes} min read`}
               {article.view_count > 0 && ` · ${article.view_count.toLocaleString()} reads`}
             </span>
             {!unpublished && (
@@ -86,6 +90,17 @@ export default function ArticleDetail() {
           </div>
           <div className="mt-3"><TagList tags={article.tags} /></div>
         </header>
+
+        {article.external_url && (
+          <div className="mt-5">
+            <LinkedArticleTile
+              url={article.external_url}
+              site={article.external_site}
+              image={article.external_image}
+              title={article.title}
+            />
+          </div>
+        )}
 
         {article.has_pdf && (
           <a
@@ -106,6 +121,9 @@ export default function ArticleDetail() {
 
         {article.body_html && (
           <div className="mt-6">
+            {article.external_url && (
+              <h2 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Note from {article.author_name}</h2>
+            )}
             <ArticleBody html={article.body_html} />
           </div>
         )}

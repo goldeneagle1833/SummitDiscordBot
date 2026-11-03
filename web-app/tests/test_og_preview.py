@@ -349,3 +349,19 @@ class TestArticlePreviews:
         for path in (f"/articles/{aid}-frog-tempo", "/articles", "/articles/mine", f"/articles/{aid}/edit"):
             r = client.get(path, headers={"User-Agent": BROWSER_UA})
             assert r.status_code == 200 and 'id="root"' in r.get_data(as_text=True)
+
+
+def test_linked_article_preview_uses_page_image(client, tmp_path, monkeypatch):
+    import webapp_config
+    from repositories.articles import ArticleRepository
+    monkeypatch.setattr(webapp_config, "ARTICLES_DB_PATH", tmp_path / "articles.db")
+    repo = ArticleRepository()
+    aid = repo.create(title="The PV Rule", summary="A great read.", category="Strategy", tags=[],
+                      body_md="", body_html="", word_count=0, reading_minutes=1, author_id="1",
+                      author_name="Kate", author_provider="discord",
+                      author_avatar="https://cdn.discordapp.com/avatars/1/a.png", slug="the-pv-rule")
+    repo.set_external(aid, "https://eternaldurdles.com/x", "Eternal Durdles", "https://eternaldurdles.com/i.png")
+    repo.set_status(aid, "approved", "admin")
+    html = client.get(f"/articles/{aid}-the-pv-rule", headers={"User-Agent": "Discordbot/2.0"}).get_data(as_text=True)
+    assert "https://eternaldurdles.com/i.png" in html
+    assert "on Eternal Durdles" in html

@@ -566,11 +566,17 @@ def og_article_detail(slug: str):
             logger.exception("Article OG preview failed")
     if not article or article["status"] != "approved":
         return og_articles_list()
+    image = article.get("author_avatar") if article.get("author_provider") == "discord" else None
+    detail = f"{article['reading_minutes']} min read"
+    if article.get("external_url"):
+        # Linked article: use that page's own preview image when it has one
+        image = article.get("external_image") or image
+        detail = f"on {article.get('external_site') or 'another site'}"
     return _og_html(
         title=f"{article['title']} — by {article['author_name']}",
-        description=f"{article['category']} · {article['reading_minutes']} min read. {article['summary']}",
+        description=f"{article['category']} · {detail}. {article['summary']}",
         url=f"{SITE_URL}/articles/{article['id']}-{article['slug']}",
-        image=article.get("author_avatar") if article.get("author_provider") == "discord" else None,
+        image=image,
     )
 
 

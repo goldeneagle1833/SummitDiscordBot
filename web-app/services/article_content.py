@@ -22,7 +22,7 @@ from __future__ import annotations
 import html
 import re
 import zlib
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 # ---------------------------------------------------------------------------
 # Limits
@@ -36,6 +36,11 @@ TAG_MAX_LEN = 24
 LINKS_MAX = 40
 PDF_MAX_BYTES = 10 * 1024 * 1024
 COMMENT_MAX = 2000
+EXTERNAL_URL_MAX = 500
+SITE_NAME_MAX = 60
+
+# Our own site: an article can't "link out" to another Summit page.
+OWN_HOSTS = ("sorcererssummit.com",)
 
 CATEGORIES = [
     "Strategy",
@@ -76,8 +81,36 @@ def clean_tags(raw) -> list[str]:
     return tags[:TAGS_MAX]
 
 
+def clean_external_url(raw: str | None) -> tuple[str | None, str | None]:
+    """Check a link to an article on another site.  Returns (url, error)."""
+    url = clean_text(raw)
+    if not url:
+        return None, None
+    if len(url) > EXTERNAL_URL_MAX:
+        return None, f"That link is too long (max {EXTERNAL_URL_MAX} characters)."
+    if not re.match(r"^https?://", url, re.IGNORECASE):
+        url = "https://" + url
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if (parsed.scheme.lower() not in ("http", "https") or not host or "." not in host
+            or parsed.username or parsed.password or re.search(r"\s", url)):
+        return None, "That doesn't look like a web link. Paste the full address (https://...)."
+    if any(host == h or host.endswith("." + h) for h in OWN_HOSTS):
+        return None, "That link is to this site. Link an article hosted somewhere else."
+    return url, None
+
+
+def site_label(url: str, site_name: str | None = None) -> str:
+    """A short name for the site an outside article lives on."""
+    name = clean_text(site_name)[:SITE_NAME_MAX]
+    if name:
+        return name
+    host = (urlparse(url).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
 def validate_article(title: str, summary: str, body: str, category: str,
-                     has_pdf: bool) -> str | None:
+                     has_pdf: bool, has_link: bool = False) -> str | None:
     """Return an error message, or None when the article may be saved."""
     if not title:
         return "Add a title."
@@ -91,7 +124,7 @@ def validate_article(title: str, summary: str, body: str, category: str,
         return "Pick a category."
     if len(body) > BODY_MAX:
         return f"The article is too long ({len(body):,} characters, max {BODY_MAX:,})."
-    if not has_pdf and len(body) < 200:
+    if not has_pdf and not has_link and len(body) < 200:
         return "Write at least a few paragraphs (200+ characters), or attach a PDF."
     if len(_URL_ANYWHERE.findall(body)) > LINKS_MAX:
         return f"Too many links (max {LINKS_MAX})."

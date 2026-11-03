@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  ARTICLE_CATEGORIES, editArticle, getArticle, previewArticle, submitArticle,
+  ARTICLE_CATEGORIES, editArticle, fetchLinkPreview, getArticle, previewArticle, submitArticle,
 } from '@/api/articles'
-import { ArticleBody, StatusBadge } from '@/components/articles/ArticleBits'
+import { ArticleBody, LinkedArticleTile, StatusBadge } from '@/components/articles/ArticleBits'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -26,6 +26,12 @@ export default function ArticleEditor() {
   const [body, setBody] = useState('')
   const [pdf, setPdf] = useState(null)
   const [removePdf, setRemovePdf] = useState(false)
+  // 'write' = written here; 'link' = an article hosted on another site
+  const [mode, setMode] = useState('write')
+  const [linkUrl, setLinkUrl] = useState('')
+  const [linkCard, setLinkCard] = useState(null)
+  const [linkBusy, setLinkBusy] = useState(false)
+  const [linkMsg, setLinkMsg] = useState(null)
   const [tab, setTab] = useState('write')
   const [preview, setPreview] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -44,6 +50,11 @@ export default function ArticleEditor() {
         setTags((a.tags || []).join(', '))
         setSummary(a.summary)
         setBody(a.body_md || '')
+        if (a.external_url) {
+          setMode('link')
+          setLinkUrl(a.external_url)
+          setLinkCard({ url: a.external_url, site: a.external_site, image: a.external_image })
+        }
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoaded(true))
@@ -93,11 +104,49 @@ export default function ArticleEditor() {
     setError(null)
   }
 
+  const getLinkPreview = async (pasted) => {
+    const target = (typeof pasted === 'string' ? pasted : linkUrl).trim()
+    if (!target) return
+    setLinkBusy(true)
+    setLinkMsg(null)
+    try {
+      const p = await fetchLinkPreview(target)
+      setLinkUrl(p.url)
+      setLinkCard(p)
+      if (p.found) {
+        if (!title.trim() && p.title) setTitle(p.title)
+        if (!summary.trim() && p.summary) setSummary(p.summary)
+      } else {
+        setLinkMsg("We couldn't read a preview from that page. You can still send it; fill in the title and summary yourself.")
+      }
+    } catch (err) {
+      setLinkCard(null)
+      setLinkMsg(err.message)
+    } finally {
+      setLinkBusy(false)
+    }
+  }
+
+  const switchMode = (m) => {
+    setMode(m)
+    setError(null)
+    if (m === 'link') {
+      setPdf(null)
+      setRemovePdf(Boolean(existing?.has_pdf))
+    }
+  }
+
   const submit = async (e) => {
     e.preventDefault()
     setSaving(true)
     setError(null)
-    const fields = { title, category, tags, summary, body, pdf: pdf || undefined, remove_pdf: removePdf ? '1' : undefined }
+    const linking = mode === 'link'
+    const fields = {
+      title, category, tags, summary, body,
+      external_url: linking ? linkUrl.trim() : '',
+      pdf: !linking && pdf ? pdf : undefined,
+      remove_pdf: removePdf || (linking && existing?.has_pdf) ? '1' : undefined,
+    }
     try {
       const res = editing ? await editArticle(id, fields) : await submitArticle(fields)
       navigate(`/articles/mine?id=${res.id}&sent=1`)
@@ -142,6 +191,75 @@ export default function ArticleEditor() {
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
         <form onSubmit={submit} className="space-y-4 min-w-0">
+          <fieldset>
+            <legend className="block text-xs text-text-muted mb-1">What are you sharing?</legend>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {[
+                ['write', 'Write it here', 'Your article lives on Summit.'],
+                ['link', 'Link an article', 'Share an article hosted on another site.'],
+              ].map(([m, label, hint]) => (
+                <label
+                  key={m}
+                  className={`flex items-start gap-2 rounded-lg border p-3 cursor-pointer transition-colors ${
+                    mode === m ? 'border-secondary bg-secondary/5' : 'border-border bg-bg-surface hover:border-text-muted'
+                  }`}
+                >
+                  <input type="radio" name="a-mode" value={m} checked={mode === m} onChange={() => switchMode(m)} className="mt-1 accent-secondary" />
+                  <span>
+                    <span className="block text-sm font-semibold text-text-primary">{label}</span>
+                    <span className="block text-xs text-text-muted">{hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          {mode === 'link' && (
+            <div className="rounded-lg border border-border bg-bg-surface p-3 space-y-3">
+              <div>
+                <label htmlFor="a-link" className="block text-xs text-text-muted mb-1">Link to the article</label>
+                <div className="flex gap-2">
+                  <input
+                    id="a-link"
+                    type="text"
+                    inputMode="url"
+                    value={linkUrl}
+                    onChange={(e) => { setLinkUrl(e.target.value); setLinkCard(null); setLinkMsg(null) }}
+                    onPaste={(e) => { const t = e.clipboardData?.getData('text'); if (t) setTimeout(() => getLinkPreview(t), 0) }}
+                    maxLength={500}
+                    required
+                    className={inputCls}
+                    placeholder="https://…"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => getLinkPreview()}
+                    disabled={linkBusy || !linkUrl.trim()}
+                    className="shrink-0 px-3 py-2 text-sm rounded border border-border hover:border-secondary disabled:opacity-40 transition-colors"
+                  >
+                    {linkBusy ? 'Checking…' : 'Get preview'}
+                  </button>
+                </div>
+                <p className="text-xs text-text-muted mt-1">
+                  We read the page's preview card (title, summary, image) and fill in the fields below. You can change them.
+                </p>
+              </div>
+              {linkMsg && <p className="text-xs text-secondary">{linkMsg}</p>}
+              {linkCard && (
+                <div className="max-w-md">
+                  <p className="text-xs text-text-muted mb-1">How the link tile will look</p>
+                  <LinkedArticleTile
+                    url={linkCard.url}
+                    site={linkCard.site}
+                    image={linkCard.image}
+                    title={title || linkCard.title}
+                    summary={summary || linkCard.summary}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <label htmlFor="a-title" className="block text-xs text-text-muted mb-1">Title</label>
             <input id="a-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} required className={`${inputCls} text-base`} placeholder="e.g. Piloting Frogs in Season 8" />
@@ -167,6 +285,15 @@ export default function ArticleEditor() {
             <textarea id="a-summary" value={summary} onChange={(e) => setSummary(e.target.value)} maxLength={300} rows={2} required className={`${inputCls} resize-none`} />
           </div>
 
+          {mode === 'link' ? (
+            <div>
+              <label htmlFor="a-note" className="flex justify-between text-xs text-text-muted mb-1">
+                <span>Note (optional): why it's worth a read</span>
+                <span>{body.length.toLocaleString()}/40,000</span>
+              </label>
+              <textarea id="a-note" value={body} onChange={(e) => setBody(e.target.value)} maxLength={40000} rows={5} className={inputCls} />
+            </div>
+          ) : (
           <div>
             <div className="flex flex-wrap items-end justify-between gap-2 mb-1">
               <div className="inline-flex gap-1 bg-bg-surface border border-border rounded-full p-1" role="tablist">
@@ -210,6 +337,9 @@ export default function ArticleEditor() {
             )}
           </div>
 
+          )}
+
+          {mode === 'write' && (
           <div className="rounded-lg border border-dashed border-border p-3">
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-sm font-medium">PDF version <span className="text-text-muted font-normal">(optional, 10 MB max)</span></span>
@@ -231,6 +361,7 @@ export default function ArticleEditor() {
               With a PDF attached the text above can be short. PDFs with scripts, attachments or passwords are refused.
             </p>
           </div>
+          )}
 
           <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
             <span className="text-xs text-text-muted">A reviewer reads it before it goes live.</span>

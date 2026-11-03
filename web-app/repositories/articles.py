@@ -27,7 +27,7 @@ _PUBLIC_COLS = (
     "id", "slug", "title", "summary", "category", "tags", "author_id",
     "author_name", "author_provider", "author_avatar", "word_count",
     "reading_minutes", "view_count", "published_at", "updated_at",
-    "pdf_size",
+    "pdf_size", "external_url", "external_site", "external_image",
 )
 
 
@@ -159,6 +159,10 @@ class ArticleRepository:
                 conn.execute("ALTER TABLE articles ADD COLUMN forum_thread_id TEXT")
             if "forum_locked" not in cols:
                 conn.execute("ALTER TABLE articles ADD COLUMN forum_locked INTEGER NOT NULL DEFAULT 0")
+            # Link to an article hosted on another site (shown as a preview tile)
+            for col in ("external_url", "external_site", "external_image"):
+                if col not in cols:
+                    conn.execute(f"ALTER TABLE articles ADD COLUMN {col} TEXT")
             conn.commit()
         finally:
             conn.close()
@@ -233,6 +237,20 @@ class ArticleRepository:
                 """UPDATE articles SET pdf_file = ?, pdf_original_name = ?,
                        pdf_size = ? WHERE id = ?""",
                 (stored_name, original_name, size, article_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def set_external(self, article_id: int, url: str | None, site: str | None = None,
+                     image: str | None = None) -> None:
+        """Point the article at a page on another site (None clears it)."""
+        conn = self._conn()
+        try:
+            conn.execute(
+                """UPDATE articles SET external_url = ?, external_site = ?,
+                       external_image = ? WHERE id = ?""",
+                (url, site if url else None, image if url else None, article_id),
             )
             conn.commit()
         finally:
@@ -344,9 +362,10 @@ class ArticleRepository:
             like = f"%{word.lower()}%"
             where.append(
                 "(LOWER(title) LIKE ? OR LOWER(summary) LIKE ? OR LOWER(body_md) LIKE ?"
-                " OR LOWER(author_name) LIKE ? OR tags LIKE ?)"
+                " OR LOWER(author_name) LIKE ? OR tags LIKE ?"
+                " OR LOWER(COALESCE(external_site, '')) LIKE ?)"
             )
-            params += [like] * 5
+            params += [like] * 6
         if category:
             where.append("category = ?")
             params.append(category)

@@ -7,6 +7,7 @@ import CardImagePopup from '@/components/deck/CardImagePopup'
 import DeckVisualizer from '@/components/deck/DeckVisualizer'
 import TryDeckButton from '@/components/deck/TryDeckButton'
 import CardmarketButton from '@/components/deck/CardmarketButton'
+import DeckCardStats from '@/components/deck/DeckCardStats'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const TCGPLAYER_IMPACT_LINK = 'https://partner.tcgplayer.com/c/5746741/1780961/21018'
@@ -314,7 +315,7 @@ export default function DeckDetail() {
       {/* Seed Deck Contents */}
       {data.seed_spellbook?.length > 0 && (
         <>
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex flex-wrap items-center gap-3 mb-3">
             <h3 className="font-display text-text-primary">Deck Contents</h3>
             <div className="inline-flex bg-bg-raised border border-border rounded-lg overflow-hidden">
               <button
@@ -333,10 +334,20 @@ export default function DeckDetail() {
               >
                 Visual
               </button>
+              <button
+                onClick={() => setViewMode('stats')}
+                className={`px-3 py-1 text-xs font-medium transition-colors ${
+                  viewMode === 'stats' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                Card stats
+              </button>
             </div>
           </div>
           {viewMode === 'list' ? (
             <SeedDeckContents cards={data.seed_spellbook} sideboard={data.seed_sideboard} onHover={handleHover} onLeave={handleLeave} />
+          ) : viewMode === 'stats' ? (
+            <DeckCardStats cards={data.seed_spellbook} avatarName={seed.avatar_name} />
           ) : (
             <DeckVisualizer cards={data.seed_spellbook} sideboard={data.seed_sideboard} />
           )}

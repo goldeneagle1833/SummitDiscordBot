@@ -11,6 +11,7 @@ Like Report Player, the button is a DynamicItem (survives bot restarts) and
 stays on the match message after the result is reported.
 """
 
+import asyncio
 import logging
 
 import discord
@@ -34,6 +35,11 @@ KUDOS_REASONS = [
     ("great_game", "Great game, well played"),
 ]
 KUDOS_LABELS = dict(KUDOS_REASONS)
+
+# Discord gives a button press 3 seconds to answer. The "can you give kudos
+# yet?" check must finish well inside that, or the form opens anyway and the
+# save step decides.
+PRECHECK_TIMEOUT_SECONDS = 1.5
 
 NO_RESULT_YET = (
     "You can give kudos once this match's result has been reported and confirmed."
@@ -103,6 +109,10 @@ class PlayerKudosModal(discord.ui.Modal, title="Give Kudos"):
             )
             return
 
+        # Answer Discord right away (3-second limit); the lookups and the save
+        # can then take as long as they need.
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
         receiver = None
         try:
             receiver = interaction.client.get_user(self.receiver_id) or await interaction.client.fetch_user(
@@ -114,7 +124,8 @@ class PlayerKudosModal(discord.ui.Modal, title="Give Kudos"):
         giver_name = _player_name(interaction.user)
 
         try:
-            save_player_kudos(
+            await asyncio.to_thread(
+                save_player_kudos,
                 giver_id=interaction.user.id,
                 giver_name=giver_name,
                 receiver_id=self.receiver_id,
@@ -126,11 +137,11 @@ class PlayerKudosModal(discord.ui.Modal, title="Give Kudos"):
             )
         except KudosError as e:
             text = ALREADY_GIVEN if e.code == "already_given" else NO_RESULT_YET
-            await interaction.response.send_message(text, ephemeral=True)
+            await interaction.followup.send(text, ephemeral=True)
             return
         except Exception as e:
             logger.error(f"Failed to save kudos: {e}", exc_info=True)
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Something went wrong saving your kudos. Please try again.", ephemeral=True
             )
             return
@@ -139,7 +150,7 @@ class PlayerKudosModal(discord.ui.Modal, title="Give Kudos"):
             "Kudos given: %s -> %s (pairing %s): %s",
             interaction.user.id, self.receiver_id, self.pairing_id, reasons,
         )
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"👏 Kudos sent to {receiver_name or 'your opponent'}. Thanks for making the Summit a friendly place!",
             ephemeral=True,
         )
@@ -190,8 +201,16 @@ class PersistentKudosButton(
             )
             return
         # Check before opening the form so nobody fills it in for nothing.
+        # Run off the event loop with a time limit: a slow database must never
+        # make Discord say "The application didn't respond in time".
         try:
-            match = find_kudos_match(self.giver_id, self.receiver_id, self.pairing_id or None)
+            match = await asyncio.wait_for(
+                asyncio.to_thread(find_kudos_match, self.giver_id, self.receiver_id, self.pairing_id or None),
+                timeout=PRECHECK_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Kudos pre-check took over %ss; opening the form anyway", PRECHECK_TIMEOUT_SECONDS)
+            match = {}  # let the save step decide
         except KudosError:
             await interaction.response.send_message(ALREADY_GIVEN, ephemeral=True)
             return

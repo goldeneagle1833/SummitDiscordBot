@@ -66,6 +66,8 @@ def _interaction(user_id=10, name="Giver"):
     interaction.user.global_name = name
     interaction.response.send_message = AsyncMock()
     interaction.response.send_modal = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
     receiver = MagicMock(global_name="Opponent")
     receiver.send = AsyncMock()
     interaction.client.get_user.return_value = receiver
@@ -160,6 +162,26 @@ async def test_only_the_owner_can_press_it_and_only_after_the_result():
     assert modal.receiver_id == 20
 
 
+@pytest.mark.asyncio
+async def test_a_slow_database_still_opens_the_form_in_time():
+    """Discord allows 3 s; a stuck lookup must not cause "didn't respond in time"."""
+    import time
+    from unittest.mock import patch
+
+    def stuck(*args, **kwargs):
+        time.sleep(1)
+        return None
+
+    owner = _interaction(user_id=10)
+    with patch("cogs.lfg.player_kudos.find_kudos_match", stuck), \
+            patch("cogs.lfg.player_kudos.PRECHECK_TIMEOUT_SECONDS", 0.05):
+        started = time.perf_counter()
+        await PersistentKudosButton(10, 20, 1).callback(owner)
+        elapsed = time.perf_counter() - started
+    assert elapsed < 0.5
+    assert isinstance(owner.response.send_modal.await_args.args[0], PlayerKudosModal)
+
+
 # ── modal ────────────────────────────────────────────────────────────
 
 
@@ -177,7 +199,8 @@ async def test_submitting_saves_the_kudos_and_tells_the_opponent():
     [row] = _rows()
     assert row["giver_name"] == "Giver" and row["receiver_name"] == "Opponent"
     assert row["message"] == "Explained Rubble for me, thanks!"
-    assert "Kudos sent" in interaction.response.send_message.await_args.args[0]
+    interaction.response.defer.assert_awaited_once()
+    assert "Kudos sent" in interaction.followup.send.await_args.args[0]
     dm = interaction.client.get_user.return_value.send.await_args.args[0]
     assert "**Giver** gave you kudos" in dm
     assert "Helped me learn" in dm

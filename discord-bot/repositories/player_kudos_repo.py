@@ -44,8 +44,26 @@ def _get_connection():
         conn.close()
 
 
+def _table_exists() -> bool:
+    """Read-only check, so it never waits on another writer's lock."""
+    conn = sqlite3.connect(DB_NAME)
+    try:
+        return conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'player_kudos'"
+        ).fetchone() is not None
+    finally:
+        conn.close()
+
+
 def create_player_kudos_table():
-    """Create the player_kudos table if it doesn't exist."""
+    """Create the player_kudos table if it doesn't exist.
+
+    Called on every kudos lookup, so it checks first with a plain read:
+    CREATE ... IF NOT EXISTS opens a write transaction and could wait up to
+    5 s for the bot's or website's write lock.
+    """
+    if _table_exists():
+        return
     with _get_connection() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS player_kudos (

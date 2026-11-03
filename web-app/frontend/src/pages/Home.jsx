@@ -12,6 +12,25 @@ import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import { STORE_LIVE } from '@/utils/store'
 import { getProducts } from '@/api/store'
+import { articlePath, listArticles } from '@/api/articles'
+
+// A player article published this recently gets a slide in the carousel
+const NEW_ARTICLE_DAYS = 14
+
+/** Carousel slide for the newest published player article (or null). */
+export function articleSlide(article) {
+  if (!article) return null
+  return {
+    key: `article-${article.id}`, badge: 'NEW ARTICLE', color: 'blue',
+    title: article.title,
+    subtitle: article.summary,
+    extra: `By ${article.author_name}${article.external_site ? ` on ${article.external_site}` : ''}`,
+    link: articlePath(article),
+    thumbnail: article.external_image || null,
+    analyticsType: 'new_article',
+    cta: 'Read article',
+  }
+}
 
 const DISCORD_URL = 'https://discord.gg/ZDqHSK9VGx'
 const HERO_LOGO = '/static/images/summit-logo-hero.png'
@@ -182,8 +201,9 @@ export function PromoCarousel() {
       get('/api/recent-event').then(d => d.event || null).catch(() => null),
       get('/api/deck-rec/staff-pick').then(d => d.success && d.staff_pick ? d.staff_pick : null).catch(() => null),
       get('/api/kudos-spotlight').then(d => d.success && d.kudos_spotlight ? d.kudos_spotlight : null).catch(() => null),
+      listArticles({ days: NEW_ARTICLE_DAYS }).then(d => d.articles?.[0] || null).catch(() => null),
     ]
-    Promise.all(promises).then(([banners, spotlight, eventSpotlight, newEvent, staffPick, kudosSpotlight]) => {
+    Promise.all(promises).then(([banners, spotlight, eventSpotlight, newEvent, staffPick, kudosSpotlight, newArticle]) => {
       const slides = []
 
       // Player of the Day from kudos (positive player reports) leads the carousel.
@@ -204,6 +224,9 @@ export function PromoCarousel() {
           link: `/top-8/${newEvent.folder}`, thumbnail: null, analyticsType: 'new_event',
         })
       }
+
+      const articleItem = articleSlide(newArticle)
+      if (articleItem) slides.push(articleItem)
 
       for (const b of banners) {
         const badge = isYouTubeLink(b.link) ? 'VIDEO' : b.badge_text

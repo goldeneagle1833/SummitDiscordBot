@@ -20,6 +20,9 @@ from utils.formatting import (
 
 logger = logging.getLogger(__name__)
 
+# events_dir -> (file signature, deck index); rebuilt when any event JSON changes.
+_DECK_INDEX_CACHE: dict[str, tuple] = {}
+
 
 _AUTO_TAG_PATTERNS = [
     ("Grand Contest", re.compile(r"\bgrand\s+contest\b", re.I)),
@@ -484,6 +487,131 @@ class EventRepository:
             )
 
         return events
+
+    # ------------------------------------------------------------------
+    # Deck index for the Top 8 page filters (avatar, player, elements, card)
+    # ------------------------------------------------------------------
+
+    def _deck_index_signature(self) -> tuple:
+        sig = []
+        for folder in sorted(self._events_dir.iterdir()):
+            if not folder.is_dir():
+                continue
+            for f in sorted(folder.glob("*.json")):
+                try:
+                    st = f.stat()
+                    sig.append((folder.name, f.name, st.st_mtime_ns, st.st_size))
+                except OSError:
+                    pass
+        return tuple(sig)
+
+    def _build_deck_index(self) -> dict:
+        """Read every event's deck lists once and keep a small summary.
+
+        Only the Top 8 page's own event folders are read (public tournament
+        lists). Ranked match decks are never part of this.
+        """
+        events: dict[str, list[dict]] = {}
+        for folder in self._events_dir.iterdir():
+            if not folder.is_dir():
+                continue
+            top8_json = None
+            full_json = None
+            for json_file in folder.glob("*.json"):
+                lower = json_file.name.lower()
+                if "top8" in lower or "top 8" in lower:
+                    top8_json = json_file
+                elif lower.startswith(folder.name.lower()):
+                    full_json = json_file
+
+            decks: list[dict] = []
+            seen: set[str] = set()
+            for path, is_top8 in ((top8_json, True), (full_json, False)):
+                if path is None or (not is_top8 and path == top8_json):
+                    continue
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:
+                    continue
+                if not isinstance(data, list):
+                    continue
+                for i, deck in enumerate(data):
+                    if not isinstance(deck, dict):
+                        continue
+                    deck_id = deck.get("id", "") or ""
+                    if deck_id and deck_id in seen:
+                        continue
+                    if deck_id:
+                        seen.add(deck_id)
+                    avatar_list = deck.get("avatar") or [{}]
+                    avatar = (avatar_list[0] or {}).get("name") if avatar_list else None
+                    cards = set()
+                    for section in ("spellbook", "atlas"):
+                        for card in deck.get(section) or []:
+                            if isinstance(card, dict) and card.get("name"):
+                                cards.add(card["name"])
+                    decks.append({
+                        # Top 8 list order is the finishing order.
+                        "place": i + 1 if is_top8 else None,
+                        "player": deck.get("username") or "Unknown",
+                        "avatar": avatar or "Unknown",
+                        "elements": self._get_deck_elements(deck),
+                        "deck_id": deck_id,
+                        "cards": cards,
+                    })
+            if decks:
+                events[folder.name] = decks
+        return events
+
+    def _get_deck_index(self) -> dict:
+        if not self._events_dir.exists():
+            return {}
+        key = str(self._events_dir.resolve())
+        sig = self._deck_index_signature()
+        cached = _DECK_INDEX_CACHE.get(key)
+        if cached and cached[0] == sig:
+            return cached[1]
+        index = self._build_deck_index()
+        _DECK_INDEX_CACHE[key] = (sig, index)
+        return index
+
+    def get_deck_index(self) -> dict:
+        """Compact deck summaries per event for client-side filtering.
+
+        Returns {"events": {folder: [[place, player, avatar, elements, deck_id], ...]},
+                 "avatars": [...], "cards": [...]}.
+        Card lists stay on the server; use find_decks_with_card for those.
+        """
+        index = self._get_deck_index()
+        out = {}
+        avatars = set()
+        cards = set()
+        for folder, decks in index.items():
+            rows = []
+            for d in decks:
+                rows.append([d["place"], d["player"], d["avatar"], d["elements"], d["deck_id"]])
+                if d["avatar"] and d["avatar"] != "Unknown":
+                    avatars.add(d["avatar"])
+                cards.update(d["cards"])
+            out[folder] = rows
+        return {
+            "events": out,
+            "avatars": sorted(avatars, key=str.lower),
+            "cards": sorted(cards, key=str.lower),
+        }
+
+    def find_decks_with_card(self, card_name: str) -> dict[str, list[int]]:
+        """{folder: [positions in that event's deck index]} for decks running the card."""
+        wanted = (card_name or "").strip().lower()
+        if not wanted:
+            return {}
+        result = {}
+        for folder, decks in self._get_deck_index().items():
+            hits = [i for i, d in enumerate(decks) if any(c.lower() == wanted for c in d["cards"])]
+            if hits:
+                result[folder] = hits
+        return result
 
     def get_recent_event(self, hours: int = 0) -> dict | None:
         """Get the latest event if it was added within the last N hours."""

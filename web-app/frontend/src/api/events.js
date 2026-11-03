@@ -39,3 +39,9 @@ export const pollEventJob = async (jobId, { interval = 3000, onProgress } = {}) 
     await new Promise((r) => setTimeout(r, interval))
   }
 }
+
+// Deck summaries (place, player, avatar, elements, deck id) for the Top 8 page filters.
+export const getTop8DeckIndex = () => get('/api/top-8-events/deck-index')
+// Which Top 8 page decks run a card: { matches: { folder: [deck index positions] } }
+export const searchTop8Card = (card) =>
+  get(`/api/top-8-events/card-search?${new URLSearchParams({ card })}`)

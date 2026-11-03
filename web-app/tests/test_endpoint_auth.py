@@ -21,6 +21,14 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # -- Site gate --
     "api.site_token",  # issues the front-end token; same-site checked inside
 
+    # -- Player articles: only approved articles (and their PDFs) are public;
+    #    drafts are checked against the author/reviewer inside --
+    "api.articles.list_articles",
+    "api.articles.article_facets",
+    "api.articles.get_article",
+    "api.articles.get_article_pdf",
+    "api.articles.get_discussion",  # comments on published articles only
+
     # -- Status / health --
     "api.misc.status",
     "api.misc.recent_event",
@@ -145,6 +153,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
 
     # -- Events / tournaments (public read-only) --
     "api.events.list_top8_events",
+    "api.events.top8_deck_index",
+    "api.events.top8_card_search",
     "api.events.get_event_detail",
     "api.events.get_event_match_history",
     "api.events.compare_events",
@@ -265,6 +275,9 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "og_preview.og_avatar_detail",
     "og_preview.og_card_detail",
     "og_preview.og_meta_report",
+    "og_preview.og_articles_list",
+    "og_preview.og_article_detail",
+    "og_preview.articles_subpage",
     "og_preview.spa_subpage",
 
     # -- Feedback (public submission) --

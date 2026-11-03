@@ -315,3 +315,53 @@ class TestSpaSubpages:
         adapter = client.application.url_map.bind("localhost")
         assert adapter.match("/player/123")[0] == "og_preview.og_player"
         assert adapter.match("/top-8/some-event")[0] != "og_preview.spa_subpage"
+
+
+class TestArticlePreviews:
+    @pytest.fixture()
+    def article(self, tmp_path, monkeypatch):
+        import webapp_config
+        from repositories.articles import ArticleRepository
+        monkeypatch.setattr(webapp_config, "ARTICLES_DB_PATH", tmp_path / "articles.db")
+        repo = ArticleRepository()
+        aid = repo.create(title="Frog <Tempo>", summary="How to pilot frogs.", category="Deck Guide",
+                          tags=[], body_md="x", body_html="x", word_count=500, reading_minutes=3,
+                          author_id="1", author_name="Kate", author_provider="discord",
+                          author_avatar="https://cdn.discordapp.com/avatars/1/abc.png", slug="frog-tempo")
+        return repo, aid
+
+    def test_published_article_card(self, client, article):
+        repo, aid = article
+        repo.set_status(aid, "approved", "admin")
+        html = client.get(f"/articles/{aid}-frog-tempo", headers={"User-Agent": BOT_UA}).get_data(as_text=True)
+        assert 'content="Frog &lt;Tempo&gt; — by Kate"' in html
+        assert "Deck Guide · 3 min read. How to pilot frogs." in html
+        assert f"https://sorcererssummit.com/articles/{aid}-frog-tempo" in html
+        assert "cdn.discordapp.com/avatars/1/abc.png" in html
+
+    def test_draft_gets_generic_card(self, client, article):
+        repo, aid = article
+        html = client.get(f"/articles/{aid}-frog-tempo", headers={"User-Agent": BOT_UA}).get_data(as_text=True)
+        assert "Frog" not in html and "Player Articles" in html
+
+    def test_browsers_and_subpages_get_spa(self, client, article):
+        repo, aid = article
+        for path in (f"/articles/{aid}-frog-tempo", "/articles", "/articles/mine", f"/articles/{aid}/edit"):
+            r = client.get(path, headers={"User-Agent": BROWSER_UA})
+            assert r.status_code == 200 and 'id="root"' in r.get_data(as_text=True)
+
+
+def test_linked_article_preview_uses_page_image(client, tmp_path, monkeypatch):
+    import webapp_config
+    from repositories.articles import ArticleRepository
+    monkeypatch.setattr(webapp_config, "ARTICLES_DB_PATH", tmp_path / "articles.db")
+    repo = ArticleRepository()
+    aid = repo.create(title="The PV Rule", summary="A great read.", category="Strategy", tags=[],
+                      body_md="", body_html="", word_count=0, reading_minutes=1, author_id="1",
+                      author_name="Kate", author_provider="discord",
+                      author_avatar="https://cdn.discordapp.com/avatars/1/a.png", slug="the-pv-rule")
+    repo.set_external(aid, "https://eternaldurdles.com/x", "Eternal Durdles", "https://eternaldurdles.com/i.png")
+    repo.set_status(aid, "approved", "admin")
+    html = client.get(f"/articles/{aid}-the-pv-rule", headers={"User-Agent": "Discordbot/2.0"}).get_data(as_text=True)
+    assert "https://eternaldurdles.com/i.png" in html
+    assert "on Eternal Durdles" in html

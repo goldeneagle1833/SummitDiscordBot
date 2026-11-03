@@ -21,6 +21,13 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # -- Site gate --
     "api.site_token",  # issues the front-end token; same-site checked inside
 
+    # -- Player articles: only approved articles (and their PDFs) are public;
+    #    drafts are checked against the author/reviewer inside --
+    "api.articles.list_articles",
+    "api.articles.article_facets",
+    "api.articles.get_article",
+    "api.articles.get_article_pdf",
+
     # -- Status / health --
     "api.misc.status",
     "api.misc.recent_event",

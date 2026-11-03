@@ -117,3 +117,6 @@ web-app/data/archetype_seed_decks.cache.lock
 web-app/top-8-decks-by-event/latest_event.json
 # Store database backups (contain customer shipping addresses)
 web-app/backups/
+
+# Player article PDFs (web-app/private_uploads)
+web-app/private_uploads/

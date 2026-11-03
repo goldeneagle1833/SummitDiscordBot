@@ -80,3 +80,8 @@ export function formatArticleDate(iso) {
   if (Number.isNaN(d.getTime())) return ''
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
+
+// Reviewer list (admins only)
+export const getArticleReviewers = () => get('/api/articles/reviewers')
+export const addArticleReviewer = (user_id, username) => post('/api/articles/reviewers', { user_id, username })
+export const removeArticleReviewer = (userId) => del(`/api/articles/reviewers/${userId}`)

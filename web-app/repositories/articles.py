@@ -120,6 +120,15 @@ class ArticleRepository:
                 );
                 CREATE INDEX IF NOT EXISTS idx_article_notifications_status
                     ON article_notifications (status);
+
+                -- Reviewers the owner added on the blog page (on top of
+                -- ARTICLE_REVIEWER_IDS from the environment)
+                CREATE TABLE IF NOT EXISTS article_reviewers (
+                    user_id TEXT PRIMARY KEY,     -- Discord user ID
+                    username TEXT NOT NULL,
+                    added_by TEXT,
+                    added_at TEXT NOT NULL
+                );
             """)
             conn.commit()
         finally:
@@ -482,5 +491,40 @@ class ArticleRepository:
                 (article_id, since),
             ).fetchone()
             return row is not None
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Reviewers added on the site
+
+    def list_reviewers(self) -> list[dict]:
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                "SELECT user_id, username, added_by, added_at FROM article_reviewers ORDER BY added_at"
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def add_reviewer(self, user_id: str, username: str, added_by: str | None) -> None:
+        conn = self._conn()
+        try:
+            conn.execute(
+                """INSERT INTO article_reviewers (user_id, username, added_by, added_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(user_id) DO UPDATE SET username = excluded.username""",
+                (str(user_id), username, added_by, _now()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def remove_reviewer(self, user_id: str) -> bool:
+        conn = self._conn()
+        try:
+            cur = conn.execute("DELETE FROM article_reviewers WHERE user_id = ?", (str(user_id),))
+            conn.commit()
+            return cur.rowcount > 0
         finally:
             conn.close()

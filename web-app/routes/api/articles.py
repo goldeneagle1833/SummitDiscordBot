@@ -22,7 +22,7 @@ from werkzeug.utils import secure_filename
 import webapp_config
 from repositories.articles import ArticleRepository
 from services import article_content as content
-from utils.auth import is_admin
+from utils.auth import is_admin, require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +44,22 @@ def _user_id() -> str | None:
     return str(uid) if uid else None
 
 
+def _added_reviewer_ids() -> list[str]:
+    try:
+        return [r["user_id"] for r in ArticleRepository().list_reviewers()]
+    except Exception:
+        logger.exception("Could not read article reviewers")
+        return []
+
+
 def reviewer_ids() -> list[str]:
-    """Discord IDs that review articles (and get the 'new article' DM)."""
-    ids = [i for i in webapp_config.ARTICLE_REVIEWER_IDS if i.isdigit()]
+    """Discord IDs that review articles (and get the 'new article' DM):
+    ARTICLE_REVIEWER_IDS plus the reviewers added on the blog page; the
+    admins with Discord IDs when neither has anyone."""
+    ids: list[str] = []
+    for i in list(webapp_config.ARTICLE_REVIEWER_IDS) + _added_reviewer_ids():
+        if str(i).isdigit() and str(i) not in ids:
+            ids.append(str(i))
     if ids:
         return ids
     return [a for a in webapp_config.ADMINS if str(a).isdigit()]
@@ -56,7 +69,7 @@ def is_article_reviewer() -> bool:
     if is_admin():
         return True
     uid = _user_id()
-    return bool(uid) and uid in webapp_config.ARTICLE_REVIEWER_IDS
+    return bool(uid) and (uid in webapp_config.ARTICLE_REVIEWER_IDS or uid in _added_reviewer_ids())
 
 
 def require_login(f):
@@ -440,7 +453,7 @@ def review_queue():
     return jsonify({
         "articles": repo.list_for_review("" if status == "all" else status),
         "counts": repo.status_counts(),
-        "reviewers_configured": bool(reviewer_ids()),
+        "reviewers_configured": reviewer_ids_configured() or bool(reviewer_ids()),
     })
 
 
@@ -495,3 +508,65 @@ def review_article(article_id):
     article = repo.get(article_id)
     return jsonify({"success": True, "status": article["status"],
                     "comments": repo.comments(article_id)})
+
+
+# ---------------------------------------------------------------------------
+# Reviewer list (admins only; shown at the top of /articles)
+
+@articles_bp.route("/reviewers", methods=["GET"])
+@require_admin
+def list_reviewers():
+    added = ArticleRepository().list_reviewers()
+    added_ids = {r["user_id"] for r in added}
+    from_env = [i for i in webapp_config.ARTICLE_REVIEWER_IDS if i not in added_ids]
+    return jsonify({
+        "reviewers": added,
+        "from_server_settings": from_env,
+        "admins_fallback": not reviewer_ids_configured(),
+    })
+
+
+def reviewer_ids_configured() -> bool:
+    return bool([i for i in webapp_config.ARTICLE_REVIEWER_IDS if str(i).isdigit()] + _added_reviewer_ids())
+
+
+@articles_bp.route("/reviewers", methods=["POST"])
+@require_admin
+def add_reviewer():
+    data = request.get_json(silent=True) or {}
+    user_id = content.clean_text(str(data.get("user_id") or ""))
+    username = content.clean_text(str(data.get("username") or ""))[:60]
+    if not (user_id.isdigit() and 15 <= len(user_id) <= 21):
+        return jsonify({"error": "That isn't a Discord user ID (15 to 21 digits)."}), 400
+    if not username:
+        username = _known_name(user_id) or f"User {user_id[-4:]}"
+    repo = ArticleRepository()
+    repo.add_reviewer(user_id, username, _user_id())
+    logger.info("Article reviewer %s added by %s", user_id, _user_id())
+    return jsonify({"success": True, "reviewers": repo.list_reviewers()}), 201
+
+
+@articles_bp.route("/reviewers/<user_id>", methods=["DELETE"])
+@require_admin
+def remove_reviewer(user_id):
+    repo = ArticleRepository()
+    if not repo.remove_reviewer(user_id):
+        return jsonify({"error": "Not on the reviewer list (people set in the server settings can only be removed there)."}), 404
+    logger.info("Article reviewer %s removed by %s", user_id, _user_id())
+    return jsonify({"success": True, "reviewers": repo.list_reviewers()})
+
+
+def _known_name(user_id: str) -> str | None:
+    """Display name from the ELO standings, when the player has one."""
+    try:
+        import sqlite3
+        conn = sqlite3.connect(webapp_config.ELO_DB_PATH)
+        try:
+            row = conn.execute(
+                "SELECT user_display_name FROM overall_standings WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        return row[0] if row and row[0] else None
+    except Exception:
+        return None

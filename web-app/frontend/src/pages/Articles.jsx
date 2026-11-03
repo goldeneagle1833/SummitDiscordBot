@@ -4,6 +4,7 @@ import { listArticles, getArticleFacets, ARTICLE_CATEGORIES } from '@/api/articl
 import { useAuth } from '@/context/AuthContext'
 import { ArticleCard, FeaturedArticle } from '@/components/articles/ArticleBits'
 import Spinner from '@/components/ui/Spinner'
+import ReviewersPanel from '@/components/articles/ReviewersPanel'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const DATE_OPTIONS = [
@@ -102,6 +103,7 @@ export default function Articles() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-5">
+      {user?.is_admin && <ReviewersPanel />}
       {/* Header */}
       <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>

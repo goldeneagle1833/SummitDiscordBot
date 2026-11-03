@@ -310,3 +310,33 @@ class TestSubmitAndReview:
         assert client.get("/api/me").get_json()["is_article_reviewer"] is True
         _login(client)
         assert client.get("/api/me").get_json()["is_article_reviewer"] is False
+
+
+class TestReviewerList:
+    def test_only_admins_manage_reviewers(self, client, articles):
+        _login(client)
+        assert client.get("/api/articles/reviewers").status_code == 403
+        assert client.post("/api/articles/reviewers", json={"user_id": "555555555555555555"}).status_code == 403
+
+    def test_added_reviewer_can_review_and_gets_pings(self, client, articles, monkeypatch):
+        monkeypatch.setattr(webapp_config, "ARTICLE_REVIEWER_IDS", [])
+        with client.session_transaction() as sess:
+            sess["user_id"] = "admin_user_1"
+            sess["username"] = "Admin"
+        r = client.post("/api/articles/reviewers", json={"user_id": "555555555555555555", "username": "ofncj"})
+        assert r.status_code == 201
+        assert [x["username"] for x in r.get_json()["reviewers"]] == ["ofncj"]
+        assert client.post("/api/articles/reviewers", json={"user_id": "abc"}).status_code == 400
+
+        _login(client, uid="555555555555555555", name="ofncj")
+        assert client.get("/api/me").get_json()["is_article_reviewer"] is True
+        assert client.get("/api/articles/review").status_code == 200
+        _login(client)
+        _submit(client)
+        assert [n["recipient"] for n in articles.notifications()] == ["555555555555555555"]
+
+        with client.session_transaction() as sess:
+            sess["user_id"] = "admin_user_1"
+        assert client.delete("/api/articles/reviewers/555555555555555555").status_code == 200
+        _login(client, uid="555555555555555555", name="ofncj")
+        assert client.get("/api/articles/review").status_code == 403

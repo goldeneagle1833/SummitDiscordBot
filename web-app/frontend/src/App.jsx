@@ -7,6 +7,7 @@ import AdminGuard from '@/components/layout/AdminGuard'
 import StoreAdminGuard from '@/components/layout/StoreAdminGuard'
 import LoginGuard from '@/components/layout/LoginGuard'
 import ExplorerAdminGuard from '@/components/layout/ExplorerAdminGuard'
+import ArticleReviewerGuard from '@/components/layout/ArticleReviewerGuard'
 import Spinner from '@/components/ui/Spinner'
 
 /**
@@ -68,6 +69,11 @@ const Privacy = lazyPage(() => import('@/pages/Privacy'))
 const Terms = lazyPage(() => import('@/pages/Terms'))
 const DeckHelp = lazyPage(() => import('@/pages/DeckHelp'))
 const Community = lazyPage(() => import('@/pages/Community'))
+const Articles = lazyPage(() => import('@/pages/Articles'))
+const ArticleDetail = lazyPage(() => import('@/pages/ArticleDetail'))
+const ArticleEditor = lazyPage(() => import('@/pages/ArticleEditor'))
+const MyArticles = lazyPage(() => import('@/pages/MyArticles'))
+const ArticlesReview = lazyPage(() => import('@/pages/admin/ArticlesReview'))
 const LifeCounter = lazyPage(() => import('@/pages/LifeCounter'))
 const FunStats = lazyPage(() => import('@/pages/FunStats'))
 const FartLeaderboard = lazyPage(() => import('@/pages/FartLeaderboard'))
@@ -234,6 +240,13 @@ const router = createBrowserRouter([
       { path: '/terms', element: <Terms /> },
       { path: '/deck-help', element: <DeckHelp /> },
       { path: '/community', element: <Community /> },
+      // Player articles (community blog)
+      { path: '/articles', element: <Articles /> },
+      { path: '/articles/new', element: <LoginGuard><ArticleEditor /></LoginGuard> },
+      { path: '/articles/mine', element: <LoginGuard><MyArticles /></LoginGuard> },
+      { path: '/articles/:id/edit', element: <LoginGuard><ArticleEditor /></LoginGuard> },
+      { path: '/articles/:slug', element: <ArticleDetail /> },
+      { path: '/admin/articles', element: <ArticleReviewerGuard><ArticlesReview /></ArticleReviewerGuard> },
       { path: '/life-counter', element: <LifeCounter /> },
       { path: '/explorer', element: <LazyPage><ExplorerStandings /></LazyPage> },
       { path: '/explorer/apply', element: <ExplorerApply /> },

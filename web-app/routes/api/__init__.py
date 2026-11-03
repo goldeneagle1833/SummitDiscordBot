@@ -48,6 +48,7 @@ from routes.api.ranked_analytics import ranked_analytics_bp
 from routes.api.season_badges import season_badges_bp
 from routes.api.staples import staples_bp
 from routes.api.paper_finishes import paper_finishes_bp
+from routes.api.articles import articles_bp
 
 api_bp.register_blueprint(leaderboard_bp)
 api_bp.register_blueprint(matches_bp)
@@ -88,3 +89,4 @@ api_bp.register_blueprint(ranked_analytics_bp, url_prefix="/ranked-analytics")
 api_bp.register_blueprint(season_badges_bp)
 api_bp.register_blueprint(staples_bp)
 api_bp.register_blueprint(paper_finishes_bp)
+api_bp.register_blueprint(articles_bp, url_prefix="/articles")

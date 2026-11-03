@@ -35,6 +35,7 @@ const ALL_NAV_OPTIONS = [
   { to: '/life-counter', label: 'Life Counter' },
   { to: '/help', label: 'Help' },
   { to: '/feedback', label: 'Feedback' },
+  { to: '/articles', label: 'Player Articles' },
   { to: '/community', label: 'Community' },
 ]
 
@@ -717,6 +718,7 @@ export default function Nav() {
                 {(STORE_LIVE || user.is_store_admin || user.is_store_staff) && (
                   <SidebarLink to="/store/orders" label="My orders" location={location} onClick={close} />
                 )}
+                <SidebarLink to="/articles/mine" label="My articles" location={location} onClick={close} />
                 <a
                   href="/api/logout"
                   className="block px-4 py-3 text-text-muted hover:bg-accent-red/10 hover:text-accent-red transition-colors text-sm"
@@ -742,7 +744,7 @@ export default function Nav() {
         </div>
 
         {/* Staff tools */}
-        {(user?.is_admin || user?.is_explorer_admin || user?.is_store_admin || user?.is_store_staff) && (
+        {(user?.is_admin || user?.is_explorer_admin || user?.is_store_admin || user?.is_store_staff || user?.is_article_reviewer) && (
           <div className="border-b border-border">
             {user?.is_admin && (
               <Link
@@ -765,6 +767,9 @@ export default function Nav() {
             )}
             {(user?.is_store_admin || user?.is_store_staff) && (
               <SidebarLink to="/admin/store" label="Store Admin" location={location} onClick={close} />
+            )}
+            {(user?.is_article_reviewer || user?.is_admin) && (
+              <SidebarLink to="/admin/articles" label="Article Review" location={location} onClick={close} />
             )}
           </div>
         )}
@@ -800,6 +805,7 @@ export default function Nav() {
           <SidebarLink to="/help" label="Help" location={location} onClick={close} match={['/help', '/about', '/feedback']} />
 
           <SidebarHeading label="Community" />
+          <SidebarLink to="/articles" label="Player Articles" location={location} onClick={close} match={['/articles', '/articles/mine', '/articles/new']} />
           <SidebarLink to="/community" label="Community Links" location={location} onClick={close} />
           {/* Phones only: from md up Store is on the top bar */}
           {(STORE_LIVE || user?.is_store_admin) && (
@@ -871,6 +877,9 @@ function UserMenu({ user }) {
               My orders
             </Link>
           )}
+          <Link role="menuitem" to="/articles/mine" className={itemCls} onClick={close}>
+            My articles
+          </Link>
           {(user.is_store_admin || user.is_store_staff) && (
             <Link role="menuitem" to="/admin/store" className={itemCls} onClick={close}>
               Store Admin

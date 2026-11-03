@@ -533,3 +533,57 @@ def og_card_detail(card_name: str):
         description=description,
         url=f"{SITE_URL}/card/{card_name}",
     )
+
+
+# ---------------------------------------------------------------------------
+# Player articles: shared links show the article's title, author and summary
+# ---------------------------------------------------------------------------
+
+@og_preview_bp.route("/articles")
+def og_articles_list():
+    """OG preview for the Player Articles blog."""
+    if not _is_bot():
+        return _serve_spa()
+    return _og_html(
+        title="Player Articles — Sorcerers Summit",
+        description="Strategy, deck guides and tournament stories written by the Summit community.",
+        url=f"{SITE_URL}/articles",
+    )
+
+
+@og_preview_bp.route("/articles/<slug>")
+def og_article_detail(slug: str):
+    """OG preview for one published article (drafts get the generic card)."""
+    if not _is_bot():
+        return _serve_spa()
+    article = None
+    m = re.match(r"^(\d+)", slug)
+    if m:
+        try:
+            from repositories.articles import ArticleRepository
+            article = ArticleRepository().get(int(m.group(1)))
+        except Exception:
+            logger.exception("Article OG preview failed")
+    if not article or article["status"] != "approved":
+        return og_articles_list()
+    image = article.get("author_avatar") if article.get("author_provider") == "discord" else None
+    if article.get("header_image"):
+        from urllib.parse import quote
+        image = f"{SITE_URL}/card-images/{quote(article['header_image'])}"
+    detail = f"{article['reading_minutes']} min read"
+    if article.get("external_url"):
+        # Linked article: use that page's own preview image when it has one
+        image = article.get("external_image") or image
+        detail = f"on {article.get('external_site') or 'another site'}"
+    return _og_html(
+        title=f"{article['title']} — by {article['author_name']}",
+        description=f"{article['category']} · {detail}. {article['summary']}",
+        url=f"{SITE_URL}/articles/{article['id']}-{article['slug']}",
+        image=image,
+    )
+
+
+@og_preview_bp.route("/articles/<path:_subpath>")
+def articles_subpage(_subpath: str):
+    """/articles/mine, /articles/new, /articles/<id>/edit: always the SPA."""
+    return _serve_spa()

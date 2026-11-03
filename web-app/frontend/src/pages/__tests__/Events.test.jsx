@@ -159,3 +159,89 @@ describe('Events page — event type tags', () => {
     expect(screen.getByText('3 events')).toBeInTheDocument()
   })
 })
+
+describe('Events page — deck filters', () => {
+  const INDEX = {
+    events: {
+      'gencon-2026': [
+        [1, 'alice', 'Druid', ['Earth', 'Water'], 'd1'],
+        [2, 'carol', 'Sparkmage', ['Fire', 'Air'], 'd2'],
+        [null, 'dave', 'Sparkmage', ['Fire'], 'd3'],
+      ],
+      'scg-portland-2026': [
+        [1, 'bob', 'Elementalist', ['Fire', 'Water'], 'd4'],
+        [5, 'alice', 'Sparkmage', ['Air', 'Fire'], 'd5'],
+      ],
+    },
+    avatars: ['Druid', 'Elementalist', 'Sparkmage'],
+    cards: ['Askelon Phoenix', 'Blink'],
+  }
+
+  beforeEach(() => {
+    setViewport({ desktop: true })
+    Element.prototype.scrollIntoView = vi.fn()
+    get.mockImplementation((url) => {
+      if (url === '/api/top-8-events') return Promise.resolve({ events: EVENTS, is_admin: false, featured_event: null })
+      if (url === '/api/avatar-image-files') return Promise.resolve([])
+      if (url === '/api/top-8-events/deck-index') return Promise.resolve(INDEX)
+      if (url.startsWith('/api/top-8-events/card-search')) {
+        return Promise.resolve({ matches: url.includes('Blink') ? { 'scg-portland-2026': [0] } : {} })
+      }
+      if (url.startsWith('/api/events/')) return Promise.resolve({ top8_decks: [], all_decks: [], element_stats: null })
+      return Promise.resolve({})
+    })
+  })
+
+  it('filters by avatar and lists the matching decks with their finish', async () => {
+    renderWithRouter(<Events />)
+    await screen.findByText('SCG Portland 2026')
+    const avatar = screen.getByLabelText('Avatar')
+    await waitFor(() => expect(within(avatar).getByRole('option', { name: 'Druid' })).toBeInTheDocument())
+
+    await userEvent.selectOptions(avatar, 'Druid')
+    expect(screen.queryByRole('button', { name: /SCG Portland 2026/ })).toBeNull()
+    expect(rowFor('GenCon 2026')).toBeInTheDocument()
+    expect(screen.getByText('1 matching deck')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /1st\s*alice\s*Druid/ })).toHaveAttribute('href', '/deck-rec/d1')
+
+    // Sparkmage: both events; Finish = Top 4 leaves only Gen Con's finalist
+    await userEvent.selectOptions(avatar, 'Sparkmage')
+    expect(screen.getByText(/2 events · 3 matching decks/)).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('Finish'), '4')
+    expect(screen.getByText(/1 event · 1 matching deck/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /2nd\s*carol/ })).toBeInTheDocument()
+  })
+
+  it('searches player names and needs every picked element', async () => {
+    renderWithRouter(<Events />)
+    await screen.findByText('SCG Portland 2026')
+    await userEvent.type(screen.getByLabelText('Search player or event'), 'bob')
+    await waitFor(() => expect(screen.queryByRole('button', { name: /GenCon 2026/ })).toBeNull())
+    expect(screen.getByRole('link', { name: /1st\s*bob/ })).toBeInTheDocument()
+
+    await userEvent.clear(screen.getByLabelText('Search player or event'))
+    await userEvent.click(screen.getByRole('button', { name: 'Fire', pressed: false }))
+    await userEvent.click(screen.getByRole('button', { name: 'Air', pressed: false }))
+    expect(screen.getByText(/2 events · 2 matching decks/)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(screen.getByText('2 events')).toBeInTheDocument()
+  })
+
+  it('filters by a card once a real card name is typed', async () => {
+    renderWithRouter(<Events />)
+    await screen.findByText('SCG Portland 2026')
+    await waitFor(() => expect(within(screen.getByLabelText('Avatar')).getByRole('option', { name: 'Druid' })).toBeInTheDocument())
+    await userEvent.type(screen.getByLabelText('Deck runs card'), 'blink')
+    await waitFor(() => expect(screen.queryByRole('button', { name: /GenCon 2026/ })).toBeNull())
+    expect(get).toHaveBeenCalledWith('/api/top-8-events/card-search?card=Blink')
+    expect(screen.getByRole('link', { name: /1st\s*bob/ })).toBeInTheDocument()
+  })
+
+  it('reads filters from the link', async () => {
+    renderWithRouter(<Events />, { route: '/top-8?avatar=Elementalist' })
+    await waitFor(() => expect(screen.queryByRole('button', { name: /GenCon 2026/ })).toBeNull())
+    expect(rowFor('SCG Portland 2026')).toBeInTheDocument()
+    expect(screen.getByLabelText('Avatar')).toHaveValue('Elementalist')
+  })
+})

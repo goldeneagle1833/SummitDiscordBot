@@ -18,6 +18,7 @@ const SECTIONS = [
       { to: '/admin/brackets', label: 'Manage Top Cut', blurb: 'Create and run the season top cut bracket.' },
       { to: '/admin/meta-reports', label: 'Meta Reports', blurb: 'Build and publish reports.' },
       { to: '/admin/paper-badges', label: 'Paper Tournament Badges', blurb: 'Match Top 8 finishes to player profiles.' },
+      { to: '/admin/articles', label: 'Player Articles', blurb: 'Review, comment on and publish blog articles.' },
     ],
   },
 ]

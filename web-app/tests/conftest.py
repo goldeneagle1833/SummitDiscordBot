@@ -18,6 +18,7 @@ os.environ["ANALYTICS_DB_PATH"] = str(Path(_tmp_dir) / "analytics.db")
 os.environ["MONITORING_DB_PATH"] = str(Path(_tmp_dir) / "monitoring.db")
 os.environ["EXPLORER_DB_PATH"] = str(Path(_tmp_dir) / "explorer.db")
 os.environ["META_REPORTS_DB_PATH"] = str(Path(_tmp_dir) / "meta_reports.db")
+os.environ["CARD_SNAPSHOTS_DB_PATH"] = str(Path(_tmp_dir) / "card_snapshots.db")
 os.environ["ARTICLES_DB_PATH"] = str(Path(_tmp_dir) / "articles.db")
 os.environ["ARTICLE_UPLOADS_DIR"] = str(Path(_tmp_dir) / "article_uploads")
 os.environ["SECRET_KEY"] = "test-secret-key-for-pytest"
@@ -255,6 +256,9 @@ def app(elo_db, match_db, tmp_path):
 
     # Reset class-level flags
     MatchRepository._columns_ensured = False
+
+    from services import card_snapshots
+    card_snapshots.reset()
 
     from app import create_app
     test_app = create_app()

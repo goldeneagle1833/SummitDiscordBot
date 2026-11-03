@@ -1189,6 +1189,12 @@ def auto_publish_due(today: date | None = None, repo: MetaReportRepository | Non
 def tick(repo: MetaReportRepository | None = None) -> None:
     repo = repo or MetaReportRepository()
     try:
+        from services import card_snapshots
+
+        card_snapshots.refresh_due()
+    except Exception:
+        logger.exception("Card snapshot refresh failed")
+    try:
         auto_publish_due(repo=repo)
     except Exception:
         logger.exception("Meta report auto-publish failed")

@@ -124,7 +124,8 @@ class TestCardsRoute:
 
     def test_upstream_400_is_a_generic_400(self, client, configured, upstream):
         upstream["answer_with"](FakeResponse(400, {"error": "queue_type is admin only"}))
-        resp = client.get("/api/ranked-analytics/cards?format=constructed")
+        # A custom range is asked live, so PSO's 400 comes through as ours.
+        resp = client.get("/api/ranked-analytics/cards?format=constructed&from=2026-10-03")
         assert resp.status_code == 400
         assert resp.get_json() == {"error": "Invalid analytics query"}
 
@@ -183,10 +184,17 @@ class TestCohortRoute:
 class TestThrottle:
     def test_a_client_is_cut_off_after_the_budget(self, client, configured, upstream, monkeypatch):
         monkeypatch.setattr(svc, "MAX_REQUESTS_PER_WINDOW", 3)
+        # Custom ranges go to PSO live, so they count against the budget.
+        url = "/api/ranked-analytics/cards?format=constructed&from=2026-10-03"
         for _ in range(3):
-            assert client.get("/api/ranked-analytics/cards?format=constructed").status_code == 200
-        resp = client.get("/api/ranked-analytics/cards?format=constructed")
+            assert client.get(url).status_code == 200
+        resp = client.get(url)
         assert resp.status_code == 429
+
+    def test_saved_selections_do_not_spend_the_budget(self, client, configured, upstream, monkeypatch):
+        monkeypatch.setattr(svc, "MAX_REQUESTS_PER_WINDOW", 1)
+        for _ in range(5):
+            assert client.get("/api/ranked-analytics/cards?format=constructed").status_code == 200
 
     def test_clients_are_tracked_separately(self, monkeypatch):
         monkeypatch.setattr(svc, "MAX_REQUESTS_PER_WINDOW", 1)

@@ -175,7 +175,18 @@ class TestExemptions:
             "api.store.stripe_webhook",
             "api.store.storefront_stripe_webhook",
             "api.monitoring.health",
+            "api.staples.get_staples",
         }
+
+    def test_staples_is_open_without_key_or_token(self, gated, monkeypatch):
+        from services import ranked_analytics
+
+        def down(*args, **kwargs):
+            raise ranked_analytics.AnalyticsUnavailable("down")
+
+        monkeypatch.setattr(ranked_analytics, "forward", down)
+        # Reaches the route (503 from PSO being down), not the gate's 401.
+        assert gated.get("/api/staples").status_code == 503
 
     def test_gate_can_be_disabled_by_config(self, app):
         app.config["SITE_GATE_ENABLED"] = False

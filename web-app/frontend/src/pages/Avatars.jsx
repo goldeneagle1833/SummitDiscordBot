@@ -16,6 +16,8 @@ import PageTabs from "@/components/ui/PageTabs";
 import { AVATAR_TABS } from "@/utils/pageTabs";
 import usePageTitle from "@/hooks/usePageTitle";
 import DataReleaseNote from "@/components/ui/DataReleaseNote";
+import MetaMap from "@/components/meta/MetaMap";
+import { avatarArchetypes } from "@/utils/avatarTiers";
 
 const SORT_OPTIONS = [
   { value: "avatar-score", label: "Avatar Score" },
@@ -403,6 +405,7 @@ export default function Avatars() {
     () => avatars.reduce((s, a) => s + a.total, 0),
     [avatars],
   );
+  const metaMap = useMemo(() => avatarArchetypes(avatars), [avatars]);
 
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>;
 
@@ -483,6 +486,22 @@ export default function Avatars() {
         <Spinner className="py-20" />
       ) : (
         <>
+          <section className="max-w-2xl mx-auto mb-8" aria-labelledby="avatar-meta-map">
+            <h2 id="avatar-meta-map" className="text-lg font-semibold text-center mb-1">
+              Avatar Meta Map
+            </h2>
+            <p className="text-xs text-text-muted text-center mb-3">
+              Play rate across, win rate up, for {playDrawLabel === "Overall (from 2/7/2026 onward)" ? "all events" : playDrawLabel}.
+              Dot colour is the tier (gold S, yellow A, blue B, grey C), worked out the same way as the Meta Report.
+              Avatars need {metaMap.minimum}+ games to show.
+            </p>
+            {metaMap.archetypes.length ? (
+              <MetaMap archetypes={metaMap.archetypes} linkAvatars noun="Avatar" />
+            ) : (
+              <p className="text-text-muted text-sm text-center py-4">Not enough games for this event yet.</p>
+            )}
+          </section>
+
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-8">
             {sorted.map((avatar, i) => {
               const imgFile = getAvatarImagePath(avatar.name, imageFiles);

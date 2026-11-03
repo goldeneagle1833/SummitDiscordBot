@@ -4,7 +4,7 @@ import {
   articlePath, articlePdfUrl, deleteArticle, formatArticleDate, getArticle,
   getReviewQueue, reviewArticle,
 } from '@/api/articles'
-import { ArticleBody, AuthorChip, CategoryBadge, LinkedArticleTile, StatusBadge, TagList } from '@/components/articles/ArticleBits'
+import { ArticleBody, ArticleImage, AuthorChip, CategoryBadge, LinkedArticleTile, StatusBadge, TagList } from '@/components/articles/ArticleBits'
 import CommentThread from '@/components/articles/CommentThread'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -191,6 +191,12 @@ function ReviewPanel({ article, onBack, onChanged, onDeleted, setComments }) {
       </div>
 
       <div className="p-4 max-h-[60vh] overflow-y-auto border-b border-border">
+        {article.header_image && !article.external_url && (
+          <div className="mb-4 max-w-md">
+            <p className="text-xs text-text-muted mb-1">Header card: {article.header_card}</p>
+            <ArticleImage article={article} className="aspect-[2.4/1] rounded border border-border" />
+          </div>
+        )}
         {article.external_url && (
           <div className="mb-4 max-w-md">
             <p className="text-xs text-text-muted mb-1 break-all">Links to {article.external_url}</p>

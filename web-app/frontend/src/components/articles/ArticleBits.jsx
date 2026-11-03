@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { articlePath, formatArticleDate, STATUS_LABELS } from '@/api/articles'
+import { articleImage, articlePath, formatArticleDate, STATUS_LABELS } from '@/api/articles'
 
 // One colour per category, used for the badge and the card's top stripe.
 const CATEGORY_COLORS = {
@@ -113,7 +113,7 @@ export function ExternalBadge({ site }) {
 /** The linked page's own preview image; hides itself if it fails to load. */
 export function PreviewImage({ src, className = '' }) {
   const [failed, setFailed] = useState(false)
-  if (!src || failed || !src.startsWith('https://')) return null
+  if (!src || failed || !(src.startsWith('https://') || src.startsWith('/card-images/'))) return null
   return (
     <img
       src={src}
@@ -124,6 +124,14 @@ export function PreviewImage({ src, className = '' }) {
       className={`w-full object-cover bg-bg-elevated ${className}`}
     />
   )
+}
+
+/** An article's picture. Card art is cropped to the illustration (the top
+ *  part of the card) rather than the rules text. */
+export function ArticleImage({ article, className = '' }) {
+  const src = articleImage(article)
+  const cardArt = !article.external_url && article.header_image
+  return <PreviewImage src={src} className={`${cardArt ? 'object-[50%_22%]' : ''} ${className}`} />
 }
 
 /** Big tile for an article hosted on another site: its preview image,
@@ -164,7 +172,7 @@ export function ArticleCard({ article, onTag, activeTag }) {
   return (
     <article className="group relative flex flex-col bg-bg-surface border border-border rounded-lg overflow-hidden hover:border-secondary/60 transition-colors min-w-0">
       <span className={`h-1 ${categoryColors(article.category).stripe}`} aria-hidden="true" />
-      {article.external_url && <PreviewImage src={article.external_image} className="aspect-[1.91/1] border-b border-border" />}
+      <ArticleImage article={article} className="aspect-[1.91/1] border-b border-border" />
       <div className="p-4 flex flex-col gap-2 flex-1 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
           <CategoryBadge category={article.category} />
@@ -194,7 +202,7 @@ export function FeaturedArticle({ article }) {
   return (
     <article className="group relative overflow-hidden rounded-lg border border-border bg-gradient-to-br from-brand-panel via-bg-surface to-bg-surface hover:border-secondary/60 transition-colors">
       <span className={`absolute inset-y-0 left-0 w-1 ${categoryColors(article.category).stripe}`} aria-hidden="true" />
-      <div className={article.external_url && article.external_image ? 'sm:grid sm:grid-cols-[1fr_minmax(0,40%)] sm:items-center' : ''}>
+      <div className={articleImage(article) ? 'sm:grid sm:grid-cols-[1fr_minmax(0,40%)] sm:items-center' : ''}>
       <div className="p-5 sm:p-7 pl-6 sm:pl-8 min-w-0">
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <span className="text-[11px] font-bold uppercase tracking-wider text-secondary">Latest article</span>
@@ -213,9 +221,7 @@ export function FeaturedArticle({ article }) {
           <Meta article={article} />
         </div>
       </div>
-      {article.external_url && (
-        <PreviewImage src={article.external_image} className="aspect-[1.91/1] sm:h-full sm:aspect-auto sm:max-h-64 border-t sm:border-t-0 sm:border-l border-border" />
-      )}
+      <ArticleImage article={article} className="aspect-[1.91/1] sm:h-full sm:aspect-auto sm:max-h-64 border-t sm:border-t-0 sm:border-l border-border" />
       </div>
     </article>
   )

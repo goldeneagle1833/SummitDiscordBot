@@ -4,6 +4,7 @@ import {
   ARTICLE_CATEGORIES, editArticle, fetchLinkPreview, getArticle, previewArticle, submitArticle,
 } from '@/api/articles'
 import { ArticleBody, LinkedArticleTile, StatusBadge } from '@/components/articles/ArticleBits'
+import CardHeaderPicker from '@/components/articles/CardHeaderPicker'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -32,6 +33,7 @@ export default function ArticleEditor() {
   const [linkCard, setLinkCard] = useState(null)
   const [linkBusy, setLinkBusy] = useState(false)
   const [linkMsg, setLinkMsg] = useState(null)
+  const [headerCard, setHeaderCard] = useState(null)
   const [tab, setTab] = useState('write')
   const [preview, setPreview] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -50,6 +52,7 @@ export default function ArticleEditor() {
         setTags((a.tags || []).join(', '))
         setSummary(a.summary)
         setBody(a.body_md || '')
+        if (a.header_card && a.header_image) setHeaderCard({ name: a.header_card, image: a.header_image })
         if (a.external_url) {
           setMode('link')
           setLinkUrl(a.external_url)
@@ -144,6 +147,7 @@ export default function ArticleEditor() {
     const fields = {
       title, category, tags, summary, body,
       external_url: linking ? linkUrl.trim() : '',
+      header_card: !linking && headerCard ? headerCard.name : '',
       pdf: !linking && pdf ? pdf : undefined,
       remove_pdf: removePdf || (linking && existing?.has_pdf) ? '1' : undefined,
     }
@@ -284,6 +288,8 @@ export default function ArticleEditor() {
             </label>
             <textarea id="a-summary" value={summary} onChange={(e) => setSummary(e.target.value)} maxLength={300} rows={2} required className={`${inputCls} resize-none`} />
           </div>
+
+          {mode === 'write' && <CardHeaderPicker value={headerCard} onChange={setHeaderCard} />}
 
           {mode === 'link' ? (
             <div>

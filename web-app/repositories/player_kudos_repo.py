@@ -124,16 +124,17 @@ class PlayerKudosRepository:
             has_pairing = "pairing_id" in cols
             since = (datetime.now(timezone.utc) - timedelta(days=KUDOS_WINDOW_DAYS)).strftime("%Y-%m-%d")
             pairing_col = "m.pairing_id" if has_pairing else "NULL"
+            # Production's match_records has no match_id column (it predates it);
+            # the match ID is SQLite's rowid, as everywhere else in the code.
             sql = f"""
-                SELECT m.match_id, {pairing_col} AS pairing_id, m.match_type, m.timestamp
+                SELECT m.rowid AS match_id, {pairing_col} AS pairing_id, m.match_type, m.timestamp
                 FROM match_records m
                 WHERE ((CAST(m.winner_id AS TEXT) = ? AND CAST(m.losser_id AS TEXT) = ?)
                     OR (CAST(m.winner_id AS TEXT) = ? AND CAST(m.losser_id AS TEXT) = ?))
                   AND m.timestamp >= ?
-                  AND m.match_id IS NOT NULL
                   AND NOT EXISTS (
                       SELECT 1 FROM player_kudos k
-                      WHERE k.giver_id = ? AND k.match_id = m.match_id
+                      WHERE k.giver_id = ? AND k.match_id = m.rowid
                   )
             """
             params = [giver_id, receiver_id, receiver_id, giver_id, since, giver_id]

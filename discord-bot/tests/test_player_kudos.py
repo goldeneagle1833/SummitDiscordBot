@@ -286,3 +286,28 @@ def test_the_result_edit_keeps_report_player_and_give_kudos():
     view = report_player_only_view(message)
     assert [item.custom_id for item in view.children] == ["prp:10:20:77:ranked", "pkd:10:20:77"]
     assert all(not item.disabled for item in view.children)
+
+
+def test_works_with_the_production_match_records_layout(tmp_path, monkeypatch):
+    """Production's match_records has no match_id column; the match ID is the rowid."""
+    import repositories.player_kudos_repo as repo
+
+    db = tmp_path / "prod_layout.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE match_records (reporter_id INTEGER, winner_id INTEGER, losser_id INTEGER, "
+        "timestamp TEXT, json_deck_data TEXT, match_type TEXT, pairing_id INTEGER)"
+    )
+    conn.execute(
+        "INSERT INTO match_records (winner_id, losser_id, timestamp, match_type, pairing_id) "
+        "VALUES (20, 10, ?, 'ranked', 5)",
+        (datetime.now().isoformat(),),
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(repo, "DB_NAME", str(db))
+
+    assert repo.find_kudos_match(10, 20, 5)["match_id"] == 1
+    repo.save_player_kudos(giver_id=10, receiver_id=20, reasons=["good_sport"], pairing_id=5)
+    with pytest.raises(KudosError):
+        repo.find_kudos_match(10, 20, 5)

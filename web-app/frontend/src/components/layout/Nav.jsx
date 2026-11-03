@@ -25,6 +25,7 @@ const ALL_NAV_OPTIONS = [
   { to: '/elements', label: 'Element Winrates' },
   { to: '/cards/played-winrates', label: 'Card Win Rates' },
   { to: '/popular-cards', label: 'Popular Cards' },
+  { to: '/articles', label: 'Player Articles' },
   { to: '/elo', label: 'ELO Leaderboards' },
   { to: '/brackets', label: 'Season Top Cut' },
   { to: '/match-history', label: 'Match History' },
@@ -35,7 +36,6 @@ const ALL_NAV_OPTIONS = [
   { to: '/life-counter', label: 'Life Counter' },
   { to: '/help', label: 'Help' },
   { to: '/feedback', label: 'Feedback' },
-  { to: '/articles', label: 'Player Articles' },
   { to: '/community', label: 'Community' },
 ]
 
@@ -788,6 +788,7 @@ export default function Nav() {
           <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
           <SidebarLink to="/cards/played-winrates" label="Card Win Rates" location={location} onClick={close} />
           <SidebarLink to="/popular-cards" label="Popular Cards" location={location} onClick={close} />
+          <SidebarLink to="/articles" label="Player Articles" location={location} onClick={close} match={['/articles', '/articles/mine', '/articles/new']} />
 
           <SidebarHeading label="Summit Ranked" />
           <SidebarLink to="/elo" label="ELO Leaderboards" location={location} onClick={close} />
@@ -805,7 +806,6 @@ export default function Nav() {
           <SidebarLink to="/help" label="Help" location={location} onClick={close} match={['/help', '/about', '/feedback']} />
 
           <SidebarHeading label="Community" />
-          <SidebarLink to="/articles" label="Player Articles" location={location} onClick={close} match={['/articles', '/articles/mine', '/articles/new']} />
           <SidebarLink to="/community" label="Community Links" location={location} onClick={close} />
           {/* Phones only: from md up Store is on the top bar */}
           {(STORE_LIVE || user?.is_store_admin) && (

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { getEventsWithAdmin, getEvent, reorderEvents, updateEventMetadata, createEvent, importEventFromUrl, pollEventJob, setFeaturedEvent } from '@/api/events'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { getEventsWithAdmin, getEvent, reorderEvents, updateEventMetadata, createEvent, importEventFromUrl, pollEventJob, setFeaturedEvent, getTop8DeckIndex, searchTop8Card } from '@/api/events'
 import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
 import ShareLinkButton from '@/components/ui/ShareLinkButton'
@@ -90,6 +90,78 @@ function getEventYear(ev) {
   return match ? match[0] : 'Other'
 }
 
+const ELEMENTS = ['Fire', 'Water', 'Earth', 'Air']
+const PLACE_OPTIONS = [
+  { value: '', label: 'Any deck' },
+  { value: '8', label: 'Top 8' },
+  { value: '4', label: 'Top 4' },
+  { value: '2', label: 'Finalists' },
+  { value: '1', label: 'Winners' },
+]
+const STAR_OPTIONS = [
+  { value: '', label: 'Any' },
+  { value: '2', label: '★★ and up' },
+  { value: '3', label: '★★★ only' },
+]
+
+function placeLabel(place) {
+  if (place == null) return 'Played'
+  if (place === 1) return '1st'
+  if (place === 2) return '2nd'
+  if (place <= 4) return 'Top 4'
+  if (place <= 8) return 'Top 8'
+  return `#${place}`
+}
+
+function placeClass(place) {
+  if (place === 1) return 'text-yellow-300 bg-yellow-400/10 border-yellow-400/30'
+  if (place === 2) return 'text-gray-200 bg-white/5 border-white/20'
+  if (place != null && place <= 8) return 'text-primary-light bg-primary/10 border-primary/30'
+  return 'text-text-muted bg-white/5 border-border'
+}
+
+const norm = (s) => (s || '').toLowerCase()
+
+/**
+ * Work out which events (and which of their decks) match the deck filters.
+ * Returns null when no deck-level filter or search is on, otherwise a Map of
+ * folder -> matching decks (only events that match at all are in the map).
+ */
+function matchEventDecks(events, deckIndex, { query, avatar, elements, place, cardMatches }) {
+  const q = norm(query).trim()
+  const deckFilterOn = Boolean(avatar || elements.length || place || cardMatches)
+  if (!q && !deckFilterOn) return null
+  const out = new Map()
+  for (const ev of events) {
+    const rows = deckIndex?.[ev.folder] || []
+    const cardHits = cardMatches ? new Set(cardMatches[ev.folder] || []) : null
+    const decks = []
+    rows.forEach((r, i) => {
+      const [p, player, av, els, id] = r
+      if (avatar && av !== avatar) return
+      if (elements.length && !elements.every((e) => (els || []).includes(e))) return
+      if (place && (p == null || p > Number(place))) return
+      if (cardHits && !cardHits.has(i)) return
+      decks.push({ place: p, player, avatar: av, elements: els || [], deck_id: id })
+    })
+    const nameHit = q && (norm(ev.name).includes(q) || norm(ev.folder).includes(q))
+    const playerHits = q ? decks.filter((d) => norm(d.player).includes(q)) : decks
+    let shown
+    if (q && !nameHit) {
+      if (!playerHits.length) continue
+      shown = playerHits
+    } else if (deckFilterOn) {
+      if (!decks.length) continue
+      shown = decks
+    } else {
+      shown = [] // event name search only: no deck list needed
+    }
+    shown.sort((a, b) => (a.place ?? 9999) - (b.place ?? 9999))
+    out.set(ev.folder, shown)
+  }
+  return out
+}
+
 function groupByYear(events) {
   const groups = {}
   for (const ev of events) {
@@ -111,10 +183,26 @@ export default function Events() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [yearFilter, setYearFilter] = useState('')
-  const [tagFilter, setTagFilter] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [yearFilter, setYearFilter] = useState(() => searchParams.get('year') || '')
+  const [tagFilter, setTagFilter] = useState(() => searchParams.get('type') || '')
   const [eventTags, setEventTags] = useState(DEFAULT_EVENT_TAGS)
   const [sortBy, setSortBy] = useState('date-desc')
+
+  // Deck filters (kept in the URL so a filtered view can be shared)
+  const [query, setQuery] = useState(() => searchParams.get('q') || '')
+  const [avatarFilter, setAvatarFilter] = useState(() => searchParams.get('avatar') || '')
+  const [elementFilter, setElementFilter] = useState(() =>
+    (searchParams.get('el') || '').split(',').filter((e) => ELEMENTS.includes(e)))
+  const [placeFilter, setPlaceFilter] = useState(() => searchParams.get('place') || '')
+  const [starFilter, setStarFilter] = useState(() => searchParams.get('stars') || '')
+  const [cardInput, setCardInput] = useState(() => searchParams.get('card') || '')
+  const [cardFilter, setCardFilter] = useState(() => searchParams.get('card') || '')
+  const [cardMatches, setCardMatches] = useState(null)
+  const [cardLoading, setCardLoading] = useState(false)
+  const [deckIndex, setDeckIndex] = useState(null)
+  const [deckIndexError, setDeckIndexError] = useState(false)
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false)
   const [selectedFolder, setSelectedFolder] = useState(null)
   const [featuredFolder, setFeaturedFolder] = useState(null)
   const [imageFiles, setImageFiles] = useState([])
@@ -179,8 +267,69 @@ export default function Events() {
       .finally(() => setLoading(false))
   }, [])
 
+  // Deck summaries for the avatar / player / element / placement filters.
+  useEffect(() => {
+    getTop8DeckIndex()
+      .then((data) => setDeckIndex(data || { events: {}, avatars: [], cards: [] }))
+      .catch(() => setDeckIndexError(true))
+  }, [])
+
+  // Card filter: the server knows which decks run which cards.
+  useEffect(() => {
+    if (!cardFilter) { setCardMatches(null); return }
+    let cancelled = false
+    setCardLoading(true)
+    searchTop8Card(cardFilter)
+      .then((data) => { if (!cancelled) setCardMatches(data?.matches || {}) })
+      .catch(() => { if (!cancelled) setCardMatches({}) })
+      .finally(() => { if (!cancelled) setCardLoading(false) })
+    return () => { cancelled = true }
+  }, [cardFilter])
+
+  // Apply the typed card once it matches a real card name (or on Enter).
+  const cardNames = deckIndex?.cards
+  useEffect(() => {
+    const typed = cardInput.trim()
+    if (!typed) { setCardFilter(''); return }
+    const exact = cardNames?.find((c) => c.toLowerCase() === typed.toLowerCase())
+    if (exact) setCardFilter(exact)
+  }, [cardInput, cardNames])
+
+  // Mirror the filters into the URL (replace, so Back still leaves the page).
+  useEffect(() => {
+    const next = new URLSearchParams()
+    if (query.trim()) next.set('q', query.trim())
+    if (avatarFilter) next.set('avatar', avatarFilter)
+    if (elementFilter.length) next.set('el', elementFilter.join(','))
+    if (placeFilter) next.set('place', placeFilter)
+    if (cardFilter) next.set('card', cardFilter)
+    if (starFilter) next.set('stars', starFilter)
+    if (yearFilter) next.set('year', yearFilter)
+    if (tagFilter) next.set('type', tagFilter)
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true })
+  }, [query, avatarFilter, elementFilter, placeFilter, cardFilter, starFilter, yearFilter, tagFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleElement = useCallback((el) => {
+    setElementFilter((prev) => (prev.includes(el) ? prev.filter((e) => e !== el) : [...prev, el]))
+  }, [])
+
+  const secondaryCount = (elementFilter.length ? 1 : 0) + (yearFilter ? 1 : 0) + (tagFilter ? 1 : 0) + (starFilter ? 1 : 0) + (sortBy !== 'date-desc' ? 1 : 0)
+  const showMoreFilters = moreFiltersOpen
+  const deckFiltersOn = Boolean(avatarFilter || elementFilter.length || placeFilter || cardFilter)
+  const anyFilterOn = Boolean(deckFiltersOn || query.trim() || starFilter || yearFilter || tagFilter)
+  const clearFilters = useCallback(() => {
+    setQuery(''); setAvatarFilter(''); setElementFilter([]); setPlaceFilter('')
+    setCardInput(''); setCardFilter(''); setStarFilter(''); setYearFilter(''); setTagFilter('')
+  }, [])
+  // Deck filters need the deck index (and the card search, if a card is set).
+  const deckDataPending = (deckFiltersOn || query.trim()) && !deckIndex && !deckIndexError
+  const cardPending = Boolean(cardFilter) && (cardLoading || cardMatches == null)
+
   const filtered = useMemo(() => {
     let result = events
+    if (starFilter) {
+      result = result.filter((ev) => (ev.rating || 0) >= Number(starFilter))
+    }
     if (yearFilter) {
       result = result.filter((ev) => getEventYear(ev) === yearFilter)
     }
@@ -190,20 +339,43 @@ export default function Events() {
       result = result.filter((ev) => ev.tag === tagFilter)
     }
     return sortEvents(result, sortBy)
-  }, [events, yearFilter, tagFilter, sortBy])
+  }, [events, yearFilter, tagFilter, sortBy, starFilter])
+
+  // folder -> matching decks, or null when no deck filter / search is on.
+  const deckMatches = useMemo(() => {
+    if (deckDataPending || cardPending) return null
+    return matchEventDecks(filtered, deckIndex?.events, {
+      query,
+      avatar: avatarFilter,
+      elements: elementFilter,
+      place: placeFilter,
+      cardMatches: cardFilter ? cardMatches : null,
+    })
+  }, [filtered, deckIndex, query, avatarFilter, elementFilter, placeFilter, cardFilter, cardMatches, deckDataPending, cardPending])
+
+  const visibleEvents = useMemo(() => {
+    if (!deckMatches) return (deckDataPending || cardPending) && (deckFiltersOn || query.trim()) ? [] : filtered
+    return filtered.filter((ev) => deckMatches.has(ev.folder))
+  }, [filtered, deckMatches, deckDataPending, cardPending, deckFiltersOn, query])
+  const matchedDeckCount = useMemo(() => {
+    if (!deckMatches) return 0
+    let n = 0
+    for (const d of deckMatches.values()) n += d.length
+    return n
+  }, [deckMatches])
 
   // Auto-select: featured event, or first in filtered list
   const selected = useMemo(() => {
     if (selectedFolder) {
-      const found = filtered.find((e) => e.folder === selectedFolder)
+      const found = visibleEvents.find((e) => e.folder === selectedFolder)
       if (found) return found
     }
     if (featuredFolder) {
-      const found = filtered.find((e) => e.folder === featuredFolder)
+      const found = visibleEvents.find((e) => e.folder === featuredFolder)
       if (found) return found
     }
-    return filtered[0] || null
-  }, [filtered, selectedFolder, featuredFolder])
+    return visibleEvents[0] || null
+  }, [visibleEvents, selectedFolder, featuredFolder])
 
   // Fetch event detail for selected event preview
   useEffect(() => {
@@ -233,7 +405,13 @@ export default function Events() {
     return () => cancelAnimationFrame(id)
   }, [selected?.folder, isDesktop, reducedMotion])
 
-  const yearGroups = useMemo(() => groupByYear(filtered), [filtered])
+  // Highlight the selected event's placements that match the deck filters.
+  const selectedMatchIds = useMemo(
+    () => new Set((selected && deckMatches?.get(selected.folder)?.map((d) => d.deck_id).filter(Boolean)) || []),
+    [selected, deckMatches],
+  )
+
+  const yearGroups = useMemo(() => groupByYear(visibleEvents), [visibleEvents])
 
   const saveMetadata = useCallback(async () => {
     if (!editModal) return
@@ -336,6 +514,53 @@ export default function Events() {
       if (result.success) setFeaturedFolder(null)
     } catch { /* ignore */ }
   }, [])
+
+  // Decks in this event that match the deck filters, shown under its row.
+  const renderDeckMatches = (event, { inPanel = false } = {}) => {
+    const decks = deckMatches?.get(event.folder)
+    if (!decks || !decks.length) return null
+    const limit = 5
+    const shown = decks.slice(0, limit)
+    return (
+      <div className={inPanel ? 'p-3 border-b border-border' : 'border border-t-0 border-border rounded-b-lg bg-bg-surface/60 px-3 py-2'}>
+        <p className="text-[10px] font-semibold text-text-muted uppercase tracking-widest mb-1">
+          {decks.length} matching deck{decks.length !== 1 ? 's' : ''}
+        </p>
+        <ul className="space-y-0.5">
+          {shown.map((d, i) => {
+            const body = (
+              <>
+                <span className={`text-[10px] font-semibold border px-1.5 py-0.5 rounded shrink-0 w-12 text-center ${placeClass(d.place)}`}>
+                  {placeLabel(d.place)}
+                </span>
+                <span className="truncate text-text/90">{d.player}</span>
+                <span className="ml-auto flex items-center gap-1 shrink-0 text-[11px]">
+                  <span className="text-secondary">{d.avatar}</span>
+                  {d.elements.length > 0 && <span className="text-white/80">({d.elements.join('/')})</span>}
+                </span>
+              </>
+            )
+            return (
+              <li key={d.deck_id || i}>
+                {d.deck_id ? (
+                  <Link to={`/deck-rec/${d.deck_id}`} className="flex items-center gap-2 text-xs rounded px-1 -mx-1 py-0.5 hover:bg-white/5">
+                    {body}
+                  </Link>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs px-1 -mx-1 py-0.5">{body}</div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+        {decks.length > limit && (
+          <Link to={`/top-8/${event.folder}`} className="text-[11px] text-primary hover:underline">
+            +{decks.length - limit} more in this event →
+          </Link>
+        )}
+      </div>
+    )
+  }
 
   // The big event preview tile. On desktop it sits in the sticky left panel;
   // on mobile it renders inside the accordion, right under the tapped row.
@@ -548,7 +773,7 @@ export default function Events() {
                             <li key={deck.deck_id}>
                               <Link
                                 to={`/deck-rec/${deck.deck_id}`}
-                                className="flex items-center text-sm gap-2 hover:bg-white/5 rounded px-1 -mx-1 py-0.5 transition-colors"
+                                className={`flex items-center text-sm gap-2 hover:bg-white/5 rounded px-1 -mx-1 py-0.5 transition-colors ${selectedMatchIds.has(deck.deck_id) ? 'bg-primary/10 ring-1 ring-primary/40' : ''}`}
                               >
                                 {content}
                               </Link>
@@ -575,46 +800,167 @@ export default function Events() {
         {/* Right Panel — Event List */}
         <div className="flex-1 min-w-0">
           {/* Filters + Sort */}
-          <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-bg-surface rounded-lg border border-border">
-            <div>
-              <label className="text-xs text-text-muted block mb-1">Sort</label>
-              <select
-                className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-              >
-                {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+          <div className="mb-4 p-3 bg-bg-surface rounded-lg border border-border space-y-3">
+            {/* Find decks: search, avatar, card */}
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-[12rem]">
+                <label htmlFor="top8-search" className="text-xs text-text-muted block mb-1">Search player or event</label>
+                <input
+                  id="top8-search"
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="e.g. Ambrai or Gen Con"
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-1.5 text-sm placeholder:text-text-muted/50"
+                />
+              </div>
+              <div className="w-[calc(50%-0.375rem)] sm:w-auto">
+                <label htmlFor="top8-avatar" className="text-xs text-text-muted block mb-1">Avatar</label>
+                <select
+                  id="top8-avatar"
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                  value={avatarFilter}
+                  onChange={(e) => setAvatarFilter(e.target.value)}
+                >
+                  <option value="">All Avatars</option>
+                  {(deckIndex?.avatars || (avatarFilter ? [avatarFilter] : [])).map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+              <div className="w-[calc(50%-0.375rem)] sm:w-auto">
+                <label htmlFor="top8-placement" className="text-xs text-text-muted block mb-1">Finish</label>
+                <select
+                  id="top8-placement"
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                  value={placeFilter}
+                  onChange={(e) => setPlaceFilter(e.target.value)}
+                >
+                  {PLACE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div className="flex-1 min-w-[12rem] sm:max-w-[16rem]">
+                <label htmlFor="top8-card" className="text-xs text-text-muted block mb-1">Deck runs card</label>
+                <input
+                  id="top8-card"
+                  type="search"
+                  list="top8-card-names"
+                  value={cardInput}
+                  onChange={(e) => setCardInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') setCardFilter(cardInput.trim()) }}
+                  placeholder="Type a card name"
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-1.5 text-sm placeholder:text-text-muted/50"
+                />
+                <datalist id="top8-card-names">
+                  {cardInput.trim().length >= 2 && (deckIndex?.cards || [])
+                    .filter((c) => c.toLowerCase().includes(cardInput.trim().toLowerCase()))
+                    .slice(0, 30)
+                    .map((c) => <option key={c} value={c} />)}
+                </datalist>
+              </div>
             </div>
-            <div>
-              <label className="text-xs text-text-muted block mb-1">Year</label>
-              <select
-                className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
-                value={yearFilter}
-                onChange={(e) => setYearFilter(e.target.value)}
-              >
-                <option value="">All Years</option>
-                {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-              </select>
+            {/* Elements + event filters (folded away on phones until asked for) */}
+            <div id="top8-more-filters" className={`${showMoreFilters ? 'flex' : 'hidden'} lg:flex flex-wrap items-end gap-3`}>
+              <div>
+                <span className="text-xs text-text-muted block mb-1" id="top8-elements-label">Elements</span>
+                <div className="flex gap-1" role="group" aria-labelledby="top8-elements-label">
+                  {ELEMENTS.map((el) => {
+                    const on = elementFilter.includes(el)
+                    return (
+                      <button
+                        key={el}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => toggleElement(el)}
+                        className={`px-2.5 py-1.5 rounded text-xs font-semibold border transition-colors ${
+                          on
+                            ? `${ELEMENT_COLORS[el].bar} text-black border-transparent`
+                            : `bg-bg-raised border-border ${ELEMENT_COLORS[el].label} hover:border-white/30`
+                        }`}
+                      >
+                        {el}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-text-muted block mb-1" htmlFor="top8-sort">Sort</label>
+                <select
+                  id="top8-sort"
+                  className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                >
+                  {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-text-muted block mb-1" htmlFor="top8-year">Year</label>
+                <select
+                  id="top8-year"
+                  className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                  value={yearFilter}
+                  onChange={(e) => setYearFilter(e.target.value)}
+                >
+                  <option value="">All Years</option>
+                  {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="event-type-filter" className="text-xs text-text-muted block mb-1">Type</label>
+                <select
+                  id="event-type-filter"
+                  className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                  value={tagFilter}
+                  onChange={(e) => setTagFilter(e.target.value)}
+                >
+                  <option value="">All Types</option>
+                  {eventTags.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {isAdmin && <option value={UNTAGGED}>Untagged</option>}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="top8-stars" className="text-xs text-text-muted block mb-1">Stars</label>
+                <select
+                  id="top8-stars"
+                  className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                  value={starFilter}
+                  onChange={(e) => setStarFilter(e.target.value)}
+                >
+                  {STAR_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
             </div>
-            <div>
-              <label htmlFor="event-type-filter" className="text-xs text-text-muted block mb-1">Type</label>
-              <select
-                id="event-type-filter"
-                className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
-                value={tagFilter}
-                onChange={(e) => setTagFilter(e.target.value)}
-              >
-                <option value="">All Types</option>
-                {eventTags.map((t) => <option key={t} value={t}>{t}</option>)}
-                {isAdmin && <option value={UNTAGGED}>Untagged</option>}
-              </select>
-            </div>
-            <span className="text-text-muted text-xs ml-auto self-end pb-1">
-              {filtered.length} event{filtered.length !== 1 ? 's' : ''}
+            {/* Result count + actions */}
+            <div className="flex flex-wrap items-center gap-3">
+            <span className="text-text-muted text-xs mr-auto" aria-live="polite">
+              {deckDataPending || cardPending
+                ? 'Finding decks…'
+                : <>
+                    {visibleEvents.length} event{visibleEvents.length !== 1 ? 's' : ''}
+                    {deckMatches && matchedDeckCount > 0 && <> · {matchedDeckCount} matching deck{matchedDeckCount !== 1 ? 's' : ''}</>}
+                  </>}
+              {deckIndexError && (deckFiltersOn || query.trim()) && <span className="text-accent-red"> · Deck filters could not load</span>}
             </span>
             <button
-              className={`text-xs px-3 py-1.5 rounded font-semibold self-end transition-colors ${
+              type="button"
+              className="lg:hidden text-xs px-3 py-1.5 rounded font-semibold bg-bg-raised border border-border text-text-muted hover:text-text"
+              aria-expanded={showMoreFilters}
+              aria-controls="top8-more-filters"
+              onClick={() => setMoreFiltersOpen(!showMoreFilters)}
+            >
+              {showMoreFilters ? 'Fewer filters' : `More filters${secondaryCount ? ` (${secondaryCount})` : ''}`}
+            </button>
+            {anyFilterOn && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-xs px-3 py-1.5 rounded font-semibold bg-bg-raised border border-border text-text-muted hover:text-text hover:border-primary/50"
+              >
+                Clear filters
+              </button>
+            )}
+            <button
+              className={`text-xs px-3 py-1.5 rounded font-semibold transition-colors ${
                 compareMode
                   ? 'bg-secondary text-black'
                   : 'bg-bg-raised border border-border text-text-muted hover:text-text hover:border-secondary/50'
@@ -628,18 +974,21 @@ export default function Events() {
             </button>
             {isAdmin && (
               <button
-                className="text-xs bg-primary text-black px-3 py-1.5 rounded font-semibold self-end"
+                className="text-xs bg-primary text-black px-3 py-1.5 rounded font-semibold"
                 onClick={openCreateModal}
               >
                 + Add Event
               </button>
             )}
+            </div>
           </div>
 
           {/* Event List grouped by year */}
           <div className="space-y-4">
             {yearGroups.length === 0 && (
-              <p className="text-center text-text-muted py-8">No events match your filters.</p>
+              <p className="text-center text-text-muted py-8">
+                {deckDataPending || cardPending ? 'Finding decks…' : 'No events match your filters.'}
+              </p>
             )}
             {yearGroups.map(([year, yearEvents]) => (
               <div key={year}>
@@ -653,6 +1002,7 @@ export default function Events() {
                     const isSelected = selected?.folder === event.folder
                     const isLatest = event.folder === (featuredFolder || filtered[0]?.folder)
                     const isCompareChecked = compareSelection.has(event.folder)
+                    const hasMatches = !compareMode && Boolean(deckMatches?.get(event.folder)?.length)
                     return (
                       <div key={event.folder} className={compareMode ? 'flex items-stretch gap-0' : ''}>
                         {compareMode && (
@@ -696,7 +1046,7 @@ export default function Events() {
                               ? `rounded-r-lg border border-l-0 ${isCompareChecked ? 'bg-secondary/10 border-secondary/40' : 'bg-bg-surface border-border hover:bg-bg-elevated/50'}`
                               : `rounded-lg ${isSelected
                                 ? 'bg-primary/10 border border-primary/40 rounded-t-lg rounded-b-none lg:rounded-lg'
-                                : 'bg-bg-surface border border-border hover:border-primary/30 hover:bg-bg-elevated/50'}`
+                                : 'bg-bg-surface border border-border hover:border-primary/30 hover:bg-bg-elevated/50'} ${hasMatches ? 'lg:rounded-b-none' : ''} ${hasMatches && !isSelected ? 'rounded-b-none' : ''}`
                           }`}
                         >
                           <div className="flex items-center gap-3">
@@ -742,6 +1092,8 @@ export default function Events() {
                             </svg>
                           </div>
                         </button>
+                        {/* Matching decks (desktop always; mobile while the row is closed) */}
+                        {hasMatches && (isDesktop || !isSelected) && renderDeckMatches(event)}
                         {/* Mobile accordion */}
                         {isSelected && !compareMode && !isDesktop && (
                           <div
@@ -752,6 +1104,7 @@ export default function Events() {
                           >
                             {/* Event preview tile — same card as the desktop left panel, with View Decks */}
                             {renderHeroCard(event, { inAccordion: true })}
+                            {hasMatches && renderDeckMatches(event, { inPanel: true })}
                             {/* Stats + Placements */}
                             {selectedEventData && (
                               <div className="grid grid-cols-2 divide-x divide-border border-b border-border">
@@ -819,7 +1172,7 @@ export default function Events() {
                                         {deck.deck_id ? (
                                           <Link
                                             to={`/deck-rec/${deck.deck_id}`}
-                                            className="flex items-center text-[13px] gap-1.5 hover:bg-white/5 rounded px-1 -mx-1 py-0.5 transition-colors"
+                                            className={`flex items-center text-[13px] gap-1.5 hover:bg-white/5 rounded px-1 -mx-1 py-0.5 transition-colors ${selectedMatchIds.has(deck.deck_id) ? 'bg-primary/10 ring-1 ring-primary/40' : ''}`}
                                           >
                                             <span className={`w-5 text-[11px] font-bold shrink-0 tabular-nums ${
                                               i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-text-muted/60'

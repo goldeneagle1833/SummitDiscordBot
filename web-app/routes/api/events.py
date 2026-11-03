@@ -230,6 +230,34 @@ def list_top8_events():
         return jsonify({"error": "Failed to load events"}), 500
 
 
+@events_bp.route("/top-8-events/deck-index")
+def top8_deck_index():
+    """Player / avatar / elements / placement for every deck on the Top 8 page.
+
+    Public tournament lists only (the Top 8 event folders); never ranked decks.
+    """
+    try:
+        resp = jsonify(EventRepository().get_deck_index())
+        resp.headers["Cache-Control"] = "public, max-age=300"
+        return resp
+    except Exception as e:
+        logger.exception("Error building Top 8 deck index: %s", e)
+        return jsonify({"error": "Failed to load deck index"}), 500
+
+
+@events_bp.route("/top-8-events/card-search")
+def top8_card_search():
+    """Which Top 8 page decks run a card: {"matches": {folder: [deck index positions]}}."""
+    card = (request.args.get("card") or "").strip()[:100]
+    if not card:
+        return jsonify({"matches": {}})
+    try:
+        return jsonify({"card": card, "matches": EventRepository().find_decks_with_card(card)})
+    except Exception as e:
+        logger.exception("Error searching Top 8 decks for card %r: %s", card, e)
+        return jsonify({"error": "Failed to search decks"}), 500
+
+
 @events_bp.route("/events/<event_folder>")
 def get_event_detail(event_folder: str):
     """Return deck tables, card stats, and element charts for a single event."""

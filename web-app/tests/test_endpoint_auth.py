@@ -150,6 +150,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
 
     # -- Events / tournaments (public read-only) --
     "api.events.list_top8_events",
+    "api.events.top8_deck_index",
+    "api.events.top8_card_search",
     "api.events.get_event_detail",
     "api.events.get_event_match_history",
     "api.events.compare_events",

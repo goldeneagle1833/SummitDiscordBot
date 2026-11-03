@@ -59,7 +59,7 @@ const AvatarTopPlayers = lazyPage(() => import('@/pages/AvatarTopPlayers'))
 const EloBreakdownMatches = lazyPage(() => import('@/pages/EloBreakdownMatches'))
 const Cards = lazyPage(() => import('@/pages/Cards'))
 const CardDetail = lazyPage(() => import('@/pages/CardDetail'))
-const CardPlayedWinrates = lazyPage(() => import('@/pages/CardPlayedWinrates'))
+const CardStats = lazyPage(() => import('@/pages/CardStats'))
 const Elements = lazyPage(() => import('@/pages/Elements'))
 // Phase 6: Content & Interactive
 import Home from '@/pages/Home'
@@ -86,7 +86,6 @@ const StoreCheckout = lazyPage(() => import('@/pages/StoreCheckout'))
 const StoreSuccess = lazyPage(() => import('@/pages/StoreSuccess'))
 const StoreCancelled = lazyPage(() => import('@/pages/StoreCancelled'))
 const MyOrders = lazyPage(() => import('@/pages/MyOrders'))
-const Creator = lazyPage(() => import('@/pages/Creator'))
 const Feedback = lazyPage(() => import('@/pages/Feedback'))
 
 const ExplorerStandings = lazyPage(() => import('@/pages/ExplorerStandings'))
@@ -230,7 +229,9 @@ const router = createBrowserRouter([
       { path: '/avatar/:name', element: <AvatarDetail /> },
       { path: '/avatars/elo-matches', element: <EloBreakdownMatches /> },
       { path: '/cards', element: <Cards /> },
-      { path: '/cards/played-winrates', element: <CardPlayedWinrates /> },
+      // Card Stats: Card Win Rates and Popular Cards merged (2026-11-03)
+      { path: '/card-stats', element: <CardStats /> },
+      { path: '/cards/played-winrates', element: <Navigate to="/card-stats" replace /> },
       { path: '/card/:name', element: <CardDetail /> },
       { path: '/elements', element: <Elements /> },
       // Phase 6: Content & Interactive
@@ -259,9 +260,9 @@ const router = createBrowserRouter([
       // Post-season survey: unlisted, the link goes out in the announcement
       { path: '/season-feedback', element: <SeasonFeedback /> },
       { path: '/login', element: <Login /> },
-      // Popular Cards (was the creator-only Creator Stats page)
-      { path: '/popular-cards', element: <Creator /> },
-      { path: '/creator', element: <Navigate to="/popular-cards" replace /> },
+      // Popular Cards (was the creator-only Creator Stats page) merged into Card Stats
+      { path: '/popular-cards', element: <Navigate to="/card-stats" replace /> },
+      { path: '/creator', element: <Navigate to="/card-stats" replace /> },
       // Store (soft launch: public by direct link, not yet in the nav)
       { path: '/store', element: <Store /> },
       { path: '/store/checkout', element: <StoreCheckout /> },

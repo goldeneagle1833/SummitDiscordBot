@@ -240,8 +240,9 @@ describe('Events page — deck filters', () => {
 
   it('reads filters from the link', async () => {
     renderWithRouter(<Events />, { route: '/top-8?avatar=Elementalist' })
-    await waitFor(() => expect(screen.queryByRole('button', { name: /GenCon 2026/ })).toBeNull())
-    expect(rowFor('SCG Portland 2026')).toBeInTheDocument()
+    // Wait for the events to load first: before they do, GenCon is "missing" too.
+    await waitFor(() => expect(rowFor('SCG Portland 2026')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /GenCon 2026/ })).toBeNull()
     expect(screen.getByLabelText('Avatar')).toHaveValue('Elementalist')
   })
 })

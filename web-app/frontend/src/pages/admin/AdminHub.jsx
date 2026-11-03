@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
+import CreatorAccessPanel from '@/components/admin/CreatorAccessPanel'
 
 // One menu link for the admin tools that used to be listed one by one in the
 // hamburger menu. Every tool keeps its own page and address.
@@ -49,6 +50,8 @@ export default function AdminHub() {
           </div>
         </section>
       ))}
+      {/* Was at the bottom of the old Popular Cards page */}
+      <CreatorAccessPanel />
     </div>
   )
 }

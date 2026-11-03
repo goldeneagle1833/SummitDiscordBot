@@ -10,6 +10,7 @@ import sqlite3
 import threading
 import time
 from collections import defaultdict
+from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
@@ -109,11 +110,26 @@ def get_creator_popular_cards():
       "current" or the running season's event_id give the running season,
       up to the latest batch release.
     - source: "discord" | "web" | "all" (default: "all")
+    - from / through: YYYY-MM-DD, both inclusive. When either is given it
+      replaces ``event`` (Card Stats custom dates). Summit's own records only.
     """
     event_filter = request.args.get("event", "all")
+    date_from = request.args.get("from", "").strip()
+    date_through = request.args.get("through", "").strip()
     source_filter = request.args.get("source", "all")
     if source_filter not in ("discord", "web", "all"):
         source_filter = "all"
+
+    if date_from or date_through:
+        if not all(_valid_day(d) for d in (date_from, date_through) if d):
+            return jsonify({"error": "Dates must be YYYY-MM-DD"}), 400
+        start = date_from or "0000-01-01"
+        end = (date_through or "9999-12-31") + " 23:59:59"
+        result = _cached(("popular", "range", start, end, source_filter, cutoff_timestamp()),
+                         lambda: _build_popular_cards("range", source_filter, (start, end)))
+        if result is None:
+            return jsonify({"error": "Failed to load card data"}), 500
+        return jsonify(result)
 
     # The running season lives in match_records, not the archive
     if event_filter in _active_event_ids():
@@ -133,7 +149,15 @@ def get_creator_popular_cards():
     return jsonify(result)
 
 
-def _build_popular_cards(event_filter, source_filter):
+def _valid_day(value):
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
+def _build_popular_cards(event_filter, source_filter, date_range=None):
 
     # Load card metadata from DB
     card_metadata = {}
@@ -244,9 +268,13 @@ def _build_popular_cards(event_filter, source_filter):
         except sqlite3.OperationalError:
             pass
 
-    elif isinstance(event_filter, str) and event_filter.startswith("season_"):
-        # Season date-range filter - query both tables by timestamp (same as avatar winrates)
-        start_date, end_date = _get_event_date_range(event_filter)
+    elif event_filter == "range" or (isinstance(event_filter, str) and event_filter.startswith("season_")):
+        # Date-range filter (a season_ filter or Card Stats custom dates) -
+        # query both tables by timestamp (same as avatar winrates)
+        if event_filter == "range":
+            start_date, end_date = date_range
+        else:
+            start_date, end_date = _get_event_date_range(event_filter)
         if start_date and end_date:
             # match_records has source column, archive does not
             try:

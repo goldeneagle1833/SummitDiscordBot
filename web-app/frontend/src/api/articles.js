@@ -17,6 +17,16 @@ export const articlePdfUrl = (id) => `${API_BASE_URL}/api/articles/${id}/pdf`
 // Authors
 export const getMyArticles = () => get('/api/articles/mine')
 export const fetchLinkPreview = (url) => post('/api/articles/link-preview', { url })
+export const searchArticleCards = (q) => get(`/api/articles/card-search?q=${encodeURIComponent(q)}`)
+export const cardImageUrl = (file) => (file ? `${API_BASE_URL}/card-images/${encodeURIComponent(file)}` : null)
+
+/** The picture to show for an article: the linked page's image for an
+ *  outside article, or the card the author picked as the header. */
+export function articleImage(a) {
+  if (!a) return null
+  if (a.external_url) return a.external_image || null
+  return cardImageUrl(a.header_image)
+}
 export const previewArticle = (body) => post('/api/articles/preview', { body })
 export const deleteArticle = (id) => del(`/api/articles/${id}`)
 export const addArticleComment = (id, body) => post(`/api/articles/${id}/comments`, { body })

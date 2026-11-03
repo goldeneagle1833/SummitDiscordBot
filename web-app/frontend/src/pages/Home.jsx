@@ -12,7 +12,7 @@ import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import { STORE_LIVE } from '@/utils/store'
 import { getProducts } from '@/api/store'
-import { articlePath, listArticles } from '@/api/articles'
+import { articleImage, articlePath, listArticles } from '@/api/articles'
 
 // A player article published this recently gets a slide in the carousel
 const NEW_ARTICLE_DAYS = 14
@@ -26,7 +26,7 @@ export function articleSlide(article) {
     subtitle: article.summary,
     extra: `By ${article.author_name}${article.external_site ? ` on ${article.external_site}` : ''}`,
     link: articlePath(article),
-    thumbnail: article.external_image || null,
+    thumbnail: articleImage(article),
     analyticsType: 'new_article',
     cta: 'Read article',
   }

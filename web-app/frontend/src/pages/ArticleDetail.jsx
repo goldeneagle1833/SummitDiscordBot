@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { getArticle, listArticles, articlePdfUrl, formatArticleDate } from '@/api/articles'
 import {
-  ArticleBody, ArticleCard, AuthorChip, CategoryBadge, ExternalBadge, LinkedArticleTile, StatusBadge, TagList,
+  ArticleBody, ArticleCard, ArticleImage, AuthorChip, CategoryBadge, ExternalBadge, LinkedArticleTile, StatusBadge, TagList,
 } from '@/components/articles/ArticleBits'
 import Discussion from '@/components/articles/Discussion'
 import ShareLinkButton from '@/components/ui/ShareLinkButton'
@@ -63,6 +63,14 @@ export default function ArticleDetail() {
       )}
 
       <article className="mt-4">
+        {article.header_image && !article.external_url && (
+          <figure className="mb-5 overflow-hidden rounded-lg border border-border">
+            <ArticleImage article={article} className="aspect-[2.4/1]" />
+            <figcaption className="px-3 py-1.5 text-xs text-text-muted bg-bg-surface">
+              Header art: <Link to={`/card/${encodeURIComponent(article.header_card)}`} className="hover:text-secondary">{article.header_card}</Link>
+            </figcaption>
+          </figure>
+        )}
         <header className="pb-5 border-b border-border">
           <div className="flex flex-wrap items-center gap-2">
             <CategoryBadge category={article.category} />

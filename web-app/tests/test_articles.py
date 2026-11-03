@@ -543,3 +543,69 @@ class TestExternalLinks:
         repo = ArticleRepository(db_path=db)
         listing = repo.search_published()["articles"][0]
         assert listing["external_url"] is None and listing["title"] == "Old"
+
+
+# ---------------------------------------------------------------------------
+# A card as the header image
+
+
+@pytest.fixture()
+def card_art(tmp_path, monkeypatch):
+    from routes.api import articles as routes
+    from utils import card_images
+    folder = tmp_path / "card_images"
+    folder.mkdir()
+    for f in ("bet-pudge_butcher-b-s.webp", "alp-whirling_blades-b-s.png", "bet-cave_in-b-s.webp"):
+        (folder / f).write_bytes(b"x")
+    monkeypatch.setattr(card_images, "CARD_IMAGES_DIR", folder)
+    card_images.reset_cache()
+    monkeypatch.setattr(routes, "_card_names", ["Cave In", "Pudge Butcher", "Pudge Lord", "Whirling Blades"])
+    yield
+    card_images.reset_cache()
+
+
+class TestHeaderCard:
+    def test_card_search(self, client, articles, card_art):
+        assert client.get("/api/articles/card-search?q=pudge").status_code == 401
+        _login(client)
+        cards = client.get("/api/articles/card-search?q=pudge").get_json()["cards"]
+        # Pudge Lord has no art we serve, so it is left out
+        assert cards == [{"name": "Pudge Butcher", "image": "bet-pudge_butcher-b-s.webp"}]
+        assert client.get("/api/articles/card-search?q=a").get_json()["cards"] == []
+        names = [c["name"] for c in client.get("/api/articles/card-search?q=in").get_json()["cards"]]
+        assert names == ["Cave In", "Whirling Blades"]  # starts-with first
+
+    def test_submit_with_header_card_and_publish(self, client, articles, card_art):
+        _login(client)
+        r = _submit(client, header_card="pudge butcher")
+        assert r.status_code == 201, r.get_json()
+        aid = r.get_json()["id"]
+        stored = articles.get(aid)
+        assert stored["header_card"] == "Pudge Butcher"
+        assert stored["header_image"] == "bet-pudge_butcher-b-s.webp"
+
+        _login(client, uid="111111111111111111", name="Bruce")
+        client.post(f"/api/articles/{aid}/review", json={"action": "approve"})
+        with client.session_transaction() as sess:
+            sess.clear()
+        listing = client.get("/api/articles").get_json()["articles"][0]
+        assert listing["header_image"] == "bet-pudge_butcher-b-s.webp"
+        html = client.get(f"/articles/{aid}-frog-tempo-primer",
+                          headers={"User-Agent": "Discordbot/2.0"}).get_data(as_text=True)
+        assert "/card-images/bet-pudge_butcher-b-s.webp" in html
+
+    def test_unknown_card_refused_and_edit_clears(self, client, articles, card_art):
+        _login(client)
+        r = _submit(client, header_card="Pudge Lord")
+        assert r.status_code == 400 and "art" in r.get_json()["error"]
+        aid = _submit(client, header_card="Cave In").get_json()["id"]
+        base = {"title": "Frog Tempo Primer", "summary": "How to pilot frogs.",
+                "category": "Deck Guide", "body": BODY}
+        client.post(f"/api/articles/{aid}/edit", data=dict(base, header_card=""),
+                    content_type="multipart/form-data")
+        assert articles.get(aid)["header_card"] is None and articles.get(aid)["header_image"] is None
+
+    def test_linked_articles_ignore_header_card(self, client, articles, card_art, fake_previews):
+        _login(client)
+        aid = _submit(client, body="", external_url=EXT_URL, header_card="Cave In").get_json()["id"]
+        assert articles.get(aid)["header_card"] is None

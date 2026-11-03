@@ -567,6 +567,9 @@ def og_article_detail(slug: str):
     if not article or article["status"] != "approved":
         return og_articles_list()
     image = article.get("author_avatar") if article.get("author_provider") == "discord" else None
+    if article.get("header_image"):
+        from urllib.parse import quote
+        image = f"{SITE_URL}/card-images/{quote(article['header_image'])}"
     detail = f"{article['reading_minutes']} min read"
     if article.get("external_url"):
         # Linked article: use that page's own preview image when it has one

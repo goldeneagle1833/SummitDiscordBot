@@ -38,6 +38,7 @@ REVIEWER_PING_COOLDOWN_MIN = 15
 COMMENTS_PER_ARTICLE = 200
 MAX_REQUEST_BYTES = content.PDF_MAX_BYTES + 512 * 1024
 LINK_PREVIEWS_PER_10_MIN = 20
+CARD_SEARCH_RESULTS = 12
 
 
 # ---------------------------------------------------------------------------
@@ -182,10 +183,54 @@ def _read_form():
     if external_url and pdf_bytes is not None:
         return None, None, ("Attach a PDF or link an article on another site, not both.", 400)
 
+    header_card = None
+    if not external_url:
+        header_card, error = _resolve_header_card(form.get("header_card"))
+        if error:
+            return None, None, (error, 400)
+
     fields = dict(title=title, summary=summary, category=category, body=body,
                   tags=tags, remove_pdf=remove_pdf, pdf_name=pdf_name,
-                  external_url=external_url)
+                  external_url=external_url, header_card=header_card)
     return fields, pdf_bytes, None
+
+
+_card_names: list[str] | None = None
+
+
+def _all_card_names() -> list[str]:
+    """Every card name in the catalog (cached per worker)."""
+    global _card_names
+    if _card_names is None:
+        try:
+            from repositories.card_catalog import CardCatalogRepository
+            _card_names = CardCatalogRepository().get_all_card_names()
+        except Exception:
+            logger.exception("Could not load card names for article headers")
+            return []
+    return _card_names
+
+
+def _resolve_header_card(raw) -> tuple[tuple[str, str] | None, str | None]:
+    """A card picked as the header image -> ((name, image file), error).
+    Only cards we already serve an image for can be used."""
+    from utils.card_images import resolve_card_image
+    name = content.clean_text(raw)[:80]
+    if not name:
+        return None, None
+    lower = name.lower()
+    name = next((n for n in _all_card_names() if n.lower() == lower), name)
+    image = resolve_card_image(name)
+    if not image:
+        return None, "We don't have art for that card. Pick another one."
+    return (name, image), None
+
+
+def _save_header_card(repo, article_id: int, header):
+    if header:
+        repo.set_header_card(article_id, header[0], header[1])
+    else:
+        repo.set_header_card(article_id, None)
 
 
 def _fetch_link_preview(url: str) -> dict | None:
@@ -385,6 +430,31 @@ def link_preview():
     })
 
 
+@articles_bp.route("/card-search", methods=["GET"])
+@require_login
+def card_search():
+    """Cards (with art we serve) matching ?q=, for picking a header image."""
+    from utils.card_images import resolve_card_image
+    q = content.clean_text(request.args.get("q"))[:60].lower()
+    if len(q) < 2:
+        return jsonify({"cards": []})
+    starts, contains = [], []
+    for name in _all_card_names():
+        low = name.lower()
+        if low.startswith(q):
+            starts.append(name)
+        elif q in low:
+            contains.append(name)
+    cards = []
+    for name in starts + contains:
+        image = resolve_card_image(name)
+        if image:
+            cards.append({"name": name, "image": image})
+            if len(cards) >= CARD_SEARCH_RESULTS:
+                break
+    return jsonify({"cards": cards})
+
+
 @articles_bp.route("/mine", methods=["GET"])
 @require_login
 def my_articles():
@@ -419,6 +489,7 @@ def submit_article():
         repo.set_pdf(article_id, _store_pdf(pdf_bytes), fields["pdf_name"], len(pdf_bytes))
     if fields["external_url"]:
         _save_external(repo, repo.get(article_id), fields["external_url"])
+    _save_header_card(repo, article_id, fields["header_card"])
 
     article = repo.get(article_id)
     repo.add_comment(article_id, uid, article["author_name"], "author", "", kind="submitted")
@@ -464,6 +535,7 @@ def edit_article(article_id):
         else:
             repo.set_pdf(article_id, None, None, None)
     _save_external(repo, article, fields["external_url"])
+    _save_header_card(repo, article_id, fields["header_card"])
 
     article = repo.get(article_id)
     repo.add_comment(article_id, article["author_id"], article["author_name"], "author", "", kind="submitted")

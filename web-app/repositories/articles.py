@@ -28,6 +28,7 @@ _PUBLIC_COLS = (
     "author_name", "author_provider", "author_avatar", "word_count",
     "reading_minutes", "view_count", "published_at", "updated_at",
     "pdf_size", "external_url", "external_site", "external_image",
+    "header_card", "header_image",
 )
 
 
@@ -160,7 +161,10 @@ class ArticleRepository:
             if "forum_locked" not in cols:
                 conn.execute("ALTER TABLE articles ADD COLUMN forum_locked INTEGER NOT NULL DEFAULT 0")
             # Link to an article hosted on another site (shown as a preview tile)
-            for col in ("external_url", "external_site", "external_image"):
+            # header_card/header_image: a Sorcery card picked as the header
+            # (image is a file name served from /card-images/)
+            for col in ("external_url", "external_site", "external_image",
+                        "header_card", "header_image"):
                 if col not in cols:
                     conn.execute(f"ALTER TABLE articles ADD COLUMN {col} TEXT")
             conn.commit()
@@ -251,6 +255,19 @@ class ArticleRepository:
                 """UPDATE articles SET external_url = ?, external_site = ?,
                        external_image = ? WHERE id = ?""",
                 (url, site if url else None, image if url else None, article_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def set_header_card(self, article_id: int, card: str | None,
+                        image: str | None = None) -> None:
+        """Use a card's art as the article's header image (None clears it)."""
+        conn = self._conn()
+        try:
+            conn.execute(
+                "UPDATE articles SET header_card = ?, header_image = ? WHERE id = ?",
+                (card, image if card else None, article_id),
             )
             conn.commit()
         finally:

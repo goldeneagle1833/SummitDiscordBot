@@ -33,6 +33,8 @@ DECK_BUILDER_DB_PATH = Path(os.environ.get("DECK_BUILDER_DB_PATH", BASE_DIR / "d
 FEEDBACK_DB_PATH = Path(os.environ.get("FEEDBACK_DB_PATH", BASE_DIR / "feedback.db"))
 MONITORING_DB_PATH = Path(os.environ.get("MONITORING_DB_PATH", BASE_DIR / "monitoring.db"))
 META_REPORTS_DB_PATH = Path(os.environ.get("META_REPORTS_DB_PATH", BASE_DIR / "meta_reports.db"))
+# Player articles (blog): own database; the bot reads its notification queue.
+ARTICLES_DB_PATH = Path(os.environ.get("ARTICLES_DB_PATH", BASE_DIR / "articles.db"))
 
 # Upload directories
 STATIC_DIR = BASE_DIR / "static"
@@ -42,6 +44,11 @@ BANNER_UPLOADS_DIR = STATIC_DIR / "uploads" / "banners"
 BANNER_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 STORE_UPLOADS_DIR = STATIC_DIR / "uploads" / "store"
 STORE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+# Player article PDFs live OUTSIDE static/ so nothing is served directly:
+# every download goes through /api/articles/<id>/pdf, which checks status.
+ARTICLE_UPLOADS_DIR = Path(
+    os.environ.get("ARTICLE_UPLOADS_DIR", BASE_DIR / "private_uploads" / "articles")
+)
 
 # Flask configuration
 # SECURITY: SECRET_KEY must be set in production via environment variable
@@ -118,6 +125,13 @@ BRACKET_ORGANIZER_ROLE_NAME = os.environ.get("BRACKET_ORGANIZER_ROLE_NAME", "Bra
 # Admin Discord IDs - full access to all features in production
 # Set via ADMIN_IDS env var as comma-separated list
 ADMINS = [id.strip() for id in os.environ.get("ADMIN_IDS", "").split(",") if id.strip()]
+
+# Player article reviewers: Discord user IDs that can approve articles on the
+# site and get a bot DM when one is submitted. When empty, the admins with
+# Discord IDs are the reviewers. Example: ARTICLE_REVIEWER_IDS=<Bruce>,<ofncj>
+ARTICLE_REVIEWER_IDS = [
+    i.strip() for i in os.environ.get("ARTICLE_REVIEWER_IDS", "").split(",") if i.strip()
+]
 
 # Curio Tracking editors - can add/edit/delete curio entries (no other admin access)
 # Set via CURIO_EDITOR_IDS env var as comma-separated list

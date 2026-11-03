@@ -36,7 +36,18 @@ def me():
         "is_store_admin": is_store_admin(),
         "is_store_staff": _is_store_staff(str(user_id)),
         "is_bracket_organizer": _is_bracket_organizer(),
+        "is_article_reviewer": _is_article_reviewer(),
     })
+
+
+def _is_article_reviewer() -> bool:
+    """Admins, or the Discord IDs in ARTICLE_REVIEWER_IDS."""
+    try:
+        from routes.api.articles import is_article_reviewer
+        return is_article_reviewer()
+    except Exception:
+        logger.exception("Article reviewer lookup failed")
+        return False
 
 
 def _is_bracket_organizer() -> bool:

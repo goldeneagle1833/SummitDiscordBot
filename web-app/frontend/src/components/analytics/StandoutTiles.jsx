@@ -32,7 +32,7 @@ export default function StandoutTiles({ cards, catalogIndex, filters, onSelect }
       popular && {
         key: 'popular', label: 'Most played', card: popular,
         value: `${percent(popular.deckShare, 0)} of decks`, tone: 'accent',
-        detail: `${popular.inDeck.playerGames?.toLocaleString()} games`,
+        detail: popular.inDeck.playerGames != null ? `${popular.inDeck.playerGames.toLocaleString()} games` : '',
       },
       swing && {
         key: 'swing', label: 'Biggest swing', card: swing,

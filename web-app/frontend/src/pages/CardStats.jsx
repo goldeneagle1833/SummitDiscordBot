@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getRankedCards, getRankedCatalog, getRankedSeasons, RANKED_ANALYTICS_ENDPOINT } from '@/api/rankedAnalytics'
+import { get } from '@/api/client'
+import { nameKey } from '@/components/analytics/format'
+import CardPopularityChart from '@/components/analytics/CardPopularityChart'
+import DataReleaseNote from '@/components/ui/DataReleaseNote'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import QuickFilters from '@/components/analytics/QuickFilters'
@@ -44,6 +48,60 @@ function seasonLabel(season) {
   return `${season.name}${season.is_active ? ' (current)' : ''} · ${range}`
 }
 
+// Deck-usage numbers from Summit's own deck lists. Held as rate-shaped
+// objects ({ winRate: value }) so the shared table code can sort them like
+// any other column; the table shows them through each column's format.
+const USAGE_COLUMNS = [
+  { key: 'usageAvgCopies', label: 'Avg copies', position: 'lead', help: 'Average copies in decks that ran this card', format: (v) => v.toLocaleString() },
+]
+const MORE_USAGE_COLUMNS = [
+  { key: 'usageTotalCopies', label: 'Total copies', help: 'Copies across every reported deck', format: (v) => v.toLocaleString() },
+  { key: 'usageCollection', label: 'Collection', help: 'Copies in decks’ collections', format: (v) => v.toLocaleString() },
+  { key: 'usageDecksWith', label: 'Decks with', help: 'Reported decks that ran this card', format: (v) => v.toLocaleString() },
+]
+const NO_RATE = { playerGames: null, matches: null, wins: null, winRate: null, none: true }
+const usageValue = (value) => (value == null ? null : { playerGames: null, matches: null, wins: null, winRate: value })
+
+function usageFields(usage) {
+  return {
+    usageAvgCopies: usageValue(usage.average_played),
+    usageTotalCopies: usageValue(usage.count),
+    usageCollection: usageValue(usage.sideboard_count || 0),
+    usageDecksWith: usageValue(usage.decks_with_card),
+    usageNumber: { percent: usage.percent_of_decks, decks: usage.decks_with_card },
+  }
+}
+
+/**
+ * PSO rows with Summit's deck usage added. Popularity is Summit's own
+ * "% of decks" (Bruce, 2026-11-03), so it never depends on PSO. Cards that
+ * only Summit's deck lists have (older seasons, cards PSO hides) get a row
+ * of their own with empty rates.
+ */
+function mergeRows(psoRows, usageRows) {
+  if (!usageRows) return psoRows
+  const usageByKey = new Map(usageRows.map((u) => [nameKey(u.name), u]))
+  const seen = new Set()
+  const merged = psoRows.map((row) => {
+    const key = nameKey(row.cardName)
+    const usage = usageByKey.get(key)
+    seen.add(key)
+    return usage
+      ? { ...row, deckShare: usage.decks_with_card / usage.total_decks, ...usageFields(usage) }
+      : { ...row, deckShare: null }
+  })
+  for (const [key, usage] of usageByKey) {
+    if (seen.has(key)) continue
+    merged.push({
+      cardKey: `summit:${key}`, cardName: usage.name, summitOnly: true,
+      deckShare: usage.decks_with_card / usage.total_decks,
+      inDeck: NO_RATE, played: NO_RATE, openingHand: NO_RATE, inDeckUnplayed: NO_RATE,
+      ...usageFields(usage),
+    })
+  }
+  return merged
+}
+
 function UnavailablePanel({ title, children }) {
   return (
     <div className="bg-bg-surface border border-border rounded-soft p-8 text-center max-w-2xl mx-auto">
@@ -54,15 +112,16 @@ function UnavailablePanel({ title, children }) {
 }
 
 /**
- * Card Win Rates, fed by Play Sorcery Online's Summit ranked analytics.
+ * Card Stats: the old Card Win Rates and Popular Cards pages in one.
  *
- * Every rate comes from PSO through the server-side proxy. The population is
- * fixed there: first games at Summit matchmade ranked tables, released in
- * two-week batches. This page filters, sorts and pages those
- * rows in the browser and never re-computes a rate itself.
+ * Win rates come from Play Sorcery Online's Summit ranked analytics, saved on
+ * Summit's side after each 1st/15th release (custom dates, the query
+ * builder and replay clips still ask PSO). Popularity, copies and collection
+ * counts come from the deck lists in Summit's own match records
+ * (/api/creator/popular-cards), released in the same batches.
  */
-export default function CardPlayedWinrates() {
-  usePageTitle('Card Win Rates')
+export default function CardStats() {
+  usePageTitle('Card Stats')
 
   const [tab, setTab] = useState('cards')
   const [seasons, setSeasons] = useState([])
@@ -78,6 +137,11 @@ export default function CardPlayedWinrates() {
   const [sortDirection, setSortDirection] = useState('descending')
   const [page, setPage] = useState(1)
   const [selectedCard, setSelectedCard] = useState(null)
+  const [collectionOnly, setCollectionOnly] = useState(false)
+  const [moreColumns, setMoreColumns] = useState(false)
+  const [usage, setUsage] = useState(null)
+  const [usageLoading, setUsageLoading] = useState(true)
+  const usageRequestId = useRef(0)
 
   const [cards, setCards] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -119,10 +183,32 @@ export default function CardPlayedWinrates() {
       .finally(() => { if (id === requestId.current) setLoading(false) })
   }, [selection, dateOrderProblem])
 
+  // Summit's own deck usage for the same season or dates. Never calls PSO.
+  const usageQuery = useMemo(() => {
+    const params = new URLSearchParams()
+    if (season === CUSTOM_DATES) {
+      if (from) params.set('from', from)
+      if (through) params.set('through', through)
+    } else if (season !== ALL_SEASONS) {
+      params.set('event', season)
+    }
+    return params.toString()
+  }, [season, from, through])
+
+  useEffect(() => {
+    if (dateOrderProblem) return
+    const id = ++usageRequestId.current
+    setUsageLoading(true)
+    get(`/api/creator/popular-cards${usageQuery ? `?${usageQuery}` : ''}`)
+      .then((body) => { if (id === usageRequestId.current) setUsage(Array.isArray(body) ? body : []) })
+      .catch(() => { if (id === usageRequestId.current) setUsage(null) })
+      .finally(() => { if (id === usageRequestId.current) setUsageLoading(false) })
+  }, [usageQuery, dateOrderProblem])
+
   useEffect(() => {
     setPage(1)
     setSelectedCard(null)
-  }, [selection, search, quickFilters, minimums, minimumValues, sortKey, sortDirection])
+  }, [selection, search, quickFilters, minimums, minimumValues, sortKey, sortDirection, collectionOnly])
 
   const catalogIndex = useMemo(() => indexCardMetadata(catalog), [catalog])
   const avatarImages = useMemo(
@@ -133,8 +219,17 @@ export default function CardPlayedWinrates() {
     () => ({ search, ...quickFilters, minimums, minimumValues }),
     [search, quickFilters, minimums, minimumValues],
   )
-  const rows = cards?.cards ?? EMPTY_ROWS
-  const extraMetrics = useMemo(() => extraRateMetrics(rows), [rows])
+  const psoRows = cards?.dataAvailable === false ? EMPTY_ROWS : (cards?.cards ?? EMPTY_ROWS)
+  // Extra PSO rate columns are read before the usage fields are added.
+  const extraMetrics = useMemo(() => extraRateMetrics(psoRows), [psoRows])
+  const mergedRows = useMemo(() => mergeRows(psoRows, usage), [psoRows, usage])
+  const rows = useMemo(
+    () => (collectionOnly ? mergedRows.filter((r) => r.usageCollection?.winRate) : mergedRows),
+    [mergedRows, collectionOnly],
+  )
+  const usageColumns = moreColumns ? [...USAGE_COLUMNS, ...MORE_USAGE_COLUMNS] : USAGE_COLUMNS
+  const psoMissing = psoRows.length === 0 && rows.length > 0
+  const usageDecks = usage?.[0]?.total_decks ?? 0
   const table = useMemo(
     () => selectCardTable(rows, catalogIndex, tableFilters, sortKey, sortDirection, page),
     [rows, catalogIndex, tableFilters, sortKey, sortDirection, page],
@@ -143,9 +238,10 @@ export default function CardPlayedWinrates() {
   const quickFilterCount = Object.values(quickFilters).filter(Boolean).length
   const minimumCount = Object.values(minimums).filter((v) => minimumSample(v) > 0).length
     + Object.values(minimumValues).filter((v) => minimumMetricValue(v) !== null).length
-  const anyFilter = Boolean(search) || quickFilterCount > 0 || minimumCount > 0
+  const anyFilter = Boolean(search) || quickFilterCount > 0 || minimumCount > 0 || collectionOnly
 
   const clearFilters = () => {
+    setCollectionOnly(false)
     setSearch('')
     setQuickFilters(EMPTY_FILTERS)
     setMinimums({ ...EMPTY_MINIMUMS })
@@ -178,23 +274,26 @@ export default function CardPlayedWinrates() {
     ? queryPopulation.data
     : cards
 
-  const unavailable = error?.status === 503 || (cards && cards.dataAvailable === false)
+  // The page only gives up when neither PSO nor Summit's deck lists have rows.
+  const unavailable = rows.length === 0 && !usage?.length
+    && (error?.status === 503 || (cards && cards.dataAvailable === false))
 
   return (
     <div className="flex flex-col gap-5">
       <section className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display text-secondary">Card Win Rates</h1>
+          <h1 className="text-2xl font-display text-secondary">Card Stats</h1>
           <p className="text-sm text-text-muted mt-1">
-            When a card is in your deck, in your opening hand, or gets played, how often do you win?
+            How often each card shows up in Summit decks, and how often you win when it’s in your deck, in your opening hand, or gets played.
           </p>
           <p className="text-xs text-text-muted mt-1" aria-live="polite">
-            Summit ranked games on Play Sorcery Online
+            {usageDecks > 0 && <>Popularity and copies from <span className="text-text">{usageDecks.toLocaleString()} reported decks</span> {'·'} </>}
+            Win rates from Summit ranked games on Play Sorcery Online
             {population?.dataAvailable && typeof population.totalGames === 'number' && (
               <> {'·'} <span className="text-text">{population.totalGames.toLocaleString()} games</span></>
             )}
-            {population?.releasedThrough && <> {'·'} data through {population.releasedThrough}</>}
           </p>
+          <DataReleaseNote className="mt-1" />
         </div>
         <div className="flex gap-1 bg-bg-surface border border-border rounded-lg p-1 self-start" role="tablist" aria-label="Analytics views">
           <button type="button" role="tab" aria-selected={tab === 'cards'} onClick={() => setTab('cards')} className={tab === 'cards' ? TAB_ON : TAB_OFF}>Cards</button>
@@ -237,7 +336,14 @@ export default function CardPlayedWinrates() {
         {tab === 'cards' && (
           <div className="flex flex-wrap items-center gap-2">
             <QuickFilters filters={quickFilters} onChange={setQuickFilters} disabled={Boolean(catalogError)} />
+            <button type="button" aria-pressed={collectionOnly} onClick={() => setCollectionOnly((v) => !v)}
+              className={collectionOnly ? `${GHOST} !bg-primary !text-bg !border-primary` : GHOST}>
+              Collection only
+            </button>
             <div className="flex items-center gap-2 sm:ml-auto">
+              <button type="button" aria-pressed={moreColumns} onClick={() => setMoreColumns((v) => !v)} className={GHOST}>
+                {moreColumns ? 'Fewer columns' : 'More columns'}
+              </button>
               {anyFilter && (
                 <button type="button" onClick={clearFilters} className="text-xs text-primary hover:underline px-1 min-h-[32px]">Clear filters</button>
               )}
@@ -254,14 +360,14 @@ export default function CardPlayedWinrates() {
       </section>
 
       {tab === 'cards' ? (
-        loading ? (
+        loading || usageLoading ? (
           <Spinner className="py-20" />
         ) : unavailable ? (
           <UnavailablePanel title="Ranked analytics isn’t available yet">
             Play Sorcery Online publishes Summit ranked card data in two-week batches.
             Check back soon.
           </UnavailablePanel>
-        ) : error ? (
+        ) : error && rows.length === 0 ? (
           <UnavailablePanel title="Couldn’t load card analytics">
             {error.message || 'Something went wrong. Try again in a moment.'}
           </UnavailablePanel>
@@ -271,6 +377,16 @@ export default function CardPlayedWinrates() {
           </UnavailablePanel>
         ) : (
           <>
+            {psoMissing && (
+              <p className="text-xs text-text-muted bg-bg-surface border border-border rounded-soft px-4 py-3">
+                Play Sorcery Online has no win-rate data for this selection, so only popularity and copies from Summit’s deck lists are shown.
+              </p>
+            )}
+            {usage === null && (
+              <p className="text-xs text-text-muted bg-bg-surface border border-border rounded-soft px-4 py-3">
+                Summit’s deck-usage numbers couldn’t be loaded, so Popularity and copies are blank. Try again in a moment.
+              </p>
+            )}
             <StandoutTiles cards={rows} catalogIndex={catalogIndex} filters={tableFilters} onSelect={jumpToCard} />
             <div className="bg-bg-surface border border-border rounded-soft overflow-hidden">
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-3 border-b border-border text-xs text-text-muted">
@@ -288,11 +404,12 @@ export default function CardPlayedWinrates() {
                   rows={table.cards} sortKey={sortKey} sortDirection={sortDirection} onSort={chooseSort}
                   selectedCard={selectedCard} onToggle={(key) => setSelectedCard((c) => (c === key ? null : key))}
                   catalogIndex={catalogIndex} avatarImages={avatarImages} selection={selection}
-                  extraMetrics={extraMetrics}
+                  extraMetrics={extraMetrics} usageColumns={usageColumns}
+                  detailExtra={(card) => <CardPopularityChart cardName={card.cardName} />}
                 />
               )}
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5 py-3 border-t border-border text-xs text-text-muted">
-                <span>Rates hide below 20 player-games. A player-game is one player’s side of one game.</span>
+                <span>Rates hide below 20 player-games. A player-game is one player’s side of one game. Popularity counts reported Summit decks.</span>
                 {table.pageCount > 1 && (
                   <nav className="flex items-center gap-2" aria-label="Card pages">
                     <button type="button" disabled={table.page <= 1} onClick={() => { setPage(table.page - 1); setSelectedCard(null) }} className={`${GHOST} disabled:opacity-40`}>← Previous</button>

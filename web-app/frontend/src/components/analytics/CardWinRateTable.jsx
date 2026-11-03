@@ -55,17 +55,27 @@ export function extraRateMetrics(rows) {
     .map((key) => ({ key, label: EXTRA_LABELS[key] ?? humanize(key) }))
 }
 
-export function tableColumns(extraMetrics = []) {
-  return [...LEADING_COLUMNS, ...extraMetrics, ...TRAILING_COLUMNS]
+/**
+ * Columns in display order. ``usageColumns`` are the Card Stats page's
+ * deck-usage numbers (Summit's own deck lists): each has a ``position`` of
+ * 'lead' (right after Popularity) or 'trail' (at the end), a ``help`` text
+ * and a ``format`` for the number held at ``row[key].winRate``.
+ */
+export function tableColumns(extraMetrics = [], usageColumns = []) {
+  const [cardColumn, popularity, ...leadingRates] = LEADING_COLUMNS
+  const lead = usageColumns.filter((c) => c.position === 'lead')
+  const trail = usageColumns.filter((c) => c.position !== 'lead')
+  return [cardColumn, popularity, ...lead, ...leadingRates, ...extraMetrics, ...TRAILING_COLUMNS, ...trail]
 }
 
 const columnHelp = (column) =>
-  COLUMN_HELP[column.key] ?? `Win rate when the card was ${column.label.toLowerCase()}`
+  column.help ?? COLUMN_HELP[column.key] ?? `Win rate when the card was ${column.label.toLowerCase()}`
 
 // The diverging bar caps at 20 pp either way.
 const BAR_CAP = 0.2
 
 function RateCell({ rate }) {
+  if (rate.none) return <span className="text-text-muted">—</span>
   const tone = winRateTone(rate.winRate)
   return (
     <div className="flex flex-col leading-tight">
@@ -146,17 +156,20 @@ function StatCard({ label, rate, highlight, barTone }) {
   )
 }
 
-function CardDetailRow({ card, meta, selection, avatarImages, extraMetrics, columnCount }) {
+function CardDetailRow({ card, meta, selection, avatarImages, extraMetrics, columnCount, detailExtra }) {
   const [replays, setReplays] = useState({ loading: true, error: null, items: [] })
+  // Rows built from Summit's deck lists alone have no PSO game data to show.
+  const noRates = Boolean(card.summitOnly)
 
   useEffect(() => {
+    if (noRates) return undefined
     let cancelled = false
     setReplays({ loading: true, error: null, items: [] })
     getRankedCardReplays(card.cardKey, selection)
       .then((body) => { if (!cancelled) setReplays({ loading: false, error: null, items: body.replays ?? [] }) })
       .catch(() => { if (!cancelled) setReplays({ loading: false, error: 'Public replays could not be loaded.', items: [] }) })
     return () => { cancelled = true }
-  }, [card.cardKey, selection])
+  }, [card.cardKey, selection, noRates])
 
   const details = [meta?.type, meta?.elements?.length ? meta.elements.join(' / ') : null, meta?.rarity].filter(Boolean)
 
@@ -177,6 +190,10 @@ function CardDetailRow({ card, meta, selection, avatarImages, extraMetrics, colu
               <h3 className="font-display text-xl text-secondary">{card.cardName}</h3>
               {details.length > 0 && <span className="text-xs text-text-muted">{details.join(' · ')}</span>}
             </div>
+            {noRates ? (
+              <p className="text-xs text-text-muted">No Play Sorcery Online win-rate data for this card in this selection.</p>
+            ) : (
+            <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <StatCard label="In deck" rate={card.inDeck} barTone="bg-primary" />
               <StatCard label="Played" rate={card.played} highlight />
@@ -205,6 +222,9 @@ function CardDetailRow({ card, meta, selection, avatarImages, extraMetrics, colu
                 </div>
               )}
             </div>
+            </>
+            )}
+            {detailExtra?.(card)}
           </div>
         </div>
       </td>
@@ -219,8 +239,19 @@ function CardDetailRow({ card, meta, selection, avatarImages, extraMetrics, colu
  */
 export default function CardWinRateTable({
   rows, sortKey, sortDirection, onSort, selectedCard, onToggle, catalogIndex, avatarImages, selection, extraMetrics = [],
+  usageColumns = [], detailExtra,
 }) {
-  const columns = tableColumns(extraMetrics)
+  const columns = tableColumns(extraMetrics, usageColumns)
+  const leadUsage = usageColumns.filter((c) => c.position === 'lead')
+  const trailUsage = usageColumns.filter((c) => c.position !== 'lead')
+  const usageCell = (card, column) => {
+    const value = card[column.key]?.winRate
+    return (
+      <td key={column.key} className="px-3 py-2.5 text-[#c9d1d9]">
+        {value == null ? <span className="text-text-muted">—</span> : column.format(value)}
+      </td>
+    )
+  }
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[900px] border-collapse text-sm">
@@ -271,6 +302,7 @@ export default function CardWinRateTable({
                       <span className="text-[#c9d1d9]">{percent(card.deckShare, 0)}</span>
                     </div>
                   </td>
+                  {leadUsage.map((column) => usageCell(card, column))}
                   <td className="px-3 py-2.5"><RateCell rate={card.inDeck} /></td>
                   <td className="px-3 py-2.5"><RateCell rate={card.played} /></td>
                   <td className="px-3 py-2.5"><RateCell rate={card.openingHand} /></td>
@@ -281,10 +313,11 @@ export default function CardWinRateTable({
                   ))}
                   <td className="px-3 py-2.5"><RateCell rate={card.inDeckUnplayed} /></td>
                   <td className="px-3 py-2.5"><EffectCell card={card} /></td>
+                  {trailUsage.map((column) => usageCell(card, column))}
                 </tr>
                 {expanded && (
                   <CardDetailRow card={card} meta={meta} selection={selection} avatarImages={avatarImages}
-                    extraMetrics={extraMetrics} columnCount={columns.length} />
+                    extraMetrics={extraMetrics} columnCount={columns.length} detailExtra={detailExtra} />
                 )}
               </Fragment>
             )

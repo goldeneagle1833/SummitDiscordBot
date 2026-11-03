@@ -23,8 +23,7 @@ const ALL_NAV_OPTIONS = [
   { to: '/avatars', label: 'Avatars' },
   { to: '/meta-report', label: 'Meta Report' },
   { to: '/elements', label: 'Element Winrates' },
-  { to: '/cards/played-winrates', label: 'Card Win Rates' },
-  { to: '/popular-cards', label: 'Popular Cards' },
+  { to: '/card-stats', label: 'Card Stats' },
   { to: '/articles', label: 'Player Articles' },
   { to: '/elo', label: 'ELO Leaderboards' },
   { to: '/brackets', label: 'Season Top Cut' },
@@ -41,10 +40,14 @@ const ALL_NAV_OPTIONS = [
 
 const DEFAULT_NAV_LABELS = PERMANENT_LINKS
 // Saved prefs from before a link was renamed
-const RENAMED_LABELS = { Brackets: 'Season Top Cut', 'Avatar Winrates': 'Avatars' }
+const RENAMED_LABELS = {
+  Brackets: 'Season Top Cut', 'Avatar Winrates': 'Avatars',
+  // Merged into one Card Stats page (2026-11-03)
+  'Card Win Rates': 'Card Stats', 'Popular Cards': 'Card Stats',
+}
 
 function normalizeLabels(labels) {
-  return labels.map((l) => RENAMED_LABELS[l] || l)
+  return [...new Set(labels.map((l) => RENAMED_LABELS[l] || l))]
 }
 const STORAGE_KEY = 'summit-nav-prefs'
 
@@ -786,8 +789,7 @@ export default function Nav() {
           <SidebarLink to="/avatars" label="Avatars" location={location} onClick={close} match={['/avatars', '/avatars/top-players']} />
           <SidebarLink to="/meta-report" label="Meta Report" location={location} onClick={close} />
           <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
-          <SidebarLink to="/cards/played-winrates" label="Card Win Rates" location={location} onClick={close} />
-          <SidebarLink to="/popular-cards" label="Popular Cards" location={location} onClick={close} />
+          <SidebarLink to="/card-stats" label="Card Stats" location={location} onClick={close} />
           <SidebarLink to="/articles" label="Player Articles" location={location} onClick={close} match={['/articles', '/articles/mine', '/articles/new']} />
 
           <SidebarHeading label="Summit Ranked" />

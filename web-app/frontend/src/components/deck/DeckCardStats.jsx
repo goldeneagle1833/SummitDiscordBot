@@ -131,7 +131,7 @@ export default function DeckCardStats({ cards, avatarName }) {
           Each card across all Summit ranked games on Play Sorcery Online
           {data?.releasedThrough && <> {'·'} data through {data.releasedThrough}</>}
           {' · '}
-          <Link to="/cards/played-winrates" className="text-primary hover:underline">All cards</Link>
+          <Link to="/card-stats" className="text-primary hover:underline">All cards</Link>
         </p>
       </div>
 

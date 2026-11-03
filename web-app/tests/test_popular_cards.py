@@ -86,3 +86,17 @@ def test_card_history_by_month(patched):
         {"month": "2026-04", "total_decks": 1, "decks_with_card": 1, "percent_of_decks": 100.0},
         {"month": "2026-09", "total_decks": 2, "decks_with_card": 1, "percent_of_decks": 50.0},
     ]
+
+
+def test_custom_date_range(patched):
+    cards = patched.get("/api/creator/popular-cards?from=2026-04-01&through=2026-04-10").get_json()
+    by_name = {c["name"]: c for c in cards}
+    # Through is inclusive of the whole day, so the 12:00 archive game counts
+    assert by_name["Fireball"]["decks_with_card"] == 1
+    assert "Frost Bolt" not in by_name
+    both = patched.get("/api/creator/popular-cards?from=2026-01-01").get_json()
+    assert {c["name"]: c for c in both}["Fireball"]["decks_with_card"] == 2
+
+
+def test_custom_date_range_rejects_bad_dates(patched):
+    assert patched.get("/api/creator/popular-cards?from=yesterday").status_code == 400

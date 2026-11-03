@@ -486,7 +486,7 @@ export default function Avatars() {
         <Spinner className="py-20" />
       ) : (
         <>
-          <section className="max-w-2xl mx-auto mb-8" aria-labelledby="avatar-meta-map">
+          <section className="max-w-6xl mx-auto mb-8" aria-labelledby="avatar-meta-map">
             <h2 id="avatar-meta-map" className="text-lg font-semibold text-center mb-1">
               Avatar Meta Map
             </h2>
@@ -496,7 +496,7 @@ export default function Avatars() {
               Avatars need {metaMap.minimum}+ games to show.
             </p>
             {metaMap.archetypes.length ? (
-              <MetaMap archetypes={metaMap.archetypes} linkAvatars noun="Avatar" />
+              <MetaMap archetypes={metaMap.archetypes} linkAvatars noun="Avatar" fluid />
             ) : (
               <p className="text-text-muted text-sm text-center py-4">Not enough games for this event yet.</p>
             )}

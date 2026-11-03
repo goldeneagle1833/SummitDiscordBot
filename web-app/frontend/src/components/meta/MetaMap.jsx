@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 /**
@@ -39,7 +39,8 @@ function placeLabels(points, width) {
       const x1 = side === 'right' ? p.x + 9 : p.x - 9 - w
       const box = { x1, x2: x1 + w, y1: p.y - 9, y2: p.y + 5 }
       const hitsDot = dots.some((d, i) => points[i] !== p && box.x1 < d.x2 && box.x2 > d.x1 && box.y1 < d.y2 && box.y2 > d.y1)
-      if (!overlaps(box) && !hitsDot) {
+      const inside = box.x1 >= 2 && box.x2 <= width - 2
+      if (inside && !overlaps(box) && !hitsDot) {
         boxes.push(box)
         placed.push({ ...p, lx: side === 'right' ? p.x + 9 : p.x - 9, anchor: side === 'right' ? 'start' : 'end' })
         return
@@ -49,10 +50,23 @@ function placeLabels(points, width) {
   return placed
 }
 
-export default function MetaMap({ archetypes, linkAvatars = false, noun = 'deck' }) {
+// fluid: the chart is drawn at the panel's real pixel width, so a wider panel
+// spreads the dots out instead of just scaling everything (text included) up.
+export default function MetaMap({ archetypes, linkAvatars = false, noun = 'deck', fluid = false }) {
   const [picked, setPicked] = useState(null)
+  const boxRef = useRef(null)
+  const [boxWidth, setBoxWidth] = useState(0)
+  useEffect(() => {
+    if (!fluid || !boxRef.current || typeof ResizeObserver === 'undefined') return undefined
+    const el = boxRef.current
+    const ro = new ResizeObserver(([entry]) => setBoxWidth(Math.round(entry.contentRect.width)))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [fluid, archetypes.length])
   if (!archetypes.length) return null
-  const W = 460, H = 300, L = 40, R = 12, T = 14, B = 34
+  const W = fluid && boxWidth ? Math.max(320, boxWidth) : 460
+  const H = fluid && boxWidth ? Math.round(Math.min(560, Math.max(320, W * 0.55))) : 300
+  const L = 40, R = 12, T = 14, B = 34
   const maxShare = Math.max(4, Math.ceil(Math.max(...archetypes.map((a) => a.share)) / 2) * 2)
   const wrs = archetypes.map((a) => a.winRate)
   const lo = Math.min(45, Math.floor(Math.min(...wrs) / 5) * 5)
@@ -66,7 +80,7 @@ export default function MetaMap({ archetypes, linkAvatars = false, noun = 'deck'
   const points = archetypes.map((a) => ({ ...a, x: X(a.share), y: Y(a.winRate), label: a.avatar }))
   const labels = placeLabels(points, W)
   return (
-    <div className={panel}>
+    <div className={panel} ref={boxRef}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block" role="img" aria-label="Archetypes by share of decks and win rate">
         {yTicks.map((v) => (
           <g key={v}>

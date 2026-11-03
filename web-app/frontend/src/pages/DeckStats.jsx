@@ -3,6 +3,7 @@ import { useParams, useSearchParams, Link } from 'react-router-dom'
 import Spinner from '@/components/ui/Spinner'
 import CardImagePopup from '@/components/deck/CardImagePopup'
 import DeckVisualizer from '@/components/deck/DeckVisualizer'
+import DeckCardStats from '@/components/deck/DeckCardStats'
 import StatCard from '@/components/player/StatCard'
 import CollapsibleSection from '@/components/player/CollapsibleSection'
 import { get } from '@/api/client'
@@ -243,6 +244,14 @@ export default function DeckStats() {
               >
                 Visual
               </button>
+              <button
+                onClick={() => setViewMode('stats')}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                  viewMode === 'stats' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                Card stats
+              </button>
             </div>
           </div>
 
@@ -274,6 +283,10 @@ export default function DeckStats() {
 
           {viewMode === 'visual' && (
             <DeckVisualizer spellbook={deck.spellbook} atlas={deck.atlas} sideboard={deck.sideboard} />
+          )}
+
+          {viewMode === 'stats' && (
+            <DeckCardStats cards={[...(deck.spellbook || []), ...(deck.atlas || [])]} avatarName={avatarName} />
           )}
         </section>
       )}

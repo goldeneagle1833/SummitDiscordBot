@@ -12,7 +12,14 @@ vi.mock('react-router-dom', async () => {
   return { ...actual, useParams: () => ({ matchId: '1000013521', playerId: '296846802924208130' }) }
 })
 
+vi.mock('@/components/deck/DeckCardStats', () => ({
+  default: ({ cards, avatarName }) => (
+    <div data-testid="deck-card-stats">{avatarName}: {cards.map((c) => c.name).join(', ')}</div>
+  ),
+}))
+
 import { get } from '@/api/client'
+import { userEvent } from '@/test/test-utils'
 
 function snapshot(deck) {
   return {
@@ -68,5 +75,14 @@ describe('DeckSnapshot', () => {
     const link = await screen.findByRole('link', { name: /Open in Play Sorcery Online/i })
     expect(link).toHaveAttribute('href', 'https://playsorceryonline.com/?deck=pD-1gXa3cg8c')
     expect(screen.queryByRole('button', { name: /Try this Deck/i })).not.toBeInTheDocument()
+  })
+
+  it('has a Card stats view with the deck cards and avatar', async () => {
+    get.mockResolvedValue(snapshot({ ...CARDS, name: 'Steamed Imposter' }))
+
+    renderWithRouter(<DeckSnapshot />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Card stats' }))
+    expect(screen.getByTestId('deck-card-stats')).toHaveTextContent('Imposter: Vile Imp, Oasis')
   })
 })

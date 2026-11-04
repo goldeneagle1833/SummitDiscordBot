@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { getCard } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
+import CardRankedStats from '@/components/analytics/CardRankedStats'
 
 function Stat({ label, value }) {
   if (value == null || value === '' || value === 'None') return null
@@ -38,7 +39,7 @@ export default function CardDetail() {
 
   return (
     <div className="space-y-6">
-      <Link to="/cards" className="text-primary hover:text-primary-light text-sm">&larr; All Cards</Link>
+      <Link to="/card-stats" className="text-primary hover:text-primary-light text-sm">&larr; Card Stats</Link>
 
       <div className="bg-bg-surface border border-border rounded-soft p-6 flex flex-col sm:flex-row gap-6">
         {imageUrl && (
@@ -91,6 +92,8 @@ export default function CardDetail() {
           </div>
         </div>
       )}
+
+      <CardRankedStats cardName={card.name} />
     </div>
   )
 }

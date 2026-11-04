@@ -57,6 +57,7 @@ Commands are organized into Cogs (modular command handlers) in `discord-bot/cogs
 - `anti_spam.py` - Spam protection system
 - `streaming.py` - Streaming detection and announcements
 - `purchase_tracking.py` - Discord monetization/purchase tracking
+- `claude_feedback.py` - Feedback channel → Claude triage → GitHub issue → Claude PR (`.github/workflows/claude-feedback.yml`) → owner DM with Merge/Close buttons (see `discord-bot/docs/CLAUDE_FEEDBACK.md`)
 - `slash_commands.py` - Delegates slash commands to existing cog functions (DRY pattern)
 
 Utilities in `discord-bot/utils/`:

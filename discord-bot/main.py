@@ -32,6 +32,7 @@ from cogs.content_monitor import ContentMonitorCog
 from cogs.health_monitor import HealthMonitorCog
 from cogs.pairing_bans import PairingBanCog
 from cogs.moderation_alerts import ModerationAlertsCog, PersistentModerationButton
+from cogs.claude_feedback import ClaudeFeedbackCog, FeedbackButton
 from repositories.moderation_repo import create_moderation_tables
 from repositories.pairing_bans_repo import create_pairing_bans_table
 from repositories.voice_only_repo import create_voice_only_table
@@ -205,6 +206,7 @@ async def setup_cogs():
     await bot.add_cog(HealthMonitorCog(bot))  # Periodic API health checks, DMs owner on degradation
     await bot.add_cog(PairingBanCog(bot))  # !ban / !unban: block players from the pairing service
     await bot.add_cog(ModerationAlertsCog(bot))  # DM owner on blocks/reports with Timeout/Ban
+    await bot.add_cog(ClaudeFeedbackCog(bot))  # Feedback channel -> Claude PR -> owner DM with Merge buttons
 
 
 async def main():
@@ -230,7 +232,7 @@ async def main():
             PersistentMatchCardReportButton, PersistentMatchCardCancelButton,
             PersistentPSOConfirmButton, PersistentPSODisputeButton,
             PersistentReportPlayerButton, PersistentModerationButton,
-            PersistentKudosButton,
+            PersistentKudosButton, FeedbackButton,
         )
         await setup_cogs()
         matchmaking_runner = await start_matchmaking_api(bot)

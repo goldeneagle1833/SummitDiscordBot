@@ -78,5 +78,17 @@ WEB_APP_URL = "https://sorcererssummit.com"
 # Every /api/* call on the web app requires it.
 WEB_APP_API_KEY = os.getenv("WEB_APP_API_KEY", "")
 
+# Feedback -> Claude -> pull request (cogs/claude_feedback.py)
+# Messages in this channel are triaged by Claude; clear requests become a GitHub
+# issue that .github/workflows/claude-feedback.yml turns into a PR, and the
+# admins below get a DM with Merge / Request changes / Close buttons.
+# Off unless GITHUB_FEEDBACK_TOKEN is set.
+CLAUDE_FEEDBACK_CHANNEL_ID = 1463363646146088963
+# CLAUDE_FEEDBACK_ADMIN_IDS = [000000000000000000]  # defaults to [OWNER_ID]
+GITHUB_REPO = "goldeneagle1833/SummitDiscordBot"
+# Fine-grained token: Contents, Issues, Pull requests = read/write on GITHUB_REPO
+GITHUB_FEEDBACK_TOKEN = os.getenv("GITHUB_FEEDBACK_TOKEN", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
 # File names
 DECK_DATA_FILE = "deck_data_test.json"

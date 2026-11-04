@@ -135,52 +135,74 @@ function DayDetail({ date, day }) {
   )
 }
 
-/** Wall-calendar view of the same weeks the list view shows. */
+const fill = (day) => {
+  const n = day?.exact.length || 0
+  if (day?.competing) return 'rgb(248 113 113)'
+  if (n >= 3) return 'rgb(52 211 153)'
+  if (n === 2) return 'rgba(52, 211, 153, 0.8)'
+  if (n === 1) return 'rgba(52, 211, 153, 0.6)'
+  if (day?.flexible) return `rgba(167, 139, 250, ${Math.min(0.1 + day.flexible * 0.06, 0.28)})`
+  return null
+}
+
+/**
+ * The whole season at a glance: a row per month, a small square per day.
+ * Green squares are exact dates (darker = more events), red is a
+ * competing weekend, violet is only flexible windows. Tap a day for detail.
+ */
 export default function MonthGrid({ weeks }) {
   const [selected, setSelected] = useState(null)
   const days = indexDays(weeks)
+  const months = monthsFor(weeks)
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-      {monthsFor(weeks).map((key) => {
-        const first = toDate(`${key}-01`)
-        const lead = (first.getUTCDay() + 6) % 7
-        const length = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate()
-        const cells = []
-        for (let i = 0; i < lead; i += 1) cells.push({ key: `lead-${i}`, inMonth: false })
-        for (let d = 1; d <= length; d += 1) {
-          const date = `${key}-${String(d).padStart(2, '0')}`
-          cells.push({ key: date, date, inMonth: true })
-        }
-        const selectedHere = selected && selected.startsWith(key)
-        return (
-          <section key={key} className="bg-bg-raised border border-border rounded-lg overflow-hidden">
-            <h2 className="px-2 py-1 text-xs font-semibold text-secondary border-b border-border">
-              {first.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', year: 'numeric' })}
-            </h2>
-            <div className="p-1.5">
-              <div className="grid grid-cols-7 gap-0.5 mb-0.5">
-                {WEEKDAYS.map((d, i) => (
-                  <div key={i} className="text-[10px] text-center text-text-muted">{d}</div>
-                ))}
-              </div>
-              <div className="grid grid-cols-7 gap-0.5">
-                {cells.map((cell) => (
-                  <DayCell
-                    key={cell.key}
-                    date={cell.date}
-                    inMonth={cell.inMonth}
-                    day={cell.date ? days.get(cell.date) : null}
-                    selected={cell.date === selected}
-                    onSelect={setSelected}
-                  />
-                ))}
-              </div>
+    <div className="bg-bg-raised border border-border rounded-lg overflow-hidden max-w-3xl">
+      <div className="p-2 sm:p-3 overflow-x-auto">
+        <div
+          className="grid gap-[2px] min-w-[18rem]"
+          style={{ gridTemplateColumns: '2.25rem repeat(31, minmax(0, 1fr))' }}
+        >
+          <div />
+          {Array.from({ length: 31 }, (_, i) => (
+            <div key={i} className="text-[9px] text-center text-text-muted leading-none pb-0.5">
+              {(i + 1) % 5 === 0 || i === 0 ? i + 1 : ''}
             </div>
-            {selectedHere && <DayDetail date={selected} day={days.get(selected)} />}
-          </section>
-        )
-      })}
+          ))}
+          {months.map((key) => {
+            const first = toDate(`${key}-01`)
+            const length = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate()
+            return [
+              <div key={`${key}-label`} className="text-[11px] text-text-muted leading-none self-center">
+                {first.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short' })}
+              </div>,
+              ...Array.from({ length: 31 }, (_, i) => {
+                const d = i + 1
+                if (d > length) return <div key={`${key}-${d}`} />
+                const date = `${key}-${String(d).padStart(2, '0')}`
+                const day = days.get(date)
+                const n = day?.exact.length || 0
+                const weekend = [0, 6].includes(toDate(date).getUTCDay())
+                const bg = fill(day)
+                return (
+                  <button
+                    key={date}
+                    type="button"
+                    onClick={() => setSelected(selected === date ? null : date)}
+                    aria-label={`${date}: ${n} event${n === 1 ? '' : 's'}${day?.competing ? ', competing' : ''}`}
+                    aria-pressed={selected === date}
+                    title={(day?.exact || []).map((e) => who(e.application)).join(', ') || undefined}
+                    className={`aspect-square rounded-[2px] ${
+                      selected === date ? 'ring-1 ring-secondary' : ''
+                    } ${bg ? '' : weekend ? 'bg-text-muted/25' : 'bg-bg-surface'}`}
+                    style={bg ? { backgroundColor: bg } : undefined}
+                  />
+                )
+              }),
+            ]
+          })}
+        </div>
+      </div>
+      {selected && <DayDetail date={selected} day={days.get(selected)} />}
     </div>
   )
 }

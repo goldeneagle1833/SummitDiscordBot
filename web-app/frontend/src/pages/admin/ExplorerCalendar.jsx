@@ -191,7 +191,7 @@ export default function ExplorerCalendar() {
       )}
 
       <div className="inline-flex rounded border border-border overflow-hidden" role="group" aria-label="View">
-        {[['grid', 'Month grid'], ['list', 'Weekend list']].map(([value, label]) => (
+        {[['grid', 'Overview'], ['list', 'Weekend list']].map(([value, label]) => (
           <button
             key={value}
             type="button"
@@ -240,11 +240,19 @@ export default function ExplorerCalendar() {
         {view === 'grid' ? (
           <>
             <span className="inline-flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded border border-red-400/80 bg-red-400/10" /> Competing
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: 'rgba(52,211,153,0.6)' }} />
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: 'rgb(52,211,153)' }} />
+              Events (darker = more)
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded" style={{ boxShadow: 'inset 0 -4px 0 rgba(167,139,250,0.5)' }} />
-              Flexible windows like “mid-June” (thicker bar = more)
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: 'rgb(248,113,113)' }} /> Competing
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: 'rgba(167,139,250,0.25)' }} />
+              Only vague dates like “mid-June”
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-text-muted/25" /> Weekend
             </span>
             <span>Tap a day for who and where</span>
           </>

@@ -40,7 +40,7 @@ export default function LgsAttendance({ application, onRefresh, refreshing }) {
       </div>
 
       <div className="bg-bg-raised border border-border rounded-lg p-4 space-y-3">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <div>
             <div className="text-xs text-text-muted">They said</div>
             <div className="text-lg text-text-primary">
@@ -53,6 +53,12 @@ export default function LgsAttendance({ application, onRefresh, refreshing }) {
             </div>
             <div className="text-lg text-secondary">
               {median != null ? `${median} players` : '—'}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-text-muted">Suggested local activity</div>
+            <div className="text-lg text-secondary">
+              {application.lgs_activity_score != null ? `${application.lgs_activity_score} / 5` : '—'}
             </div>
           </div>
         </div>

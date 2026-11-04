@@ -48,13 +48,41 @@ def recent_events(events: list[dict], today: date | None = None) -> list[dict]:
     return kept
 
 
+# Suggested 1-5 "Local activity" score from the store's median attendance.
+# Each entry is (lowest median that earns the score, score), highest first.
+# The Council can still change the score on their own scorecard.
+ACTIVITY_SCORE_BANDS = (
+    (16, 5),
+    (12, 4),
+    (8, 3),
+    (4, 2),
+    (1, 1),
+)
+
+
+def activity_score(median_players) -> int | None:
+    """The suggested Local activity score for a median player count.
+
+    None when there is no attendance to go on, so a store with no page or no
+    recorded events is left for the reviewer to judge.
+    """
+    if not isinstance(median_players, int) or median_players <= 0:
+        return None
+    for minimum, score in ACTIVITY_SCORE_BANDS:
+        if median_players >= minimum:
+            return score
+    return None
+
+
 def summarise(attendance: dict, today: date | None = None) -> dict:
     """Turn a venue-attendance payload into what we store on the application."""
     history = recent_events(attendance.get("events"), today=today)
     counts = [e["player_count"] for e in history]
+    median = int(statistics.median(counts)) if counts else None
     return {
         "lgs_store_name": attendance.get("store_name") or None,
-        "lgs_median_players": int(statistics.median(counts)) if counts else None,
+        "lgs_median_players": median,
+        "lgs_activity_score": activity_score(median),
         "lgs_event_count": len(counts),
         "lgs_history": json.dumps(history),
         "lgs_lookup_error": None if counts else "No events with attendance in the last 9 months",
@@ -67,7 +95,7 @@ def _save(application_id: int, summary: dict) -> None:
         conn.execute(
             """UPDATE explorer_applications
                SET lgs_store_name = ?, lgs_median_players = ?, lgs_event_count = ?,
-                   lgs_history = ?, lgs_lookup_error = ?,
+                   lgs_history = ?, lgs_lookup_error = ?, lgs_activity_score = ?,
                    lgs_checked_at = datetime('now')
                WHERE id = ?""",
             (
@@ -76,6 +104,7 @@ def _save(application_id: int, summary: dict) -> None:
                 summary.get("lgs_event_count"),
                 summary.get("lgs_history"),
                 summary.get("lgs_lookup_error"),
+                summary.get("lgs_activity_score"),
                 application_id,
             ),
         )
@@ -101,6 +130,7 @@ def lookup_attendance(application_id: int, lgs_url: str | None) -> dict | None:
     except ValueError as exc:
         summary = {
             "lgs_store_name": None, "lgs_median_players": None, "lgs_event_count": 0,
+            "lgs_activity_score": None,
             "lgs_history": json.dumps([]), "lgs_lookup_error": str(exc),
         }
         _save(application_id, summary)
@@ -110,6 +140,7 @@ def lookup_attendance(application_id: int, lgs_url: str | None) -> dict | None:
                        application_id, exc)
         summary = {
             "lgs_store_name": None, "lgs_median_players": None, "lgs_event_count": 0,
+            "lgs_activity_score": None,
             "lgs_history": json.dumps([]),
             "lgs_lookup_error": "Could not reach sorcerytcg.com",
         }

@@ -524,7 +524,7 @@ CSV_COLUMNS = (
     "city", "state", "country", "lgs_name", "lgs_url", "lgs_confirmed",
     "expected_attendance", "proposed_dates", "events_run_count", "avg_headcount",
     "events_run", "motivation", "reference_contact", "anything_else", "referral",
-    "lgs_store_name", "lgs_median_players", "lgs_event_count",
+    "lgs_store_name", "lgs_median_players", "lgs_event_count", "lgs_activity_score",
     "vote_count", "avg_enthusiasm", "avg_track_record", "avg_local_activity",
     "average_score", "submitted_at",
 )

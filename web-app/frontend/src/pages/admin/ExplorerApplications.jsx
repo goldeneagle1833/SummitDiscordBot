@@ -60,18 +60,21 @@ function percent(count, total) {
  * At-a-glance review progress, counted across every application whatever
  * the filters show. The tiles double as quick filters.
  */
-function ApplicationMetrics({ applications, statusFilter, onStatusFilter, fewVotes, onFewVotes }) {
+function ApplicationMetrics({
+  applications, statusFilter, onStatusFilter, fewVotes, onFewVotes, needsMyVote, onNeedsMyVote,
+}) {
   const total = applications.length
   const candidates = applications.filter((a) => a.source === 'admin_added').length
   const needVotes = applications.filter((a) => (a.vote_count || 0) < VOTE_TARGET).length
+  const needMine = applications.filter((a) => !a.my_vote).length
   const tile = 'bg-bg-raised border rounded-lg p-4 text-left transition-colors'
 
   return (
     <section aria-label="Application metrics" className="space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <button
-          onClick={() => { onStatusFilter(''); onFewVotes(false) }}
-          className={`${tile} ${!statusFilter && !fewVotes ? 'border-secondary/60' : 'border-border hover:border-secondary'}`}
+          onClick={() => { onStatusFilter(''); onFewVotes(false); onNeedsMyVote(false) }}
+          className={`${tile} ${!statusFilter && !fewVotes && !needsMyVote ? 'border-secondary/60' : 'border-border hover:border-secondary'}`}
         >
           <div className="text-xs text-text-muted">Applications received</div>
           <div className="text-3xl font-display text-secondary">{total}</div>
@@ -90,6 +93,17 @@ function ApplicationMetrics({ applications, statusFilter, onStatusFilter, fewVot
           <div className="text-3xl font-display text-amber-300">{needVotes}</div>
           <div className="text-xs text-text-muted">
             {fewVotes ? 'Showing only these. Click to show all.' : 'Click to show only these'}
+          </div>
+        </button>
+        <button
+          onClick={() => onNeedsMyVote(!needsMyVote)}
+          aria-pressed={needsMyVote}
+          className={`${tile} ${needsMyVote ? 'border-sky-400/60 bg-sky-400/5' : 'border-border hover:border-secondary'}`}
+        >
+          <div className="text-xs text-text-muted">Need my vote</div>
+          <div className="text-3xl font-display text-sky-300">{needMine}</div>
+          <div className="text-xs text-text-muted">
+            {needsMyVote ? 'Showing only these. Click to show all.' : "Click to show ones you haven't voted on"}
           </div>
         </button>
       </div>
@@ -633,6 +647,7 @@ export default function ExplorerApplications() {
   const [applications, setApplications] = useState([])
   const [statusFilter, setStatusFilter] = useState('')
   const [fewVotes, setFewVotes] = useState(false)
+  const [needsMyVote, setNeedsMyVote] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
@@ -664,6 +679,7 @@ export default function ExplorerApplications() {
   const shown = applications.filter((a) =>
     (!statusFilter || a.status === statusFilter)
     && (!fewVotes || (a.vote_count || 0) < VOTE_TARGET)
+    && (!needsMyVote || !a.my_vote)
   )
 
   return (
@@ -730,6 +746,8 @@ export default function ExplorerApplications() {
           onStatusFilter={setStatusFilter}
           fewVotes={fewVotes}
           onFewVotes={setFewVotes}
+          needsMyVote={needsMyVote}
+          onNeedsMyVote={setNeedsMyVote}
         />
       )}
 

@@ -3,7 +3,7 @@ import { STATUS_COLORS } from './statusColors'
 import { competingIds } from './calendarModel'
 
 const DAY_MS = 86400000
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 const toDate = (iso) => new Date(`${iso}T00:00:00Z`)
 const iso = (d) => d.toISOString().slice(0, 10)
 
@@ -62,50 +62,38 @@ function DayCell({ date, inMonth, day, selected, onSelect }) {
   const n = day?.exact.length || 0
   const soft = day?.flexible || 0
   const weekend = [0, 6].includes(toDate(date).getUTCDay())
-  if (!inMonth) return <div className="min-h-[3.25rem] sm:min-h-[5.5rem]" />
+  if (!inMonth) return <div className="h-8" />
+  const names = (day?.exact || []).map((e) => who(e.application)).join(', ')
   return (
     <button
       type="button"
       onClick={() => onSelect(selected ? null : date)}
+      title={names || undefined}
       aria-label={`${date}: ${n} event${n === 1 ? '' : 's'}${day?.competing ? ', competing' : ''}`}
       aria-pressed={selected}
-      className={`relative min-h-[3.25rem] sm:min-h-[5.5rem] rounded border p-1 text-left align-top transition-colors overflow-hidden ${
+      className={`relative h-8 rounded-sm border flex flex-col items-center justify-start pt-0.5 transition-colors overflow-hidden ${
         day?.competing
-          ? 'border-red-400/80 bg-red-400/10'
+          ? 'border-red-400/80 bg-red-400/15'
           : selected
             ? 'border-secondary'
-            : 'border-border/60 hover:border-secondary/60'
-      } ${weekend ? 'bg-bg-surface' : 'bg-bg-base'}`}
-      style={soft && !day?.competing ? { boxShadow: `inset 0 -${Math.min(soft, 4) * 3}px 0 rgba(167,139,250,0.35)` } : undefined}
+            : 'border-transparent hover:border-secondary/60'
+      } ${weekend ? 'bg-bg-surface' : ''}`}
+      style={soft && !day?.competing ? { boxShadow: `inset 0 -${Math.min(soft, 3) * 2}px 0 rgba(167,139,250,0.45)` } : undefined}
     >
-      <div className={`text-[11px] leading-none ${n ? 'text-text-primary font-semibold' : 'text-text-muted'}`}>
+      <span className={`text-[10px] leading-none ${n ? 'text-text-primary font-semibold' : 'text-text-muted'}`}>
         {toDate(date).getUTCDate()}
-      </div>
-      {/* Names on wide screens, dots on phones. */}
-      <ul className="hidden sm:block mt-1 space-y-0.5">
-        {day?.exact.slice(0, 3).map((entry) => (
-          <li key={entry.application.id} className="flex items-center gap-1 text-[10px] leading-tight">
-            <span
-              className="w-1.5 h-1.5 rounded-full shrink-0"
-              style={{ backgroundColor: STATUS_COLORS[entry.application.status] || '#9ca3af' }}
-            />
-            <span className={`truncate ${entry.rank === 1 ? 'text-text-primary' : 'text-text-muted'}`}>
-              {who(entry.application)}
-            </span>
-          </li>
-        ))}
-        {n > 3 && <li className="text-[10px] text-text-muted">+{n - 3} more</li>}
-      </ul>
+      </span>
       {n > 0 && (
-        <div className="sm:hidden flex flex-wrap gap-0.5 mt-1">
-          {day.exact.slice(0, 4).map((entry) => (
+        <span className="flex gap-px mt-0.5">
+          {day.exact.slice(0, 3).map((entry) => (
             <span
               key={entry.application.id}
               className="w-1.5 h-1.5 rounded-full"
               style={{ backgroundColor: STATUS_COLORS[entry.application.status] || '#9ca3af' }}
             />
           ))}
-        </div>
+          {n > 3 && <span className="text-[8px] leading-none text-text-muted">+</span>}
+        </span>
       )}
     </button>
   )
@@ -153,7 +141,7 @@ export default function MonthGrid({ weeks }) {
   const days = indexDays(weeks)
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
       {monthsFor(weeks).map((key) => {
         const first = toDate(`${key}-01`)
         const lead = (first.getUTCDay() + 6) % 7
@@ -167,16 +155,16 @@ export default function MonthGrid({ weeks }) {
         const selectedHere = selected && selected.startsWith(key)
         return (
           <section key={key} className="bg-bg-raised border border-border rounded-lg overflow-hidden">
-            <h2 className="px-3 py-2 text-sm font-semibold text-secondary border-b border-border">
+            <h2 className="px-2 py-1 text-xs font-semibold text-secondary border-b border-border">
               {first.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', year: 'numeric' })}
             </h2>
-            <div className="p-2">
-              <div className="grid grid-cols-7 gap-1 mb-1">
-                {WEEKDAYS.map((d) => (
-                  <div key={d} className="text-[10px] text-center text-text-muted">{d}</div>
+            <div className="p-1.5">
+              <div className="grid grid-cols-7 gap-0.5 mb-0.5">
+                {WEEKDAYS.map((d, i) => (
+                  <div key={i} className="text-[10px] text-center text-text-muted">{d}</div>
                 ))}
               </div>
-              <div className="grid grid-cols-7 gap-1">
+              <div className="grid grid-cols-7 gap-0.5">
                 {cells.map((cell) => (
                   <DayCell
                     key={cell.key}

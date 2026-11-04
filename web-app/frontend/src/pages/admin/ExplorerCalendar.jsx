@@ -246,7 +246,7 @@ export default function ExplorerCalendar() {
               <span className="w-3 h-3 rounded" style={{ boxShadow: 'inset 0 -4px 0 rgba(167,139,250,0.5)' }} />
               Flexible windows like “mid-June” (thicker bar = more)
             </span>
-            <span>Tap a day for details</span>
+            <span>Tap a day for who and where</span>
           </>
         ) : (
           <span>Faded and dashed: flexible windows like “mid-June” or “summer”</span>

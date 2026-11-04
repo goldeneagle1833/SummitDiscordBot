@@ -13,6 +13,7 @@ describe('Footer', () => {
     expect(screen.getByRole('link', { name: /about/i })).toHaveAttribute('href', '/about')
     expect(screen.getByRole('link', { name: /help/i })).toHaveAttribute('href', '/help')
     expect(screen.getByRole('link', { name: /community/i })).toHaveAttribute('href', '/community')
+    expect(screen.getByRole('link', { name: /feedback/i })).toHaveAttribute('href', '/feedback')
   })
 
   it('renders legal links', () => {

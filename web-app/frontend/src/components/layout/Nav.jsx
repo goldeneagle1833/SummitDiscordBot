@@ -805,10 +805,12 @@ export default function Nav() {
 
           <SidebarHeading label="Tools" />
           <SidebarLink to="/life-counter" label="Life Counter" location={location} onClick={close} />
-          <SidebarLink to="/help" label="Help" location={location} onClick={close} match={['/help', '/about', '/feedback']} />
+          <SidebarLink to="/help" label="Help" location={location} onClick={close} match={['/help', '/about']} />
 
           <SidebarHeading label="Community" />
           <SidebarLink to="/community" label="Community Links" location={location} onClick={close} />
+          {/* Own link again (lost when it was folded into Help on 2026-10-15) */}
+          <SidebarLink to="/feedback" label="Feedback" location={location} onClick={close} />
           {/* Phones only: from md up Store is on the top bar */}
           {(STORE_LIVE || user?.is_store_admin) && (
             <div className="md:hidden">

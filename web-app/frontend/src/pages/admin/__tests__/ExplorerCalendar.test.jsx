@@ -17,8 +17,20 @@ const apps = [
 describe('ExplorerCalendar', () => {
   beforeEach(() => getApplications.mockResolvedValue({ applications: apps }))
 
-  it('shows weekends and flags competing events', async () => {
+  it('opens on the month grid and shows a day on tap', async () => {
+    const user = userEvent.setup()
     renderWithRouter(<ExplorerCalendar />)
+    const day = await screen.findByRole('button', { name: /2027-04-10: 1 event, competing/ })
+    await user.click(day)
+    expect(screen.getByText('Saturday, April 10')).toBeInTheDocument()
+    expect(screen.getByText(/Competing events within 100 miles/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /2027-04-11: 1 event, competing/ })).toBeInTheDocument()
+  })
+
+  it('shows weekends and flags competing events', async () => {
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerCalendar />)
+    await user.click(await screen.findByRole('button', { name: 'Weekend list' }))
     expect(await screen.findByText('Columbus Games')).toBeInTheDocument()
     expect(screen.getByText('Dayton Cards')).toBeInTheDocument()
     expect(screen.getByText(/Competing: \d+ mi apart/)).toBeInTheDocument()
@@ -29,6 +41,7 @@ describe('ExplorerCalendar', () => {
   it('approved only drops the clash', async () => {
     const user = userEvent.setup()
     renderWithRouter(<ExplorerCalendar />)
+    await user.click(await screen.findByRole('button', { name: 'Weekend list' }))
     await screen.findByText('Columbus Games')
     await user.click(screen.getByLabelText('Approved only'))
     expect(screen.queryByText('Dayton Cards')).toBeNull()
@@ -38,6 +51,7 @@ describe('ExplorerCalendar', () => {
   it('can narrow to problem weekends', async () => {
     const user = userEvent.setup()
     renderWithRouter(<ExplorerCalendar />)
+    await user.click(await screen.findByRole('button', { name: 'Weekend list' }))
     await screen.findByText('Columbus Games')
     await user.click(screen.getByLabelText('Only competing or busy weekends'))
     expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(1)

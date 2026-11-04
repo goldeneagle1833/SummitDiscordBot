@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 import { getApplications } from '@/api/explorerApplications'
 import { STATUS_COLORS } from '@/components/explorer/statusColors'
+import MonthGrid from '@/components/explorer/MonthGrid'
 import {
   BUSY_WEEKEND,
   COMPETING_MILES,
@@ -115,6 +116,8 @@ export default function ExplorerCalendar() {
   const [approvedOnly, setApprovedOnly] = useState(false)
   const [firstChoiceOnly, setFirstChoiceOnly] = useState(false)
   const [problemsOnly, setProblemsOnly] = useState(false)
+  // 'grid' is a wall calendar; 'list' is one row per weekend.
+  const [view, setView] = useState('grid')
 
   useEffect(() => {
     getApplications()
@@ -187,6 +190,20 @@ export default function ExplorerCalendar() {
         </section>
       )}
 
+      <div className="inline-flex rounded border border-border overflow-hidden" role="group" aria-label="View">
+        {[['grid', 'Month grid'], ['list', 'Weekend list']].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={view === value}
+            onClick={() => setView(value)}
+            className={`px-3 py-1.5 text-sm ${view === value ? 'bg-secondary text-black font-medium' : 'text-text-muted hover:text-text-primary'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap gap-x-5 gap-y-2">
         <label className={toggle}>
           <input type="checkbox" checked={approvedOnly} onChange={(e) => setApprovedOnly(e.target.checked)} />
@@ -205,10 +222,12 @@ export default function ExplorerCalendar() {
           <input type="checkbox" checked={firstChoiceOnly} onChange={(e) => setFirstChoiceOnly(e.target.checked)} />
           First choices only
         </label>
-        <label className={toggle}>
-          <input type="checkbox" checked={problemsOnly} onChange={(e) => setProblemsOnly(e.target.checked)} />
-          Only competing or busy weekends
-        </label>
+        {view === 'list' && (
+          <label className={toggle}>
+            <input type="checkbox" checked={problemsOnly} onChange={(e) => setProblemsOnly(e.target.checked)} />
+            Only competing or busy weekends
+          </label>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3 text-xs text-text-muted" aria-label="Legend">
@@ -218,11 +237,26 @@ export default function ExplorerCalendar() {
             {label}
           </span>
         ))}
-        <span>Faded and dashed: flexible windows like “mid-June” or “summer”</span>
+        {view === 'grid' ? (
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded border border-red-400/80 bg-red-400/10" /> Competing
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded" style={{ boxShadow: 'inset 0 -4px 0 rgba(167,139,250,0.5)' }} />
+              Flexible windows like “mid-June” (thicker bar = more)
+            </span>
+            <span>Tap a day for details</span>
+          </>
+        ) : (
+          <span>Faded and dashed: flexible windows like “mid-June” or “summer”</span>
+        )}
       </div>
 
       {loading ? (
         <p className="text-sm text-text-muted">Loading…</p>
+      ) : view === 'grid' ? (
+        <MonthGrid weeks={weeks} />
       ) : months.length === 0 ? (
         <p className="text-sm text-text-muted">Nothing to show with these filters.</p>
       ) : (

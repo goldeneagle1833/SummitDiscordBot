@@ -57,7 +57,6 @@ const Avatars = lazyPage(() => import('@/pages/Avatars'))
 const AvatarDetail = lazyPage(() => import('@/pages/AvatarDetail'))
 const AvatarTopPlayers = lazyPage(() => import('@/pages/AvatarTopPlayers'))
 const EloBreakdownMatches = lazyPage(() => import('@/pages/EloBreakdownMatches'))
-const Cards = lazyPage(() => import('@/pages/Cards'))
 const CardDetail = lazyPage(() => import('@/pages/CardDetail'))
 const CardStats = lazyPage(() => import('@/pages/CardStats'))
 const Elements = lazyPage(() => import('@/pages/Elements'))
@@ -228,7 +227,8 @@ const router = createBrowserRouter([
       { path: '/avatars/top-players', element: <AvatarTopPlayers /> },
       { path: '/avatar/:name', element: <AvatarDetail /> },
       { path: '/avatars/elo-matches', element: <EloBreakdownMatches /> },
-      { path: '/cards', element: <Cards /> },
+      // The old all-cards name grid is retired; card pages link back to Card Stats.
+      { path: '/cards', element: <Navigate to="/card-stats" replace /> },
       // Card Stats: Card Win Rates and Popular Cards merged (2026-11-03)
       { path: '/card-stats', element: <CardStats /> },
       { path: '/cards/played-winrates', element: <Navigate to="/card-stats" replace /> },

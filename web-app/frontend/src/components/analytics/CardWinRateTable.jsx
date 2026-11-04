@@ -85,7 +85,7 @@ function RateCell({ rate }) {
   )
 }
 
-function EffectCell({ card }) {
+export function EffectCell({ card }) {
   const difference = cardMetricValue(card, 'winRateDifference')
   if (difference == null) return <span className="text-text-muted">—</span>
   const width = Math.min(50, (Math.abs(difference) / BAR_CAP) * 50)
@@ -98,7 +98,7 @@ function EffectCell({ card }) {
           style={{ width: `${width}%` }}
         />
       </div>
-      <span className={`font-bold ${positive ? 'text-[#3fb950]' : 'text-[#f85149]'}`}>{ppLabel(difference)}</span>
+      <span className={`font-bold whitespace-nowrap ${positive ? 'text-[#3fb950]' : 'text-[#f85149]'}`}>{ppLabel(difference)}</span>
     </div>
   )
 }
@@ -140,7 +140,7 @@ function ReplayLink({ replay, avatarImages }) {
   )
 }
 
-function StatCard({ label, rate, highlight, barTone }) {
+export function StatCard({ label, rate, highlight, barTone }) {
   const tone = winRateTone(rate.winRate)
   return (
     <div className={`bg-bg-surface border rounded-soft p-3 flex flex-col gap-1.5 ${highlight ? 'border-secondary' : 'border-border'}`}>
@@ -156,20 +156,58 @@ function StatCard({ label, rate, highlight, barTone }) {
   )
 }
 
-function CardDetailRow({ card, meta, selection, avatarImages, extraMetrics, columnCount, detailExtra }) {
+/**
+ * Public replay clips for one card. Replays are always asked of PSO live
+ * (a player can make a replay private at any time), so with ``onDemand``
+ * nothing is fetched until the visitor presses the button.
+ */
+export function CardReplays({ cardKey, selection, avatarImages, onDemand = false }) {
+  const [requested, setRequested] = useState(!onDemand)
   const [replays, setReplays] = useState({ loading: true, error: null, items: [] })
-  // Rows built from Summit's deck lists alone have no PSO game data to show.
-  const noRates = Boolean(card.summitOnly)
+
+  useEffect(() => { setRequested(!onDemand) }, [cardKey, selection, onDemand])
 
   useEffect(() => {
-    if (noRates) return undefined
+    if (!requested) return undefined
     let cancelled = false
     setReplays({ loading: true, error: null, items: [] })
-    getRankedCardReplays(card.cardKey, selection)
+    getRankedCardReplays(cardKey, selection)
       .then((body) => { if (!cancelled) setReplays({ loading: false, error: null, items: body.replays ?? [] }) })
       .catch(() => { if (!cancelled) setReplays({ loading: false, error: 'Public replays could not be loaded.', items: [] }) })
     return () => { cancelled = true }
-  }, [card.cardKey, selection, noRates])
+  }, [cardKey, selection, requested])
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm font-semibold">Watch it get played</span>
+        <span className="text-[11px] text-text-muted">Public replays on Play Sorcery Online · opens just before the play</span>
+      </div>
+      {!requested ? (
+        <button type="button" onClick={() => setRequested(true)}
+          className="self-start border border-border bg-bg-surface text-[#c9d1d9] rounded px-3 min-h-[32px] text-xs hover:border-primary/60 transition-colors">
+          Show public replays
+        </button>
+      ) : replays.loading ? (
+        <p className="text-xs text-text-muted" role="status">Loading public replays…</p>
+      ) : replays.error ? (
+        <p className="text-xs text-text-muted" role="alert">{replays.error}</p>
+      ) : replays.items.length === 0 ? (
+        <p className="text-xs text-text-muted">No public replays are available for this selection.</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
+          {replays.items.map((replay) => (
+            <ReplayLink key={replay.clipId} replay={replay} avatarImages={avatarImages} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CardDetailRow({ card, meta, selection, avatarImages, extraMetrics, columnCount, detailExtra }) {
+  // Rows built from Summit's deck lists alone have no PSO game data to show.
+  const noRates = Boolean(card.summitOnly)
 
   const details = [meta?.type, meta?.elements?.length ? meta.elements.join(' / ') : null, meta?.rarity].filter(Boolean)
 
@@ -203,25 +241,7 @@ function CardDetailRow({ card, meta, selection, avatarImages, extraMetrics, colu
               ))}
               <StatCard label="In deck, never played" rate={card.inDeckUnplayed} barTone="bg-text-muted" />
             </div>
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-sm font-semibold">Watch it get played</span>
-                <span className="text-[11px] text-text-muted">Public replays on Play Sorcery Online · opens just before the play</span>
-              </div>
-              {replays.loading ? (
-                <p className="text-xs text-text-muted" role="status">Loading public replays…</p>
-              ) : replays.error ? (
-                <p className="text-xs text-text-muted" role="alert">{replays.error}</p>
-              ) : replays.items.length === 0 ? (
-                <p className="text-xs text-text-muted">No public replays are available for this selection.</p>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
-                  {replays.items.map((replay) => (
-                    <ReplayLink key={replay.clipId} replay={replay} avatarImages={avatarImages} />
-                  ))}
-                </div>
-              )}
-            </div>
+            <CardReplays cardKey={card.cardKey} selection={selection} avatarImages={avatarImages} />
             </>
             )}
             {detailExtra?.(card)}

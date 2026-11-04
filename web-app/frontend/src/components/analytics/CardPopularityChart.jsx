@@ -9,10 +9,12 @@ import { get } from '@/api/client'
  * Monthly "% of decks" for one card, from Summit's own deck lists
  * (/api/creator/card-history). Was the Popular Cards row chart.
  */
-export default function CardPopularityChart({ cardName }) {
+export default function CardPopularityChart({ cardName, showCardLink = true }) {
   const [history, setHistory] = useState(null)
   const [histLoading, setHistLoading] = useState(true)
   const card = { name: cardName }
+  // SVG ids can't hold spaces or quotes, or the gradient fill silently breaks.
+  const gradientId = `popGrad-${String(cardName).replace(/[^A-Za-z0-9_-]/g, '_')}`
 
   useEffect(() => {
     let cancelled = false
@@ -30,9 +32,11 @@ export default function CardPopularityChart({ cardName }) {
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm font-semibold">Popularity over time</span>
         <span className="text-[11px] text-text-muted">% of Summit decks each month</span>
-        <Link to={`/card/${encodeURIComponent(cardName)}`} className="text-xs text-primary hover:text-primary-light sm:ml-auto">
-          View card page →
-        </Link>
+        {showCardLink && (
+          <Link to={`/card/${encodeURIComponent(cardName)}`} className="text-xs text-primary hover:text-primary-light sm:ml-auto">
+            View card page →
+          </Link>
+        )}
       </div>
             {histLoading && <p className="text-xs text-text-muted">Loading chart...</p>}
             {!histLoading && history && history.length === 0 && (
@@ -43,7 +47,7 @@ export default function CardPopularityChart({ cardName }) {
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={history} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
                     <defs>
-                      <linearGradient id={`popGrad-${card.name}`} x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="rgba(77,184,255,0.4)" stopOpacity={0.4} />
                         <stop offset="95%" stopColor="rgba(77,184,255,0.4)" stopOpacity={0.02} />
                       </linearGradient>
@@ -78,10 +82,12 @@ export default function CardPopularityChart({ cardName }) {
                       type="monotone"
                       dataKey="percent_of_decks"
                       stroke="rgba(77,184,255,0.85)"
-                      fill={`url(#popGrad-${card.name})`}
+                      fill={`url(#${gradientId})`}
                       strokeWidth={2}
                       dot={{ fill: 'rgba(77,184,255,0.95)', r: 3 }}
                       activeDot={{ r: 5 }}
+                      // Drawn at once: the grow-in animation could be cut off by a re-render and leave only dots.
+                      isAnimationActive={false}
                     />
                   </AreaChart>
                 </ResponsiveContainer>

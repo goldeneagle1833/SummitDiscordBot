@@ -168,3 +168,56 @@ class TestBackfill:
         assert [r["start_date"] for r in repo.get_dates(old)] == ["2027-06-12"]
         assert repo.get_dates(blank) == []
         assert backfill_missing_dates(repo) == 0
+
+
+class TestCouncilCheck:
+    def _apply(self, client, text):
+        return client.post("/api/explorer/applications", json=valid_application(
+            proposed_dates=text)).get_json()["application_id"]
+
+    def test_list_flags_vague_dates(self, admin_session):
+        vague = self._apply(admin_session, "mid-June")
+        exact = self._apply(admin_session, "4/10/27")
+        unreadable = self._apply(admin_session, "TBD")
+        apps = {a["id"]: a for a in admin_session.get(
+            "/api/explorer/applications").get_json()["applications"]}
+        assert apps[vague]["dates_need_check"] is True
+        assert apps[exact]["dates_need_check"] is False
+        assert apps[unreadable]["dates_need_check"] is True
+        assert apps[exact]["dates"][0]["start_date"] == "2027-04-10"
+
+    def test_confirm_clears_the_flag_and_locks(self, admin_session):
+        app_id = self._apply(admin_session, "mid-June")
+        res = admin_session.post(f"/api/explorer/applications/{app_id}/dates/confirm")
+        assert res.status_code == 200
+        assert res.get_json()["dates"][0]["confirmed_at"]
+        apps = admin_session.get("/api/explorer/applications").get_json()["applications"]
+        assert next(a for a in apps if a["id"] == app_id)["dates_need_check"] is False
+        assert ExplorerApplicationRepository().dates_locked(app_id)
+
+    def test_admin_can_set_dates(self, admin_session):
+        app_id = self._apply(admin_session, "TBD")
+        res = admin_session.put(f"/api/explorer/applications/{app_id}/dates", json={
+            "dates": [{"start": "2027-06-12"}, {"start": "2027-07-17", "end": "2027-07-18"}],
+        })
+        assert res.status_code == 200
+        dates = res.get_json()["dates"]
+        assert [(d["start_date"], d["end_date"], d["precision"], d["source"]) for d in dates] == [
+            ("2027-06-12", "2027-06-12", "day", "admin"),
+            ("2027-07-17", "2027-07-18", "range", "admin"),
+        ]
+
+    @pytest.mark.parametrize("dates", [
+        "nope", [{"start": "2027-06-12", "end": "2027-06-01"}], [{"start": "x"}],
+    ])
+    def test_admin_dates_validated(self, admin_session, dates):
+        app_id = self._apply(admin_session, "TBD")
+        res = admin_session.put(f"/api/explorer/applications/{app_id}/dates", json={"dates": dates})
+        assert res.status_code == 400
+
+    def test_requires_explorer_admin(self, applicant_session):
+        app_id = self._apply(applicant_session, "TBD")
+        assert applicant_session.post(
+            f"/api/explorer/applications/{app_id}/dates/confirm").status_code in (401, 403)
+        assert applicant_session.put(
+            f"/api/explorer/applications/{app_id}/dates", json={"dates": []}).status_code in (401, 403)

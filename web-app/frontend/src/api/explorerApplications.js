@@ -44,3 +44,10 @@ export const refreshLgsAttendance = (id) =>
   post(`/api/explorer/applications/${id}/lgs-attendance`)
 
 export const EXPORT_CSV_URL = '/api/explorer/applications/export.csv'
+
+export const confirmApplicationDates = (id) =>
+  post(`/api/explorer/applications/${id}/dates/confirm`)
+
+// dates: [{ start, end }] (ISO), up to three.
+export const setApplicationDates = (id, dates) =>
+  put(`/api/explorer/applications/${id}/dates`, { dates })

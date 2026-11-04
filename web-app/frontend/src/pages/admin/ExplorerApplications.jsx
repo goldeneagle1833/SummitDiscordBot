@@ -13,11 +13,14 @@ import {
   deleteApplication,
   regeocodeApplication,
   refreshLgsAttendance,
+  confirmApplicationDates,
+  setApplicationDates,
   EXPORT_CSV_URL,
 } from '@/api/explorerApplications'
 
 import { STATUS_COLORS } from '@/components/explorer/statusColors'
 import LgsAttendance from '@/components/explorer/LgsAttendance'
+import ApplicationDates from '@/components/explorer/ApplicationDates'
 import ApplicantLocations from '@/components/explorer/ApplicantLocations'
 
 const STATUS_OPTIONS = [
@@ -63,19 +66,21 @@ function percent(count, total) {
  */
 function ApplicationMetrics({
   applications, statusFilter, onStatusFilter, fewVotes, onFewVotes, needsMyVote, onNeedsMyVote,
+  datesCheck, onDatesCheck,
 }) {
   const total = applications.length
   const candidates = applications.filter((a) => a.source === 'admin_added').length
   const needVotes = applications.filter((a) => (a.vote_count || 0) < VOTE_TARGET).length
   const needMine = applications.filter((a) => !a.my_vote).length
+  const needDates = applications.filter((a) => a.dates_need_check).length
   const tile = 'bg-bg-raised border rounded-lg p-4 text-left transition-colors'
 
   return (
     <section aria-label="Application metrics" className="space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <button
-          onClick={() => { onStatusFilter(''); onFewVotes(false); onNeedsMyVote(false) }}
-          className={`${tile} ${!statusFilter && !fewVotes && !needsMyVote ? 'border-secondary/60' : 'border-border hover:border-secondary'}`}
+          onClick={() => { onStatusFilter(''); onFewVotes(false); onNeedsMyVote(false); onDatesCheck(false) }}
+          className={`${tile} ${!statusFilter && !fewVotes && !needsMyVote && !datesCheck ? 'border-secondary/60' : 'border-border hover:border-secondary'}`}
         >
           <div className="text-xs text-text-muted">Applications received</div>
           <div className="text-3xl font-display text-secondary">{total}</div>
@@ -105,6 +110,17 @@ function ApplicationMetrics({
           <div className="text-3xl font-display text-sky-300">{needMine}</div>
           <div className="text-xs text-text-muted">
             {needsMyVote ? 'Showing only these. Click to show all.' : "Click to show ones you haven't voted on"}
+          </div>
+        </button>
+        <button
+          onClick={() => onDatesCheck(!datesCheck)}
+          aria-pressed={datesCheck}
+          className={`${tile} ${datesCheck ? 'border-violet-400/60 bg-violet-400/5' : 'border-border hover:border-secondary'}`}
+        >
+          <div className="text-xs text-text-muted">Dates need a check</div>
+          <div className="text-3xl font-display text-violet-300">{needDates}</div>
+          <div className="text-xs text-text-muted">
+            {datesCheck ? 'Showing only these. Click to show all.' : 'Vague or unreadable dates nobody has checked'}
           </div>
         </button>
       </div>
@@ -469,6 +485,19 @@ function ApplicationDetail({ applicationId, currentUserId, onClose, onChanged })
                 <DetailRow label="Owner confirmed?" value={application.lgs_confirmed} />
                 <DetailRow label="Expected attendance" value={application.expected_attendance} />
                 <DetailRow label="Proposed dates" value={application.proposed_dates} />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 py-2 border-b border-border/50">
+                  <dt className="text-xs text-text-muted">Dates for the calendar</dt>
+                  <dd className="sm:col-span-2">
+                    <ApplicationDates
+                      key={(detail.dates || []).map((d) => `${d.id}${d.confirmed_at || ''}`).join()}
+                      dates={detail.dates || []}
+                      needsCheck={detail.dates_need_check}
+                      busy={busy}
+                      onConfirm={() => run(() => confirmApplicationDates(application.id))}
+                      onSave={(dates) => run(() => setApplicationDates(application.id, dates))}
+                    />
+                  </dd>
+                </div>
                 <DetailRow label="Timing notes" value={application.proposed_dates_notes} />
                 <DetailRow label="Events run" value={application.events_run_count} />
                 <DetailRow label="Average headcount" value={application.avg_headcount} />
@@ -669,6 +698,7 @@ export default function ExplorerApplications() {
   const [statusFilter, setStatusFilter] = useState('')
   const [fewVotes, setFewVotes] = useState(false)
   const [needsMyVote, setNeedsMyVote] = useState(false)
+  const [datesCheck, setDatesCheck] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
@@ -701,6 +731,7 @@ export default function ExplorerApplications() {
     (!statusFilter || a.status === statusFilter)
     && (!fewVotes || (a.vote_count || 0) < VOTE_TARGET)
     && (!needsMyVote || !a.my_vote)
+    && (!datesCheck || a.dates_need_check)
   )
 
   return (
@@ -776,6 +807,8 @@ export default function ExplorerApplications() {
           onFewVotes={setFewVotes}
           needsMyVote={needsMyVote}
           onNeedsMyVote={setNeedsMyVote}
+          datesCheck={datesCheck}
+          onDatesCheck={setDatesCheck}
         />
       )}
 

@@ -227,3 +227,36 @@ def backfill_missing_dates(repo=None) -> int:
         sync_application_dates(repo, application_id)
         filled += 1
     return filled
+
+
+def admin_rows(values) -> list[dict]:
+    """Validate dates a Council member typed: [{start, end?}, ...] in order.
+
+    A row without an end is a single day. Raises ValueError on bad input.
+    """
+    if not isinstance(values, list):
+        raise ValueError("dates must be a list")
+    rows = []
+    for value in values:
+        if not isinstance(value, dict):
+            raise ValueError("Each date needs a start")
+        start_text = str(value.get("start") or "").strip()
+        end_text = str(value.get("end") or "").strip() or start_text
+        if not start_text:
+            continue
+        try:
+            start, end = date.fromisoformat(start_text), date.fromisoformat(end_text)
+        except ValueError:
+            raise ValueError(f"'{start_text}' is not a valid date") from None
+        if end < start:
+            raise ValueError("An end date can't be before its start")
+        if (end - start).days > 92:
+            raise ValueError("A date window can be at most three months long")
+        rows.append({
+            "start": start.isoformat(), "end": end.isoformat(),
+            "precision": "day" if start == end else "range",
+            "confidence": "high", "raw": "set by the Council",
+        })
+    if len(rows) > MAX_PICKED_DATES:
+        raise ValueError(f"At most {MAX_PICKED_DATES} dates")
+    return rows

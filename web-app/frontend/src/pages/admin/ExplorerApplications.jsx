@@ -18,6 +18,7 @@ import {
 
 import { STATUS_COLORS } from '@/components/explorer/statusColors'
 import LgsAttendance from '@/components/explorer/LgsAttendance'
+import ApplicantLocations from '@/components/explorer/ApplicantLocations'
 
 const STATUS_OPTIONS = [
   { value: 'pending', label: 'Pending' },
@@ -756,6 +757,13 @@ export default function ExplorerApplications() {
         <div className="text-sm rounded p-3 border bg-accent-red/10 border-accent-red/30 text-accent-red">
           {error}
         </div>
+      )}
+
+      {!loading && applications.length > 0 && (
+        <ApplicantLocations
+          applications={applications}
+          onSelect={(application) => setSelectedId(application.id)}
+        />
       )}
 
       {!loading && applications.length > 0 && (

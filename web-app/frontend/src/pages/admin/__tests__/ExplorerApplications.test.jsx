@@ -117,10 +117,11 @@ describe('ExplorerApplications admin page', () => {
     expect(screen.getByText('Unscored')).toBeInTheDocument()
   })
 
-  it('does not show the applications map', async () => {
+  it('shows the applicant locations map above the metrics, whatever the filters', async () => {
     renderWithRouter(<ExplorerApplications />)
     await screen.findByText('Ruben Sanchez')
-    expect(screen.queryByTestId('map')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Applicant locations' })).toBeInTheDocument()
+    expect(await screen.findByTestId('map')).toBeInTheDocument()
     expect(screen.queryByText('Not on the map')).not.toBeInTheDocument()
   })
 

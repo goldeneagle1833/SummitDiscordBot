@@ -469,6 +469,7 @@ function ApplicationDetail({ applicationId, currentUserId, onClose, onChanged })
                 <DetailRow label="Owner confirmed?" value={application.lgs_confirmed} />
                 <DetailRow label="Expected attendance" value={application.expected_attendance} />
                 <DetailRow label="Proposed dates" value={application.proposed_dates} />
+                <DetailRow label="Timing notes" value={application.proposed_dates_notes} />
                 <DetailRow label="Events run" value={application.events_run_count} />
                 <DetailRow label="Average headcount" value={application.avg_headcount} />
                 <DetailRow label="Event experience" value={application.events_run} />

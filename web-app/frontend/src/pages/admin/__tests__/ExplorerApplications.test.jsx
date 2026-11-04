@@ -166,6 +166,28 @@ describe('ExplorerApplications admin page', () => {
     expect(screen.getByText('Kevin Rodriguez')).toBeInTheDocument()
   })
 
+  it('filters to applications the signed-in admin has not voted on', async () => {
+    getApplications.mockResolvedValue({
+      applications: [
+        { ...application, my_vote: 1 },
+        { ...unmapped, my_vote: 0 },
+        { ...application, id: 3, first_name: 'Fresh', my_vote: 0 },
+      ],
+    })
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerApplications />)
+    const metrics = await screen.findByRole('region', { name: 'Application metrics' })
+    expect(within(metrics).getByText('Need my vote').nextSibling).toHaveTextContent('2')
+
+    await user.click(screen.getByRole('button', { name: /Need my vote/ }))
+    expect(screen.queryByText('Ruben Sanchez')).not.toBeInTheDocument()
+    expect(screen.getByText('Kevin Rodriguez')).toBeInTheDocument()
+    expect(screen.getByText('Fresh Sanchez')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Applications received/ }))
+    expect(screen.getByText('Ruben Sanchez')).toBeInTheDocument()
+  })
+
   it('no longer shows the Community Series events map controls', async () => {
     renderWithRouter(<ExplorerApplications />)
     await screen.findByText('Ruben Sanchez')

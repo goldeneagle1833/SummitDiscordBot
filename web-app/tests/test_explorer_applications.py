@@ -261,6 +261,32 @@ class TestVoting:
         assert row["average_score"] is None
         assert row["vote_count"] == 0
 
+    def test_listing_flags_applications_the_current_admin_voted_on(
+        self, admin_session, application_id
+    ):
+        repo = ExplorerApplicationRepository()
+        other_id = repo.create_application(
+            "999888777666555444", valid_application(lgs_name="Other Store"), source="application"
+        )
+        repo.upsert_vote(application_id, "admin_user_1", "AdminUser",
+                         {"enthusiasm": 4, "track_record": 4, "local_activity": 4})
+        repo.upsert_vote(other_id, "explorer_admin_1", "ExplorerAdmin",
+                         {"enthusiasm": 2, "track_record": 2, "local_activity": 2})
+
+        listing = admin_session.get("/api/explorer/applications").get_json()["applications"]
+        mine = {a["id"]: a["my_vote"] for a in listing}
+        assert mine == {application_id: 1, other_id: 0}
+
+    def test_my_vote_works_with_the_status_filter(self, admin_session, application_id):
+        ExplorerApplicationRepository().upsert_vote(
+            application_id, "admin_user_1", "AdminUser",
+            {"enthusiasm": 4, "track_record": None, "local_activity": None},
+        )
+        listing = admin_session.get(
+            "/api/explorer/applications?status=pending"
+        ).get_json()["applications"]
+        assert [a["my_vote"] for a in listing] == [1]
+
     @pytest.mark.parametrize("score", [0, 6, -1, 99])
     def test_scores_outside_1_to_5_are_rejected(self, admin_session, application_id, score):
         res = admin_session.post(

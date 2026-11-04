@@ -151,14 +151,18 @@ class ExplorerApplicationRepository:
             conn.commit()
             return self.get_application(row["id"])
 
-    def list_applications(self, status: str | None = None) -> list[dict]:
+    def list_applications(
+        self, status: str | None = None, voter_user_id: str | None = None
+    ) -> list[dict]:
         """List applications with their vote aggregate, newest first.
 
         Each row carries ``average_score`` (mean of every score a reviewer has
-        given, across all three criteria) and ``vote_count``.
+        given, across all three criteria) and ``vote_count``. When
+        ``voter_user_id`` is given, each row also carries ``my_vote`` (1 if
+        that reviewer has voted on it, else 0).
         """
         where = " WHERE a.status = ?" if status else ""
-        params = (status,) if status else ()
+        params = (str(voter_user_id or ""),) + ((status,) if status else ())
         with self._conn() as conn:
             rows = conn.execute(
                 f"""
@@ -168,7 +172,10 @@ class ExplorerApplicationRepository:
                        AVG(v.track_record) AS avg_track_record,
                        AVG(v.local_activity) AS avg_local_activity,
                        (SELECT COUNT(*) FROM explorer_application_comments c
-                         WHERE c.application_id = a.id) AS comment_count
+                         WHERE c.application_id = a.id) AS comment_count,
+                       EXISTS (SELECT 1 FROM explorer_application_votes mv
+                                WHERE mv.application_id = a.id
+                                  AND mv.voter_user_id = ?) AS my_vote
                 FROM explorer_applications a
                 LEFT JOIN explorer_application_votes v ON v.application_id = a.id
                 {where}

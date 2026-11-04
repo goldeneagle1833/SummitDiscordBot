@@ -300,7 +300,8 @@ def list_applications():
     if status and status not in STATUSES:
         return jsonify({"success": False, "error": f"Unknown status '{status}'"}), 400
 
-    applications = ExplorerApplicationRepository().list_applications(status)
+    voter_id, _ = _current_user()
+    applications = ExplorerApplicationRepository().list_applications(status, voter_id or None)
     return jsonify({"success": True, "applications": applications}), 200
 
 

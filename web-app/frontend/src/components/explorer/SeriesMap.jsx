@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
+import { useState, useEffect } from 'react'
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services'
@@ -60,6 +60,19 @@ function readStoredStyle(storageKey) {
   }
 }
 
+/** Zooms the map to frame every pin, once, when the pins first arrive. */
+function FitToPoints({ points }) {
+  const map = useMap()
+  const hasPoints = points.length > 0
+  useEffect(() => {
+    if (!hasPoints) return
+    map.fitBounds(points.map((p) => [p.latitude, p.longitude]), { padding: [30, 30], maxZoom: 6 })
+    // Only on first arrival, so a reviewer's own pan and zoom stick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, hasPoints])
+  return null
+}
+
 /**
  * Shared pin map for the Explorer Series.
  *
@@ -74,6 +87,7 @@ export default function SeriesMap({
   storageKey,
   center = DEFAULT_CENTER,
   zoom = DEFAULT_ZOOM,
+  fitToPoints = false,
 }) {
   const [style, setStyle] = useState(() => readStoredStyle(storageKey))
 
@@ -111,6 +125,7 @@ export default function SeriesMap({
           {tiles.labels && (
             <TileLayer key={`${style}-labels`} url={tiles.labels} maxZoom={tiles.maxZoom} />
           )}
+          {fitToPoints && <FitToPoints points={points} />}
           {points.map((point) => (
             <CircleMarker
               key={point.id}

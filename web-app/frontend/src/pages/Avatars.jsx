@@ -16,6 +16,8 @@ import PageTabs from "@/components/ui/PageTabs";
 import { AVATAR_TABS } from "@/utils/pageTabs";
 import usePageTitle from "@/hooks/usePageTitle";
 import DataReleaseNote from "@/components/ui/DataReleaseNote";
+import MetaMap from "@/components/meta/MetaMap";
+import { avatarArchetypes } from "@/utils/avatarTiers";
 
 const SORT_OPTIONS = [
   { value: "avatar-score", label: "Avatar Score" },
@@ -25,6 +27,8 @@ const SORT_OPTIONS = [
   { value: "most-wins", label: "Wins" },
   { value: "best-record", label: "Best Record (+/-)" },
 ];
+
+const MAP_OPEN_KEY = "avatars.metaMapOpen";
 
 const SORT_LABELS = {
   "avatar-score": "Avatar Score",
@@ -403,6 +407,17 @@ export default function Avatars() {
     () => avatars.reduce((s, a) => s + a.total, 0),
     [avatars],
   );
+  const metaMap = useMemo(() => avatarArchetypes(avatars), [avatars]);
+  // Open by default; a collapse is remembered for this browser session only.
+  const [mapOpen, setMapOpen] = useState(() => {
+    try { return sessionStorage.getItem(MAP_OPEN_KEY) !== "0"; } catch { return true; }
+  });
+  const toggleMap = () => {
+    setMapOpen((open) => {
+      try { sessionStorage.setItem(MAP_OPEN_KEY, open ? "0" : "1"); } catch { /* storage blocked */ }
+      return !open;
+    });
+  };
 
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>;
 
@@ -483,6 +498,33 @@ export default function Avatars() {
         <Spinner className="py-20" />
       ) : (
         <>
+          <section className="max-w-6xl mx-auto mb-8" aria-labelledby="avatar-meta-map">
+            <h2 id="avatar-meta-map" className="text-lg font-semibold mb-1">
+              <button
+                type="button"
+                onClick={toggleMap}
+                aria-expanded={mapOpen}
+                className="flex items-center justify-center gap-2 w-full text-text-primary hover:text-secondary transition-colors">
+                <span className={`text-xs transition-transform ${mapOpen ? "rotate-90" : ""}`}>&#9654;</span>
+                Avatar Meta Map
+              </button>
+            </h2>
+            {mapOpen && (
+              <>
+                <p className="text-xs text-text-muted text-center mb-3">
+                  Play rate across, win rate up, for {playDrawLabel === "Overall (from 2/7/2026 onward)" ? "all events" : playDrawLabel}.
+                  Dot colour is the tier (gold S, yellow A, blue B, grey C), worked out the same way as the Meta Report.
+                  Avatars need {metaMap.minimum}+ games to show.
+                </p>
+                {metaMap.archetypes.length ? (
+                  <MetaMap archetypes={metaMap.archetypes} linkAvatars noun="Avatar" fluid />
+                ) : (
+                  <p className="text-text-muted text-sm text-center py-4">Not enough games for this event yet.</p>
+                )}
+              </>
+            )}
+          </section>
+
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-8">
             {sorted.map((avatar, i) => {
               const imgFile = getAvatarImagePath(avatar.name, imageFiles);

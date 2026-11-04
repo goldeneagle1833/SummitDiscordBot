@@ -128,6 +128,8 @@ def create_explorer_application_tables(db_path=None):
         "lgs_history": "TEXT",
         "lgs_checked_at": "TEXT",
         "lgs_lookup_error": "TEXT",
+        # Suggested 1-5 Local activity score worked out from the median above.
+        "lgs_activity_score": "INTEGER",
         # The decision the applicant has been told about. Status changes stay
         # internal to the Council until an admin publishes them.
         "published_status": "TEXT",
@@ -141,6 +143,21 @@ def create_explorer_application_tables(db_path=None):
                 f"ALTER TABLE explorer_applications ADD COLUMN {column} {column_type}"
             )
             logger.info("Added %s to explorer_applications", column)
+
+    # Stores checked before the suggested score existed: work it out from the
+    # median we already saved, so nobody has to re-check every store.
+    from services.lgs_attendance import activity_score
+    rows = cursor.execute(
+        """SELECT id, lgs_median_players FROM explorer_applications
+           WHERE lgs_activity_score IS NULL AND lgs_median_players IS NOT NULL"""
+    ).fetchall()
+    for application_id, median in rows:
+        score = activity_score(median)
+        if score is not None:
+            cursor.execute(
+                "UPDATE explorer_applications SET lgs_activity_score = ? WHERE id = ?",
+                (score, application_id),
+            )
 
     conn.commit()
     conn.close()

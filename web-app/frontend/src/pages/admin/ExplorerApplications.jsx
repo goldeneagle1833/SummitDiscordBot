@@ -260,10 +260,13 @@ function PublishModal({ preview, onClose, onPublished }) {
   )
 }
 
-function ScoreSelect({ value, onChange, label }) {
+function ScoreSelect({ value, onChange, label, hint }) {
   return (
     <label className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-text-muted">{label}</span>
+      <span className="text-text-muted">
+        {label}
+        {hint && <span className="block text-xs text-secondary/80">{hint}</span>}
+      </span>
       <select
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
@@ -344,6 +347,8 @@ function ApplicationDetail({ applicationId, currentUserId, onClose, onChanged })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [scores, setScores] = useState({ enthusiasm: null, track_record: null, local_activity: null })
+  // Whether this reviewer has already saved a Local activity score of their own.
+  const [savedLocalActivity, setSavedLocalActivity] = useState(false)
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -353,11 +358,14 @@ function ApplicationDetail({ applicationId, currentUserId, onClose, onChanged })
       const data = await getApplication(applicationId)
       setDetail(data)
       const mine = (data.votes || []).find((v) => String(v.voter_user_id) === String(currentUserId))
+      // Local activity starts from the score suggested by the store's real
+      // attendance; the reviewer can change it before saving.
       setScores({
         enthusiasm: mine?.enthusiasm ?? null,
         track_record: mine?.track_record ?? null,
-        local_activity: mine?.local_activity ?? null,
+        local_activity: mine?.local_activity ?? data.application?.lgs_activity_score ?? null,
       })
+      setSavedLocalActivity(mine?.local_activity != null)
       setError(null)
     } catch (err) {
       setError(err.message || 'Failed to load application')
@@ -381,6 +389,16 @@ function ApplicationDetail({ applicationId, currentUserId, onClose, onChanged })
   }
 
   const application = detail?.application
+
+  const autoLocalActivity = application?.lgs_activity_score ?? null
+  const localActivityHint = (() => {
+    if (autoLocalActivity == null) return null
+    if (!savedLocalActivity && scores.local_activity === autoLocalActivity) {
+      return `Auto-filled from store attendance (not saved yet)`
+    }
+    if (scores.local_activity === autoLocalActivity) return 'Matches store attendance'
+    return `Store attendance suggests ${autoLocalActivity}`
+  })()
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4">
@@ -473,6 +491,7 @@ function ApplicationDetail({ applicationId, currentUserId, onClose, onChanged })
                     <ScoreSelect
                       key={key}
                       label={label}
+                      hint={key === 'local_activity' ? localActivityHint : null}
                       value={scores[key]}
                       onChange={(value) => setScores((s) => ({ ...s, [key]: value }))}
                     />

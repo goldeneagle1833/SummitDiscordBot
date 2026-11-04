@@ -342,6 +342,88 @@ class TestLgsAttendance:
         assert res.status_code == 200
         assert res.get_json()["application"]["lgs_median_players"] == 25
 
+    @pytest.mark.parametrize("median, score", [
+        (None, None), (0, None), (1, 1), (3, 1), (4, 2), (7, 2), (8, 3),
+        (11, 3), (12, 4), (15, 4), (16, 5), (40, 5),
+    ])
+    def test_suggested_local_activity_score(self, median, score):
+        assert lgs_attendance.activity_score(median) == score
+
+    def test_summary_carries_the_suggested_score(self):
+        summary = lgs_attendance.summarise(venue_payload([(10, 9), (40, 10), (70, 11)]))
+        assert summary["lgs_activity_score"] == 3
+
+    def test_no_recent_events_means_no_suggested_score(self):
+        summary = lgs_attendance.summarise(venue_payload([(400, 50)]))
+        assert summary["lgs_activity_score"] is None
+
+    def test_recheck_saves_the_suggested_score(self, applicant_session):
+        applicant_session.post(
+            "/api/explorer/applications",
+            json=valid_application(lgs_url="https://sorcerytcg.com/stores/abc"),
+        )
+        application = ExplorerApplicationRepository().get_by_discord_user("555000111222333444")
+        login_as(applicant_session, "admin_user_1", "AdminUser")
+
+        with patch(
+            "services.explorer.ExplorerService.fetch_venue_attendance",
+            return_value=venue_payload([(10, 12), (40, 14)]),
+        ):
+            applicant_session.post(
+                f"/api/explorer/applications/{application['id']}/lgs-attendance"
+            )
+        stored = ExplorerApplicationRepository().get_application(application["id"])
+        assert stored["lgs_activity_score"] == 4
+        listed = applicant_session.get("/api/explorer/applications").get_json()
+        assert listed["applications"][0]["lgs_activity_score"] == 4
+
+    def test_reviewer_can_still_override_the_suggested_score(self, applicant_session):
+        applicant_session.post(
+            "/api/explorer/applications",
+            json=valid_application(lgs_url="https://sorcerytcg.com/stores/abc"),
+        )
+        application = ExplorerApplicationRepository().get_by_discord_user("555000111222333444")
+        login_as(applicant_session, "admin_user_1", "AdminUser")
+        with patch(
+            "services.explorer.ExplorerService.fetch_venue_attendance",
+            return_value=venue_payload([(10, 20)]),
+        ):
+            applicant_session.post(
+                f"/api/explorer/applications/{application['id']}/lgs-attendance"
+            )
+
+        res = applicant_session.post(
+            f"/api/explorer/applications/{application['id']}/vote",
+            json={"enthusiasm": 4, "track_record": 3, "local_activity": 2},
+        )
+        assert res.status_code == 200
+        assert res.get_json()["votes"][0]["local_activity"] == 2
+        # The suggestion itself is untouched by the reviewer's choice.
+        stored = ExplorerApplicationRepository().get_application(application["id"])
+        assert stored["lgs_activity_score"] == 5
+
+    def test_startup_backfills_scores_for_stores_already_checked(self, applicant_session):
+        import sqlite3
+        import webapp_config
+        from migrations.create_explorer_application_tables import (
+            create_explorer_application_tables,
+        )
+
+        applicant_session.post("/api/explorer/applications", json=valid_application())
+        application = ExplorerApplicationRepository().get_by_discord_user("555000111222333444")
+        conn = sqlite3.connect(str(webapp_config.EXPLORER_DB_PATH))
+        conn.execute(
+            "UPDATE explorer_applications SET lgs_median_players = 9, "
+            "lgs_activity_score = NULL WHERE id = ?",
+            (application["id"],),
+        )
+        conn.commit()
+        conn.close()
+
+        create_explorer_application_tables()
+        stored = ExplorerApplicationRepository().get_application(application["id"])
+        assert stored["lgs_activity_score"] == 3
+
     def test_rechecking_without_a_store_link_is_rejected(self, applicant_session):
         applicant_session.post("/api/explorer/applications", json=valid_application(lgs_url="not registered"))
         application = ExplorerApplicationRepository().get_by_discord_user("555000111222333444")

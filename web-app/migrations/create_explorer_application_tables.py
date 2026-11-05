@@ -134,6 +134,9 @@ def create_explorer_application_tables(db_path=None):
         # internal to the Council until an admin publishes them.
         "published_status": "TEXT",
         "published_at": "TEXT",
+        # Free-text note beside the date pickers ("flexible", "any weekend in
+        # June"). Older applications put everything in proposed_dates.
+        "proposed_dates_notes": "TEXT",
     }
     cursor.execute("PRAGMA table_info(explorer_applications)")
     existing = {row[1] for row in cursor.fetchall()}
@@ -158,6 +161,36 @@ def create_explorer_application_tables(db_path=None):
                 "UPDATE explorer_applications SET lgs_activity_score = ? WHERE id = ?",
                 (score, application_id),
             )
+
+    # Each application's preferred event dates as structured rows, read from
+    # the free-text answer (source 'parser') or the apply form's date pickers
+    # ('applicant'), or set by a Council member ('admin'). Feeds the events
+    # calendar. The applicant's proposed_dates text is never changed.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS explorer_application_dates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            application_id INTEGER NOT NULL
+                REFERENCES explorer_applications(id) ON DELETE CASCADE,
+            choice_rank INTEGER NOT NULL,
+            start_date TEXT,
+            end_date TEXT,
+            precision TEXT NOT NULL,
+            confidence TEXT NOT NULL,
+            raw_text TEXT,
+            source TEXT NOT NULL DEFAULT 'parser',
+            confirmed_by TEXT,
+            confirmed_at TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_explorer_application_dates_app
+        ON explorer_application_dates (application_id)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_explorer_application_dates_start
+        ON explorer_application_dates (start_date)
+    """)
 
     conn.commit()
     conn.close()

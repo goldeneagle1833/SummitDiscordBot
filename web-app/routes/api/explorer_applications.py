@@ -18,8 +18,15 @@ from repositories.explorer_applications import (
     SCORE_FIELDS,
     STATUSES,
     ExplorerApplicationRepository,
+    dates_need_check,
 )
 from services.explorer import SORCERY_STORE_URL_RE
+from services.explorer_dates import (
+    admin_rows,
+    format_picked_dates,
+    parse_picked_dates,
+    sync_application_dates,
+)
 from services.geocoding import geocode_location
 from services.explorer_notifications import (
     notify_new_application_in_background,
@@ -63,6 +70,33 @@ def _collect_fields(data: dict) -> dict:
         else:
             fields[name] = _clean(data[name])
     return fields
+
+
+def _picked_dates(data: dict, fields: dict):
+    """Read the apply form's date pickers into fields.
+
+    Returns (picked, error). picked is None when the request didn't send
+    "proposed_date_list" (older clients, admin-added candidates), in which
+    case the free-text proposed_dates is used as before. Picked dates are
+    also written to proposed_dates as text so exports and the review page
+    keep working.
+    """
+    if "proposed_date_list" not in data:
+        return None, None
+    try:
+        picked = parse_picked_dates(data.get("proposed_date_list"))
+    except ValueError as e:
+        return None, str(e)
+    fields["proposed_dates"] = format_picked_dates(picked)
+    return picked, None
+
+
+def _sync_dates(repo: ExplorerApplicationRepository, application_id: int, picked) -> None:
+    """Refresh the structured date rows; never blocks saving the application."""
+    try:
+        sync_application_dates(repo, application_id, picked)
+    except Exception:
+        logger.exception("Could not update dates for Explorer application %s", application_id)
 
 
 # What the form stores when the applicant ticks "the store isn't listed".
@@ -138,6 +172,9 @@ def submit_application():
 
     data = request.get_json(silent=True) or {}
     fields = _collect_fields(data)
+    picked, dates_error = _picked_dates(data, fields)
+    if dates_error:
+        return jsonify({"success": False, "error": dates_error}), 400
 
     missing = [name for name in REQUIRED_FIELDS if not fields.get(name)]
     if missing:
@@ -169,6 +206,7 @@ def submit_application():
         repo.update_application(application_id, fields)
     else:
         application_id = repo.create_application(user_id, fields, source="application")
+    _sync_dates(repo, application_id, picked)
 
     _geocode_in_background(
         application_id, fields.get("city"), fields.get("state"), fields.get("country")
@@ -222,7 +260,35 @@ def _applicant_view(application: dict | None) -> dict | None:
     view.pop("published_at", None)
     view["editable"] = _is_editable(application)
     view["status"] = published if published in DECIDED_STATUSES else "pending"
+    view.update(_date_picker_values(application))
     return view
+
+
+def _date_picker_values(application: dict) -> dict:
+    """Prefill the apply form's date pickers when an applicant edits.
+
+    Exact days go into the pickers. If an older free-text answer had vaguer
+    parts ("mid-June", "TBD"), the original words go into the notes box so
+    nothing the applicant wrote is lost.
+    """
+    if not application.get("id"):
+        return {"proposed_date_list": []}
+    try:
+        rows = ExplorerApplicationRepository().get_dates(application["id"])
+    except Exception:
+        rows = []
+    days = [r["start_date"] for r in rows if r["precision"] == "day" and r["start_date"]]
+    values = {"proposed_date_list": days[:3]}
+    vague = any(r["precision"] != "day" for r in rows) or len(days) > 3
+    from_text = not rows or all(r["source"] == "parser" for r in rows)
+    if (
+        not application.get("proposed_dates_notes")
+        and from_text
+        and (vague or not rows)
+        and application.get("proposed_dates")
+    ):
+        values["proposed_dates_notes"] = application["proposed_dates"]
+    return values
 
 
 @explorer_applications_bp.route("/mine", methods=["PUT"])
@@ -255,6 +321,9 @@ def update_my_application(application_id=None):
 
     data = request.get_json(silent=True) or {}
     fields = _collect_fields(data)
+    picked, dates_error = _picked_dates(data, fields)
+    if dates_error:
+        return jsonify({"success": False, "error": dates_error}), 400
 
     missing = [name for name in REQUIRED_FIELDS if name in fields and not fields[name]]
     if missing:
@@ -269,6 +338,8 @@ def update_my_application(application_id=None):
             return jsonify({"success": False, "error": store_error}), 400
 
     repo.update_application(existing["id"], fields)
+    if picked is not None or "proposed_dates" in fields or "proposed_dates_notes" in fields:
+        _sync_dates(repo, existing["id"], picked)
 
     # Re-place the pin if they moved.
     moved = any(
@@ -314,12 +385,52 @@ def get_application(application_id):
     if not application:
         return jsonify({"success": False, "error": "Application not found"}), 404
 
+    dates = repo.get_dates(application_id)
     return jsonify({
         "success": True,
         "application": application,
         "votes": repo.get_votes(application_id),
         "comments": repo.get_comments(application_id),
+        "dates": dates,
+        "dates_need_check": dates_need_check(application, dates),
     }), 200
+
+
+def _admin_name() -> str:
+    user_id, username = _current_user()
+    return username or user_id or "admin"
+
+
+@explorer_applications_bp.route("/<int:application_id>/dates/confirm", methods=["POST"])
+@require_explorer_admin
+def confirm_dates(application_id):
+    """A Council member says the dates read from this application look right."""
+    repo = ExplorerApplicationRepository()
+    if not repo.get_application(application_id):
+        return jsonify({"success": False, "error": "Application not found"}), 404
+    if not repo.get_dates(application_id):
+        return jsonify({"success": False, "error": "There are no dates to confirm. Add them instead."}), 400
+    repo.confirm_dates(application_id, _admin_name())
+    return jsonify({"success": True, "dates": repo.get_dates(application_id)}), 200
+
+
+@explorer_applications_bp.route("/<int:application_id>/dates", methods=["PUT"])
+@require_explorer_admin
+def set_dates(application_id):
+    """A Council member fixes the dates by hand: [{start, end}, ...], up to 3.
+
+    These are never replaced by re-reading the applicant's answer.
+    """
+    repo = ExplorerApplicationRepository()
+    if not repo.get_application(application_id):
+        return jsonify({"success": False, "error": "Application not found"}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        rows = admin_rows(data.get("dates"))
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    repo.set_admin_dates(application_id, rows, _admin_name())
+    return jsonify({"success": True, "dates": repo.get_dates(application_id)}), 200
 
 
 @explorer_applications_bp.route("/<int:application_id>/vote", methods=["POST"])
@@ -454,6 +565,7 @@ def add_candidate():
     application_id = repo.create_application(
         None, fields, source="admin_added", created_by=admin_name
     )
+    _sync_dates(repo, application_id, None)
 
     if fields.get("city") or fields.get("state"):
         _geocode_in_background(
@@ -522,7 +634,7 @@ def refresh_lgs_attendance(application_id):
 CSV_COLUMNS = (
     "id", "status", "source", "first_name", "last_name", "discord_handle", "email",
     "city", "state", "country", "lgs_name", "lgs_url", "lgs_confirmed",
-    "expected_attendance", "proposed_dates", "events_run_count", "avg_headcount",
+    "expected_attendance", "proposed_dates", "proposed_dates_notes", "events_run_count", "avg_headcount",
     "events_run", "motivation", "reference_contact", "anything_else", "referral",
     "lgs_store_name", "lgs_median_players", "lgs_event_count", "lgs_activity_score",
     "vote_count", "avg_enthusiasm", "avg_track_record", "avg_local_activity",

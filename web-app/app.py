@@ -111,6 +111,14 @@ def create_app() -> Flask:
         logger.error(f"Failed to ensure explorer application tables: {e}")
 
     try:
+        from services.explorer_dates import backfill_missing_dates
+        filled = backfill_missing_dates()
+        if filled:
+            logger.info(f"Parsed preferred dates for {filled} Explorer application(s)")
+    except Exception as e:
+        logger.error(f"Failed to backfill Explorer application dates: {e}")
+
+    try:
         create_explorer_map_support()
     except Exception as e:
         logger.error(f"Failed to ensure explorer map support: {e}")

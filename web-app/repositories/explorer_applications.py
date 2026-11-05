@@ -29,6 +29,7 @@ APPLICATION_FIELDS = (
     "lgs_confirmed",
     "expected_attendance",
     "proposed_dates",
+    "proposed_dates_notes",
     "events_run",
     "events_run_count",
     "avg_headcount",
@@ -43,6 +44,25 @@ APPLICATION_FIELDS = (
 def normalize_handle(handle: str | None) -> str:
     """Lowercase a Discord handle and drop a leading @ so typed handles compare."""
     return (handle or "").strip().lstrip("@").strip().lower()
+
+
+# Date rows a Council member should look at: anything vaguer than an exact
+# date the applicant picked or wrote out in full.
+CHECK_CONFIDENCE = ("low", "none")
+
+
+def dates_need_check(application: dict, dates: list[dict]) -> bool:
+    """True when an application's dates still want a person's eye.
+
+    That's a free-text answer the parser couldn't read, or any vague row
+    (a month, "mid-June", a season) nobody has confirmed yet.
+    """
+    if any(d.get("confirmed_at") or d.get("source") == "admin" for d in dates):
+        return False
+    if not dates:
+        text = (application.get("proposed_dates") or application.get("proposed_dates_notes") or "")
+        return bool(text.strip())
+    return any(d.get("confidence") in CHECK_CONFIDENCE for d in dates)
 
 
 class ExplorerApplicationRepository:
@@ -185,7 +205,14 @@ class ExplorerApplicationRepository:
                 params,
             ).fetchall()
 
-        return [self._with_average(dict(row)) for row in rows]
+        applications = [self._with_average(dict(row)) for row in rows]
+        dates = self.dates_by_application()
+        for application in applications:
+            application["dates"] = dates.get(application["id"], [])
+            application["dates_need_check"] = dates_need_check(
+                application, application["dates"]
+            )
+        return applications
 
     @staticmethod
     def _with_average(row: dict) -> dict:
@@ -371,3 +398,98 @@ class ExplorerApplicationRepository:
             )
             conn.commit()
             return cur.rowcount > 0
+
+    # ── Preferred event dates ────────────────────────────────────────────────
+
+    def get_dates(self, application_id: int) -> list[dict]:
+        """An application's structured date rows, in the applicant's order."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT * FROM explorer_application_dates
+                   WHERE application_id = ?
+                   ORDER BY choice_rank ASC, id ASC""",
+                (application_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def dates_locked(self, application_id: int) -> bool:
+        """True once a Council member has confirmed or fixed these dates.
+
+        Locked dates are never replaced by re-parsing the applicant's text.
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT 1 FROM explorer_application_dates
+                   WHERE application_id = ?
+                     AND (source = 'admin' OR confirmed_at IS NOT NULL)
+                   LIMIT 1""",
+                (application_id,),
+            ).fetchone()
+        return row is not None
+
+    def replace_dates(self, application_id: int, rows: list[dict], source: str) -> None:
+        """Swap an application's date rows for new ones.
+
+        rows are dicts with start, end, precision, confidence and raw, as
+        produced by services.explorer_dates.
+        """
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM explorer_application_dates WHERE application_id = ?",
+                (application_id,),
+            )
+            conn.executemany(
+                """INSERT INTO explorer_application_dates
+                   (application_id, choice_rank, start_date, end_date,
+                    precision, confidence, raw_text, source)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (application_id, rank, row.get("start"), row.get("end"),
+                     row["precision"], row["confidence"], row.get("raw"), source)
+                    for rank, row in enumerate(rows, start=1)
+                ],
+            )
+            conn.commit()
+
+    def application_ids_without_dates(self) -> list[int]:
+        """Applications with no date rows yet (e.g. made before the table existed)."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT a.id FROM explorer_applications a
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM explorer_application_dates d
+                       WHERE d.application_id = a.id
+                   )
+                   ORDER BY a.id"""
+            ).fetchall()
+        return [r["id"] for r in rows]
+
+    def dates_by_application(self) -> dict[int, list[dict]]:
+        """Every application's date rows, keyed by application id."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT * FROM explorer_application_dates
+                   ORDER BY application_id, choice_rank, id"""
+            ).fetchall()
+        grouped: dict[int, list[dict]] = {}
+        for row in rows:
+            grouped.setdefault(row["application_id"], []).append(dict(row))
+        return grouped
+
+    def confirm_dates(self, application_id: int, confirmed_by: str) -> int:
+        """Mark an application's date rows as checked by a Council member."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                """UPDATE explorer_application_dates
+                   SET confirmed_by = ?, confirmed_at = datetime('now')
+                   WHERE application_id = ?""",
+                (confirmed_by, application_id),
+            )
+            conn.commit()
+            return cur.rowcount
+
+    def set_admin_dates(self, application_id: int, rows: list[dict], admin_name: str) -> None:
+        """Replace the dates with ones a Council member entered; they're locked from re-parsing."""
+        self.replace_dates(application_id, rows, source="admin")
+        if rows:
+            self.confirm_dates(application_id, admin_name)

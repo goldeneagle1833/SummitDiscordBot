@@ -104,6 +104,7 @@ const Monitoring = lazyPage(() => import('@/pages/admin/Monitoring'))
 const BracketsAdmin = lazyPage(() => import('@/pages/admin/BracketsAdmin'))
 const UserProfiles = lazyPage(() => import('@/pages/admin/UserProfiles'))
 const ExplorerApplications = lazyPage(() => import('@/pages/admin/ExplorerApplications'))
+const ExplorerCalendar = lazyPage(() => import('@/pages/admin/ExplorerCalendar'))
 const MetaReportsAdmin = lazyPage(() => import('@/pages/admin/MetaReports'))
 const PaperBadgesAdmin = lazyPage(() => import('@/pages/admin/PaperBadges'))
 const MetaReport = lazyPage(() => import('@/pages/MetaReport'))
@@ -286,6 +287,7 @@ const router = createBrowserRouter([
       { path: '/admin/meta-reports', element: <AdminGuard><MetaReportsAdmin /></AdminGuard> },
       { path: '/admin/paper-badges', element: <AdminGuard><PaperBadgesAdmin /></AdminGuard> },
       { path: '/admin/explorer-applications', element: <ExplorerAdminGuard><LazyPage><ExplorerApplications /></LazyPage></ExplorerAdminGuard> },
+      { path: '/admin/explorer-calendar', element: <ExplorerAdminGuard><LazyPage><ExplorerCalendar /></LazyPage></ExplorerAdminGuard> },
       // Error & 404
       { path: '/error', element: <ErrorPage /> },
       { path: '*', element: <NotFound /> },

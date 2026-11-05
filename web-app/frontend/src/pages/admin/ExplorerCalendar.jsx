@@ -4,6 +4,7 @@ import usePageTitle from '@/hooks/usePageTitle'
 import { getApplications } from '@/api/explorerApplications'
 import { STATUS_COLORS } from '@/components/explorer/statusColors'
 import MonthGrid from '@/components/explorer/MonthGrid'
+import CollapsibleSection from '@/components/explorer/CollapsibleSection'
 import {
   BUSY_WEEKEND,
   COMPETING_MILES,
@@ -170,7 +171,8 @@ export default function ExplorerCalendar() {
       )}
 
       {!loading && (
-        <section aria-label="Calendar summary" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <CollapsibleSection title="Summary" storageKey="explorerCalendar.summary" headerClassName="mb-2">
+        <div aria-label="Calendar summary" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="bg-bg-raised border border-border rounded-lg p-4">
             <div className="text-xs text-text-muted">Competing weekends</div>
             <div className="text-3xl font-display text-red-400">{competingWeeks}</div>
@@ -187,9 +189,12 @@ export default function ExplorerCalendar() {
             <div className="text-xs text-text-muted">No dates yet</div>
             <div className="text-3xl font-display text-text-primary">{withoutDates}</div>
           </div>
-        </section>
+        </div>
+        </CollapsibleSection>
       )}
 
+      <CollapsibleSection title="View, filters and key" storageKey="explorerCalendar.filters" headerClassName="mb-2">
+        <div className="space-y-3">
       <div className="inline-flex rounded border border-border overflow-hidden" role="group" aria-label="View">
         {[['grid', 'Overview'], ['list', 'Weekend list']].map(([value, label]) => (
           <button
@@ -261,6 +266,10 @@ export default function ExplorerCalendar() {
         )}
       </div>
 
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Calendar" storageKey="explorerCalendar.calendar" headerClassName="mb-2">
       {loading ? (
         <p className="text-sm text-text-muted">Loading…</p>
       ) : view === 'grid' ? (
@@ -270,15 +279,18 @@ export default function ExplorerCalendar() {
       ) : (
         <div className="space-y-4">
           {months.map((month) => (
-            <section key={month.key} className="bg-bg-raised border border-border rounded-lg overflow-hidden">
-              <h2 className="px-3 py-2 text-sm font-semibold text-secondary border-b border-border">
-                {fmt(`${month.key}-01`, { month: 'long', year: 'numeric' })}
-              </h2>
+            <CollapsibleSection
+              key={month.key}
+              title={fmt(`${month.key}-01`, { month: 'long', year: 'numeric' })}
+              className="bg-bg-raised border border-border rounded-lg overflow-hidden"
+              headerClassName="px-3 py-2 border-b border-border"
+            >
               {month.weeks.map((week) => <WeekRow key={week.start} week={week} />)}
-            </section>
+            </CollapsibleSection>
           ))}
         </div>
       )}
+      </CollapsibleSection>
     </div>
   )
 }

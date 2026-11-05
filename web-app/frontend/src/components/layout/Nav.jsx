@@ -768,6 +768,14 @@ export default function Nav() {
                 onClick={close}
               />
             )}
+            {(user?.is_explorer_admin || user?.is_admin) && (
+              <SidebarLink
+                to="/admin/explorer-calendar"
+                label="Explorer Calendar"
+                location={location}
+                onClick={close}
+              />
+            )}
             {(user?.is_store_admin || user?.is_store_staff) && (
               <SidebarLink to="/admin/store" label="Store Admin" location={location} onClick={close} />
             )}

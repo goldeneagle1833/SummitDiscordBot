@@ -18,9 +18,11 @@ from repositories.explorer_applications import (
     SCORE_FIELDS,
     STATUSES,
     ExplorerApplicationRepository,
+    dates_need_check,
 )
 from services.explorer import SORCERY_STORE_URL_RE
 from services.explorer_dates import (
+    admin_rows,
     format_picked_dates,
     parse_picked_dates,
     sync_application_dates,
@@ -383,13 +385,52 @@ def get_application(application_id):
     if not application:
         return jsonify({"success": False, "error": "Application not found"}), 404
 
+    dates = repo.get_dates(application_id)
     return jsonify({
         "success": True,
         "application": application,
         "votes": repo.get_votes(application_id),
         "comments": repo.get_comments(application_id),
-        "dates": repo.get_dates(application_id),
+        "dates": dates,
+        "dates_need_check": dates_need_check(application, dates),
     }), 200
+
+
+def _admin_name() -> str:
+    user_id, username = _current_user()
+    return username or user_id or "admin"
+
+
+@explorer_applications_bp.route("/<int:application_id>/dates/confirm", methods=["POST"])
+@require_explorer_admin
+def confirm_dates(application_id):
+    """A Council member says the dates read from this application look right."""
+    repo = ExplorerApplicationRepository()
+    if not repo.get_application(application_id):
+        return jsonify({"success": False, "error": "Application not found"}), 404
+    if not repo.get_dates(application_id):
+        return jsonify({"success": False, "error": "There are no dates to confirm. Add them instead."}), 400
+    repo.confirm_dates(application_id, _admin_name())
+    return jsonify({"success": True, "dates": repo.get_dates(application_id)}), 200
+
+
+@explorer_applications_bp.route("/<int:application_id>/dates", methods=["PUT"])
+@require_explorer_admin
+def set_dates(application_id):
+    """A Council member fixes the dates by hand: [{start, end}, ...], up to 3.
+
+    These are never replaced by re-reading the applicant's answer.
+    """
+    repo = ExplorerApplicationRepository()
+    if not repo.get_application(application_id):
+        return jsonify({"success": False, "error": "Application not found"}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        rows = admin_rows(data.get("dates"))
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    repo.set_admin_dates(application_id, rows, _admin_name())
+    return jsonify({"success": True, "dates": repo.get_dates(application_id)}), 200
 
 
 @explorer_applications_bp.route("/<int:application_id>/vote", methods=["POST"])

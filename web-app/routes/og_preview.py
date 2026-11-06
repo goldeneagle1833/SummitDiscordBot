@@ -17,6 +17,7 @@ from flask import Blueprint, request, send_from_directory
 from repositories.events import EventRepository
 from repositories.deck_rec_repo import DeckRecRepository
 from repositories.elo import EloRepository
+from services import provisional
 from repositories.card_catalog import CardCatalogRepository
 from services.player import PlayerService
 from utils.formatting import format_event_name, normalize_card_name
@@ -360,6 +361,11 @@ def og_player(player_id: str):
 
         name = player_row["display_name"] if player_row else "Player"
         elo = player_row["online_elo"] if player_row else 1500
+        if provisional.lifetime_is_glicko2():
+            # A provisional Glicko-2 lifetime rating is never shown as a number
+            games = provisional.standings_games().get(str(player_id), (0, 0))[1]
+            if provisional.is_provisional(games):
+                elo = provisional.g2.provisional_label(games)
 
         stats = player_service.get_player_stats(player_id)
         wins = stats["wins"] if stats else 0
@@ -391,6 +397,13 @@ def og_elo():
     try:
         elo_repo = EloRepository()
         standings = elo_repo.get_all_standings()
+        if provisional.lifetime_is_glicko2():
+            # Only settled Glicko-2 players count as ranked (and can be #1)
+            games = provisional.standings_games()
+            standings = [
+                p for p in standings
+                if not provisional.is_provisional(games.get(str(p["user_id"]), (0, 0))[1])
+            ]
         count = len(standings) if standings else 0
         if standings:
             top = standings[0]

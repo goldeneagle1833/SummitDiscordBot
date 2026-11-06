@@ -508,15 +508,15 @@ class DailySummaryCog(commands.Cog):
                 cur.execute(
                     f"""
                     SELECT m.winner_id, m.winner_display_name, m.losser_id, m.losser_display_name,
-                           COALESCE(w.online_elo, w.elo, 1500) as winner_elo,
-                           COALESCE(l.online_elo, l.elo, 1500) as loser_elo
+                           COALESCE(w.online_elo, 1500) as winner_elo,
+                           COALESCE(l.online_elo, 1500) as loser_elo
                     FROM {live_matches()} m
                     LEFT JOIN elo_db.overall_standings w ON w.user_id = m.winner_id
                     LEFT JOIN elo_db.overall_standings l ON l.user_id = m.losser_id
                     WHERE m.timestamp >= ? AND m.timestamp < ? AND m.match_type = 'ranked'
                           {settled}
-                    ORDER BY (COALESCE(w.online_elo, w.elo, 1500)
-                              + COALESCE(l.online_elo, l.elo, 1500)) DESC
+                    ORDER BY (COALESCE(w.online_elo, 1500)
+                              + COALESCE(l.online_elo, 1500)) DESC
                     LIMIT 1
                     """,
                     (start, end),

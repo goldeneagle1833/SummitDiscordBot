@@ -11,6 +11,7 @@ from flask import Blueprint, jsonify, request
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS
 from utils.auth import is_admin
 from utils.deck_sql import avatar_only
+from services import provisional
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,8 @@ def _collect_match_rows(event_filter, source_filter):
         "winner_elo_change", "loser_elo_change",
         "winner_lifetime_elo_change", "loser_lifetime_elo_change",
         "winner_went_first", "loser_went_first",
+        # Glicko-2 game counts, to leave out changes made while provisional
+        *provisional.GAMES_COLUMNS,
     ]
 
     rows = []
@@ -205,6 +208,9 @@ def _collect_match_rows(event_filter, source_filter):
     except Exception as e:
         logger.error(f"Error collecting match rows: {e}")
 
+    # Changes made while a side was provisional (Glicko-2) count for nothing
+    for row in rows:
+        provisional.mask_match(row)
     return rows
 
 

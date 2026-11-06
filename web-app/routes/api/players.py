@@ -23,6 +23,7 @@ from utils.card_images import attach_images, resolve_card_image
 from services.curiosa import deck_url_source, is_deck_url, normalize_deck_url
 from services.avatar_elo import get_player_avatar_changes, get_player_avatar_elo
 from services import provisional
+from services.elo_gap import current_ratings, pre_match_select, ratings_then
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +185,25 @@ def _row_lifetime_delta_hidden(row, did_win) -> bool:
         return True
     has_lifetime = len(row) > 26 and (row[25] if did_win else row[26]) is not None
     return not has_lifetime and _row_change_hidden(row, did_win, "event")
+
+
+# After the games columns, bot rows carry each side's rating before the game,
+# whether the game stored pre-game standings (elo_gap.pre_match_select) and the
+# lifetime ladder that rated it ('glicko2' from Season 9 on)
+PRE_INDEX = GAMES_INDEX + len(provisional.GAMES_COLUMNS)
+LIFETIME_SYSTEM_INDEX = PRE_INDEX + 3
+
+
+def _history_select(columns):
+    """SELECT fragment for the columns from PRE_INDEX on (NULLs where the table lacks them)."""
+    system = "lifetime_system" if "lifetime_system" in columns else "NULL AS lifetime_system"
+    return f"{pre_match_select(columns)}, {system}"
+
+
+def _row_era(row):
+    """'glicko2' for a game rated on the Glicko-2 lifetime ladder, else 'legacy' (Elo lifetime)."""
+    glicko = len(row) > LIFETIME_SYSTEM_INDEX and row[LIFETIME_SYSTEM_INDEX] == "glicko2"
+    return "glicko2" if glicko else "legacy"
 
 
 def _active_event_window():
@@ -1226,6 +1246,9 @@ def player_api(player_id):
     include_current_matches = True  # From match_records or match_reports_web table
     include_archived_matches = True  # From match_records_archive table
     archive_event_id = None  # Specific event to filter in archive
+    # season_match_records keeps every season from 9 on (never archived): bot
+    # games from it are scoped to this event when one is in view
+    live_event_id = None
 
     # Event date range for filtering web matches (which have no event_id column)
     event_start_date = None
@@ -1239,11 +1262,12 @@ def player_api(player_id):
             elo_conn_tmp = sqlite3.connect(str(ELO_DB_PATH))
             elo_cur_tmp = elo_conn_tmp.cursor()
             elo_cur_tmp.execute(
-                "SELECT start_date FROM events WHERE is_active = 1 LIMIT 1"
+                "SELECT start_date, event_id FROM events WHERE is_active = 1 LIMIT 1"
             )
             ev_row = elo_cur_tmp.fetchone()
             if ev_row:
                 event_start_date = ev_row[0]
+                live_event_id = ev_row[1]
             elo_conn_tmp.close()
         except sqlite3.OperationalError:
             pass
@@ -1276,6 +1300,10 @@ def player_api(player_id):
                     event_start_date = ev_row[0]
                     event_end_date = ev_row[1]
                 elo_conn_tmp.close()
+                # Season 9 on: past seasons stay in season_match_records, not the archive
+                if live_matches() == "season_match_records":
+                    include_current_matches = True
+                    live_event_id = archive_event_id
             except (ValueError, TypeError):
                 pass  # Invalid event_id, fall back to lifetime
             except sqlite3.OperationalError:
@@ -1357,6 +1385,10 @@ def player_api(player_id):
         # Voice games have been flagged only since the voice queue preference shipped
         cur.execute(f"PRAGMA table_info({live_matches()})")
         record_cols = {c[1] for c in cur.fetchall()}
+        if (live_event_id is not None and live_matches() == "season_match_records"
+                and "event_id" in record_cols):
+            bot_date_filter += " AND event_id = ?"
+            bot_base_params = (*bot_base_params, live_event_id)
         voice_select = "voice" if "voice" in record_cols else "NULL as voice"
         lifetime_change_select = _lifetime_change_select(record_cols)
         games_select = provisional.games_select(record_cols)
@@ -1391,7 +1423,8 @@ def player_api(player_id):
                     reporter_id,
                     {voice_select},
                     {lifetime_change_select},
-                    {games_select}
+                    {games_select},
+                    {_history_select(record_cols)}
                 FROM {live_matches()}
                 WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                 ORDER BY timestamp DESC
@@ -1525,7 +1558,9 @@ def player_api(player_id):
                     match_comment,
                     reporter_id,
                     {archive_voice_select},
-                    {archive_lifetime_select}
+                    {archive_lifetime_select},
+                    {provisional.games_select(archive_cols)},
+                    {_history_select(archive_cols)}
                 FROM match_records_archive
                 WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                 ORDER BY timestamp DESC
@@ -2147,49 +2182,33 @@ def player_api(player_id):
         "1199 or less": {"wins": 0, "losses": 0},
     }
 
-    # Get opponent ELOs from database
+    # Opponent's rating at the time of each game: stored on newer games (left
+    # out while it was still provisional), today's rating for older ones
     try:
         elo_conn = sqlite3.connect(str(ELO_DB_PATH))
-        elo_cur = elo_conn.cursor()
+        try:
+            ratings_now = current_ratings(elo_conn, paper=source == "web", default=None)
+        except sqlite3.OperationalError:
+            ratings_now = {}
+        elo_conn.close()
 
         # Ranked games only, the same ones as the Ranked Match History table
         for row in (r for r in rows if not _is_casual_row(r)):
             did_win = row[0]
             opponent_id = str(row[11]) if did_win else str(row[10])
-            winner_elo_change = row[7] if row[7] else 0
-            loser_elo_change = row[8] if row[8] else 0
+            if source != "web" and opponent_id.startswith("google_"):
+                opponent_id = opponent_id[7:]
 
-            # Get opponent's current ELO
-            opponent_elo = None
-            if source == "web":
-                # Query paper_standings for web matches
-                try:
-                    elo_cur.execute(
-                        "SELECT paper_elo FROM paper_standings WHERE user_id = ?",
-                        (opponent_id,)
-                    )
-                    opp_row = elo_cur.fetchone()
-                    if opp_row:
-                        opponent_elo = opp_row[0]
-                except sqlite3.OperationalError:
-                    pass
-            else:
-                # Query overall_standings for bot matches
-                # Normalize opponent_id for bot matches (remove google_ prefix if present)
-                opponent_id_normalized = opponent_id
-                if opponent_id.startswith("google_"):
-                    opponent_id_normalized = opponent_id[7:]
-
-                try:
-                    elo_cur.execute(
-                        "SELECT elo FROM overall_standings WHERE user_id = ?",
-                        (opponent_id_normalized,)
-                    )
-                    opp_row = elo_cur.fetchone()
-                    if opp_row:
-                        opponent_elo = opp_row[0]
-                except sqlite3.OperationalError:
-                    pass
+            winner_pre, loser_pre, has_snapshot = (
+                row[PRE_INDEX:PRE_INDEX + 3] if len(row) > PRE_INDEX + 2 else (None, None, 0)
+            )
+            # Today's rating stands in for the opponent only; ours isn't needed
+            now = ratings_now.get(opponent_id)
+            winner_then, loser_then = ratings_then(
+                winner_pre, loser_pre, has_snapshot,
+                0 if did_win else now, now if did_win else 0,
+            )
+            opponent_elo = loser_then if did_win else winner_then
 
             # If we have opponent ELO, categorize by bracket
             if opponent_elo is not None:
@@ -2212,8 +2231,6 @@ def player_api(player_id):
                     elo_bracket_stats[bracket]["wins"] += 1
                 else:
                     elo_bracket_stats[bracket]["losses"] += 1
-
-        elo_conn.close()
     except Exception as e:
         logger.error(f"Error calculating ELO bracket stats: {e}", exc_info=True)
 
@@ -2565,21 +2582,35 @@ def player_api(player_id):
     except sqlite3.OperationalError:
         pass
 
-    # Walk forward, using stored lifetime ELO when available
+    # Walk forward, using stored lifetime ELO when available.
+    # Each point carries its era: "legacy" for the Elo lifetime (Seasons 1-8,
+    # kept as Legacy ELO) and "glicko2" for games on the Glicko-2 lifetime
+    # ladder, which restarted at 1500. The chart draws them apart, so the
+    # restart doesn't read as a drop.
     elo = 1500
     event_idx = 0
+    era = None
     elo_history = []
     for row in elo_history_source:
         did_win = row[0]
         elo_change = row[7] if did_win else row[8]
         match_date = row[6]
+        row_era = _row_era(row)
+        if row_era != era and row_era == "glicko2":
+            elo = 1500  # the Glicko-2 lifetime ladder starts over
+        era = row_era
 
         # Try stored lifetime_elo_after first (index 20 = winner, 21 = loser)
         stored_elo_after = None
         if len(row) > 21:
             stored_elo_after = row[20] if did_win else row[21]
 
-        if stored_elo_after is not None:
+        if era == "glicko2":
+            # Lifetime change, so the tooltip adds up to the lifetime line
+            # (a Glicko-2 season's change is a different ladder)
+            elo_change = _row_lifetime_delta(row, did_win)
+            elo = stored_elo_after if stored_elo_after is not None else elo + elo_change
+        elif stored_elo_after is not None:
             elo = stored_elo_after
         else:
             # Fallback: reconstruct using event boundaries
@@ -2599,8 +2630,9 @@ def player_api(player_id):
             "elo_after": round(elo),
             "result": "Win" if did_win else "Loss",
             "opponent": opponent_name,
+            "era": era,
         }
-        if _row_change_hidden(row, did_win):
+        if era == "legacy" and _row_change_hidden(row, did_win):
             point.update(elo_change=None, elo_change_hidden=True)
         elo_history.append(point)
 

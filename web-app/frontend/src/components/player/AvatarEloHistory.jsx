@@ -22,7 +22,8 @@ export default function AvatarEloHistory({ history, entries = [], eventName, ope
     return [
       { game: 0, elo: 1500, date: 'Start' },
       ...points.map((p, i) => ({
-        game: i + 1,
+        // Glicko-2 points carry the entry's game number (its first 8 games are hidden)
+        game: p.game ?? i + 1,
         elo: p.elo,
         date: p.timestamp
           ? new Date(p.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })

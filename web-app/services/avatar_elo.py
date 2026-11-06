@@ -36,18 +36,26 @@ def _resolve_event(elo_repo: EloRepository, event_filter, archive_event_id):
 
 
 def _history(player_id, event_id, is_current, match_db_path) -> dict[str, list[dict]]:
-    """{avatar: [{match_id, timestamp, elo}, ...]} oldest first.
+    """{avatar: [{match_id, timestamp, elo, game?}, ...]} oldest first.
 
-    Points from an entry's provisional games (Glicko-2) are left out.
+    Points from an entry's provisional games (Glicko-2) are left out; those
+    rows carry ``game``, the entry's game count after the match, so the chart
+    can number games from 9. Season 9 on, a season's games are read from
+    season_match_records (never archived) by event.
     """
-    table, scope, params = (
-        (live_matches(match_db_path), "", ())
-        if is_current
-        else ("match_records_archive", "AND event_id = ?", (event_id,))
-    )
-    id_column = "match_id" if is_current else "original_match_id"
+    live = live_matches(match_db_path)
     conn = sqlite3.connect(str(match_db_path))
     try:
+        if live == "season_match_records" and (is_current or conn.execute(
+            f"SELECT 1 FROM {live} WHERE event_id = ? LIMIT 1", (event_id,)
+        ).fetchone()):
+            # Season 9 on: every season stays in this table (never archived)
+            table, scope, params = live, "AND event_id = ?", (event_id,)
+        elif is_current:
+            table, scope, params = live, "", ()
+        else:
+            table, scope, params = "match_records_archive", "AND event_id = ?", (event_id,)
+        id_column = "match_id" if table == live else "original_match_id"
         cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         if "winner_avatar_elo_after" not in cols:
             return {}
@@ -75,9 +83,10 @@ def _history(player_id, event_id, is_current, match_db_path) -> dict[str, list[d
     history: dict[str, list[dict]] = {}
     for match_id, timestamp, avatar, elo, games in rows:
         if avatar and elo is not None and not provisional.change_hidden(games):
-            history.setdefault(avatar, []).append(
-                {"match_id": match_id, "timestamp": timestamp, "elo": elo}
-            )
+            point = {"match_id": match_id, "timestamp": timestamp, "elo": elo}
+            if games is not None:
+                point["game"] = games  # the entry's game number (Glicko-2 rows)
+            history.setdefault(avatar, []).append(point)
     return history
 
 

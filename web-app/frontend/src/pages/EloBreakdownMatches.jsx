@@ -92,7 +92,11 @@ function MatchRow({ match }) {
         <Link to={`/player/${match.player_id}`} className="text-primary hover:underline">
           {match.player_name}
         </Link>
-        {isNum(match.player_elo) && <span className="text-text-muted text-xs ml-1">({match.player_elo})</span>}
+        {isNum(match.player_elo) && (
+          <span className="text-text-muted text-xs ml-1" title="Rating and season rank at the time of the game">
+            ({match.player_elo}{isNum(match.player_rank_then) && ` · #${match.player_rank_then}`})
+          </span>
+        )}
       </td>
       <td className="px-3 py-2">
         <DeckLinks
@@ -110,7 +114,11 @@ function MatchRow({ match }) {
         <Link to={`/player/${match.opponent_id}`} className="text-primary hover:underline">
           {match.opponent_name}
         </Link>
-        {isNum(match.opponent_elo) && <span className="text-text-muted text-xs ml-1">({match.opponent_elo})</span>}
+        {isNum(match.opponent_elo) && (
+          <span className="text-text-muted text-xs ml-1" title="Rating and season rank at the time of the game">
+            ({match.opponent_elo}{isNum(match.opponent_rank_then) && ` · #${match.opponent_rank_then}`})
+          </span>
+        )}
         {match.opponent_avatar && (
           <span className="text-text-muted text-xs ml-1">- {match.opponent_avatar}</span>
         )}

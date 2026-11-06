@@ -83,3 +83,61 @@ def elo_gap_by_day(cur, tables) -> list[list]:
             g, s = totals.get(day, (0, 0))
             totals[day] = (g + games, s + gap_sum)
     return [[day, g, s] for day, (g, s) in sorted(totals.items())]
+
+
+# --- Rating at game time, for the skill matrices -----------------------------
+
+_BEFORE = tuple(f"{side}_{kind}_before" for side in ("winner", "loser") for kind in ("event", "avatar", "lifetime"))
+
+
+def pre_match_select(columns) -> str:
+    """``winner_pre, loser_pre, has_snapshot`` SELECT fragment for a match table.
+
+    ``has_snapshot`` is 1 when the game stored either side's standing before
+    it (newer games). There a NULL pre-game rating means that side's rating
+    was still provisional; on older games it means nothing was stored.
+    """
+    columns = set(columns)
+    pre = pre_match_sql(columns) or ("NULL", "NULL")
+    stored = [f"{c} IS NOT NULL" for c in _BEFORE if c in columns]
+    snapshot = f"({' OR '.join(stored)})" if stored else "0"
+    return f"{pre[0]} AS winner_pre, {pre[1]} AS loser_pre, {snapshot} AS has_snapshot"
+
+
+def ratings_then(winner_pre, loser_pre, has_snapshot, winner_now, loser_now):
+    """(winner, loser) rating at game time for a skill matrix.
+
+    The stored pre-game rating where there is one. A newer game (it stored
+    standings) leaves a side None when that side was provisional. An older game
+    with nothing stored falls back to both players' current ratings, so old
+    seasons read as they always have (None, None when either is unknown).
+    """
+    if winner_pre is not None and loser_pre is not None:
+        return winner_pre, loser_pre
+    if has_snapshot:
+        return winner_pre, loser_pre
+    if winner_now is None or loser_now is None:
+        return None, None
+    return winner_now, loser_now
+
+
+def current_ratings(elo_conn, paper: bool = False, default=1500) -> dict:
+    """{user_id (str): today's rating}: the fallback for games that stored nothing.
+
+    Online reads ``overall_standings.elo`` where the live database has it (as
+    these views always have), else the Seasons 1-8 lifetime (``legacy_online_elo``)
+    or lifetime ELO. A player with no rating gets ``default``. Raises
+    sqlite3.OperationalError when the table is missing.
+    """
+    if paper:
+        sql = "SELECT user_id, paper_elo FROM paper_standings"
+    else:
+        cols = {row[1] for row in elo_conn.execute("PRAGMA table_info(overall_standings)")}
+        if "elo" in cols:
+            expr = "elo"
+        elif "legacy_online_elo" in cols:
+            expr = "COALESCE(legacy_online_elo, online_elo)"
+        else:
+            expr = "online_elo"
+        sql = f"SELECT user_id, {expr} FROM overall_standings"
+    return {str(uid): rating or default for uid, rating in elo_conn.execute(sql).fetchall()}

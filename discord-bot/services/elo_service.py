@@ -216,10 +216,11 @@ def rate_top_cut_lifetime(match_id, winner_id, winner_name, loser_id, loser_name
         )
         match_conn.execute(
             f"UPDATE {live_matches()} SET lifetime_system = ?, winner_lifetime_elo_change = ?, "
-            "loser_lifetime_elo_change = ?, winner_lifetime_elo_after = ?, loser_lifetime_elo_after = ? "
-            "WHERE rowid = ?",
+            "loser_lifetime_elo_change = ?, winner_lifetime_elo_after = ?, loser_lifetime_elo_after = ?, "
+            "winner_lifetime_games = ?, loser_lifetime_games = ? WHERE rowid = ?",
             (glicko2_season.GLICKO2, life["winner_change"], life["loser_change"],
-             life["winner_rating"], life["loser_rating"], match_id),
+             life["winner_rating"], life["loser_rating"], life["winner_games"], life["loser_games"],
+             match_id),
         )
         elo_conn.commit()
         match_conn.commit()
@@ -1215,6 +1216,11 @@ async def record_match(
     match_event_id = None
     match_rating_system = None
     glicko = False
+    # Glicko-2 ladders: each side's game count after this match (provisional display)
+    match_games = dict.fromkeys((
+        "winner_event_games", "loser_event_games", "winner_avatar_games", "loser_avatar_games",
+        "winner_lifetime_games", "loser_lifetime_games",
+    ))
 
     # Per-avatar ladder (Avatar-mode events only; stays None otherwise)
     avatar_event_id = None
@@ -1358,6 +1364,10 @@ async def record_match(
         winner_elo_change, loser_elo_change = result["winner_change"], result["loser_change"]
         winner_avatar_change, loser_avatar_change = result["winner_avatar_change"], result["loser_avatar_change"]
         winner_avatar_after, loser_avatar_after = result["winner_avatar_after"], result["loser_avatar_after"]
+        match_games.update(
+            winner_event_games=result["winner_games"], loser_event_games=result["loser_games"],
+            winner_avatar_games=result["winner_avatar_games"], loser_avatar_games=result["loser_avatar_games"],
+        )
         logger.info(
             "record_match Glicko-2: %s %+d → %d | %s %+d → %d (avatars %s %s / %s %s)",
             winner_global, winner_elo_change, result["winner_rating"],
@@ -1408,6 +1418,9 @@ async def record_match(
                 winner_lifetime_mult, loser_lifetime_mult = elo_multiplier_winner, elo_multiplier_loser
                 winner_lifetime_change, loser_lifetime_change = life["winner_change"], life["loser_change"]
                 winner_new_elo, loser_new_elo = life["winner_rating"], life["loser_rating"]
+                match_games.update(
+                    winner_lifetime_games=life["winner_games"], loser_lifetime_games=life["loser_games"],
+                )
         except Exception:
             conn_elo.rollback()
             raise
@@ -1458,9 +1471,11 @@ async def record_match(
             "winner_lifetime_elo_after, loser_lifetime_elo_after, pairing_id, voice, "
             "winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, "
             "winner_avatar_elo_after, loser_avatar_elo_after, event_k, replay_url, "
-            "event_id, rating_system, lifetime_system, winner_lifetime_mult, loser_lifetime_mult) "
+            "event_id, rating_system, lifetime_system, winner_lifetime_mult, loser_lifetime_mult, "
+            "winner_event_games, loser_event_games, winner_avatar_games, loser_avatar_games, "
+            "winner_lifetime_games, loser_lifetime_games) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 reporter_id,
                 winner_id, winner_global,
@@ -1500,6 +1515,7 @@ async def record_match(
                 lifetime_system,
                 winner_lifetime_mult,
                 loser_lifetime_mult,
+                *match_games.values(),
             ),
         )
         table_name = "match_records"

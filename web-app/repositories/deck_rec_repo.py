@@ -363,7 +363,7 @@ class DeckRecRepository:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
 
-            for table in ("match_records_archive", "match_records"):
+            for table in ("match_records_archive", "match_records", "season_match_records"):
                 for row in self._fetch_match_rows(cur, table):
                     for side in ("winner", "losser"):
                         json_col, _url_col, _name_col = self._MATCH_SIDE_COLS[side]

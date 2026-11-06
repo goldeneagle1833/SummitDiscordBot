@@ -1,5 +1,6 @@
 """Player API routes."""
 
+from utils.match_tables import live_matches
 import json
 import logging
 import sqlite3
@@ -183,7 +184,7 @@ def _attach_replays(entries: list[dict], player_id: str) -> None:
     try:
         placeholders = ",".join("?" * len(ids))
         found = conn.execute(
-            f"SELECT rowid, replay_url FROM match_records WHERE rowid IN ({placeholders})"
+            f"SELECT rowid, replay_url FROM {live_matches()} WHERE rowid IN ({placeholders})"
             " AND replay_url IS NOT NULL AND replay_url != ''",
             ids,
         ).fetchall()
@@ -304,7 +305,7 @@ def get_deck_stats(player_id):
 
     # Pull every match for this player from both active and archive tables
     all_rows = []
-    for table, id_col in [("match_records", "rowid"), ("match_records_archive", "rowid + 1000000000")]:
+    for table, id_col in [("match_records", "rowid"), ("match_records_archive", "rowid + 1000000000"), ("season_match_records", "rowid")]:
         try:
             cur.execute(
                 f"""
@@ -494,7 +495,7 @@ def _any_display_name(player_id):
     except sqlite3.OperationalError:
         return None
     try:
-        for table in ["match_records", "match_records_archive"]:
+        for table in ["match_records", "match_records_archive", "season_match_records"]:
             try:
                 row = conn.execute(
                     f"""
@@ -527,13 +528,13 @@ def player_avatar_stats(player_id, avatar_name):
     # Period picker, same choices as the profile: lifetime, the current event
     # (live table), a past event (archive rows with that event_id) or a
     # season_* date range. event_start/end date the external matches.
-    tables = ["match_records", "match_records_archive"]
+    tables = [live_matches(), "match_records_archive"]
     archive_event_id = None
     season_range = None
     event_start_date = None
     event_end_date = None
     if event_filter == "current":
-        tables = ["match_records"]
+        tables = [live_matches()]
         event_start_date, event_end_date = _active_event_window()
     elif event_filter.startswith("season_"):
         season = next((sf for sf in SEASON_FILTERS if sf["id"] == event_filter), None)
@@ -1129,8 +1130,8 @@ def player_api(player_id):
     # Check for bot matches (match_records table with INTEGER IDs)
     try:
         cur.execute(
-            """
-            SELECT COUNT(*), MAX(timestamp) FROM match_records
+            f"""
+            SELECT COUNT(*), MAX(timestamp) FROM {live_matches()}
             WHERE winner_id = ? OR losser_id = ?
             """,
             (player_id_normalized, player_id_normalized),
@@ -1301,7 +1302,7 @@ def player_api(player_id):
             bot_date_filter = " AND timestamp >= ? AND timestamp <= ?"
             bot_base_params = (query_player_id, query_player_id, query_player_id, event_start_date, event_end_date)
         # Voice games have been flagged only since the voice queue preference shipped
-        cur.execute("PRAGMA table_info(match_records)")
+        cur.execute(f"PRAGMA table_info({live_matches()})")
         record_cols = {c[1] for c in cur.fetchall()}
         voice_select = "voice" if "voice" in record_cols else "NULL as voice"
         lifetime_change_select = _lifetime_change_select(record_cols)
@@ -1336,7 +1337,7 @@ def player_api(player_id):
                     reporter_id,
                     {voice_select},
                     {lifetime_change_select}
-                FROM match_records
+                FROM {live_matches()}
                 WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                 ORDER BY timestamp DESC
             """,
@@ -1373,7 +1374,7 @@ def player_api(player_id):
                         NULL as loser_lifetime_elo_after,
                         NULL as match_comment,
                         reporter_id
-                    FROM match_records
+                    FROM {live_matches()}
                     WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                     ORDER BY timestamp DESC
                 """,
@@ -1410,7 +1411,7 @@ def player_api(player_id):
                             NULL as loser_lifetime_elo_after,
                             NULL as match_comment,
                             reporter_id
-                        FROM match_records
+                        FROM {live_matches()}
                         WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                         ORDER BY timestamp DESC
                     """,
@@ -1679,11 +1680,11 @@ def player_api(player_id):
                     )
                     displayed_rank = sum(1 for r in elo_cur.fetchall() if str(r[0]) in web_participants) + 1
                 else:
-                    match_cur_tmp.execute("""
+                    match_cur_tmp.execute(f"""
                         SELECT DISTINCT user_id FROM (
-                            SELECT winner_id as user_id FROM match_records WHERE timestamp >= ?
+                            SELECT winner_id as user_id FROM {live_matches()} WHERE timestamp >= ?
                             UNION
-                            SELECT losser_id as user_id FROM match_records WHERE timestamp >= ?
+                            SELECT losser_id as user_id FROM {live_matches()} WHERE timestamp >= ?
                         )
                     """, (event_start_date or "", event_start_date or ""))
                     bot_participants = {row[0] for row in match_cur_tmp.fetchall()}

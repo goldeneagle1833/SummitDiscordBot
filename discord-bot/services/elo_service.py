@@ -7,6 +7,7 @@ import json
 import logging
 
 from services import glicko2_season
+from utils.match_tables import LEGACY_MATCH_TABLE, SEASON_MATCH_TABLE, live_matches
 
 from utils.avatars import read_deck_avatar
 from utils.deck_checker import get_pso_deck_id, scrape_Curosa, scrape_curosa_async
@@ -528,12 +529,12 @@ def get_current_event_match_elo_snapshot(match_id: int):
     match_cur = match_conn.cursor()
 
     match_cur.execute(
-        """
+        f"""
         SELECT rowid as match_id, winner_id, winner_display_name, losser_id, losser_display_name,
                timestamp, match_type, did_win,
                winner_elo_change, loser_elo_change,
                winner_lifetime_elo_change, loser_lifetime_elo_change, event_k
-        FROM match_records
+        FROM {live_matches()}
         WHERE timestamp >= ?
         ORDER BY timestamp ASC, rowid ASC
         """,
@@ -841,7 +842,7 @@ def get_current_event_match_elo_snapshot(match_id: int):
         try:
             avatar_row = conn.execute(
                 "SELECT winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, "
-                "winner_avatar_elo_after, loser_avatar_elo_after FROM match_records WHERE rowid = ?",
+                f"winner_avatar_elo_after, loser_avatar_elo_after FROM {live_matches()} WHERE rowid = ?",
                 (match_id,),
             ).fetchone()
         finally:
@@ -1020,7 +1021,7 @@ async def _update_deck_data(match_id: int, winner_url: str, loser_url: str, tabl
             )
         else:
             conn.execute(
-                "UPDATE match_records SET json_deck_data = ?, json_deck_data_winner = ?, json_deck_data_loser = ? WHERE rowid = ?",
+                f"UPDATE {live_matches()} SET json_deck_data = ?, json_deck_data_winner = ?, json_deck_data_loser = ? WHERE rowid = ?",
                 (winner_json, winner_json, loser_json, match_id),
             )
         conn.commit()
@@ -1034,7 +1035,7 @@ async def _update_deck_data(match_id: int, winner_url: str, loser_url: str, tabl
 # matches into the archive, and the profile page reads both, so a deck that was
 # never fetched (e.g. a PSO link from before the bot accepted them) has to be
 # recovered there too.
-_BACKFILL_TABLES = ("match_records", "match_records_archive")
+_BACKFILL_TABLES = (LEGACY_MATCH_TABLE, "match_records_archive", SEASON_MATCH_TABLE)
 
 
 async def backfill_deck_data() -> None:
@@ -1376,7 +1377,7 @@ async def record_match(
         table_name = "rumble_match_records"
     else:
         cur.execute(
-            "INSERT INTO match_records (reporter_id, winner_id, winner_display_name, "
+            f"INSERT INTO {live_matches()} (reporter_id, winner_id, winner_display_name, "
             "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
             "curiosa_url, curiosa_url_winner, curiosa_url_loser, match_comment, "
             "json_deck_data, json_deck_data_winner, json_deck_data_loser, "
@@ -1479,6 +1480,17 @@ def start_new_event(event_name, elo_mode=PLAYER_MODE, scheduled_end_at=None, rat
     active_event = get_active_event()
     if active_event:
         previous_event_summary = end_current_event()
+
+    if rating_system == glicko2_season.GLICKO2:
+        # The first Glicko-2 season (Season 9) opens the season match table:
+        # Seasons 1-8 stay in match_records / match_records_archive untouched
+        conn_match = sqlite3.connect("match_records.db")
+        try:
+            if glicko2_season.create_season_match_table(conn_match):
+                logger.info("Created %s for Glicko-2 seasons", SEASON_MATCH_TABLE)
+            conn_match.commit()
+        finally:
+            conn_match.close()
 
     # Create new event
     conn = sqlite3.connect("elo.db")
@@ -1601,21 +1613,22 @@ def end_current_event():
     conn_match = sqlite3.connect("match_records.db")
     cur_match = conn_match.cursor()
 
-    if glicko2_season.is_glicko2(active_event):
-        # Season 9 onward: matches stay in match_records, tagged with their
-        # event_id, so nothing is copied to match_records_archive or deleted.
+    season_table = live_matches() == SEASON_MATCH_TABLE
+    if season_table:
+        # Season 9 onward: matches stay in the season match table, tagged with
+        # their event_id, so nothing is copied to match_records_archive or deleted.
         match_count = cur_match.execute(
-            "SELECT COUNT(*) FROM match_records WHERE event_id = ?", (event_id,)
+            f"SELECT COUNT(*) FROM {live_matches()} WHERE event_id = ?", (event_id,)
         ).fetchone()[0]
         matches = []
     else:
         # Copy all matches to archive (Glicko-2 seasons' rows stay put)
-        cur_match.execute(f"SELECT * FROM match_records WHERE {_KEEP_OUT_OF_ARCHIVE}")
+        cur_match.execute(f"SELECT * FROM {LEGACY_MATCH_TABLE} WHERE {_KEEP_OUT_OF_ARCHIVE}")
         matches = cur_match.fetchall()
         match_count = len(matches)
 
     # Get column names from match_records
-    cur_match.execute("PRAGMA table_info(match_records)")
+    cur_match.execute(f"PRAGMA table_info({LEGACY_MATCH_TABLE})")
     columns = [col[1] for col in cur_match.fetchall()]
 
     for match in matches:
@@ -1670,9 +1683,9 @@ def end_current_event():
             ),
         )
 
-    # Clear match_records table (Elo seasons only; see above)
-    if not glicko2_season.is_glicko2(active_event):
-        cur_match.execute(f"DELETE FROM match_records WHERE {_KEEP_OUT_OF_ARCHIVE}")
+    # Clear match_records table (Seasons 1-8 only; see above)
+    if not season_table:
+        cur_match.execute(f"DELETE FROM {LEGACY_MATCH_TABLE} WHERE {_KEEP_OUT_OF_ARCHIVE}")
 
     conn_match.commit()
     conn_match.close()
@@ -1735,7 +1748,7 @@ def recalculate_event_elo() -> dict:
     match_cur.execute(
         f"""
         SELECT rowid, winner_id, losser_id
-        FROM match_records
+        FROM {live_matches()}
         WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
         ORDER BY timestamp ASC, rowid ASC
         """,
@@ -1755,7 +1768,7 @@ def recalculate_event_elo() -> dict:
         player_elos[loser_id] = l_elo + l_change
         player_games[winner_id] = player_games.get(winner_id, 0) + 1
         player_games[loser_id] = player_games.get(loser_id, 0) + 1
-        match_cur.execute("UPDATE match_records SET event_k = ? WHERE rowid = ?", (k_value, rowid))
+        match_cur.execute(f"UPDATE {live_matches()} SET event_k = ? WHERE rowid = ?", (k_value, rowid))
     match_conn.commit()
     match_conn.close()
 
@@ -1847,7 +1860,7 @@ def _recalculate_avatar_event_elo(active_event) -> list:
         matches = match_conn.execute(
             f"""SELECT rowid, winner_id, losser_id, winner_display_name, losser_display_name,
                        timestamp, winner_avatar, loser_avatar, event_k
-                FROM match_records
+                FROM {live_matches()}
                 WHERE timestamp >= ? AND winner_avatar IS NOT NULL AND loser_avatar IS NOT NULL
                   AND {ELO_COUNTING_MATCH_FILTER}
                 ORDER BY timestamp ASC, rowid ASC""",
@@ -1869,7 +1882,7 @@ def _recalculate_avatar_event_elo(active_event) -> list:
             names[m["winner_id"]] = m["winner_display_name"]
             names[m["losser_id"]] = m["losser_display_name"]
             match_conn.execute(
-                "UPDATE match_records SET winner_avatar_elo_change = ?, loser_avatar_elo_change = ?, "
+                f"UPDATE {live_matches()} SET winner_avatar_elo_change = ?, loser_avatar_elo_change = ?, "
                 "winner_avatar_elo_after = ?, loser_avatar_elo_after = ? WHERE rowid = ?",
                 (w_change, l_change, elos[w_key], elos[l_key], m["rowid"]),
             )
@@ -1908,7 +1921,7 @@ def get_match_players(match_id: int) -> dict:
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
     cur.execute(
-        "SELECT winner_id, losser_id, winner_display_name, losser_display_name FROM match_records WHERE rowid = ?",
+        f"SELECT winner_id, losser_id, winner_display_name, losser_display_name FROM {live_matches()} WHERE rowid = ?",
         (match_id,),
     )
     row = cur.fetchone()
@@ -1931,7 +1944,7 @@ _ADMIN_MATCH_COLUMNS = """rowid AS row_id, winner_id, losser_id, winner_display_
 
 
 def _load_admin_match_rows(match_cur, where: str, params) -> list[dict]:
-    match_cur.execute(f"SELECT {_ADMIN_MATCH_COLUMNS} FROM match_records WHERE {where}", params)
+    match_cur.execute(f"SELECT {_ADMIN_MATCH_COLUMNS} FROM {live_matches()} WHERE {where}", params)
     columns = [d[0] for d in match_cur.description]
     return [dict(zip(columns, row)) for row in match_cur.fetchall()]
 
@@ -2025,7 +2038,7 @@ def _replay_match_elo(elo_cur, match_cur, row: dict, active_event, avatar_event_
             )
 
     match_cur.execute(
-        """UPDATE match_records
+        f"""UPDATE {live_matches()}
            SET winner_elo_change = ?, loser_elo_change = ?,
                winner_lifetime_elo_change = ?, loser_lifetime_elo_change = ?,
                winner_lifetime_elo_after = ?, loser_lifetime_elo_after = ?,
@@ -2057,16 +2070,23 @@ def _glicko2_rebuild(elo_conn, match_conn, active_event) -> None:
 
 
 def _closed_season_row(row: dict, active_event) -> bool:
-    """A match from an ended Glicko-2 season (they stay in match_records)."""
-    return row.get("rating_system") == glicko2_season.GLICKO2 and (
+    """A match from an ended season that stayed in the season match table.
+
+    Season 9 onward is never archived, so older seasons' matches sit next to
+    the running season's; the admin fixes leave them alone.
+    """
+    return row.get("rating_system") is not None and (
         not active_event or row.get("event_id") != active_event["event_id"]
     )
 
 
 def _current_rows_sql(active_event) -> tuple[str, tuple]:
-    """SQL limiting match_records to rows the current admin tools may change."""
+    """SQL limiting the live match table to rows the current admin tools may change.
+
+    Untagged rows (no event running when reported) and the running event's.
+    """
     return (
-        f"(COALESCE(rating_system, 'elo') != '{glicko2_season.GLICKO2}' OR event_id = ?)",
+        "(rating_system IS NULL OR event_id = ?)",
         (active_event["event_id"] if active_event else -1,),
     )
 
@@ -2143,7 +2163,7 @@ def correct_match_record(match_id: int) -> dict:
 
         # Flip the target match (players, their decks and their avatars)
         match_cur.execute(
-            """UPDATE match_records
+            f"""UPDATE {live_matches()}
                SET winner_id = losser_id, losser_id = winner_id,
                    winner_display_name = losser_display_name, losser_display_name = winner_display_name,
                    curiosa_url = curiosa_url_loser,
@@ -2166,7 +2186,7 @@ def correct_match_record(match_id: int) -> dict:
             if glicko2_season.is_glicko2(active_event):
                 _glicko2_rebuild(elo_conn, match_conn, active_event)
                 new_w_change, new_l_change = match_conn.execute(
-                    "SELECT winner_elo_change, loser_elo_change FROM match_records WHERE rowid = ?",
+                    f"SELECT winner_elo_change, loser_elo_change FROM {live_matches()} WHERE rowid = ?",
                     (match_id,),
                 ).fetchone()
 
@@ -2242,7 +2262,7 @@ def remove_match_record(match_id: int) -> dict:
                 text += f", {match[f'{side}_avatar']} {-avatar_change:+d}"
             reverted_info.append(text)
 
-        match_cur.execute("DELETE FROM match_records WHERE rowid = ?", (match_id,))
+        match_cur.execute(f"DELETE FROM {live_matches()} WHERE rowid = ?", (match_id,))
         if match["rating_system"] == glicko2_season.GLICKO2:
             # The season's numbers come from a full replay without this match
             _glicko2_rebuild(elo_conn, match_conn, active_event)
@@ -2341,7 +2361,7 @@ def remove_player(user_id: int, user_name: str) -> dict:
                 adjustments_made.append(f"{opp_name}: {event_adj:+d}")
 
         match_cur.execute(
-            f"DELETE FROM match_records WHERE (winner_id = ? OR losser_id = ?) AND {current_sql}",
+            f"DELETE FROM {live_matches()} WHERE (winner_id = ? OR losser_id = ?) AND {current_sql}",
             (user_id, user_id, *current_params),
         )
         matches_deleted = match_cur.rowcount

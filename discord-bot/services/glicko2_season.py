@@ -12,7 +12,9 @@ How a Glicko-2 season is stored:
   that already reads it shows the Glicko-2 number unchanged.
 - ``event_avatar_standings`` (Avatar mode): the same per (player, avatar)
   entry (``rating``, ``rd``, ``vol``), with ``event_elo`` the rounded rating.
-- ``match_records``: each rated match carries ``event_id`` and
+- ``season_match_records`` (created when the first Glicko-2 season starts;
+  see ``create_season_match_table``): every match from then on, never
+  archived. Each rated match carries ``event_id`` and
   ``rating_system = 'glicko2'``. Its ``*_elo_change`` / ``*_avatar_elo_*``
   columns hold the change in the rounded rating, so they add up to the
   number on the leaderboard.
@@ -200,16 +202,105 @@ def ensure_elo_schema(conn: sqlite3.Connection) -> None:
     )
 
 
+# Seasons 1-8 live in match_records / match_records_archive and never change.
+# The first Glicko-2 season creates SEASON_MATCH_TABLE; from then on every
+# new match goes there (tagged with its event) and is never archived.
+LEGACY_MATCH_TABLE = "match_records"
+SEASON_MATCH_TABLE = "season_match_records"
+
+
+def live_match_table(conn: sqlite3.Connection) -> str:
+    """The table current matches are read from and written to."""
+    return SEASON_MATCH_TABLE if _table_exists(conn, SEASON_MATCH_TABLE) else LEGACY_MATCH_TABLE
+
+
 def ensure_match_schema(conn: sqlite3.Connection) -> None:
-    """Add the season and rating-system columns to match_records."""
-    _add_columns(conn, "match_records", (
+    """Add the season and rating-system columns, and keep the season table in step."""
+    _add_columns(conn, LEGACY_MATCH_TABLE, (
         ("event_id", "INTEGER"),
         ("rating_system", "TEXT"),
     ))
-    if _table_exists(conn, "match_records"):
+    if _table_exists(conn, LEGACY_MATCH_TABLE):
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_match_records_event ON match_records (event_id, rating_system)"
         )
+    sync_season_match_table(conn)
+
+
+def sync_season_match_table(conn: sqlite3.Connection) -> None:
+    """Give the season table every column and index match_records has.
+
+    Column migrations are written against match_records; this repeats them
+    on the season table so both always have the same layout.
+    """
+    if not (_table_exists(conn, SEASON_MATCH_TABLE) and _table_exists(conn, LEGACY_MATCH_TABLE)):
+        return
+    have = _columns(conn, SEASON_MATCH_TABLE)
+    for row in conn.execute(f"PRAGMA table_info({LEGACY_MATCH_TABLE})").fetchall():
+        name, decl = row[1], row[2] or ""
+        if name not in have:
+            conn.execute(f"ALTER TABLE {SEASON_MATCH_TABLE} ADD COLUMN {name} {decl}")
+    indexes = conn.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL",
+        (LEGACY_MATCH_TABLE,),
+    ).fetchall()
+    for name, sql in indexes:
+        new_name = f"season_{name}"
+        conn.execute(
+            sql.replace(f"INDEX {name}", f"INDEX IF NOT EXISTS {new_name}", 1)
+               .replace(f"INDEX IF NOT EXISTS {name}", f"INDEX IF NOT EXISTS {new_name}", 1)
+               .replace(f" ON {LEGACY_MATCH_TABLE}", f" ON {SEASON_MATCH_TABLE}", 1)
+        )
+
+
+def create_season_match_table(conn: sqlite3.Connection) -> bool:
+    """Create the Season 9+ match table (once). Returns True if it was created now.
+
+    Same layout as match_records. Match ids continue above every id used so
+    far (live and archived), so a match number never points at two games.
+    Rows still in match_records at this point (games reported between seasons,
+    after the last Elo season was archived) move across with their ids.
+    Does not commit.
+    """
+    if _table_exists(conn, SEASON_MATCH_TABLE):
+        return False
+    ensure_match_schema(conn)
+    sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", (LEGACY_MATCH_TABLE,)
+    ).fetchone()[0]
+    head, rest = sql.split("(", 1)
+    conn.execute(f"CREATE TABLE {SEASON_MATCH_TABLE} ({rest}")
+
+    top = conn.execute(f"SELECT COALESCE(MAX(rowid), 0) FROM {LEGACY_MATCH_TABLE}").fetchone()[0]
+    if _table_exists(conn, "match_records_archive") and "original_match_id" in _columns(
+        conn, "match_records_archive"
+    ):
+        archived = conn.execute(
+            "SELECT COALESCE(MAX(original_match_id), 0) FROM match_records_archive"
+        ).fetchone()[0]
+        top = max(top, archived or 0)
+    if _table_exists(conn, "sqlite_sequence"):
+        seq = conn.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name = ?", (LEGACY_MATCH_TABLE,)
+        ).fetchone()
+        top = max(top, seq[0] if seq else 0)
+        if "AUTOINCREMENT" in rest.upper():
+            conn.execute("DELETE FROM sqlite_sequence WHERE name = ?", (SEASON_MATCH_TABLE,))
+            conn.execute(
+                "INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)", (SEASON_MATCH_TABLE, top)
+            )
+
+    info = conn.execute(f"PRAGMA table_info({LEGACY_MATCH_TABLE})").fetchall()
+    cols = ", ".join(row[1] for row in info)
+    # Keep each row's id: copy rowid unless a column already is the rowid
+    has_rowid_alias = any(row[5] and (row[2] or "").upper() == "INTEGER" for row in info)
+    ids = "" if has_rowid_alias else "rowid, "
+    conn.execute(
+        f"INSERT INTO {SEASON_MATCH_TABLE} ({ids}{cols}) SELECT {ids}{cols} FROM {LEGACY_MATCH_TABLE}"
+    )
+    conn.execute(f"DELETE FROM {LEGACY_MATCH_TABLE}")
+    sync_season_match_table(conn)
+    return True
 
 
 # --- Reading and writing one entry ------------------------------------------
@@ -359,7 +450,7 @@ def season_matches(match_conn, event) -> list[dict]:
         rows = match_conn.execute(
             f"""SELECT rowid AS row_id, winner_id, losser_id, winner_display_name,
                        losser_display_name, timestamp, winner_avatar, loser_avatar
-                FROM match_records
+                FROM {live_match_table(match_conn)}
                 WHERE event_id = ? AND rating_system = '{GLICKO2}'
                   AND (match_type IS NULL OR match_type NOT IN
                        ({", ".join(f"'{t}'" for t in _NON_RATED_TYPES)}))
@@ -431,9 +522,10 @@ def rebuild_season(elo_conn, match_conn, event) -> dict:
         match_updates.append((*change, m["row_id"]))
 
     # event_k is the Elo K a match was played at; a Glicko-2 match has none
-    clear_k = ", event_k = NULL" if "event_k" in _columns(match_conn, "match_records") else ""
+    table = live_match_table(match_conn)
+    clear_k = ", event_k = NULL" if "event_k" in _columns(match_conn, table) else ""
     match_conn.executemany(
-        "UPDATE match_records SET winner_elo_change = ?, loser_elo_change = ?, "
+        f"UPDATE {table} SET winner_elo_change = ?, loser_elo_change = ?, "
         "winner_avatar_elo_change = ?, loser_avatar_elo_change = ?, "
         f"winner_avatar_elo_after = ?, loser_avatar_elo_after = ?{clear_k} WHERE rowid = ?",
         match_updates,

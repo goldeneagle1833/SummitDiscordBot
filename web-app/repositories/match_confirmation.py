@@ -1,5 +1,6 @@
 """Repository for match confirmation database access."""
 
+from utils.match_tables import live_matches
 import sqlite3
 from pathlib import Path
 from typing import Optional
@@ -483,7 +484,7 @@ class MatchConfirmationRepository:
 
         # Query for recent opponents
         cursor.execute(
-            """
+            f"""
             SELECT
                 CASE
                     WHEN winner_id = ? THEN losser_id
@@ -491,7 +492,7 @@ class MatchConfirmationRepository:
                 END as opponent_id,
                 MAX(timestamp) as last_matched_at,
                 COUNT(*) as match_count
-            FROM match_records
+            FROM {live_matches(self._db_path)}
             WHERE winner_id = ? OR losser_id = ?
             GROUP BY opponent_id
             ORDER BY last_matched_at DESC

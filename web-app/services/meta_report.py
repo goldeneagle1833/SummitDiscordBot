@@ -229,7 +229,7 @@ def ranked_games(period_from: str, period_through: str, db_path=None) -> list[di
     seen_ids: set = set()
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
-        for table, id_col in (("match_records", "match_id"), ("match_records_archive", "original_match_id")):
+        for table, id_col in (("match_records", "match_id"), ("match_records_archive", "original_match_id"), ("season_match_records", "match_id")):
             try:
                 cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
             except sqlite3.Error:

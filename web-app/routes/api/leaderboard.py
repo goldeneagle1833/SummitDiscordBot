@@ -350,7 +350,7 @@ def get_season_leaderboard(season_id):
         player_names = {}
 
         # Query match_records within date range
-        for table in ("match_records", "match_records_archive"):
+        for table in ("match_records", "match_records_archive", "season_match_records"):
             try:
                 cur.execute(f"""
                     SELECT winner_id, winner_display_name, losser_id, losser_display_name

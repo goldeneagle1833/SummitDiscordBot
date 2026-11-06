@@ -1,5 +1,6 @@
 """Pure data access layer for ELO, match records, and event databases."""
 
+from utils.match_tables import live_matches
 import sqlite3
 import datetime
 import logging
@@ -153,14 +154,14 @@ def create_db():
         cur.execute("ALTER TABLE match_records ADD COLUMN source TEXT DEFAULT 'Discord'")
     except sqlite3.OperationalError:
         pass  # Column already exists
-    cur.execute("UPDATE match_records SET source = 'Discord' WHERE source IS NULL")
+    cur.execute(f"UPDATE {live_matches()} SET source = 'Discord' WHERE source IS NULL")
 
     # Add match_type column (ranked vs testing/casual)
     try:
         cur.execute("ALTER TABLE match_records ADD COLUMN match_type TEXT DEFAULT 'ranked'")
     except sqlite3.OperationalError:
         pass  # Column already exists
-    cur.execute("UPDATE match_records SET match_type = 'ranked' WHERE match_type IS NULL")
+    cur.execute(f"UPDATE {live_matches()} SET match_type = 'ranked' WHERE match_type IS NULL")
 
     # Voice flag + originating queue pairing (voice ranked games count toward top cut)
     try:
@@ -796,10 +797,10 @@ def get_event_participant_ids(event_start_str: str) -> set:
     cur = conn.cursor()
     cur.execute(f"""
         SELECT DISTINCT player_id FROM (
-            SELECT winner_id AS player_id FROM match_records
+            SELECT winner_id AS player_id FROM {live_matches()}
             WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
             UNION
-            SELECT losser_id AS player_id FROM match_records
+            SELECT losser_id AS player_id FROM {live_matches()}
             WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
         )
     """, (event_start_str, event_start_str))
@@ -822,7 +823,7 @@ def has_player_played_event(user_id: int, event_start_str: str) -> bool:
     cur = conn.cursor()
     cur.execute(
         f"""
-        SELECT 1 FROM match_records
+        SELECT 1 FROM {live_matches()}
         WHERE (winner_id = ? OR losser_id = ?)
           AND timestamp >= ?
           AND {ELO_COUNTING_MATCH_FILTER}
@@ -841,7 +842,7 @@ def get_event_match_count(event_start_str: str) -> int:
     cur = conn.cursor()
     cur.execute(
         f"""
-        SELECT COUNT(*) FROM match_records
+        SELECT COUNT(*) FROM {live_matches()}
         WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
         """,
         (event_start_str,),
@@ -857,7 +858,7 @@ def get_player_event_match_count(user_id: int, event_start_str: str) -> int:
     cur = conn.cursor()
     cur.execute(
         f"""
-        SELECT COUNT(*) FROM match_records
+        SELECT COUNT(*) FROM {live_matches()}
         WHERE (winner_id = ? OR losser_id = ?)
           AND timestamp >= ?
           AND {ELO_COUNTING_MATCH_FILTER}
@@ -873,7 +874,7 @@ def get_total_match_count():
     """Get the total number of matches recorded in the database."""
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM match_records")
+    cur.execute(f"SELECT COUNT(*) FROM {live_matches()}")
     count = cur.fetchone()[0]
     conn.close()
     return count
@@ -1293,7 +1294,7 @@ def set_pairing_replay(pairing_id: int, replay_url) -> bool:
             (replay_url, pairing_id),
         )
         conn.execute(
-            "UPDATE match_records SET replay_url = ? "
+            f"UPDATE {live_matches()} SET replay_url = ? "
             "WHERE pairing_id = ? AND replay_url IS NULL "
             "AND COALESCE(match_type, 'ranked') != 'limited'",
             (replay_url, pairing_id),

@@ -1,5 +1,6 @@
 """Admin API routes for player and match management."""
 
+from utils.match_tables import live_matches
 import logging
 import re
 import sqlite3
@@ -206,7 +207,7 @@ def reset_all_elo():
 
         conn_match = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur_match = conn_match.cursor()
-        cur_match.execute("SELECT COUNT(*) FROM match_records")
+        cur_match.execute(f"SELECT COUNT(*) FROM {live_matches()}")
         match_count = cur_match.fetchone()[0]
         conn_match.close()
 
@@ -232,7 +233,7 @@ def reset_all_elo():
 
         conn_match = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur_match = conn_match.cursor()
-        cur_match.execute("DELETE FROM match_records")
+        cur_match.execute(f"DELETE FROM {live_matches()}")
         cur_match.execute("DELETE FROM pairings")
         cur_match.execute("DELETE FROM match_records_archive")
         cur_match.execute("DELETE FROM match_reports_web")
@@ -275,7 +276,7 @@ def game_activity():
 
         # Bot matches
         cur_match.execute(
-            "SELECT COUNT(*) FROM match_records WHERE timestamp >= ?",
+            f"SELECT COUNT(*) FROM {live_matches()} WHERE timestamp >= ?",
             (cutoff_str,)
         )
         bot_matches = cur_match.fetchone()[0]
@@ -289,11 +290,11 @@ def game_activity():
 
         # Get unique players (note: column is "losser_id" due to typo in schema)
         cur_match.execute(
-            """
+            f"""
             SELECT COUNT(DISTINCT player_id) FROM (
-                SELECT winner_id AS player_id FROM match_records WHERE timestamp >= ?
+                SELECT winner_id AS player_id FROM {live_matches()} WHERE timestamp >= ?
                 UNION
-                SELECT losser_id AS player_id FROM match_records WHERE timestamp >= ?
+                SELECT losser_id AS player_id FROM {live_matches()} WHERE timestamp >= ?
             )
             """,
             (cutoff_str, cutoff_str)
@@ -358,7 +359,7 @@ def dashboard_stats():
 
         # Build UNION fragments for "all online matches" (current + archive)
         # and "all matches" (online + web). Archive uses same schema as match_records.
-        online_tables = ["match_records"]
+        online_tables = [live_matches()]
         if has_archive:
             online_tables.append("match_records_archive")
 
@@ -775,7 +776,7 @@ def chart_stats_hourly():
         has_archive = "match_records_archive" in existing_tables
         has_web = "match_reports_web" in existing_tables
 
-        online_tables = ["match_records"]
+        online_tables = [live_matches()]
         if has_archive:
             online_tables.append("match_records_archive")
 
@@ -872,7 +873,7 @@ def chart_stats_daily():
         has_archive = "match_records_archive" in existing_tables
         has_web = "match_reports_web" in existing_tables
 
-        online_tables = ["match_records"]
+        online_tables = [live_matches()]
         if has_archive:
             online_tables.append("match_records_archive")
 
@@ -972,7 +973,7 @@ def omens_matches():
 
         # Count total
         try:
-            cur.execute("SELECT COUNT(*) FROM match_records WHERE match_type = 'points'")
+            cur.execute(f"SELECT COUNT(*) FROM {live_matches()} WHERE match_type = 'points'")
             total = cur.fetchone()[0]
         except sqlite3.OperationalError:
             total = 0
@@ -981,7 +982,7 @@ def omens_matches():
         page = min(page, total_pages)
 
         # Detect available columns
-        cur.execute("PRAGMA table_info(match_records)")
+        cur.execute(f"PRAGMA table_info({live_matches()})")
         available_cols = {row[1] for row in cur.fetchall()}
 
         # Build SELECT dynamically based on available columns
@@ -999,7 +1000,7 @@ def omens_matches():
         try:
             cur.execute(f"""
                 SELECT {', '.join(select_parts)}
-                FROM match_records
+                FROM {live_matches()}
                 WHERE match_type = 'points'
                 ORDER BY timestamp DESC
                 LIMIT ? OFFSET ?
@@ -1431,12 +1432,12 @@ def matches_with_notes():
         # Build UNION query across all match tables
         # match_records/archive use rowid for IDs; match_reports_web has match_id column
         queries = []
-        queries.append("""
+        queries.append(f"""
             SELECT
                 rowid as match_id, winner_display_name, losser_display_name,
                 winner_id, losser_id, winner_elo_change, loser_elo_change,
                 timestamp, match_time, match_comment, 'online' as source
-            FROM match_records
+            FROM {live_matches()}
             WHERE match_comment IS NOT NULL AND match_comment != ''
         """)
         if has_archive:

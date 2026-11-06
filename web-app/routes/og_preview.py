@@ -6,6 +6,7 @@ paths to Flask. Flask checks the user agent: bot crawlers get minimal HTML
 with dynamic OG meta tags, regular users get the React SPA index.html.
 """
 
+from utils.match_tables import live_matches
 import logging
 import re
 import os
@@ -296,7 +297,7 @@ def _get_avatar_stats(avatar_name: str) -> dict | None:
         # Current event Discord matches
         try:
             cur.execute(
-                f"SELECT json_deck_data_winner, json_deck_data_loser FROM match_records "
+                f"SELECT json_deck_data_winner, json_deck_data_loser FROM {live_matches()} "
                 f"WHERE {_DECK_NOT_EMPTY} AND (source = 'Discord' OR source IS NULL)"
             )
             _tally(cur.fetchall())
@@ -316,7 +317,7 @@ def _get_avatar_stats(avatar_name: str) -> dict | None:
         # External / non-Discord matches stored in match_records
         try:
             cur.execute(
-                f"SELECT json_deck_data_winner, json_deck_data_loser FROM match_records "
+                f"SELECT json_deck_data_winner, json_deck_data_loser FROM {live_matches()} "
                 f"WHERE {_DECK_NOT_EMPTY} AND source != 'Discord' AND source IS NOT NULL"
             )
             _tally(cur.fetchall())

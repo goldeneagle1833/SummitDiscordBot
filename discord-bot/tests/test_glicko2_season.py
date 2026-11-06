@@ -71,7 +71,7 @@ def _season_snapshot():
     matches = [
         (r["match_id"], r["winner_elo_change"], r["loser_elo_change"],
          r["winner_avatar_elo_change"], r["loser_avatar_elo_change"])
-        for r in _rows("SELECT * FROM match_records ORDER BY match_id")
+        for r in _rows("SELECT * FROM season_match_records ORDER BY match_id")
     ]
     avatars = sorted(
         (r["user_id"], r["avatar"], r["event_elo"], r["games_played"], round(r["rating"], 6))
@@ -198,7 +198,7 @@ async def test_report_moves_glicko2_season_and_elo_lifetime():
     event = start_new_event("Season 9", rating_system="glicko2")
     match_id = await _record()
 
-    row = _rows("SELECT * FROM match_records WHERE match_id = ?", (match_id,))[0]
+    row = _rows("SELECT * FROM season_match_records WHERE match_id = ?", (match_id,))[0]
     assert row["event_id"] == event["event_id"] and row["rating_system"] == "glicko2"
     assert row["event_k"] is None
     s = _standings()
@@ -216,7 +216,7 @@ async def test_report_moves_glicko2_season_and_elo_lifetime():
 async def test_testing_matches_are_tagged_but_not_rated():
     event = start_new_event("Season 9", rating_system="glicko2")
     match_id = await _record(match_type="testing")
-    row = _rows("SELECT * FROM match_records WHERE match_id = ?", (match_id,))[0]
+    row = _rows("SELECT * FROM season_match_records WHERE match_id = ?", (match_id,))[0]
     assert row["event_id"] == event["event_id"]
     assert (row["winner_elo_change"], row["loser_elo_change"]) == (0, 0)
     assert A not in _standings() or _standings()[A]["online_event_rating"] is None
@@ -239,7 +239,7 @@ async def test_zero_change_glicko2_games_still_count_as_games():
     start_new_event("Season 9", rating_system="glicko2")
     match_id = await _record()
     conn = sqlite3.connect("match_records.db")
-    conn.execute("UPDATE match_records SET winner_elo_change = 0, loser_elo_change = 0 WHERE match_id = ?",
+    conn.execute("UPDATE season_match_records SET winner_elo_change = 0, loser_elo_change = 0 WHERE match_id = ?",
                  (match_id,))
     conn.commit()
     conn.close()
@@ -257,7 +257,7 @@ async def test_remove_match_rebuilds_the_season_without_it():
     bad = await _record(B, C)
     await _record(C, A)
     lifetime_before = _standings()[B]["online_elo"]
-    bad_row = _rows("SELECT * FROM match_records WHERE match_id = ?", (bad,))[0]
+    bad_row = _rows("SELECT * FROM season_match_records WHERE match_id = ?", (bad,))[0]
 
     remove_match_record(bad)
 
@@ -296,10 +296,10 @@ async def test_remove_player_rebuilds_without_their_games():
 
     s = _standings()
     assert A not in s
-    assert _rows("SELECT COUNT(*) AS n FROM match_records")[0]["n"] == 1
+    assert _rows("SELECT COUNT(*) AS n FROM season_match_records")[0]["n"] == 1
     # Only B beat C is left: same numbers as a fresh season with that one game
     w, l = g2.play(g2.Rating(), g2.Rating(),
-                   _rows("SELECT timestamp FROM match_records")[0]["timestamp"])
+                   _rows("SELECT timestamp FROM season_match_records")[0]["timestamp"])
     assert s[B]["online_event_elo"] == w.display and s[C]["online_event_elo"] == l.display
 
 
@@ -366,7 +366,7 @@ async def test_glicko2_season_end_keeps_matches_and_archives_standings():
     await _record(A, B)
     summary = end_current_event()
     assert summary["total_matches"] == 1
-    assert _rows("SELECT COUNT(*) AS n FROM match_records")[0]["n"] == 1
+    assert _rows("SELECT COUNT(*) AS n FROM season_match_records")[0]["n"] == 1
     assert _rows("SELECT COUNT(*) AS n FROM match_records_archive")[0]["n"] == 0
     archived = _rows("SELECT * FROM event_standings_archive WHERE event_id = ?",
                      (event["event_id"],), db="elo.db")
@@ -383,18 +383,83 @@ async def test_later_season_fixes_leave_an_ended_glicko2_season_alone():
     with pytest.raises(ValueError):
         remove_match_record(old)
     remove_player(A, "PA")
-    assert _rows("SELECT match_id FROM match_records") == [{"match_id": old}]
+    assert _rows("SELECT match_id FROM season_match_records") == [{"match_id": old}]
 
 
 @pytest.mark.asyncio
-async def test_an_elo_season_end_does_not_archive_glicko2_rows():
+async def test_an_elo_season_after_glicko2_stays_in_the_season_table():
     start_new_event("Season 9", rating_system="glicko2")
     kept = await _record(A, B)
     start_new_event("Season 10")  # an Elo season after a Glicko-2 one
-    await _record(B, A)
+    newer = await _record(B, A)
     end_current_event()
-    assert _rows("SELECT match_id FROM match_records") == [{"match_id": kept}]
-    assert _rows("SELECT COUNT(*) AS n FROM match_records_archive")[0]["n"] == 1
+    # Once the season table exists every later season stays in it, Elo or not
+    assert _rows("SELECT match_id, rating_system FROM season_match_records ORDER BY match_id") == [
+        {"match_id": kept, "rating_system": "glicko2"}, {"match_id": newer, "rating_system": "elo"}]
+    assert _rows("SELECT COUNT(*) AS n FROM match_records_archive")[0]["n"] == 0
+
+
+# ── The Season 9+ match table ──
+
+
+def _match_conn():
+    conn = sqlite3.connect("match_records.db")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+@pytest.mark.asyncio
+async def test_first_glicko2_season_creates_the_season_table_and_keeps_ids_going():
+    from utils.match_tables import live_matches
+
+    start_new_event("Season 8")
+    old = await _record(A, B)
+    end_current_event()  # Season 8 archived: match_records is empty again
+    assert live_matches() == "match_records"
+    between = await _record(C, D)  # reported between seasons, no event
+
+    start_new_event("Season 9", rating_system="glicko2")
+    assert live_matches() == "season_match_records"
+    first = await _record(A, B)
+
+    assert _rows("SELECT COUNT(*) AS n FROM match_records")[0]["n"] == 0
+    assert [r["match_id"] for r in _rows("SELECT match_id FROM season_match_records ORDER BY match_id")] == [
+        between, first]
+    assert old < between < first
+
+
+@pytest.mark.asyncio
+async def test_season_table_continues_above_archived_ids():
+    start_new_event("Season 8")
+    for _ in range(3):
+        last = await _record(A, B)
+    end_current_event()
+    conn = _match_conn()
+    conn.execute("DELETE FROM sqlite_sequence WHERE name = 'match_records'")  # lose the counter
+    conn.commit()
+    conn.close()
+
+    start_new_event("Season 9", rating_system="glicko2")
+    assert await _record(A, B) > last
+
+
+def test_season_table_picks_up_columns_added_to_match_records():
+    start_new_event("Season 9", rating_system="glicko2")
+    conn = _match_conn()
+    conn.execute("ALTER TABLE match_records ADD COLUMN some_new_field TEXT")
+    conn.execute("CREATE INDEX idx_some_new_field ON match_records(some_new_field)")
+    g2.ensure_match_schema(conn)
+    conn.commit()
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(season_match_records)")}
+    idx = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='season_match_records'")}
+    conn.close()
+    assert "some_new_field" in cols and "season_idx_some_new_field" in idx
+
+
+def test_an_elo_season_does_not_create_the_season_table():
+    start_new_event("Season 9")
+    assert not _rows("SELECT name FROM sqlite_master WHERE name = 'season_match_records'")
 
 
 # ── The web app's copy ──

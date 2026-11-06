@@ -6,6 +6,7 @@ graph line per avatar built from the per-avatar "ELO after" stored on each
 match.
 """
 
+from utils.match_tables import live_matches
 import sqlite3
 from pathlib import Path
 
@@ -36,7 +37,7 @@ def _resolve_event(elo_repo: EloRepository, event_filter, archive_event_id):
 def _history(player_id, event_id, is_current, match_db_path) -> dict[str, list[dict]]:
     """{avatar: [{match_id, timestamp, elo}, ...]} oldest first."""
     table, scope, params = (
-        ("match_records", "", ())
+        (live_matches(match_db_path), "", ())
         if is_current
         else ("match_records_archive", "AND event_id = ?", (event_id,))
     )
@@ -77,7 +78,7 @@ def get_player_avatar_changes(player_id, match_db_path=None) -> dict:
     changes = {}
     conn = sqlite3.connect(str(match_db_path or MATCH_RECORDS_DB_PATH))
     try:
-        for table in ("match_records", "match_records_archive"):
+        for table in ("match_records", "match_records_archive", "season_match_records"):
             cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
             if "winner_avatar_elo_change" not in cols:
                 continue

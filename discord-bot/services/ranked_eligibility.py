@@ -16,6 +16,7 @@ MIN_GAMES_FOR_RANKED = 2
 _GAME_TABLES = (
     ("match_records", "winner_id", "losser_id"),
     ("match_records_archive", "winner_id", "losser_id"),
+    ("season_match_records", "winner_id", "losser_id"),  # Season 9 onward
     ("rumble_match_records", "winner_id", "losser_id"),
     ("limited_match_records", "winner_id", "loser_id"),
     ("limited_match_records_archive", "winner_id", "loser_id"),

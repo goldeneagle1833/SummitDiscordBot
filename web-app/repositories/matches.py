@@ -1,5 +1,6 @@
 """Repository for match records database access."""
 
+from utils.match_tables import live_matches
 import sqlite3
 from pathlib import Path
 
@@ -46,7 +47,7 @@ class MatchRepository:
             except sqlite3.OperationalError:
                 pass  # Column already exists
             cur.execute(
-                f"UPDATE match_records SET {col} = '{default}' WHERE {col} IS NULL"
+                f"UPDATE {live_matches(self._db_path)} SET {col} = '{default}' WHERE {col} IS NULL"
             )
         try:
             cur.execute("ALTER TABLE match_records ADD COLUMN voice INTEGER NOT NULL DEFAULT 0")
@@ -81,9 +82,9 @@ class MatchRepository:
         """Get all unique dates that have match data."""
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(f"""
             SELECT DISTINCT date(timestamp) as match_date
-            FROM match_records
+            FROM {live_matches(self._db_path)}
             WHERE timestamp IS NOT NULL
             ORDER BY match_date DESC
         """)
@@ -117,7 +118,7 @@ class MatchRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            """
+            f"""
             SELECT
                 rowid as match_id,
                 winner_display_name,
@@ -129,7 +130,7 @@ class MatchRepository:
                 winner_id,
                 losser_id,
                 replay_url
-            FROM match_records
+            FROM {live_matches(self._db_path)}
             WHERE date(timestamp) = ?
             ORDER BY rowid DESC
         """,
@@ -214,7 +215,7 @@ class MatchRepository:
         results: list[dict] = []
 
         # --- Current season ---
-        for table in ("match_records", "match_records_archive"):
+        for table in ("match_records", "match_records_archive", "season_match_records"):
             try:
                 cur.execute(
                     f"SELECT {self._DATE_RANGE_COLS_NEW} FROM {table}"
@@ -254,7 +255,7 @@ class MatchRepository:
         # but we've validated hours is a safe integer above
         hours_modifier = f"-{hours} hours"
         cur.execute(
-            """
+            f"""
             SELECT
                 rowid as match_id,
                 winner_display_name,
@@ -266,7 +267,7 @@ class MatchRepository:
                 winner_id,
                 losser_id,
                 replay_url
-            FROM match_records
+            FROM {live_matches(self._db_path)}
             WHERE timestamp >= datetime('now', ?)
             ORDER BY rowid DESC
         """,
@@ -301,7 +302,7 @@ class MatchRepository:
 
         # Count from current match_records
         cur.execute(
-            "SELECT COUNT(*) FROM match_records WHERE winner_id = ?", (user_id,)
+            f"SELECT COUNT(*) FROM {live_matches(self._db_path)} WHERE winner_id = ?", (user_id,)
         )
         current_count = cur.fetchone()[0]
 
@@ -326,7 +327,7 @@ class MatchRepository:
 
         # Count from current match_records
         cur.execute(
-            "SELECT COUNT(*) FROM match_records WHERE losser_id = ?", (user_id,)
+            f"SELECT COUNT(*) FROM {live_matches(self._db_path)} WHERE losser_id = ?", (user_id,)
         )
         current_count = cur.fetchone()[0]
 
@@ -349,7 +350,7 @@ class MatchRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT COUNT(*) FROM match_records WHERE winner_id = ? AND timestamp >= ?"
+            f"SELECT COUNT(*) FROM {live_matches(self._db_path)} WHERE winner_id = ? AND timestamp >= ?"
             + self._NOT_SEASON,
             (user_id, event_start),
         )
@@ -362,7 +363,7 @@ class MatchRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT COUNT(*) FROM match_records WHERE losser_id = ? AND timestamp >= ?"
+            f"SELECT COUNT(*) FROM {live_matches(self._db_path)} WHERE losser_id = ? AND timestamp >= ?"
             + self._NOT_SEASON,
             (user_id, event_start),
         )
@@ -379,12 +380,12 @@ class MatchRepository:
             SELECT user_id, SUM(wins), SUM(losses)
             FROM (
                 SELECT winner_id AS user_id, COUNT(*) AS wins, 0 AS losses
-                FROM match_records
+                FROM {live_matches(self._db_path)}
                 WHERE timestamp >= ? AND winner_id IS NOT NULL {self._NOT_SEASON}
                 GROUP BY winner_id
                 UNION ALL
                 SELECT losser_id AS user_id, 0 AS wins, COUNT(*) AS losses
-                FROM match_records
+                FROM {live_matches(self._db_path)}
                 WHERE timestamp >= ? AND losser_id IS NOT NULL {self._NOT_SEASON}
                 GROUP BY losser_id
             )
@@ -472,7 +473,7 @@ class MatchRepository:
         conn = self._get_connection()
         try:
             cur = conn.cursor()
-            cur.execute("PRAGMA table_info(match_records)")
+            cur.execute(f"PRAGMA table_info({live_matches(self._db_path)})")
             columns = {row[1] for row in cur.fetchall()}
             if not columns:
                 return 0
@@ -483,7 +484,7 @@ class MatchRepository:
                 # Testing-queue games sit in the same table but are not ranked
                 filters += " AND (match_type IS NULL OR match_type = 'ranked') "
             cur.execute(
-                f"SELECT COUNT(*) FROM match_records WHERE timestamp >= ? {filters} {self._NOT_SEASON}",
+                f"SELECT COUNT(*) FROM {live_matches(self._db_path)} WHERE timestamp >= ? {filters} {self._NOT_SEASON}",
                 (event_start,),
             )
             return int(cur.fetchone()[0])
@@ -498,7 +499,7 @@ class MatchRepository:
         conn = self._get_connection()
         try:
             cur = conn.cursor()
-            cur.execute("PRAGMA table_info(match_records)")
+            cur.execute(f"PRAGMA table_info({live_matches(self._db_path)})")
             if "winner_avatar" not in {row[1] for row in cur.fetchall()}:
                 return {}
             cur.execute(
@@ -506,11 +507,11 @@ class MatchRepository:
                 SELECT user_id, avatar, SUM(wins), SUM(losses)
                 FROM (
                     SELECT winner_id AS user_id, winner_avatar AS avatar, 1 AS wins, 0 AS losses
-                    FROM match_records
+                    FROM {live_matches(self._db_path)}
                     WHERE timestamp >= ? AND winner_avatar IS NOT NULL {self._NOT_SEASON}
                     UNION ALL
                     SELECT losser_id AS user_id, loser_avatar AS avatar, 0 AS wins, 1 AS losses
-                    FROM match_records
+                    FROM {live_matches(self._db_path)}
                     WHERE timestamp >= ? AND loser_avatar IS NOT NULL {self._NOT_SEASON}
                 )
                 GROUP BY user_id, avatar
@@ -555,7 +556,7 @@ class MatchRepository:
         conn = self._get_connection()
         try:
             cur = conn.cursor()
-            cur.execute("PRAGMA table_info(match_records)")
+            cur.execute(f"PRAGMA table_info({live_matches(self._db_path)})")
             columns = {row[1] for row in cur.fetchall()}
             if not {"voice", "pairing_id"} <= columns:
                 return {"queues": totals, "days": []}
@@ -574,7 +575,7 @@ class MatchRepository:
             cur.execute(
                 f"""
                 SELECT date(timestamp) AS day, match_type, voice, COUNT(*), {elo_select}
-                FROM match_records
+                FROM {live_matches(self._db_path)}
                 WHERE pairing_id IS NOT NULL AND match_type IN ({placeholders}) {self._NOT_SEASON}
                 GROUP BY day, match_type, voice
                 ORDER BY day
@@ -598,7 +599,7 @@ class MatchRepository:
         """Count each player's ranked games played as voice matches since the event started."""
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute("PRAGMA table_info(match_records)")
+        cur.execute(f"PRAGMA table_info({live_matches(self._db_path)})")
         if "voice" not in {row[1] for row in cur.fetchall()}:
             conn.close()
             return {}
@@ -606,10 +607,10 @@ class MatchRepository:
             f"""
             SELECT user_id, COUNT(*)
             FROM (
-                SELECT winner_id AS user_id FROM match_records
+                SELECT winner_id AS user_id FROM {live_matches(self._db_path)}
                 WHERE timestamp >= ? AND voice = 1 AND match_type = 'ranked' {self._NOT_SEASON}
                 UNION ALL
-                SELECT losser_id AS user_id FROM match_records
+                SELECT losser_id AS user_id FROM {live_matches(self._db_path)}
                 WHERE timestamp >= ? AND voice = 1 AND match_type = 'ranked' {self._NOT_SEASON}
             )
             WHERE user_id IS NOT NULL
@@ -628,10 +629,10 @@ class MatchRepository:
         cur.execute(
             f"""
             SELECT DISTINCT user_id FROM (
-                SELECT winner_id as user_id FROM match_records
+                SELECT winner_id as user_id FROM {live_matches(self._db_path)}
                  WHERE timestamp >= ? {self._NOT_SEASON}
                 UNION
-                SELECT losser_id as user_id FROM match_records
+                SELECT losser_id as user_id FROM {live_matches(self._db_path)}
                  WHERE timestamp >= ? {self._NOT_SEASON}
             )
         """,
@@ -719,7 +720,7 @@ class MatchRepository:
         else:
             try:
                 cur.execute(
-                    """
+                    f"""
                     SELECT
                         winner_id,
                         losser_id,
@@ -729,7 +730,7 @@ class MatchRepository:
                         json_deck_data,
                         json_deck_data_winner,
                         json_deck_data_loser
-                    FROM match_records
+                    FROM {live_matches(self._db_path)}
                     WHERE rowid = ?
                 """,
                     (match_id,),
@@ -737,7 +738,7 @@ class MatchRepository:
                 row = cur.fetchone()
             except sqlite3.OperationalError:
                 cur.execute(
-                    """
+                    f"""
                     SELECT
                         winner_id,
                         losser_id,
@@ -745,7 +746,7 @@ class MatchRepository:
                         losser_display_name,
                         timestamp,
                         json_deck_data
-                    FROM match_records
+                    FROM {live_matches(self._db_path)}
                     WHERE rowid = ?
                 """,
                     (match_id,),
@@ -778,7 +779,7 @@ class MatchRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT winner_elo_change, loser_elo_change FROM match_records WHERE rowid = ?",
+            f"SELECT winner_elo_change, loser_elo_change FROM {live_matches(self._db_path)} WHERE rowid = ?",
             (match_id,),
         )
         row = cur.fetchone()
@@ -796,7 +797,7 @@ class MatchRepository:
 
         # Query current match_records
         try:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT
                     winner_id,
                     winner_display_name,
@@ -812,7 +813,7 @@ class MatchRepository:
                     curiosa_url_winner,
                     curiosa_url_loser,
                     rowid as match_id
-                FROM match_records
+                FROM {live_matches(self._db_path)}
                 WHERE json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL
                 ORDER BY timestamp DESC
             """)
@@ -820,7 +821,7 @@ class MatchRepository:
             for row in rows:
                 all_results.append({"row": row, "use_new_columns": True})
         except sqlite3.OperationalError:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT
                     winner_id,
                     winner_display_name,
@@ -834,7 +835,7 @@ class MatchRepository:
                     json_deck_data,
                     curiosa_url,
                     rowid as match_id
-                FROM match_records
+                FROM {live_matches(self._db_path)}
                 WHERE json_deck_data IS NOT NULL
                 ORDER BY timestamp DESC
             """)
@@ -904,7 +905,7 @@ class MatchRepository:
 
         try:
             cur.execute(
-                """
+                f"""
                 SELECT
                     rowid as match_id,
                     winner_id,
@@ -920,7 +921,7 @@ class MatchRepository:
                     json_deck_data_loser,
                     curiosa_url_winner,
                     curiosa_url_loser
-                FROM match_records
+                FROM {live_matches(self._db_path)}
                 WHERE winner_id = ? OR losser_id = ?
                 ORDER BY timestamp DESC
                 LIMIT ?
@@ -929,7 +930,7 @@ class MatchRepository:
             )
         except sqlite3.OperationalError:
             cur.execute(
-                """
+                f"""
                 SELECT
                     rowid as match_id,
                     winner_id,
@@ -943,7 +944,7 @@ class MatchRepository:
                     match_time,
                     json_deck_data,
                     curiosa_url
-                FROM match_records
+                FROM {live_matches(self._db_path)}
                 WHERE winner_id = ? OR losser_id = ?
                 ORDER BY timestamp DESC
                 LIMIT ?
@@ -964,7 +965,7 @@ class MatchRepository:
         """
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute("PRAGMA table_info(match_records)")
+        cur.execute(f"PRAGMA table_info({live_matches(self._db_path)})")
         available = {row[1] for row in cur.fetchall()}
         optional = [
             col for col in (
@@ -978,7 +979,7 @@ class MatchRepository:
         cur.execute(
             f"""SELECT rowid, winner_id, losser_id, winner_display_name,
                       losser_display_name, winner_elo_change, loser_elo_change, timestamp{extra}
-               FROM match_records WHERE rowid = ?""",
+               FROM {live_matches(self._db_path)} WHERE rowid = ?""",
             (match_id,),
         )
         row = cur.fetchone()
@@ -1004,7 +1005,7 @@ class MatchRepository:
         return details
 
     # Tables a site-settled match (a bracket game) can be written to.
-    MATCH_TABLES = ("match_records", "match_records_archive")
+    MATCH_TABLES = ("match_records", "match_records_archive", "season_match_records")
 
     # The bot's match_records_archive schema, for a database the bot has not
     # archived a season into yet.
@@ -1044,6 +1045,9 @@ class MatchRepository:
     def _table(self, table: str) -> str:
         if table not in self.MATCH_TABLES:
             raise ValueError(f"Unknown match table {table!r}")
+        if table == "match_records":
+            # The current match table (season_match_records from Season 9)
+            return live_matches(self._db_path)
         return table
 
     def _columns_of(self, cur, table: str) -> set:
@@ -1134,7 +1138,7 @@ class MatchRepository:
         try:
             archive_columns = self._columns_of(cur, "match_records_archive")
             cur.execute("BEGIN IMMEDIATE")
-            cur.execute("SELECT * FROM match_records WHERE rowid = ?", (row_id,))
+            cur.execute(f"SELECT * FROM {live_matches(self._db_path)} WHERE rowid = ?", (row_id,))
             found = cur.fetchone()
             if found is None:
                 cur.execute("ROLLBACK")
@@ -1150,7 +1154,7 @@ class MatchRepository:
                 [row[c] for c in columns],
             )
             new_id = cur.lastrowid
-            cur.execute("DELETE FROM match_records WHERE rowid = ?", (row_id,))
+            cur.execute(f"DELETE FROM {live_matches(self._db_path)} WHERE rowid = ?", (row_id,))
             cur.execute("COMMIT")
             return new_id
         except Exception:
@@ -1166,7 +1170,7 @@ class MatchRepository:
         """Delete a match record by rowid. Returns True if deleted."""
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM match_records WHERE rowid = ?", (match_id,))
+        cur.execute(f"DELETE FROM {live_matches(self._db_path)} WHERE rowid = ?", (match_id,))
         deleted = cur.rowcount > 0
         conn.commit()
         conn.close()
@@ -1177,12 +1181,12 @@ class MatchRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            "UPDATE match_records SET winner_display_name = ? WHERE winner_id = ?",
+            f"UPDATE {live_matches(self._db_path)} SET winner_display_name = ? WHERE winner_id = ?",
             (new_name, user_id),
         )
         winner_rows = cur.rowcount
         cur.execute(
-            "UPDATE match_records SET losser_display_name = ? WHERE losser_id = ?",
+            f"UPDATE {live_matches(self._db_path)} SET losser_display_name = ? WHERE losser_id = ?",
             (new_name, user_id),
         )
         loser_rows = cur.rowcount
@@ -1191,11 +1195,11 @@ class MatchRepository:
         return winner_rows + loser_rows
 
     def get_distinct_sources(self) -> list[str]:
-        """Get all distinct source names from match_records."""
+        f"""Get all distinct source names from {live_matches(self._db_path)}."""
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT DISTINCT source FROM match_records WHERE source IS NOT NULL ORDER BY source"
+            f"SELECT DISTINCT source FROM {live_matches(self._db_path)} WHERE source IS NOT NULL ORDER BY source"
         )
         sources = [row[0] for row in cur.fetchall()]
         conn.close()
@@ -1206,12 +1210,12 @@ class MatchRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT COUNT(*) FROM match_records WHERE winner_id = ? AND source = ?",
+            f"SELECT COUNT(*) FROM {live_matches(self._db_path)} WHERE winner_id = ? AND source = ?",
             (user_id, source),
         )
         wins = cur.fetchone()[0]
         cur.execute(
-            "SELECT COUNT(*) FROM match_records WHERE losser_id = ? AND source = ?",
+            f"SELECT COUNT(*) FROM {live_matches(self._db_path)} WHERE losser_id = ? AND source = ?",
             (user_id, source),
         )
         losses = cur.fetchone()[0]
@@ -1223,10 +1227,10 @@ class MatchRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            """SELECT source,
+            f"""SELECT source,
                       SUM(CASE WHEN winner_id = ? THEN 1 ELSE 0 END) as wins,
                       SUM(CASE WHEN losser_id = ? THEN 1 ELSE 0 END) as losses
-               FROM match_records
+               FROM {live_matches(self._db_path)}
                WHERE (winner_id = ? OR losser_id = ?) AND source IS NOT NULL
                GROUP BY source""",
             (player_id, player_id, player_id, player_id),
@@ -1338,18 +1342,18 @@ class MatchRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            """SELECT player_id, display_name,
+            f"""SELECT player_id, display_name,
                       SUM(wins) as wins, SUM(losses) as losses
                FROM (
                    SELECT winner_id as player_id,
                           winner_display_name as display_name,
                           1 as wins, 0 as losses
-                   FROM match_records WHERE source = ?
+                   FROM {live_matches(self._db_path)} WHERE source = ?
                    UNION ALL
                    SELECT losser_id as player_id,
                           losser_display_name as display_name,
                           0 as wins, 1 as losses
-                   FROM match_records WHERE source = ?
+                   FROM {live_matches(self._db_path)} WHERE source = ?
                )
                GROUP BY player_id
                ORDER BY wins DESC""",
@@ -1399,13 +1403,13 @@ class MatchRepository:
 
         # Check match_records (Discord bot matches)
         cur.execute(
-            """SELECT
+            f"""SELECT
                 CASE
                     WHEN winner_id = ? THEN losser_id
                     ELSE winner_id
                 END as opponent_id,
                 timestamp
-            FROM match_records
+            FROM {live_matches(self._db_path)}
             WHERE winner_id = ? OR losser_id = ?
             ORDER BY timestamp DESC
             LIMIT 1""",

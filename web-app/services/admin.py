@@ -1,5 +1,6 @@
 """Service for admin operations on players and matches."""
 
+from utils.match_tables import live_matches
 import logging
 import sqlite3
 
@@ -57,7 +58,7 @@ class AdminService:
             return self._remove_bot_match(match_id)
 
     def _remove_bot_match(self, match_id: str) -> dict:
-        """Remove a bot match (from match_records) and reverse ELO in overall_standings."""
+        f"""Remove a bot match (from {live_matches()}) and reverse ELO in overall_standings."""
         try:
             numeric_id = int(match_id)
         except (ValueError, TypeError):
@@ -141,7 +142,7 @@ class AdminService:
         try:
             glicko2_season.ensure_match_schema(conn)
             row = conn.execute(
-                "SELECT event_id, rating_system FROM match_records WHERE rowid = ?", (numeric_id,)
+                f"SELECT event_id, rating_system FROM {live_matches()} WHERE rowid = ?", (numeric_id,)
             ).fetchone()
             return tuple(row) if row else (None, None)
         finally:
@@ -267,7 +268,7 @@ class AdminService:
             tables = {row[0] for row in cur.fetchall()}
 
             # match_records + archive: winner_id, losser_id, reporter_id
-            for table in ("match_records", "match_records_archive"):
+            for table in ("match_records", "match_records_archive", "season_match_records"):
                 if table not in tables:
                     continue
                 count = _update_cols(cur, table, ("winner_id", "losser_id", "reporter_id"), new_user_id, old_user_id)
@@ -489,7 +490,7 @@ class AdminService:
             cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = {row[0] for row in cur.fetchall()}
 
-            for table in ("match_records", "match_records_archive"):
+            for table in ("match_records", "match_records_archive", "season_match_records"):
                 if table in tables:
                     deleted[table] = _delete_rows(cur, table, ("winner_id", "losser_id"), user_id)
 

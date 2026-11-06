@@ -13,6 +13,7 @@ Everything that shows or uses "the event ladder" should read it through
 get_event_ladder() so both modes share one code path.
 """
 
+from utils.match_tables import live_matches
 import logging
 import sqlite3
 from dataclasses import dataclass
@@ -161,10 +162,10 @@ def _player_mode_ladder(event: dict) -> list[LadderEntry]:
     try:
         games = dict(conn.execute(
             f"""SELECT player_id, COUNT(*) FROM (
-                    SELECT winner_id AS player_id FROM match_records
+                    SELECT winner_id AS player_id FROM {live_matches()}
                     WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
                     UNION ALL
-                    SELECT losser_id AS player_id FROM match_records
+                    SELECT losser_id AS player_id FROM {live_matches()}
                     WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
                 ) GROUP BY player_id""",
             (start, start),

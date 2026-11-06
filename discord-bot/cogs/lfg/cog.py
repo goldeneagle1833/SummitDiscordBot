@@ -1,3 +1,4 @@
+from utils.match_tables import live_matches
 import discord
 from discord.ext import commands, tasks
 import datetime
@@ -356,13 +357,13 @@ class LFGCog(commands.Cog):
             if event_start_str:
                 cursor_matches.execute(
                     f"""
-                    SELECT COUNT(*) FROM match_records
+                    SELECT COUNT(*) FROM {live_matches()}
                     WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
                     """,
                     (event_start_str,),
                 )
             else:
-                cursor_matches.execute("SELECT COUNT(*) FROM match_records")
+                cursor_matches.execute(f"SELECT COUNT(*) FROM {live_matches()}")
             total_games_played = cursor_matches.fetchone()[0]
 
             # Create leaderboard embed with event name and game count
@@ -404,7 +405,7 @@ class LFGCog(commands.Cog):
                     elif event_start_str:
                         cursor_matches.execute(
                             f"""
-                            SELECT COUNT(*) FROM match_records
+                            SELECT COUNT(*) FROM {live_matches()}
                             WHERE (winner_id = ? OR losser_id = ?)
                               AND timestamp >= ?
                               AND {ELO_COUNTING_MATCH_FILTER}
@@ -414,8 +415,8 @@ class LFGCog(commands.Cog):
                         total_games = cursor_matches.fetchone()[0]
                     else:
                         cursor_matches.execute(
-                            """
-                            SELECT COUNT(*) FROM match_records
+                            f"""
+                            SELECT COUNT(*) FROM {live_matches()}
                             WHERE winner_id = ? OR losser_id = ?
                             """,
                             (user_id, user_id),
@@ -1188,7 +1189,7 @@ class LFGCog(commands.Cog):
         try:
             # Get player1's last match
             cur.execute(
-                """SELECT winner_id, losser_id FROM match_records
+                f"""SELECT winner_id, losser_id FROM {live_matches()}
                 WHERE (winner_id = ? OR losser_id = ?)
                 ORDER BY timestamp DESC LIMIT 1""",
                 (player1_id, player1_id),
@@ -1197,7 +1198,7 @@ class LFGCog(commands.Cog):
 
             # Get player2's last match
             cur.execute(
-                """SELECT winner_id, losser_id FROM match_records
+                f"""SELECT winner_id, losser_id FROM {live_matches()}
                 WHERE (winner_id = ? OR losser_id = ?)
                 ORDER BY timestamp DESC LIMIT 1""",
                 (player2_id, player2_id),
@@ -2220,7 +2221,7 @@ class LFGCog(commands.Cog):
             _audit_conn.close()
             _audit_conn2 = sqlite3.connect("match_records.db")
             _audit_cur2 = _audit_conn2.cursor()
-            _audit_cur2.execute("SELECT COUNT(*) FROM match_records")
+            _audit_cur2.execute(f"SELECT COUNT(*) FROM {live_matches()}")
             _total_matches = _audit_cur2.fetchone()[0]
             _audit_conn2.close()
 
@@ -2247,6 +2248,7 @@ class LFGCog(commands.Cog):
 
             # Drop and recreate match_records table
             cur_matches.execute("DROP TABLE IF EXISTS match_records")
+            cur_matches.execute("DROP TABLE IF EXISTS season_match_records")
             cur_matches.execute("""CREATE TABLE match_records
                                    (reporter_id INTEGER,
                                     winner_id INTEGER,
@@ -3489,7 +3491,7 @@ class LFGCog(commands.Cog):
         # Glicko-2 seasons keep their matches in match_records after they end,
         # so count only this event's rows plus untagged (Elo-era) rows
         cur.execute(
-            "SELECT COUNT(*) FROM match_records "
+            f"SELECT COUNT(*) FROM {live_matches()} "
             "WHERE COALESCE(rating_system, 'elo') != 'glicko2' OR event_id = ?",
             (active_event["event_id"],),
         )

@@ -4,6 +4,7 @@ Public. The running season is offered too: like every season, its games only
 show up to the latest batch release (see services/data_release.py).
 """
 
+from utils.match_tables import live_matches
 import json
 import logging
 import sqlite3
@@ -103,7 +104,7 @@ def get_creator_filters():
 
 @creator_bp.route("/popular-cards")
 def get_creator_popular_cards():
-    """Card popularity stats from match_records (same source as live-popular-cards).
+    f"""Card popularity stats from {live_matches()} (same source as live-popular-cards).
 
     Query params:
     - event: event_id or season filter ID (e.g. "season_gothic_1"). Omit for all data.
@@ -239,7 +240,7 @@ def _build_popular_cards(event_filter, source_filter, date_range=None):
         try:
             cur.execute(f"""
                 SELECT json_deck_data_winner, json_deck_data_loser
-                FROM match_records
+                FROM {live_matches()}
                 WHERE {deck_where} {source_clause}
             """)
             _parse_deck_rows(cur)
@@ -280,7 +281,7 @@ def _build_popular_cards(event_filter, source_filter, date_range=None):
             try:
                 cur.execute(f"""
                     SELECT json_deck_data_winner, json_deck_data_loser
-                    FROM match_records
+                    FROM {live_matches()}
                     WHERE {deck_where} {source_clause}
                       AND timestamp >= ? AND timestamp <= ?
                 """, (start_date, end_date))
@@ -464,7 +465,7 @@ def _build_card_history(source_filter):
     try:
         cur.execute(f"""
             SELECT json_deck_data_winner, json_deck_data_loser, timestamp
-            FROM match_records
+            FROM {live_matches()}
             WHERE {deck_where} {source_clause}
         """)
         _process_rows(cur)

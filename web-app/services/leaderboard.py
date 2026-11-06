@@ -24,6 +24,38 @@ def unique_players(entries) -> list:
     return best
 
 
+def top_cut_min_games(event: dict | None) -> int:
+    """Ranked games an entry needs to count for top cut (0 = no minimum).
+
+    Glicko-2 seasons (Season 9 on) need TOP_CUT_MIN_GAMES so a 3-0 start
+    can't sit in the cut on luck; Elo seasons have no minimum.
+    """
+    from services.glicko2_season import TOP_CUT_MIN_GAMES, is_glicko2
+
+    return TOP_CUT_MIN_GAMES if is_glicko2(event) else 0
+
+
+def _entry_games(entry) -> int:
+    if entry.get("games") is not None:
+        return entry["games"] or 0
+    wins = entry.get("wins") if entry.get("wins") is not None else entry.get("season_wins")
+    losses = entry.get("losses") if entry.get("losses") is not None else entry.get("season_losses")
+    return (wins or 0) + (losses or 0)
+
+
+def top_cut_eligible(entries, event: dict | None) -> list:
+    """Entries with enough games to count for top cut, ladder order kept."""
+    need = top_cut_min_games(event)
+    return [entry for entry in entries if _entry_games(entry) >= need]
+
+
+def _flag_top_cut_eligible(rows, event) -> None:
+    """Mark each leaderboard row with whether it can count for top cut yet."""
+    need = top_cut_min_games(event)
+    for row in rows:
+        row["top_cut_eligible"] = _entry_games(row) >= need
+
+
 def is_avatar_mode(event: dict | None) -> bool:
     return bool(event) and event.get("elo_mode") == "avatar"
 
@@ -127,11 +159,14 @@ class LeaderboardService:
         """
         active_event = self._elo_repo.get_active_event()
         if is_avatar_mode(active_event):
+            rows = self._avatar_event_rows(active_event)
+            _flag_top_cut_eligible(rows, active_event)
             return {
                 "event": active_event,
-                "leaderboard": self._avatar_event_rows(active_event),
+                "leaderboard": rows,
                 "total_games": self._season_games(active_event, avatar_only=True),
                 "voice_requirement": voice_requirement(),
+                "top_cut_min_games": top_cut_min_games(active_event),
             }
         standings = self._elo_repo.get_event_standings()
 
@@ -162,11 +197,13 @@ class LeaderboardService:
                     }
                 )
 
+        _flag_top_cut_eligible(leaderboard_data, active_event)
         return {
             "event": active_event,
             "leaderboard": leaderboard_data,
             "total_games": self._season_games(active_event),
             "voice_requirement": voice_requirement(),
+            "top_cut_min_games": top_cut_min_games(active_event),
         }
 
     def get_avatar_leaderboards(
@@ -254,14 +291,17 @@ class LeaderboardService:
         lifetime_data = self.get_leaderboard()
 
         if is_avatar_mode(active_event):
+            rows = self._avatar_event_rows(
+                active_event, wins_key="season_wins", losses_key="season_losses"
+            )
+            _flag_top_cut_eligible(rows, active_event)
             return {
                 "lifetime": lifetime_data,
                 "event": {
                     "info": active_event,
-                    "leaderboard": self._avatar_event_rows(
-                        active_event, wins_key="season_wins", losses_key="season_losses"
-                    ),
+                    "leaderboard": rows,
                     "voice_requirement": voice_requirement(),
+                    "top_cut_min_games": top_cut_min_games(active_event),
                 },
             }
 
@@ -300,6 +340,7 @@ class LeaderboardService:
 
         # Sort event data by event_elo descending
         event_data.sort(key=lambda x: x["event_elo"], reverse=True)
+        _flag_top_cut_eligible(event_data, active_event)
 
         return {
             "lifetime": lifetime_data,
@@ -307,6 +348,7 @@ class LeaderboardService:
                 "info": active_event,
                 "leaderboard": event_data,
                 "voice_requirement": voice_requirement(),
+                "top_cut_min_games": top_cut_min_games(active_event),
             },
         }
 

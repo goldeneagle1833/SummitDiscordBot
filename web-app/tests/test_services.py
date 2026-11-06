@@ -87,9 +87,10 @@ class TestLeaderboardService:
 
         assert result["leaderboard"] == [
             {"id": "1", "entry_id": "1", "name": "Alice", "avatar": None, "event_elo": 1640,
-             "wins": 5, "losses": 2, "voice_games": 3},
+             "wins": 5, "losses": 2, "voice_games": 3, "top_cut_eligible": True},
         ]
         assert result["voice_requirement"] == {"min_games": 5, "enforced": False}
+        assert result["top_cut_min_games"] == 0  # Elo season: no minimum
         match_repo.get_season_records.assert_called_once_with("2025-01-01")
         match_repo.get_season_voice_games.assert_called_once_with("2025-01-01")
 

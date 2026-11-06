@@ -30,7 +30,7 @@ from services.bracket_builder import (
     winner_name,
 )
 from services.curiosa import CuriosaService
-from services.leaderboard import LeaderboardService, unique_players
+from services.leaderboard import LeaderboardService, top_cut_eligible, unique_players
 from services.sorcery_online_table import (
     LIMITED_BRACKET_QUEUE_TYPE,
     TableUnavailable,
@@ -180,6 +180,9 @@ class BracketService:
             elo_key = "elo"
 
         holders = ticket_holder_ids(self._repo)
+        if elo_key == "event_elo":
+            # Glicko-2 seasons: an entry needs enough games to be seeded from the ladder
+            standings = top_cut_eligible(standings, data.get("event"))
 
         players = []
         for entry in unique_players(standings):

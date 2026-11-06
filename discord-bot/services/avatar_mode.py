@@ -195,6 +195,27 @@ def get_event_ladder(event: dict | None = None) -> list[LadderEntry]:
     return _player_mode_ladder(event)
 
 
+def top_cut_eligible(entries, event: dict | None = None) -> list:
+    """Entries that can count for top cut (and Top 16/8 status), ladder order kept.
+
+    A Glicko-2 season needs TOP_CUT_MIN_GAMES ranked games on an entry first,
+    so a 3-0 start can't sit in the cut on luck. Elo seasons keep every entry.
+    Works on LadderEntry objects and on dicts with a "games" key.
+    """
+    from services.glicko2_season import TOP_CUT_MIN_GAMES, is_glicko2
+
+    event = event if event is not None else get_active_event()
+    if not is_glicko2(event):
+        return list(entries)
+
+    def games(entry):
+        if isinstance(entry, LadderEntry):
+            return entry.games_played or 0
+        return entry.get("games") or entry.get("games_played") or 0
+
+    return [entry for entry in entries if games(entry) >= TOP_CUT_MIN_GAMES]
+
+
 def unique_players(entries):
     """Each player's best entry only, keeping ladder order.
 

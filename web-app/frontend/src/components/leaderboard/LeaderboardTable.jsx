@@ -18,6 +18,8 @@ export default function LeaderboardTable({
   columns = 'lifetime',
   voiceRequirement = null,
   eloLabel = 'Event ELO',
+  // Glicko-2 seasons: ranked games an entry needs to count for top cut (0 = none)
+  topCutMinGames = 0,
 }) {
   const [showCount, setShowCount] = useState(16)
   // Avatar-mode seasons rate each player/avatar pair: rows carry an avatar
@@ -48,6 +50,11 @@ export default function LeaderboardTable({
       </div>
 
       <PostseasonLegend className="mb-2 px-1" />
+      {columns === 'event' && topCutMinGames > 0 && (
+        <p className="text-xs text-text-muted mb-2 px-1" data-testid="top-cut-min-note">
+          An entry needs {topCutMinGames} ranked games this season to count for top cut.
+        </p>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="border-b border-border">
@@ -122,7 +129,17 @@ export default function LeaderboardTable({
                     </td>
                   )}
                   {columns === 'event' && (
-                    <td className="px-3 py-2 text-sm text-right">{entry.event_elo}</td>
+                    <td className="px-3 py-2 text-sm text-right whitespace-nowrap">
+                      {topCutMinGames > 0 && entry.top_cut_eligible === false && (
+                        <span
+                          className="mr-2 text-xs text-text-muted"
+                          title={`Needs ${topCutMinGames} ranked games to count for top cut`}
+                        >
+                          not yet eligible
+                        </span>
+                      )}
+                      {entry.event_elo}
+                    </td>
                   )}
                 </tr>
               )

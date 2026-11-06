@@ -221,6 +221,11 @@ def reset_all_elo():
         )
         if cur_elo.fetchone():
             cur_elo.execute("DELETE FROM event_avatar_standings")
+        cur_elo.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_rating_adjustments'"
+        )
+        if cur_elo.fetchone():
+            cur_elo.execute("DELETE FROM event_rating_adjustments")
         cur_elo.execute("DELETE FROM events")
         conn_elo.commit()
         conn_elo.close()
@@ -1104,6 +1109,11 @@ def start_event_route():
     if elo_mode not in ("player", "avatar"):
         return jsonify({"success": False, "error": "elo_mode must be 'player' or 'avatar'"}), 400
 
+    # "elo" (through Season 8) or "glicko2" (Season 9 on). Locked too.
+    rating_system = str(data.get("rating_system") or "elo").strip().lower()
+    if rating_system not in ("elo", "glicko2"):
+        return jsonify({"success": False, "error": "rating_system must be 'elo' or 'glicko2'"}), 400
+
     try:
         # Import bot database utilities
         bot_db = _import_bot_database_utils()
@@ -1112,7 +1122,7 @@ def start_event_route():
         previous_event = bot_db.get_active_event()
 
         # Start new event
-        result = bot_db.start_new_event(event_name, elo_mode=elo_mode)
+        result = bot_db.start_new_event(event_name, elo_mode=elo_mode, rating_system=rating_system)
 
         # Log action
         admin_id, admin_name = _get_admin_info()
@@ -1121,8 +1131,9 @@ def start_event_route():
             admin_id, admin_name, "web_start_event",
             target_name=event_name,
             previous_state={"event": previous_event["event_name"] if previous_event else None},
-            new_state={"event": event_name, "event_id": result["event_id"], "elo_mode": elo_mode},
-            details=f"Started new event '{event_name}' (ID: {result['event_id']}) in {elo_mode} mode",
+            new_state={"event": event_name, "event_id": result["event_id"], "elo_mode": elo_mode,
+                       "rating_system": rating_system},
+            details=f"Started new event '{event_name}' (ID: {result['event_id']}) in {elo_mode} mode, {rating_system}",
         )
 
         return jsonify({
@@ -1130,6 +1141,7 @@ def start_event_route():
             "message": f"Event '{event_name}' started successfully ({elo_mode} mode)",
             "event_id": result["event_id"],
             "elo_mode": elo_mode,
+            "rating_system": rating_system,
             "previous_event": result.get("previous_event")
         }), 200
 

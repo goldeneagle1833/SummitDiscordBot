@@ -9,7 +9,13 @@ Play Sorcery Online can show them without reading Discord.
 import logging
 
 from repositories.brackets import BracketRepository
-from services.leaderboard import LeaderboardService, unique_players, voice_requirement
+from services.leaderboard import (
+    LeaderboardService,
+    top_cut_eligible,
+    top_cut_min_games,
+    unique_players,
+    voice_requirement,
+)
 from services.ticket_holders import (
     ensure_roster_fresh,
     is_configured,
@@ -77,7 +83,10 @@ class TicketLeaderboardService:
                 }
             )
 
-        ticket_holders = _ranked(unique_players(p for p in players if p["is_ticket_holder"]))
+        # Glicko-2 seasons: an entry needs enough games to hold a top cut spot
+        ticket_holders = _ranked(unique_players(
+            top_cut_eligible([p for p in players if p["is_ticket_holder"]], event)
+        ))
         free_play = _ranked(unique_players(p for p in players if not p["is_ticket_holder"]))
         if limit is not None:
             ticket_holders = ticket_holders[:limit]
@@ -97,6 +106,7 @@ class TicketLeaderboardService:
                 "configured": is_configured(),
             },
             "voice_requirement": voice_requirement(),
+            "top_cut_min_games": top_cut_min_games(event),
         }
 
 

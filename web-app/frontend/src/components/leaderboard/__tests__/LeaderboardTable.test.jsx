@@ -76,4 +76,21 @@ describe('LeaderboardTable', () => {
     renderWithRouter(<LeaderboardTable data={data} />)
     expect(screen.getByText('DisplayUser')).toBeInTheDocument()
   })
+
+  it('tags Glicko-2 entries that are short of the top cut game minimum', () => {
+    const rows = [
+      { id: '1', name: 'Alice', event_elo: 1620, top_cut_eligible: true },
+      { id: '2', name: 'Bob', event_elo: 1610, top_cut_eligible: false },
+    ]
+    renderWithRouter(<LeaderboardTable data={rows} columns="event" topCutMinGames={8} />)
+    expect(screen.getByTestId('top-cut-min-note')).toHaveTextContent('8 ranked games')
+    expect(screen.getAllByText('not yet eligible')).toHaveLength(1)
+  })
+
+  it('shows no top cut note in Elo seasons', () => {
+    const rows = [{ id: '1', name: 'Alice', event_elo: 1620, top_cut_eligible: true }]
+    renderWithRouter(<LeaderboardTable data={rows} columns="event" />)
+    expect(screen.queryByTestId('top-cut-min-note')).toBeNull()
+    expect(screen.queryByText('not yet eligible')).toBeNull()
+  })
 })

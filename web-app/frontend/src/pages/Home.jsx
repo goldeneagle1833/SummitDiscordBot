@@ -617,7 +617,7 @@ function RankCell({ rank, pinned }) {
   return <span className="text-text-muted">{rank}</span>
 }
 
-function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges = {}, avatarMode = false, avatarImageFiles = [], userId = null, bestOnly = false }) {
+function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges = {}, avatarMode = false, avatarImageFiles = [], userId = null, bestOnly = false, topCutMinGames = 0 }) {
   if (!leaderboard.length) {
     return <p className="text-center text-text-muted py-8">No matches played yet</p>
   }
@@ -678,7 +678,17 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
             />
           </td>
         )}
-        <td className="py-2.5 px-4 text-right">{player[eloKey]}</td>
+        <td className="py-2.5 px-4 text-right whitespace-nowrap">
+          {topCutMinGames > 0 && player.top_cut_eligible === false && (
+            <span
+              className="mr-2 text-xs text-text-muted"
+              title={`Needs ${topCutMinGames} ranked games to count for top cut`}
+            >
+              not yet eligible
+            </span>
+          )}
+          {player[eloKey]}
+        </td>
       </tr>
     )
   }
@@ -976,11 +986,13 @@ export default function Home() {
             <>
               <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
                 <StatBar leaderboard={leaderboard} totalGames={eventData.total_games} />
-                {(avatarMode || endsText) && (
+                {(avatarMode || endsText || eventData.top_cut_min_games > 0) && (
                   <p className="max-w-lg text-[13px] leading-relaxed text-text-muted md:text-right">
                     {avatarMode && (filtered
                       ? 'Filtered: each player appears once, on their best avatar. Top cut still gives each player one invite. '
                       : 'Each avatar is rated separately, so a player can appear once per avatar. Top cut still gives each player one invite. ')}
+                    {eventData.top_cut_min_games > 0 && source === 'online' &&
+                      `An entry needs ${eventData.top_cut_min_games} ranked games to count for top cut. `}
                     {endsText && <span className="text-text font-semibold">{endsText}</span>}
                   </p>
                 )}
@@ -992,6 +1004,7 @@ export default function Home() {
                 avatarMode={avatarMode}
                 userId={user ? user.user_id : null}
                 bestOnly={filtered}
+                topCutMinGames={source === 'online' ? eventData.top_cut_min_games || 0 : 0}
               />
             </>
           )}

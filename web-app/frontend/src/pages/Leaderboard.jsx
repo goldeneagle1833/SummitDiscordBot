@@ -213,7 +213,12 @@ function CurrentEventBoard({ eventData }) {
         meta={`Started ${formatDate(info.start_date)} · ${plural(players, 'player')} · ${plural(matches, 'match', 'matches')}`}
       />
       {rows.length > 0 ? (
-        <LeaderboardTable data={rows} columns="event" voiceRequirement={eventData?.voice_requirement} />
+        <LeaderboardTable
+          data={rows}
+          columns="event"
+          voiceRequirement={eventData?.voice_requirement}
+          topCutMinGames={eventData?.top_cut_min_games || 0}
+        />
       ) : (
         <p className="text-text-muted text-center py-8">No matches played yet</p>
       )}

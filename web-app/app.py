@@ -31,6 +31,7 @@ from migrations.create_match_reports_web import create_match_reports_web_table
 from migrations.add_season_id_to_match_reports_web import migrate as migrate_season_id
 from migrations.add_lifetime_elo_after import migrate as migrate_lifetime_elo_after
 from migrations.add_avatar_elo_mode import migrate as migrate_avatar_elo_mode
+from migrations.add_glicko2_season import migrate as migrate_glicko2_season
 from migrations.add_match_records_indexes import migrate as migrate_match_records_indexes
 from migrations.create_analytics_tables import create_analytics_tables
 from migrations.create_explorer_tables import create_explorer_tables
@@ -89,6 +90,11 @@ def create_app() -> Flask:
         migrate_avatar_elo_mode()
     except Exception as e:
         logger.error(f"Failed to ensure avatar ELO mode schema: {e}")
+
+    try:
+        migrate_glicko2_season()
+    except Exception as e:
+        logger.error(f"Failed to ensure Glicko-2 season schema: {e}")
 
     try:
         migrate_match_records_indexes()

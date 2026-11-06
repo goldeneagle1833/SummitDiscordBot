@@ -193,10 +193,18 @@ class EloCog(commands.Cog):
                 from utils.database import calculate_player_event_k, get_user_event_games
 
                 season_games = get_user_event_games(target_user.id)
-                k_line = (
-                    f"\n**K-value:** {calculate_player_event_k(season_games)} "
-                    f"({season_games} ranked game{'s' if season_games != 1 else ''} this season)"
-                )
+                if active_event.get("rating_system") == "glicko2":
+                    from services.glicko2_season import TOP_CUT_MIN_GAMES
+                    need = 0 if active_event.get("elo_mode") == "avatar" else max(TOP_CUT_MIN_GAMES - season_games, 0)
+                    k_line = (
+                        f"\n**Rating:** Glicko-2 ({season_games} ranked game{'s' if season_games != 1 else ''} this season"
+                        + (f", {need} more to count for top cut)" if need else ")")
+                    )
+                else:
+                    k_line = (
+                        f"\n**K-value:** {calculate_player_event_k(season_games)} "
+                        f"({season_games} ranked game{'s' if season_games != 1 else ''} this season)"
+                    )
             else:
                 k_line = ""
 

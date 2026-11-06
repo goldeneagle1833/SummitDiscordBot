@@ -7,6 +7,9 @@ from contextlib import contextmanager
 from urllib.parse import urlparse
 
 from repositories.avatar_elo_repo import ensure_avatar_elo_schema
+from services import glicko2_season
+from services.glicko2_season import ensure_elo_schema as ensure_glicko2_elo_schema
+from services.glicko2_season import ensure_match_schema as ensure_glicko2_match_schema
 
 logger = logging.getLogger("discord_bot")
 
@@ -43,6 +46,7 @@ ELO_COUNTING_MATCH_FILTER = f"""
         OR loser_elo_change IS NULL
         OR winner_elo_change != 0
         OR loser_elo_change != 0
+        OR rating_system = 'glicko2'
     )
 """
 
@@ -227,6 +231,9 @@ def create_db():
                     loser_went_first TEXT
                    )""")
 
+    # Season 9 on: each match carries its season and rating system
+    ensure_glicko2_match_schema(conn)
+
     conn.commit()
     conn.close()
 
@@ -285,6 +292,8 @@ def create_events_table():
 
     # Player/Avatar mode per event, and the per-avatar ladder
     ensure_avatar_elo_schema(conn)
+    # Elo or Glicko-2 per event, and the Glicko-2 columns
+    ensure_glicko2_elo_schema(conn)
 
     # When the season ends by itself (unix seconds; NULL = ends only by hand)
     cur.execute("PRAGMA table_info(events)")
@@ -502,6 +511,9 @@ def migrate_to_dual_elo_system():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Glicko-2 season columns (Season 9 on)
+    ensure_glicko2_elo_schema(conn)
+
     conn.commit()
     conn.close()
     _dual_elo_migrated = True
@@ -539,7 +551,7 @@ def get_active_event():
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
-    cur.execute("""SELECT event_id, event_name, start_date, elo_mode, scheduled_end_at
+    cur.execute("""SELECT event_id, event_name, start_date, elo_mode, scheduled_end_at, rating_system
                    FROM events
                    WHERE is_active = 1
                    LIMIT 1""")
@@ -553,6 +565,7 @@ def get_active_event():
             "start_date": datetime.datetime.fromisoformat(row[2]),
             "elo_mode": row[3] or "player",
             "scheduled_end_at": row[4],
+            "rating_system": row[5] or "elo",
         }
     return None
 
@@ -735,12 +748,13 @@ def get_top_16_user_ids():
 
 
 def _top_unique_player_ids(limit: int) -> list[int]:
-    from services.avatar_mode import get_event_ladder, unique_players
+    from services.avatar_mode import get_event_ladder, top_cut_eligible, unique_players
 
     migrate_to_dual_elo_system()
     active_event = get_active_event()
     if active_event:
-        return [entry.user_id for entry in unique_players(get_event_ladder(active_event))[:limit]]
+        ladder = top_cut_eligible(get_event_ladder(active_event), active_event)
+        return [entry.user_id for entry in unique_players(ladder)[:limit]]
 
     conn = sqlite3.connect("elo.db")
     try:
@@ -1068,7 +1082,16 @@ def set_player_event_elo(user_id: int, user_display_name: str, elo: int) -> int 
     result = cur.fetchone()
     old_elo = result[0] if result else None
 
-    if result:
+    event = glicko2_season.get_event(conn)
+    if glicko2_season.is_glicko2(event):
+        # Stored as an adjustment so a later season rebuild applies it again
+        if not result:
+            cur.execute(
+                "INSERT INTO overall_standings (user_id, user_display_name, online_elo) VALUES (?, ?, 1500)",
+                (user_id, user_display_name),
+            )
+        glicko2_season.add_adjustment(conn, event, user_id, user_display_name, elo)
+    elif result:
         cur.execute(
             "UPDATE overall_standings SET online_event_elo = ?, user_display_name = ? WHERE user_id = ?",
             (elo, user_display_name, user_id),

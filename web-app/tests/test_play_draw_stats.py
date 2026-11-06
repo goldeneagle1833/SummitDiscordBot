@@ -158,8 +158,11 @@ def test_matrix_current_event_is_public(matrix):
 def test_matrix_uses_rating_before_the_game(matrix, match_db):
     # 'lo' is 1450 today but was 1750 when it beat 'hi' (1550 then) ten times
     conn = sqlite3.connect(str(match_db))
-    conn.execute("ALTER TABLE match_records ADD COLUMN winner_lifetime_elo_change INTEGER")
-    conn.execute("ALTER TABLE match_records ADD COLUMN loser_lifetime_elo_change INTEGER")
+    # The live table has these (bot migration; the site startup migration adds them too)
+    have = {row[1] for row in conn.execute("PRAGMA table_info(match_records)")}
+    for col in ("winner_lifetime_elo_change", "loser_lifetime_elo_change"):
+        if col not in have:
+            conn.execute(f"ALTER TABLE match_records ADD COLUMN {col} INTEGER")
     for _ in range(10):
         conn.execute(
             "INSERT INTO match_records (winner_id, losser_id, json_deck_data_winner, json_deck_data_loser,"

@@ -6,6 +6,8 @@ import logging
 
 import config
 from utils.database import get_current_event_match_elo_snapshot
+from services import glicko2_season as g2
+from services import provisional
 from utils.text import find_best_command_match
 
 logger = logging.getLogger("discord_bot")
@@ -163,23 +165,52 @@ class EloCog(commands.Cog):
             lifetime_elo = row[0] if row[0] else 1500
             event_elo = row[1] if row[1] else 1500
 
-            # Get lifetime rank
-            cur.execute("SELECT COUNT(*) FROM overall_standings WHERE online_elo > ?", (lifetime_elo,))
+            # Lifetime rank; a Glicko-2 lifetime ranks settled players only
+            lifetime_glicko2 = g2.lifetime_is_glicko2(conn)
+            lifetime_games = legacy_elo = None
+            if lifetime_glicko2:
+                lifetime_games = provisional.lifetime_games([target_user.id])[target_user.id]
+                cur.execute(
+                    "SELECT COUNT(*) FROM overall_standings WHERE online_elo > ? "
+                    "AND COALESCE(online_games, 0) >= ?",
+                    (lifetime_elo, provisional.PROVISIONAL_GAMES),
+                )
+            else:
+                cur.execute("SELECT COUNT(*) FROM overall_standings WHERE online_elo > ?", (lifetime_elo,))
             lifetime_rank = cur.fetchone()[0] + 1
+            if "legacy_online_elo" in {c[1] for c in cur.execute("PRAGMA table_info(overall_standings)")}:
+                cur.execute("SELECT legacy_online_elo FROM overall_standings WHERE user_id=?", (target_user.id,))
+                legacy_elo = cur.fetchone()[0]
 
             # Check if there's an active event
             active_event = get_active_event()
+            season_glicko2 = g2.is_glicko2(active_event)
 
             # Check event participation via match_records
             has_event_games = False
             event_rank = 1
+            event_games = 0
             if active_event:
                 event_start_str = active_event["start_date"].isoformat()
                 has_event_games = has_player_played_event(target_user.id, event_start_str)
-                # Get event rank (only count players who have played event matches)
-                event_participants = get_event_participant_ids(event_start_str)
-                cur.execute("SELECT user_id, online_event_elo FROM overall_standings WHERE online_event_elo > ?", (event_elo,))
-                event_rank = sum(1 for r in cur.fetchall() if r[0] in event_participants) + 1
+                if season_glicko2:
+                    # Settled players take rank numbers; provisional ones don't
+                    from services.avatar_mode import get_event_ladder
+
+                    ladder = get_event_ladder(active_event)
+                    event_rank = None
+                    ranked = provisional.settled_first(
+                        ladder, True, lambda e: e.games_played, lambda e: e.label
+                    )
+                    for rank, entry in ranked:
+                        if entry.user_id == target_user.id:
+                            event_rank, event_games = rank, entry.games_played
+                            break
+                else:
+                    # Get event rank (only count players who have played event matches)
+                    event_participants = get_event_participant_ids(event_start_str)
+                    cur.execute("SELECT user_id, online_event_elo FROM overall_standings WHERE online_event_elo > ?", (event_elo,))
+                    event_rank = sum(1 for r in cur.fetchall() if r[0] in event_participants) + 1
 
             if is_self:
                 msg = f"{ctx.author.mention}\n"
@@ -187,26 +218,44 @@ class EloCog(commands.Cog):
                 msg = f"**{target_name}**\n"
 
             if check_is_admin(ctx):
-                msg += f"**Lifetime ELO:** {lifetime_elo} (Rank #{lifetime_rank})\n"
+                if lifetime_glicko2 and g2.is_provisional(lifetime_games):
+                    msg += f"**Lifetime ELO:** {g2.provisional_label(lifetime_games)}\n"
+                else:
+                    msg += f"**Lifetime ELO:** {lifetime_elo} (Rank #{lifetime_rank})\n"
+                if legacy_elo is not None:
+                    msg += f"**Legacy ELO (Seasons 1-8):** {legacy_elo}\n"
 
             if active_event:
                 from utils.database import calculate_player_event_k, get_user_event_games
 
                 season_games = get_user_event_games(target_user.id)
-                k_line = (
-                    f"\n**K-value:** {calculate_player_event_k(season_games)} "
-                    f"({season_games} ranked game{'s' if season_games != 1 else ''} this season)"
-                )
+                if season_glicko2:
+                    games_text = f"{season_games} ranked game{'s' if season_games != 1 else ''} this season"
+                    if active_event.get("elo_mode") != "avatar" and g2.is_provisional(season_games):
+                        k_line = (
+                            f"\n**Rating:** Glicko-2, {g2.provisional_label(season_games)}: "
+                            f"your rating shows after {provisional.PROVISIONAL_GAMES} ranked games "
+                            "and counts for top cut from then"
+                        )
+                    else:
+                        k_line = f"\n**Rating:** Glicko-2 ({games_text})"
+                else:
+                    k_line = (
+                        f"\n**K-value:** {calculate_player_event_k(season_games)} "
+                        f"({season_games} ranked game{'s' if season_games != 1 else ''} this season)"
+                    )
             else:
                 k_line = ""
 
             if active_event and active_event.get("elo_mode") == "avatar":
                 msg += _avatar_rank_lines(active_event, target_user.id)
             elif active_event:
-                if has_event_games:
-                    msg += f"**Event ELO ({active_event['event_name']}):** {event_elo} (Rank #{event_rank})"
-                else:
+                if not has_event_games:
                     msg += f"**Event ELO ({active_event['event_name']}):** 1500 (No matches yet)"
+                elif event_rank is None:
+                    msg += f"**Event ELO ({active_event['event_name']}):** {g2.provisional_label(event_games)}"
+                else:
+                    msg += f"**Event ELO ({active_event['event_name']}):** {event_elo} (Rank #{event_rank})"
             else:
                 msg += "*No active event*"
 
@@ -236,13 +285,12 @@ class EloCog(commands.Cog):
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()
         cur.execute(
-            "SELECT user_display_name, online_elo FROM overall_standings ORDER BY online_elo DESC LIMIT 16"
+            "SELECT user_id, user_display_name, online_elo FROM overall_standings ORDER BY online_elo DESC"
         )
-        rows = cur.fetchall()
+        rows = _lifetime_ranked(cur.fetchall(), g2.lifetime_is_glicko2(conn))[:16]
         if rows:
             leaderboard = "🏆 **Lifetime Elo Leaderboard** 🏆\n"
-            for i, (user_display_name, elo) in enumerate(rows, start=1):
-                leaderboard += f"#{i}: {user_display_name} - {elo} Elo\n"
+            leaderboard += "".join(_lifetime_line(rank, name, elo, games) for rank, (name, elo, games) in rows)
             await ctx.send(leaderboard)
         else:
             await ctx.send("No Elo ratings found. Play some matches to get started!")
@@ -260,13 +308,20 @@ class EloCog(commands.Cog):
             await ctx.send("No active event. Check back when a new event starts!")
             return
 
-        # One row per player (Player mode) or per player/avatar entry (Avatar mode)
-        rows = [(entry.label, entry.event_elo) for entry in get_event_ladder(active_event)[:16]]
+        # One row per player (Player mode) or per player/avatar entry (Avatar mode).
+        # Glicko-2: settled entries first; provisional ones take no rank number.
+        rows = provisional.settled_first(
+            get_event_ladder(active_event), g2.is_glicko2(active_event),
+            lambda e: e.games_played, lambda e: e.label,
+        )[:16]
 
         if rows:
             leaderboard = f"🏆 **{active_event['event_name']} Leaderboard** 🏆\n"
-            for i, (user_display_name, elo) in enumerate(rows, start=1):
-                leaderboard += f"#{i}: {user_display_name} - {elo} Elo\n"
+            for rank, entry in rows:
+                if rank is None:
+                    leaderboard += f"- {entry.label} - {g2.provisional_label(entry.games_played)}\n"
+                else:
+                    leaderboard += f"#{rank}: {entry.label} - {entry.event_elo} Elo\n"
             await ctx.send(leaderboard)
         else:
             await ctx.send(f"No rankings yet for {active_event['event_name']}. Play some matches to get started!")
@@ -289,6 +344,7 @@ class EloCog(commands.Cog):
             "SELECT user_id, user_display_name, online_elo FROM overall_standings ORDER BY online_elo DESC"
         )
         all_players = cur.fetchall()
+        lifetime_glicko2 = g2.lifetime_is_glicko2(conn)
         conn.close()
 
         # Filter players who have one of the masters roles
@@ -304,14 +360,12 @@ class EloCog(commands.Cog):
                 # Check if member has any of the masters roles
                 has_masters = any(role.id in masters_role_ids for role in member.roles)
                 if has_masters:
-                    filtered_players.append((display_name, elo))
+                    filtered_players.append((user_id, display_name, elo))
 
         if filtered_players:
             leaderboard = "🏆 **Masters Bracket Leaderboard** 🏆\n"
-            for i, (user_display_name, elo) in enumerate(
-                filtered_players[:24], start=1
-            ):
-                leaderboard += f"#{i}: {user_display_name} - {elo} Elo\n"
+            rows = _lifetime_ranked(filtered_players, lifetime_glicko2)[:24]
+            leaderboard += "".join(_lifetime_line(rank, name, elo, games) for rank, (name, elo, games) in rows)
             await ctx.send(leaderboard)
         else:
             await ctx.send("No masters bracket members found with Elo ratings!")
@@ -355,26 +409,12 @@ class EloCog(commands.Cog):
             f"**Winner:** {snapshot['winner_display_name']}",
         ]
         if is_admin:
-            lines.append(
-                f"Lifetime: {snapshot['winner']['lifetime_before']} -> {snapshot['winner']['lifetime_after']}"
-                if snapshot["winner"]["lifetime_before"] is not None
-                else "Lifetime: unavailable"
-            )
-        lines.append(
-            f"Event{_avatar_label(snapshot['winner'])}: "
-            f"{snapshot['winner']['event_before']} -> {snapshot['winner']['event_after']}"
-        )
+            lines.append(_snapshot_lifetime_line(snapshot["winner"]))
+        lines.append(_snapshot_event_line(snapshot["winner"]))
         lines.append(f"**Loser:** {snapshot['loser_display_name']}")
         if is_admin:
-            lines.append(
-                f"Lifetime: {snapshot['loser']['lifetime_before']} -> {snapshot['loser']['lifetime_after']}"
-                if snapshot["loser"]["lifetime_before"] is not None
-                else "Lifetime: unavailable"
-            )
-        lines.append(
-            f"Event{_avatar_label(snapshot['loser'])}: "
-            f"{snapshot['loser']['event_before']} -> {snapshot['loser']['event_after']}"
-        )
+            lines.append(_snapshot_lifetime_line(snapshot["loser"]))
+        lines.append(_snapshot_event_line(snapshot["loser"]))
 
         if snapshot["notes"]:
             lines.append("**Notes:**")
@@ -384,23 +424,61 @@ class EloCog(commands.Cog):
 
 
 
+def _lifetime_ranked(rows, glicko2: bool):
+    """(rank, (name, elo, games)) for (user_id, name, elo) rows sorted by lifetime ELO.
+
+    A Glicko-2 lifetime lists settled players first; provisional ones get no rank.
+    """
+    games = provisional.lifetime_games() if glicko2 else {}
+    entries = [(name, elo, games.get(uid, 0)) for uid, name, elo in rows]
+    return provisional.settled_first(entries, glicko2, lambda e: e[2], lambda e: e[0])
+
+
+def _lifetime_line(rank, name, elo, games) -> str:
+    if rank is None:
+        return f"- {name} - {g2.provisional_label(games)}\n"
+    return f"#{rank}: {name} - {elo} Elo\n"
+
+
+def _snapshot_lifetime_line(side: dict) -> str:
+    if side["lifetime_before"] is None:
+        return "Lifetime: unavailable"
+    if g2.change_hidden(side.get("lifetime_games")):
+        return f"Lifetime: {g2.provisional_label(side['lifetime_games'])} at this match"
+    return f"Lifetime: {side['lifetime_before']} -> {side['lifetime_after']}"
+
+
+def _snapshot_event_line(side: dict) -> str:
+    """A side's event before/after, unless that side was still provisional then."""
+    if g2.change_hidden(side.get("event_games")):
+        return f"Event{_avatar_label(side)}: {g2.provisional_label(side['event_games'])} at this match"
+    return f"Event{_avatar_label(side)}: {side['event_before']} -> {side['event_after']}"
+
+
 def _avatar_label(side: dict) -> str:
     return f" ({side['avatar']})" if side.get("avatar") else ""
 
 
 def _avatar_rank_lines(active_event, user_id) -> str:
     """!rank in Avatar mode: every avatar entry the player has, with its rank."""
-    from repositories.avatar_elo_repo import get_player_avatar_standings
+    from repositories.avatar_elo_repo import get_avatar_standings
 
-    entries = get_player_avatar_standings(active_event["event_id"], user_id)
+    glicko2 = g2.is_glicko2(active_event)
+    ranked = provisional.settled_first(
+        get_avatar_standings(active_event["event_id"]), glicko2,
+        lambda e: e["games_played"], lambda e: e["user_display_name"],
+    )
+    entries = [(rank, entry) for rank, entry in ranked if entry["user_id"] == user_id]
     header = f"**Event ELO ({active_event['event_name']}) — rated per avatar:**"
     if not entries:
         return f"{header}\nNo matches yet."
-    lines = [
-        f"- **{entry['avatar']}:** {entry['event_elo']} (Rank #{entry['rank']}, "
-        f"{entry['games_played']} game{'s' if entry['games_played'] != 1 else ''})"
-        for entry in entries
-    ]
+    lines = []
+    for rank, entry in entries:
+        games = f"{entry['games_played']} game{'s' if entry['games_played'] != 1 else ''}"
+        if rank is None:
+            lines.append(f"- **{entry['avatar']}:** {g2.provisional_label(entry['games_played'])}")
+        else:
+            lines.append(f"- **{entry['avatar']}:** {entry['event_elo']} (Rank #{rank}, {games})")
     return header + "\n" + "\n".join(lines)
 
 

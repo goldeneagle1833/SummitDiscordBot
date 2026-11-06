@@ -309,11 +309,11 @@ class UserProfileRepository:
                 row[0]
                 for row in cur.execute(
                     "SELECT name FROM sqlite_master WHERE type = 'table'"
-                    " AND name IN ('match_records', 'match_records_archive')"
+                    " AND name IN ('match_records', 'match_records_archive', 'season_match_records')"
                 ).fetchall()
             }
             union_parts = []
-            for table in ("match_records", "match_records_archive"):
+            for table in ("match_records", "match_records_archive", "season_match_records"):
                 if table in existing_tables:
                     union_parts.append(
                         f"SELECT winner_id AS user_id, winner_display_name AS display_name,"
@@ -949,12 +949,12 @@ class UserProfileRepository:
             row[0]
             for row in cur.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
-                " AND name IN ('match_records', 'match_records_archive')"
+                " AND name IN ('match_records', 'match_records_archive', 'season_match_records')"
             ).fetchall()
         }
 
         union_parts = []
-        for table in ("match_records", "match_records_archive"):
+        for table in ("match_records", "match_records_archive", "season_match_records"):
             if table in existing_tables:
                 union_parts.append(
                     f"SELECT winner_id AS user_id, winner_display_name AS display_name,"

@@ -5,6 +5,7 @@ import sqlite3
 from collections import Counter
 from flask import Blueprint, jsonify, request
 
+from services import provisional
 from services.leaderboard import LeaderboardService
 from services.ticket_leaderboard import TicketLeaderboardService
 from utils.api_auth import require_integration_api_key
@@ -289,6 +290,14 @@ def get_player_event_stats(player_id, event_id):
         # Keep as string to avoid overflow with large Google IDs
         stats = repo.get_player_event_elo(player_id, event_id)
         if stats:
+            ladder = provisional.archived_ladder(event_id, repo._db_path)
+            if ladder is not None:
+                # Glicko-2 season: rank among settled players; provisional shows no ELO
+                row = next((r for r in ladder if str(r["user_id"]) == str(player_id)), None)
+                if row:
+                    stats.update(elo=row["event_elo"], rank=row["rank"],
+                                 provisional=row["provisional"],
+                                 provisional_games=row["provisional_games"])
             return jsonify(stats)
         return jsonify({"error": "No data found for this player in this event"}), 404
     except Exception as e:
@@ -304,7 +313,8 @@ def get_archived_event_leaderboard(event_id):
         from repositories.matches import MatchRepository
 
         repo = EloRepository()
-        leaderboard = repo.get_archived_event_leaderboard(event_id)
+        ladder = provisional.archived_ladder(event_id, repo._db_path)
+        leaderboard = ladder if ladder is not None else repo.get_archived_event_leaderboard(event_id)
 
         # Season records come from the match archive (older events may have none)
         records = MatchRepository().get_event_archive_records(event_id)
@@ -350,7 +360,7 @@ def get_season_leaderboard(season_id):
         player_names = {}
 
         # Query match_records within date range
-        for table in ("match_records", "match_records_archive"):
+        for table in ("match_records", "match_records_archive", "season_match_records"):
             try:
                 cur.execute(f"""
                     SELECT winner_id, winner_display_name, losser_id, losser_display_name

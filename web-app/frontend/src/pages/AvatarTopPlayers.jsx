@@ -6,6 +6,7 @@ import Spinner from '@/components/ui/Spinner'
 import PageTabs from '@/components/ui/PageTabs'
 import { AVATAR_TABS } from '@/utils/pageTabs'
 import usePageTitle from '@/hooks/usePageTitle'
+import { Rating } from '@/components/common/Provisional'
 
 // Season Elo reads the running season's per-avatar ladder (Avatar-mode seasons only)
 const ELO_SORT = { value: 'elo', label: 'Season Elo' }
@@ -69,13 +70,13 @@ function SeasonEloTable({ avatar, entry }) {
               const winRate = player.games ? Math.round((player.wins / player.games) * 1000) / 10 : 0
               return (
                 <tr key={player.user_id} className="hover:bg-bg-elevated transition-colors">
-                  <td className="px-3 py-3 font-semibold text-text-muted">#{player.rank}</td>
+                  <td className="px-3 py-3 font-semibold text-text-muted">{player.rank != null ? `#${player.rank}` : ''}</td>
                   <td className="px-3 py-3">
                     <Link to={`/player/${player.user_id}`} className="text-primary hover:underline font-semibold">
                       {player.display_name}
                     </Link>
                   </td>
-                  <td className="px-3 py-3 text-right font-bold text-secondary">{player.elo}</td>
+                  <td className="px-3 py-3 text-right font-bold text-secondary"><Rating obj={player} field="elo" /></td>
                   <td className="px-3 py-3 text-right">{player.wins}W-{player.losses}L</td>
                   <td className={`px-3 py-3 text-right font-semibold ${getWinRateClass(winRate)}`}>{winRate}%</td>
                   <td className="px-3 py-3 text-right text-text-muted">{player.games}</td>

@@ -30,7 +30,7 @@ from services.bracket_builder import (
     winner_name,
 )
 from services.curiosa import CuriosaService
-from services.leaderboard import LeaderboardService, unique_players
+from services.leaderboard import LeaderboardService, top_cut_eligible, unique_players
 from services.sorcery_online_table import (
     LIMITED_BRACKET_QUEUE_TYPE,
     TableUnavailable,
@@ -180,6 +180,9 @@ class BracketService:
             elo_key = "elo"
 
         holders = ticket_holder_ids(self._repo)
+        if elo_key == "event_elo":
+            # Glicko-2 seasons: an entry needs enough games to be seeded from the ladder
+            standings = top_cut_eligible(standings, data.get("event"))
 
         players = []
         for entry in unique_players(standings):
@@ -1804,6 +1807,15 @@ class BracketService:
                 bracket.get("slug"), match.get("match_no"), e,
             )
 
+    def _lifetime_is_glicko2(self) -> bool:
+        from services import glicko2_season
+
+        conn = self._elo_repo._get_connection()
+        try:
+            return glicko2_season.lifetime_is_glicko2(conn)
+        finally:
+            conn.close()
+
     def _refund_elo(self, bracket: dict, match: dict) -> bool:
         """Give back the lifetime ELO a result moved before top cut stopped counting.
 
@@ -1822,6 +1834,14 @@ class BracketService:
 
         if not self._repo.claim_elo_refund(bracket["bracket_id"], match["match_no"]):
             return False
+        if self._lifetime_is_glicko2():
+            # The Elo lifetime these games moved is frozen as Legacy ELO
+            # (Seasons 1-8) and is never recalculated
+            self._repo.update_match(
+                bracket["bracket_id"], match["match_no"],
+                {"winner_elo_change": None, "loser_elo_change": None},
+            )
+            return True
 
         elo_repo = self._elo_repo
         for user_id, change in (

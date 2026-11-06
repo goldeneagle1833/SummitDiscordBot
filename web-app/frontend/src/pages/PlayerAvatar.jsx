@@ -5,6 +5,8 @@ import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
 import StatCard from '@/components/player/StatCard'
 import CollapsibleSection from '@/components/player/CollapsibleSection'
+import { HiddenChange } from '@/components/common/Provisional'
+import { isHidden } from '@/utils/provisional'
 import usePageTitle from '@/hooks/usePageTitle'
 
 export default function PlayerAvatar() {
@@ -171,7 +173,7 @@ export default function PlayerAvatar() {
                     </td>
                     <td className="py-2 pr-4 text-text-muted">{m.opponent_avatar !== 'Unknown' ? m.opponent_avatar : '-'}</td>
                     <td className="py-2 pr-4 text-text-muted">
-                      {m.elo_change > 0
+                      {isHidden(m, 'elo_change') ? <HiddenChange /> : m.elo_change > 0
                         ? <span className="text-accent-green">+{m.elo_change}</span>
                         : m.elo_change < 0
                           ? <span className="text-accent-red">{m.elo_change}</span>

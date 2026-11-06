@@ -2,12 +2,11 @@ import { useEffect, useState } from 'react'
 import CollapsibleSection from './CollapsibleSection'
 import { getDeckLinkPreviews } from '@/api/community'
 import { getDeckSourceLabel } from '@/utils/deckLinks'
+import { HiddenChange } from '@/components/common/Provisional'
+import { isHidden, signed } from '@/utils/provisional'
 
-function signed(n) {
-  return n > 0 ? `+${n}` : `${n}`
-}
-
-function EloDelta({ value }) {
+function EloDelta({ value, hidden = false }) {
+  if (hidden) return <HiddenChange />
   const tone = value > 0 ? 'text-accent-green' : value < 0 ? 'text-accent-red' : 'text-text-muted'
   return <span className={`font-medium ${tone}`}>{signed(value)}</span>
 }
@@ -72,8 +71,10 @@ export default function RecentDecks({ decks, playerId, showLinks = false, open, 
         {decks.map((deck) => {
           const encodedUrl = encodeURIComponent(deck.url)
           const statsHref = `/deck-stats/${playerId}?url=${encodedUrl}`
-          const hasSeason = deck.elo_season !== null && deck.elo_season !== undefined
-          const hasLifetime = deck.elo_lifetime !== null && deck.elo_lifetime !== undefined
+          const seasonHidden = isHidden(deck, 'elo_season')
+          const lifetimeHidden = isHidden(deck, 'elo_lifetime')
+          const hasSeason = seasonHidden || (deck.elo_season !== null && deck.elo_season !== undefined)
+          const hasLifetime = lifetimeHidden || (deck.elo_lifetime !== null && deck.elo_lifetime !== undefined)
           return (
             <div key={deck.url} className="bg-bg-raised border border-border rounded-lg p-3">
               <div className="flex items-center justify-between gap-3">
@@ -94,14 +95,14 @@ export default function RecentDecks({ decks, playerId, showLinks = false, open, 
                       ELO:{' '}
                       {hasSeason && (
                         <>
-                          Season <EloDelta value={deck.elo_season} />
+                          Season <EloDelta value={deck.elo_season} hidden={seasonHidden} />
                           {' '}({deck.season_wins}-{deck.season_losses})
                         </>
                       )}
                       {hasSeason && hasLifetime && ' · '}
                       {hasLifetime && (
                         <>
-                          Lifetime <EloDelta value={deck.elo_lifetime} />
+                          Lifetime <EloDelta value={deck.elo_lifetime} hidden={lifetimeHidden} />
                         </>
                       )}
                     </p>

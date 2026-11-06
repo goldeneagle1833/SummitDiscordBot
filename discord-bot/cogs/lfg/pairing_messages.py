@@ -461,7 +461,25 @@ def ladder_stakes_note(challenger_id, opponent_id, challenger_avatar=None, oppon
         return (
             " 🏆 **Ladder Challenge!** Top 16 player — special stakes (2x/0.5x ELO)!"
         )
+    if _either_provisional(challenger_id, opponent_id, challenger_avatar, opponent_avatar):
+        # A provisional (Glicko-2) rating isn't shown, so neither is the gap to it
+        return " 🏆 **Ladder Challenge!** Top 16 player (normal stakes)."
     return " 🏆 **Ladder Challenge!** Top 16 player (normal stakes — ELO diff < 100)."
+
+
+def _either_provisional(challenger_id, opponent_id, challenger_avatar, opponent_avatar) -> bool:
+    from services.avatar_mode import is_avatar_mode
+    from services.provisional import entry_provisional
+
+    try:
+        per_avatar = is_avatar_mode()
+        return any(
+            entry_provisional(uid, avatar if per_avatar else None)
+            for uid, avatar in ((challenger_id, challenger_avatar), (opponent_id, opponent_avatar))
+        )
+    except Exception as e:
+        logger.error("Could not read provisional status for the announcement note: %s", e)
+        return True
 
 
 async def announce_pairing(

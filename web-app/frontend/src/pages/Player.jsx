@@ -33,6 +33,7 @@ import QueueSettingsModal from '@/components/player/QueueSettingsModal'
 import CardStats from '@/components/player/CardStats'
 import { useBracketMarks } from '@/components/player/BracketMarks'
 import { useAuth } from '@/context/AuthContext'
+import { provisionalOf } from '@/utils/provisional'
 
 const PER_PAGE_OPTIONS = [15, 25, 50]
 
@@ -148,19 +149,30 @@ export default function Player() {
   const avatarMode = data.avatar_event_elo?.elo_mode === 'avatar'
   const avatarEntries = data.avatar_event_elo?.entries || []
   const isLifetime = eventFilter === 'lifetime' || !eventFilter
-  const headline = { elo: null, eloLabel: '', rank: null, rankLabel: 'Rank', note: '' }
+  // provisional: { games } when the shown rating is a provisional Glicko-2 one
+  // (fewer than 8 games): the header shows "Provisional (n/8)" and no rank.
+  const headline = { elo: null, eloLabel: '', rank: null, rankLabel: 'Rank', note: '', provisional: null, legacyElo: null }
+  const eventProv = provisionalOf(data, 'event')
   if (isLifetime) {
-    if (canSeeLifetime && data.elo != null) {
+    const lifetimeProv = provisionalOf(data, 'lifetime')
+    if (canSeeLifetime && (data.elo != null || lifetimeProv)) {
       headline.elo = data.elo
       headline.eloLabel = 'Lifetime ELO'
-      headline.rank = data.rank || null
-    } else if (data.event_elo && data.event_elo !== 1500) {
+      headline.provisional = lifetimeProv
+      headline.rank = lifetimeProv ? null : data.rank || null
+      headline.legacyElo = data.legacy_elo ?? null
+    } else if (eventProv || (data.event_elo && data.event_elo !== 1500)) {
       headline.elo = data.event_elo
       headline.eloLabel = 'Event ELO'
+      headline.provisional = eventProv
     }
   } else if (avatarMode) {
     if (!avatarEntries.length) headline.note = 'No avatar games this event yet'
-  } else if (data.displayed_elo !== 1500) {
+  } else if (provisionalOf(data, 'displayed')) {
+    // displayed_* is the selected event's rating (event_* is the running one)
+    headline.provisional = provisionalOf(data, 'displayed')
+    headline.eloLabel = eventFilter === 'current' ? 'Current event ELO' : 'Event ELO'
+  } else if (data.displayed_elo != null && data.displayed_elo !== 1500) {
     headline.elo = data.displayed_elo
     headline.eloLabel = eventFilter === 'current' ? 'Current event ELO' : 'Event ELO'
     headline.rank = data.displayed_rank > 0 ? data.displayed_rank : null

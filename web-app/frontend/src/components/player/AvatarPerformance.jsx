@@ -3,6 +3,11 @@ import { Link } from 'react-router-dom'
 import AvatarArtCard, { useAvatarArt } from './AvatarArtCard'
 import { getWinRateColor } from '@/utils/winRateColor'
 import { setHiddenAvatars } from '@/api/players'
+import { ProvisionalTag } from '@/components/common/Provisional'
+import { provisionalOf } from '@/utils/provisional'
+
+// An avatar's season rating can be provisional (Glicko-2, < 8 games)
+const eventProv = (av) => provisionalOf(av) || provisionalOf(av, 'event')
 
 const SORTS = {
   games: { label: 'Most played', fn: (a, b) => b.wins + b.losses - (a.wins + a.losses) },
@@ -84,7 +89,7 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
   const unhide = (name) => saveHidden(hiddenNames.filter((n) => n !== name))
 
   const games = (a) => a.wins + a.losses
-  const showEventElo = shown.some((av) => av.event_elo != null)
+  const showEventElo = shown.some((av) => av.event_elo != null || eventProv(av))
   const mostPlayed = [...shown].sort(SORTS.games.fn)[0]
   const qualified = shown.filter((a) => games(a) >= 5)
   const best = [...qualified].sort(SORTS.win_rate.fn)[0]
@@ -143,7 +148,12 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
                       {shortDate(av.last_played) && ` · last ${shortDate(av.last_played)}`}
                     </div>
                   </div>
-                  {av.event_elo != null && (
+                  {eventProv(av) ? (
+                    <div className="text-right shrink-0">
+                      <ProvisionalTag games={eventProv(av).games} className="text-sm" />
+                      <div className="text-xs text-gray-300">Event ELO</div>
+                    </div>
+                  ) : av.event_elo != null && (
                     <div className="text-right shrink-0">
                       <div className="text-lg font-bold text-secondary tabular-nums">{av.event_elo}</div>
                       <div className="text-xs text-gray-300">{av.event_rank ? `#${av.event_rank}` : 'Event ELO'}</div>
@@ -168,6 +178,7 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
                           </span>
                         </div>
                       )}
+                      {/* Summed season change; hidden (provisional) changes come back null */}
                       {av.elo_change ? (
                         <div className="text-gray-300 tabular-nums">
                           {av.elo_change > 0 ? '+' : ''}{av.elo_change} ELO
@@ -235,8 +246,12 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
                   <td className="py-2.5 px-3 tabular-nums">{av.wins}W / {av.losses}L</td>
                   <td className="py-2.5 px-3 tabular-nums font-bold" style={{ color: getWinRateColor(av.win_rate) }}>{av.win_rate}%</td>
                   <td className="py-2.5 px-3 tabular-nums text-text-muted">{games(av)}</td>
-                  {showEventElo && <td className="py-2.5 px-3 tabular-nums">{av.event_elo ?? '-'}</td>}
-                  {showEventElo && <td className="py-2.5 px-3 tabular-nums">{av.event_rank ? `#${av.event_rank}` : '-'}</td>}
+                  {showEventElo && (
+                    <td className="py-2.5 px-3 tabular-nums">
+                      {eventProv(av) ? <ProvisionalTag games={eventProv(av).games} /> : av.event_elo ?? '-'}
+                    </td>
+                  )}
+                  {showEventElo && <td className="py-2.5 px-3 tabular-nums">{av.event_rank && !eventProv(av) ? `#${av.event_rank}` : '-'}</td>}
                   <td className="py-2.5 px-5 text-text-muted">{shortDate(av.last_played) ?? '-'}</td>
                 </tr>
               ))}

@@ -22,6 +22,7 @@ Rules where two answers were possible:
   Lavamancer); the next weakest avatars take their places.
 """
 
+from utils.match_tables import live_matches
 import logging
 import sqlite3
 
@@ -92,7 +93,7 @@ def _season_rows(event: dict) -> list[tuple]:
         if event["is_active"]:
             # The running season, as the Avatars page reads it.
             return conn.execute(
-                f"SELECT {cols} FROM match_records WHERE source = 'Discord' OR source IS NULL"
+                f"SELECT {cols} FROM {live_matches()} WHERE source = 'Discord' OR source IS NULL"
             ).fetchall()
         return conn.execute(
             f"SELECT {cols} FROM match_records_archive"

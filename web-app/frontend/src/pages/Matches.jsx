@@ -4,6 +4,8 @@ import { getMatches, getAvailableDates, getRecap } from '@/api/matches'
 import Spinner from '@/components/ui/Spinner'
 import RecapPanel from '@/components/matches/RecapPanel'
 import usePageTitle from '@/hooks/usePageTitle'
+import { HiddenChange } from '@/components/common/Provisional'
+import { isHidden } from '@/utils/provisional'
 
 export default function Matches() {
   usePageTitle('Match History')
@@ -144,13 +146,17 @@ export default function Matches() {
                         {match.winner}
                       </Link>
                     </td>
-                    <td className="py-2 px-3 text-accent-green">{winSign}{match.winner_elo_change}</td>
+                    <td className="py-2 px-3 text-accent-green">
+                      {isHidden(match, 'winner_elo_change') ? <HiddenChange /> : <>{winSign}{match.winner_elo_change}</>}
+                    </td>
                     <td className="py-2 px-3">
                       <Link to={`/player/${match.loser_id}`} className="text-secondary hover:underline">
                         {match.loser}
                       </Link>
                     </td>
-                    <td className="py-2 px-3 text-accent-red">{loseSign}{match.loser_elo_change}</td>
+                    <td className="py-2 px-3 text-accent-red">
+                      {isHidden(match, 'loser_elo_change') ? <HiddenChange /> : <>{loseSign}{match.loser_elo_change}</>}
+                    </td>
                     <td className="py-2 px-3 text-text-muted">{matchTime}</td>
                     <td className="py-2 px-3 text-text-muted">{date}</td>
                     <td className="py-2 px-3 text-text-muted">

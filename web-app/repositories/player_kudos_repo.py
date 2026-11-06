@@ -13,6 +13,7 @@ shows one, with the reason and (unless they chose otherwise) who gave it.
 The table shape is shared with discord-bot/repositories/player_kudos_repo.py.
 """
 
+from utils.match_tables import live_matches
 import json
 import random
 import sqlite3
@@ -118,7 +119,7 @@ class PlayerKudosRepository:
         conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         try:
-            cols = {r[1] for r in conn.execute("PRAGMA table_info(match_records)")}
+            cols = {r[1] for r in conn.execute(f"PRAGMA table_info({live_matches(self._db_path)})")}
             if not cols:
                 return None
             has_pairing = "pairing_id" in cols
@@ -128,7 +129,7 @@ class PlayerKudosRepository:
             # the match ID is SQLite's rowid, as everywhere else in the code.
             sql = f"""
                 SELECT m.rowid AS match_id, {pairing_col} AS pairing_id, m.match_type, m.timestamp
-                FROM match_records m
+                FROM {live_matches(self._db_path)} m
                 WHERE ((CAST(m.winner_id AS TEXT) = ? AND CAST(m.losser_id AS TEXT) = ?)
                     OR (CAST(m.winner_id AS TEXT) = ? AND CAST(m.losser_id AS TEXT) = ?))
                   AND m.timestamp >= ?
@@ -153,12 +154,12 @@ class PlayerKudosRepository:
         """True if the two played a recorded match in the window (kudos given or not)."""
         conn = self._get_connection()
         try:
-            cols = {r[1] for r in conn.execute("PRAGMA table_info(match_records)")}
+            cols = {r[1] for r in conn.execute(f"PRAGMA table_info({live_matches(self._db_path)})")}
             if not cols:
                 return False
             since = (datetime.now(timezone.utc) - timedelta(days=KUDOS_WINDOW_DAYS)).strftime("%Y-%m-%d")
-            sql = """
-                SELECT 1 FROM match_records
+            sql = f"""
+                SELECT 1 FROM {live_matches(self._db_path)}
                 WHERE ((CAST(winner_id AS TEXT) = ? AND CAST(losser_id AS TEXT) = ?)
                     OR (CAST(winner_id AS TEXT) = ? AND CAST(losser_id AS TEXT) = ?))
                   AND timestamp >= ?

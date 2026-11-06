@@ -1,3 +1,4 @@
+from utils.match_tables import live_matches
 import discord
 from discord.ext import commands, tasks
 import datetime
@@ -66,6 +67,7 @@ from utils.database import (
     get_user_elo,
     get_user_event_elo,
     update_elo_db_lifetime_only,
+    rate_top_cut_lifetime,
     log_admin_action,
     cleanup_old_pairings,
     cancel_pairing,
@@ -110,6 +112,8 @@ from services.postseason import (
     select_top_cut,
 )
 from utils.checks import is_bot_admin
+from services.glicko2_season import TOP_CUT_MIN_GAMES, is_glicko2
+from services import provisional
 from services.pilots_service import is_pilot_active
 from services.limited_service import limited_winner_report, limited_elo_only_report, get_run_summary, forfeit_arena_run, close_arena_run, start_arena_run
 from repositories.limited_repo import get_active_arena_run, get_limited_elo, upsert_limited_elo, get_all_limited_standings, get_limited_wins_count, get_limited_losses_count
@@ -155,15 +159,44 @@ def _avatar_suffix(avatar):
 
 def _new_ranks_text(winner_id, winner_name, winner_avatar, winner_event_elo,
                     loser_id, loser_name, loser_avatar, loser_event_elo):
-    """The admin report's "New Ranks" block, per avatar in Avatar mode."""
-    if winner_avatar and loser_avatar and is_avatar_mode():
+    """The admin report's "New Ranks" block, per avatar in Avatar mode.
+
+    Posted in the channel, so a provisional Glicko-2 rating shows as
+    "Provisional (n/8)" instead of its number.
+    """
+    per_avatar = bool(winner_avatar and loser_avatar and is_avatar_mode())
+    if per_avatar:
         winner_event_elo = ladder_elo(winner_id, winner_avatar)
         loser_event_elo = ladder_elo(loser_id, loser_avatar)
+    winner_text = provisional.season_rating_text(
+        winner_id, winner_event_elo, winner_avatar if per_avatar else None
+    )
+    loser_text = provisional.season_rating_text(
+        loser_id, loser_event_elo, loser_avatar if per_avatar else None
+    )
     return (
         f"\n\n**New Ranks:**\n"
-        f"{winner_name}{_avatar_suffix(winner_avatar)}: **{winner_event_elo}** event\n"
-        f"{loser_name}{_avatar_suffix(loser_avatar)}: **{loser_event_elo}** event"
+        f"{winner_name}{_avatar_suffix(winner_avatar)}: **{winner_text}** event\n"
+        f"{loser_name}{_avatar_suffix(loser_avatar)}: **{loser_text}** event"
     )
+
+
+def _lifetime_result_text(rating, change, games) -> str:
+    """"**1612** lifetime (+14)"; ``games`` is the Glicko-2 lifetime count (None on Elo)."""
+    glicko2 = games is not None
+    shown = provisional.change_text(change, games) if glicko2 else f"{change:+d}"
+    return f"**{provisional.rating_text(rating, games, glicko2)}** lifetime" + (f" ({shown})" if shown else "")
+
+
+def _settled_lifetime(rows):
+    """(user_id, name, elo) lifetime rows without provisional Glicko-2 players.
+
+    A provisional lifetime rating isn't shown and can't take a top 16 place.
+    """
+    if not provisional.lifetime_is_glicko2():
+        return rows
+    games = provisional.lifetime_games()
+    return [row for row in rows if not provisional.is_provisional(games.get(row[0]))]
 
 
 class LFGCog(commands.Cog):
@@ -355,13 +388,13 @@ class LFGCog(commands.Cog):
             if event_start_str:
                 cursor_matches.execute(
                     f"""
-                    SELECT COUNT(*) FROM match_records
+                    SELECT COUNT(*) FROM {live_matches()}
                     WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
                     """,
                     (event_start_str,),
                 )
             else:
-                cursor_matches.execute("SELECT COUNT(*) FROM match_records")
+                cursor_matches.execute(f"SELECT COUNT(*) FROM {live_matches()}")
             total_games_played = cursor_matches.fetchone()[0]
 
             # Create leaderboard embed with event name and game count
@@ -403,7 +436,7 @@ class LFGCog(commands.Cog):
                     elif event_start_str:
                         cursor_matches.execute(
                             f"""
-                            SELECT COUNT(*) FROM match_records
+                            SELECT COUNT(*) FROM {live_matches()}
                             WHERE (winner_id = ? OR losser_id = ?)
                               AND timestamp >= ?
                               AND {ELO_COUNTING_MATCH_FILTER}
@@ -413,8 +446,8 @@ class LFGCog(commands.Cog):
                         total_games = cursor_matches.fetchone()[0]
                     else:
                         cursor_matches.execute(
-                            """
-                            SELECT COUNT(*) FROM match_records
+                            f"""
+                            SELECT COUNT(*) FROM {live_matches()}
                             WHERE winner_id = ? OR losser_id = ?
                             """,
                             (user_id, user_id),
@@ -444,30 +477,57 @@ class LFGCog(commands.Cog):
 
                 conn_matches.close()
 
-                def format_row(idx, p):
+                # Glicko-2 ladders (the season's, or lifetime with no season running):
+                # settled entries take the rank numbers, provisional ones follow
+                # without a number or rating
+                if active_event:
+                    glicko2 = is_glicko2(active_event)
+
+                    def rating_games(p):
+                        return p["games"]
+                else:
+                    glicko2 = provisional.lifetime_is_glicko2()
+                    life_games = provisional.lifetime_games() if glicko2 else {}
+
+                    def rating_games(p):
+                        return life_games.get(p["user_id"], 0)
+
+                def ranked(players, limit):
+                    return provisional.settled_first(
+                        players, glicko2, rating_games, lambda p: p["display_name"]
+                    )[:limit]
+
+                def format_row(rank, p):
                     # rank. **name** *avatar* — elo (games) so each part reads apart
                     name = discord.utils.escape_markdown(str(p["display_name"]))
                     avatar = f" *{discord.utils.escape_markdown(p['avatar'])}*" if p["avatar"] else ""
-                    return f"{idx}. **{name}**{avatar} — {p['elo']} ({p['games']}g)"
+                    if rank is None:
+                        return f"- **{name}**{avatar} — {provisional.provisional_label(rating_games(p))}"
+                    return f"{rank}. **{name}**{avatar} — {p['elo']} ({p['games']}g)"
 
                 def section(title, rows, empty):
                     return f"**{title}**\n" + ("\n".join(rows) if rows else empty)
 
+                ordered = [p for _, p in ranked(player_data, None)]
+
                 # Overall Rankings (top 8 of all players)
-                overall_text = [format_row(idx, p) for idx, p in enumerate(player_data[:8], 1)]
+                overall_text = [format_row(rank, p) for rank, p in ranked(ordered, 8)]
 
                 # Ticket Holders section (the top cut: top TOP_CUT_SIZE players with
                 # the ticket holder role).
                 # Top cut belongs to the player: each player appears once, at their
                 # best avatar entry, so a second entry never takes someone's slot.
-                from services.avatar_mode import unique_players
+                from services.avatar_mode import top_cut_eligible, unique_players
 
-                ticket_players = unique_players([p for p in player_data if p["has_ticket"]])
-                ticket_text = [format_row(idx, p) for idx, p in enumerate(ticket_players[:TOP_CUT_SIZE], 1)]
+                # Glicko-2 seasons: an entry needs enough games to hold a top cut spot
+                ticket_players = unique_players(
+                    top_cut_eligible([p for p in ordered if p["has_ticket"]], active_event or {})
+                )
+                ticket_text = [format_row(rank, p) for rank, p in ranked(ticket_players, TOP_CUT_SIZE)]
 
                 # Free Play section (top 8 from non-ticket holders)
-                free_players = unique_players([p for p in player_data if not p["has_ticket"]])
-                free_text = [format_row(idx, p) for idx, p in enumerate(free_players[:8], 1)]
+                free_players = unique_players([p for p in ordered if not p["has_ticket"]])
+                free_text = [format_row(rank, p) for rank, p in ranked(free_players, 8)]
 
                 # One description instead of fields: the 4096-char description
                 # limit fits all 32 ticket rows without splitting them up.
@@ -822,7 +882,7 @@ class LFGCog(commands.Cog):
         # The ladder has to be read before the event is archived
         ladder = final_ladder(active_event)
         holders = await self._ticket_holder_ids({entry.user_id for entry in ladder})
-        qualifiers = select_top_cut(ladder, holders)
+        qualifiers = select_top_cut(ladder, holders, event=active_event)
 
         summary = end_current_event()
         if not summary:
@@ -1184,7 +1244,7 @@ class LFGCog(commands.Cog):
         try:
             # Get player1's last match
             cur.execute(
-                """SELECT winner_id, losser_id FROM match_records
+                f"""SELECT winner_id, losser_id FROM {live_matches()}
                 WHERE (winner_id = ? OR losser_id = ?)
                 ORDER BY timestamp DESC LIMIT 1""",
                 (player1_id, player1_id),
@@ -1193,7 +1253,7 @@ class LFGCog(commands.Cog):
 
             # Get player2's last match
             cur.execute(
-                """SELECT winner_id, losser_id FROM match_records
+                f"""SELECT winner_id, losser_id FROM {live_matches()}
                 WHERE (winner_id = ? OR losser_id = ?)
                 ORDER BY timestamp DESC LIMIT 1""",
                 (player2_id, player2_id),
@@ -2216,7 +2276,7 @@ class LFGCog(commands.Cog):
             _audit_conn.close()
             _audit_conn2 = sqlite3.connect("match_records.db")
             _audit_cur2 = _audit_conn2.cursor()
-            _audit_cur2.execute("SELECT COUNT(*) FROM match_records")
+            _audit_cur2.execute(f"SELECT COUNT(*) FROM {live_matches()}")
             _total_matches = _audit_cur2.fetchone()[0]
             _audit_conn2.close()
 
@@ -2243,6 +2303,7 @@ class LFGCog(commands.Cog):
 
             # Drop and recreate match_records table
             cur_matches.execute("DROP TABLE IF EXISTS match_records")
+            cur_matches.execute("DROP TABLE IF EXISTS season_match_records")
             cur_matches.execute("""CREATE TABLE match_records
                                    (reporter_id INTEGER,
                                     winner_id INTEGER,
@@ -2474,19 +2535,23 @@ class LFGCog(commands.Cog):
             )
 
             # Update only lifetime ELO for both players
-            new_winner_elo, winner_change = update_elo_db_lifetime_only(
-                winner.id, winner_name, True, loser.id
-            )
-            new_loser_elo, loser_change = update_elo_db_lifetime_only(
-                loser.id, loser_name, False, winner.id
+            new_winner_elo, winner_change, new_loser_elo, loser_change = rate_top_cut_lifetime(
+                match_id, winner.id, winner_name, loser.id, loser_name
             )
 
             # Update leaderboard
             await self.update_leaderboard()
 
-            # Get event ELOs (unchanged) for display
-            winner_event_elo = get_user_event_elo(winner.id)
-            loser_event_elo = get_user_event_elo(loser.id)
+            # Get event ELOs (unchanged) for display; provisional Glicko-2
+            # ratings and changes made while provisional aren't shown
+            winner_event_elo = provisional.season_rating_text(winner.id, get_user_event_elo(winner.id))
+            loser_event_elo = provisional.season_rating_text(loser.id, get_user_event_elo(loser.id))
+            life_games = (
+                provisional.lifetime_games([winner.id, loser.id])
+                if provisional.lifetime_is_glicko2() else {}
+            )
+            winner_lifetime = _lifetime_result_text(new_winner_elo, winner_change, life_games.get(winner.id))
+            loser_lifetime = _lifetime_result_text(new_loser_elo, loser_change, life_games.get(loser.id))
 
             description = (
                 f"**Match ID:** #{match_id}\n"
@@ -2494,8 +2559,8 @@ class LFGCog(commands.Cog):
                 f"**Loser:** {loser.mention} ({loser_name})\n"
                 f"**Type:** Top Cut (lifetime ELO only)\n\n"
                 f"**Updated Ranks:**\n"
-                f"{winner_name}: **{new_winner_elo}** lifetime ({winner_change:+d}) / **{winner_event_elo}** event (unchanged)\n"
-                f"{loser_name}: **{new_loser_elo}** lifetime ({loser_change:+d}) / **{loser_event_elo}** event (unchanged)"
+                f"{winner_name}: {winner_lifetime} / **{winner_event_elo}** event (unchanged)\n"
+                f"{loser_name}: {loser_lifetime} / **{loser_event_elo}** event (unchanged)"
             )
             success_embed = discord.Embed(
                 title="Top Cut Match Reported",
@@ -2878,6 +2943,12 @@ class LFGCog(commands.Cog):
                 elo_multiplier_winner = 2.0
                 elo_multiplier_loser = 0.5
                 stakes_label = f"Special stakes (ELO diff {elo_diff} >= 100)"
+            if any(
+                provisional.entry_provisional(uid, avatars.get(uid) if is_avatar_mode() else None)
+                for uid in (top16_player.id, opponent_id)
+            ):
+                # A provisional rating isn't shown, so neither is the gap to it
+                stakes_label = stakes_label.split(" (")[0]
 
             guild_id = ctx.guild.id if ctx.guild else None
 
@@ -3104,12 +3175,15 @@ class LFGCog(commands.Cog):
     async def start_event(self, ctx, *, event_name: str = None):
         """
         Start a new event/season. Archives current event and resets event ELO.
-        Usage: !start_event [player|avatar] Event Name Here [<t:unix:F>]
+        Usage: !start_event [player|avatar] [elo|glicko2] Event Name Here [<t:unix:F>]
 
         The first word picks the ELO mode (Player mode when left out):
         - player: one event ELO per player
         - avatar: one event ELO per player and avatar (ranked needs a deck link)
-        The mode is locked once the event starts.
+        The next word picks the rating system (Elo when left out):
+        - elo: the K-factor Elo used through Season 8
+        - glicko2: Glicko-2 (new entries move fast, 8 games to count for top cut)
+        Both are locked once the event starts.
 
         Add a Discord timestamp (e.g. <t:1794805140:F>) to end the season by
         itself at that time. When it ends, the top 32 ticket holders make top
@@ -3123,17 +3197,26 @@ class LFGCog(commands.Cog):
         )
 
         usage = (
-            "Usage: `!start_event [player|avatar] Event Name Here [<t:unix:F>]` "
-            "(Player mode when the mode is left out; it can't change after the event starts. "
+            "Usage: `!start_event [player|avatar] [elo|glicko2] Event Name Here [<t:unix:F>]` "
+            "(Player mode and Elo when left out; neither can change after the event starts. "
             "The optional Discord timestamp ends the season automatically.)"
         )
         scheduled_end_at, event_name = extract_end_time(event_name or "")
         elo_mode = "player"
-        if event_name:
+        rating_system = "elo"
+        # Up to two leading option words, in either order
+        for _ in range(2):
+            if not event_name:
+                break
             first, _, rest = event_name.partition(" ")
-            if first.lower() in ("player", "avatar"):
-                elo_mode = first.lower()
-                event_name = rest.strip()
+            word = first.lower()
+            if word in ("player", "avatar"):
+                elo_mode = word
+            elif word in ("elo", "glicko2", "glicko-2", "glicko"):
+                rating_system = "elo" if word == "elo" else "glicko2"
+            else:
+                break
+            event_name = rest.strip()
 
         if not event_name:
             await ctx.send(f"Please provide an event name. {usage}")
@@ -3147,7 +3230,10 @@ class LFGCog(commands.Cog):
 
         try:
             # Start the new event
-            result = start_new_event(event_name, elo_mode=elo_mode, scheduled_end_at=scheduled_end_at)
+            result = start_new_event(
+                event_name, elo_mode=elo_mode, scheduled_end_at=scheduled_end_at,
+                rating_system=rating_system,
+            )
 
             # Build response embed
             embed = discord.Embed(
@@ -3161,8 +3247,13 @@ class LFGCog(commands.Cog):
                 value=(
                     f"**Event ID:** {result['event_id']}\n"
                     f"**Started:** {result['start_date'].strftime('%Y-%m-%d %H:%M')}\n"
-                    f"**K-Value:** each player starts at 16 and gains 2 per game, up to 32\n"
-                    f"**All event ELO reset to:** 1500"
+                    + (
+                        "**Rating:** Glicko-2 (start 1500, new entries move fast; "
+                        f"{TOP_CUT_MIN_GAMES} games to count for top cut)\n"
+                        if rating_system == "glicko2" else
+                        "**K-Value:** each player starts at 16 and gains 2 per game, up to 32\n"
+                    )
+                    + "**All event ELO reset to:** 1500"
                 ),
                 inline=False,
             )
@@ -3462,9 +3553,16 @@ class LFGCog(commands.Cog):
 
         conn = sqlite3.connect("match_records.db")
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM match_records")
+        # Glicko-2 seasons keep their matches in match_records after they end,
+        # so count only this event's rows plus untagged (Elo-era) rows
+        cur.execute(
+            f"SELECT COUNT(*) FROM {live_matches()} "
+            "WHERE COALESCE(rating_system, 'elo') != 'glicko2' OR event_id = ?",
+            (active_event["event_id"],),
+        )
         match_count = cur.fetchone()[0]
         conn.close()
+        glicko = active_event.get("rating_system") == "glicko2"
 
         embed = discord.Embed(
             title=f"Current Event: {active_event['event_name']}",
@@ -3479,10 +3577,27 @@ class LFGCog(commands.Cog):
                 f"**Days Elapsed:** {days_elapsed}\n"
                 f"**Matches Played:** {match_count}\n"
                 f"**ELO Mode:** {'Avatar (one event ELO per player and avatar)' if active_event.get('elo_mode') == 'avatar' else 'Player'}\n"
+                f"**Rating System:** {'Glicko-2' if glicko else 'Elo'}\n"
                 f"**Season End:** {_season_end_text(active_event.get('scheduled_end_at'))}"
             ),
             inline=False,
         )
+
+        if glicko:
+            need = 0 if active_event.get("elo_mode") == "avatar" else max(TOP_CUT_MIN_GAMES - your_games, 0)
+            embed.add_field(
+                name="Glicko-2 Info",
+                value=(
+                    "Ratings start at 1500 and move fastest over your first games, "
+                    "then settle but never lock.\n"
+                    f"**Top cut:** an entry needs {TOP_CUT_MIN_GAMES} ranked games to count\n"
+                    f"**You:** {your_games} ranked game{'s' if your_games != 1 else ''} this season"
+                    + (f" ({need} more to count for top cut)" if need else "")
+                ),
+                inline=False,
+            )
+            await ctx.send(embed=embed)
+            return
 
         embed.add_field(
             name="K-Value Info",
@@ -3858,8 +3973,8 @@ class LFGCog(commands.Cog):
                         f"~~Winner: {result['original_winner_name']}~~\n"
                         f"~~Loser: {result['original_loser_name']}~~\n\n"
                         f"**Corrected Result:**\n"
-                        f"Winner: **{result['new_winner_name']}** ({result['new_winner_elo_change']:+d} ELO)\n"
-                        f"Loser: **{result['new_loser_name']}** ({result['new_loser_elo_change']:+d} ELO)"
+                        f"Winner: {provisional.corrected_side_text(result, 'winner')}\n"
+                        f"Loser: {provisional.corrected_side_text(result, 'loser')}"
                     ),
                     color=discord.Color.green(),
                 )
@@ -4780,7 +4895,7 @@ class LFGCog(commands.Cog):
             cur.execute(
                 "SELECT user_id, user_display_name, online_elo FROM overall_standings ORDER BY online_elo DESC"
             )
-            rows = cur.fetchall()
+            rows = _settled_lifetime(cur.fetchall())
             conn.close()
 
             eligible = []
@@ -4832,7 +4947,7 @@ class LFGCog(commands.Cog):
             cur.execute(
                 "SELECT user_id, user_display_name, online_elo FROM overall_standings ORDER BY online_elo DESC"
             )
-            rows = cur.fetchall()
+            rows = _settled_lifetime(cur.fetchall())
             conn.close()
 
             if not rows:

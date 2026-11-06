@@ -249,3 +249,32 @@ async def test_ladder_stakes_note_leaves_out_the_gap_for_provisional_players():
     assert "diff" not in ladder_stakes_note(A, B)
     start_new_event("Season 8")
     assert "ELO diff < 100" in ladder_stakes_note(A, B)
+
+
+@pytest.mark.asyncio
+async def test_leaderboard_channel_embed_ranks_settled_players_only():
+    from cogs.lfg.cog import LFGCog
+
+    start_new_event("Season 9", rating_system="glicko2")
+    await _play(8, A, B)
+    await _play(1, C, A)  # C provisional at 1 game
+    channel = MagicMock()
+    channel.send = AsyncMock(return_value=MagicMock(id=1))
+    channel.history = MagicMock(return_value=_no_messages())
+    bot = MagicMock()
+    bot.get_channel.return_value = channel
+    bot.get_guild.return_value = None
+    cog = LFGCog.__new__(LFGCog)
+    cog.bot = bot
+    with patch("services.underdog_standings.underdog_embed", AsyncMock(return_value=None)):
+        await cog.update_leaderboard()
+    description = channel.send.await_args.kwargs["embeds"][0].description
+    overall = description.split("\n\n")[0].splitlines()
+    assert overall[1].startswith(f"1. **P{A}** — {_event_elo(A)} (9g)")
+    assert overall[2].startswith(f"2. **P{B}** — ")
+    assert overall[3] == f"- **P{C}** — Provisional (1/8)"
+
+
+async def _no_messages():
+    return
+    yield

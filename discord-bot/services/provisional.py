@@ -19,13 +19,7 @@ from services import glicko2_season as g2
 
 PROVISIONAL_GAMES = g2.PROVISIONAL_GAMES
 provisional_label = g2.provisional_label
-change_hidden = g2.change_hidden
 is_provisional = g2.is_provisional
-
-
-def season_provisional(event, games) -> bool:
-    """A season (or avatar) entry of ``event`` whose rating isn't shown yet."""
-    return g2.is_glicko2(event) and g2.is_provisional(games)
 
 
 def rating_text(rating, games, glicko2: bool) -> str:

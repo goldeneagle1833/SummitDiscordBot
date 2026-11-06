@@ -10,6 +10,7 @@ import {
   getArchivedLeaderboard,
 } from '@/api/leaderboard'
 import usePageTitle from '@/hooks/usePageTitle'
+import { isNum } from '@/utils/provisional'
 
 // The page shows one board at a time, picked from the sidebar (a select on
 // phones). The pick lives in the URL (?board=...) so a board can be linked.
@@ -346,7 +347,8 @@ export default function Leaderboard() {
     fetchAll().finally(() => setLoading(false))
   }, [])
 
-  const elos = eloValues.length > 0 ? eloValues : lifetimeData.map((p) => p.elo)
+  // Provisional players have no rating (null): keep them out of the distribution
+  const elos = (eloValues.length > 0 ? eloValues : lifetimeData.map((p) => p.elo)).filter(isNum)
   const eventInfo = eventData?.info
   const eventLeaderboard = eventData?.leaderboard || []
 

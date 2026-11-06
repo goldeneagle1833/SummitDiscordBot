@@ -22,6 +22,7 @@ from utils.auth import is_admin
 from utils.card_images import attach_images, resolve_card_image
 from services.curiosa import deck_url_source, is_deck_url, normalize_deck_url
 from services.avatar_elo import get_player_avatar_changes, get_player_avatar_elo
+from services import provisional
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +159,31 @@ def _row_lifetime_delta(row, did_win):
     if lifetime is None:
         lifetime = row[7] if did_win else row[8]
     return lifetime or 0
+
+
+# Bot rows from the live table carry each side's Glicko-2 game counts after
+# the match from this index on (see provisional.GAMES_COLUMNS)
+GAMES_INDEX = 27
+_GAMES_KINDS = {"event": 0, "avatar": 2, "lifetime": 4}
+
+
+def _row_games(row, did_win, kind="event"):
+    """The player's side's game count after this match on a ladder, or None (Elo/older rows)."""
+    index = GAMES_INDEX + _GAMES_KINDS[kind] + (0 if did_win else 1)
+    return row[index] if len(row) > index else None
+
+
+def _row_change_hidden(row, did_win, kind="event") -> bool:
+    """True when this match's change on that ladder was made while provisional."""
+    return provisional.change_hidden(_row_games(row, did_win, kind))
+
+
+def _row_lifetime_delta_hidden(row, did_win) -> bool:
+    """The lifetime delta _row_lifetime_delta would use is a provisional one."""
+    if _row_change_hidden(row, did_win, "lifetime"):
+        return True
+    has_lifetime = len(row) > 26 and (row[25] if did_win else row[26]) is not None
+    return not has_lifetime and _row_change_hidden(row, did_win, "event")
 
 
 def _active_event_window():
@@ -1306,6 +1332,7 @@ def player_api(player_id):
         record_cols = {c[1] for c in cur.fetchall()}
         voice_select = "voice" if "voice" in record_cols else "NULL as voice"
         lifetime_change_select = _lifetime_change_select(record_cols)
+        games_select = provisional.games_select(record_cols)
         # Try new schema first, fallback to old
         try:
             cur.execute(
@@ -1336,7 +1363,8 @@ def player_api(player_id):
                     match_comment,
                     reporter_id,
                     {voice_select},
-                    {lifetime_change_select}
+                    {lifetime_change_select},
+                    {games_select}
                 FROM {live_matches()}
                 WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                 ORDER BY timestamp DESC

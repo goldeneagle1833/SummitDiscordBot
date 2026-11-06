@@ -13,6 +13,8 @@ import usePageTitle from '@/hooks/usePageTitle'
 import { STORE_LIVE } from '@/utils/store'
 import { getProducts } from '@/api/store'
 import { articleImage, articlePath, listArticles } from '@/api/articles'
+import { ProvisionalTag } from '@/components/common/Provisional'
+import { isProvisional, provisionalOf } from '@/utils/provisional'
 
 // A player article published this recently gets a slide in the carousel
 const NEW_ARTICLE_DAYS = 14
@@ -465,8 +467,10 @@ function StatBar({ leaderboard, totalGames, eloKey = 'event_elo' }) {
   const total = leaderboard.length
   // Avatar-mode seasons list one row per player and avatar; count people once
   const players = new Set(leaderboard.map((p) => String(p.id))).size
-  const top = leaderboard[0][eloKey]
-  const avg = Math.round(leaderboard.reduce((s, p) => s + (p[eloKey] || 0), 0) / total)
+  // Provisional (Glicko-2, < 8 games) entries have no rating yet: leave them out
+  const rated = leaderboard.filter((p) => !isProvisional(p) && p[eloKey] != null)
+  const top = rated.length ? rated[0][eloKey] : '\u2014'
+  const avg = rated.length ? Math.round(rated.reduce((s, p) => s + (p[eloKey] || 0), 0) / rated.length) : '\u2014'
   const stats = [['Players', players]]
   if (typeof totalGames === 'number') stats.push(['Ranked Games', totalGames])
   if (total !== players) stats.push(['Avatar Entries', total])
@@ -585,10 +589,12 @@ export function bestEntryPerPlayer(rows) {
 
 /** Each row's position among the rows on the same avatar ({ place, of }), in ladder order. */
 function rankWithinAvatar(leaderboard) {
+  // Provisional entries take no place and do not count towards "of m"
   const totals = {}
-  for (const row of leaderboard) totals[row.avatar] = (totals[row.avatar] || 0) + 1
+  for (const row of leaderboard) if (!isProvisional(row)) totals[row.avatar] = (totals[row.avatar] || 0) + 1
   const seen = {}
   return leaderboard.map((row) => {
+    if (isProvisional(row)) return null
     seen[row.avatar] = (seen[row.avatar] || 0) + 1
     return { place: seen[row.avatar], of: totals[row.avatar] }
   })
@@ -638,8 +644,13 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
     .map((row, index) => ({ ...row, index }))
     .filter(({ player }) => isMine(player))
 
+  // Rank among settled rows only: provisional rows show no rank
+  let settled = 0
+  const ranks = rows.map(({ player }) => (isProvisional(player) ? null : ++settled))
+
   const renderRow = ({ player, avatarRank }, index, isPinned) => {
-    const rank = index + 1
+    const rank = ranks[index]
+    const prov = provisionalOf(player)
     const mine = isMine(player)
     const rowClass = isPinned
       ? 'bg-brand-panel border-b border-brand-line'
@@ -647,10 +658,10 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
     return (
       <tr
         key={`${isPinned ? 'pinned' : 'row'}-${player.entry_id || player.id}`}
-        className={`${rowClass} ${rank <= 3 || isPinned ? 'font-semibold' : ''}`}
+        className={`${rowClass} ${(rank != null && rank <= 3) || isPinned ? 'font-semibold' : ''}`}
       >
         <td className="py-2.5 px-4">
-          <RankCell rank={isPinned ? `#${rank}` : rank} pinned={isPinned} />
+          {rank != null && <RankCell rank={isPinned ? `#${rank}` : rank} pinned={isPinned} />}
         </td>
         <td className="py-2.5 px-4">
           <span className="inline-flex items-center gap-2">
@@ -687,7 +698,7 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
               not yet eligible
             </span>
           )}
-          {player[eloKey]}
+          {prov ? <ProvisionalTag games={prov.games} /> : player[eloKey]}
         </td>
       </tr>
     )

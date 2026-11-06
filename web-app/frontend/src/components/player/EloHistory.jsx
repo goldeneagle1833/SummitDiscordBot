@@ -3,6 +3,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from 'recharts'
 import CollapsibleSection from './CollapsibleSection'
+import { isHidden, isNum } from '@/utils/provisional'
 
 const WIN_COLOR = 'rgba(63,185,80,0.95)'
 const LOSS_COLOR = 'rgba(248,81,73,0.95)'
@@ -41,7 +42,8 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
   const validMatches = useMemo(
     () =>
       [...(eloHistory || [])]
-        .filter((m) => m.elo_after != null && m.date)
+        // Provisional (hidden) points come back null or flagged: skip them
+        .filter((m) => isNum(m.elo_after) && !isHidden(m, 'elo_after') && m.date)
         .sort((a, b) => new Date(a.date) - new Date(b.date)),
     [eloHistory],
   )
@@ -61,7 +63,7 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
       elo: m.elo_after,
       result: m.result,
       opponent: m.opponent,
-      change: m.elo_change,
+      change: isHidden(m, 'elo_change') ? null : m.elo_change,
     }))
   }, [validMatches, gameCount])
 

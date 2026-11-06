@@ -191,6 +191,14 @@ class EloRepository:
         conn.close()
         return elos
 
+    def get_all_elos_by_user(self) -> list[tuple]:
+        """(user_id, lifetime ELO) for every player."""
+        conn = self._get_connection()
+        try:
+            return conn.execute("SELECT user_id, online_elo FROM overall_standings").fetchall()
+        finally:
+            conn.close()
+
     def get_user_elo(self, user_id: int | str) -> int | None:
         """Get ELO for a specific user (handles both int and str to support large Google IDs)."""
         conn = self._get_connection()

@@ -68,8 +68,15 @@ class TicketLeaderboardService:
             user_id = str(entry["id"])
             wins = entry.get("wins") or 0
             losses = entry.get("losses") or 0
+            extra = {}
+            if "provisional" in entry:
+                # Glicko-2: a provisional entry shows no rating and takes no rank
+                overall_rank = entry.get("rank")
+                extra = {"provisional": entry["provisional"],
+                         "provisional_games": entry["provisional_games"]}
             players.append(
                 {
+                    **extra,
                     "overall_rank": overall_rank,
                     "user_id": user_id,
                     "display_name": entry.get("name"),
@@ -111,5 +118,12 @@ class TicketLeaderboardService:
 
 
 def _ranked(entries) -> list[dict]:
-    """Number a section 1..n in the order given."""
-    return [{"rank": rank, **p} for rank, p in enumerate(entries, 1)]
+    """Number a section 1..n in the order given; provisional entries get no rank."""
+    ranked, rank = [], 0
+    for p in entries:
+        if p.get("provisional"):
+            ranked.append({"rank": None, **p})
+            continue
+        rank += 1
+        ranked.append({"rank": rank, **p})
+    return ranked

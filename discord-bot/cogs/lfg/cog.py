@@ -112,7 +112,8 @@ from services.postseason import (
     select_top_cut,
 )
 from utils.checks import is_bot_admin
-from services.glicko2_season import TOP_CUT_MIN_GAMES
+from services.glicko2_season import TOP_CUT_MIN_GAMES, is_glicko2
+from services import provisional
 from services.pilots_service import is_pilot_active
 from services.limited_service import limited_winner_report, limited_elo_only_report, get_run_summary, forfeit_arena_run, close_arena_run, start_arena_run
 from repositories.limited_repo import get_active_arena_run, get_limited_elo, upsert_limited_elo, get_all_limited_standings, get_limited_wins_count, get_limited_losses_count
@@ -447,17 +448,41 @@ class LFGCog(commands.Cog):
 
                 conn_matches.close()
 
-                def format_row(idx, p):
+                # Glicko-2 ladders (the season's, or lifetime with no season running):
+                # settled entries take the rank numbers, provisional ones follow
+                # without a number or rating
+                if active_event:
+                    glicko2 = is_glicko2(active_event)
+
+                    def rating_games(p):
+                        return p["games"]
+                else:
+                    glicko2 = provisional.lifetime_is_glicko2()
+                    life_games = provisional.lifetime_games() if glicko2 else {}
+
+                    def rating_games(p):
+                        return life_games.get(p["user_id"], 0)
+
+                def ranked(players, limit):
+                    return provisional.settled_first(
+                        players, glicko2, rating_games, lambda p: p["display_name"]
+                    )[:limit]
+
+                def format_row(rank, p):
                     # rank. **name** *avatar* — elo (games) so each part reads apart
                     name = discord.utils.escape_markdown(str(p["display_name"]))
                     avatar = f" *{discord.utils.escape_markdown(p['avatar'])}*" if p["avatar"] else ""
-                    return f"{idx}. **{name}**{avatar} — {p['elo']} ({p['games']}g)"
+                    if rank is None:
+                        return f"- **{name}**{avatar} — {provisional.provisional_label(rating_games(p))}"
+                    return f"{rank}. **{name}**{avatar} — {p['elo']} ({p['games']}g)"
 
                 def section(title, rows, empty):
                     return f"**{title}**\n" + ("\n".join(rows) if rows else empty)
 
+                ordered = [p for _, p in ranked(player_data, None)]
+
                 # Overall Rankings (top 8 of all players)
-                overall_text = [format_row(idx, p) for idx, p in enumerate(player_data[:8], 1)]
+                overall_text = [format_row(rank, p) for rank, p in ranked(ordered, 8)]
 
                 # Ticket Holders section (the top cut: top TOP_CUT_SIZE players with
                 # the ticket holder role).
@@ -467,13 +492,13 @@ class LFGCog(commands.Cog):
 
                 # Glicko-2 seasons: an entry needs enough games to hold a top cut spot
                 ticket_players = unique_players(
-                    top_cut_eligible([p for p in player_data if p["has_ticket"]], active_event or {})
+                    top_cut_eligible([p for p in ordered if p["has_ticket"]], active_event or {})
                 )
-                ticket_text = [format_row(idx, p) for idx, p in enumerate(ticket_players[:TOP_CUT_SIZE], 1)]
+                ticket_text = [format_row(rank, p) for rank, p in ranked(ticket_players, TOP_CUT_SIZE)]
 
                 # Free Play section (top 8 from non-ticket holders)
-                free_players = unique_players([p for p in player_data if not p["has_ticket"]])
-                free_text = [format_row(idx, p) for idx, p in enumerate(free_players[:8], 1)]
+                free_players = unique_players([p for p in ordered if not p["has_ticket"]])
+                free_text = [format_row(rank, p) for rank, p in ranked(free_players, 8)]
 
                 # One description instead of fields: the 4096-char description
                 # limit fits all 32 ticket rows without splitting them up.

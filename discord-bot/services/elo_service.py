@@ -580,7 +580,9 @@ def get_current_event_match_elo_snapshot(match_id: int):
         SELECT rowid as match_id, winner_id, winner_display_name, losser_id, losser_display_name,
                timestamp, match_type, did_win,
                winner_elo_change, loser_elo_change,
-               winner_lifetime_elo_change, loser_lifetime_elo_change, event_k
+               winner_lifetime_elo_change, loser_lifetime_elo_change, event_k,
+               winner_event_games, loser_event_games, winner_avatar_games, loser_avatar_games,
+               winner_lifetime_games, loser_lifetime_games
         FROM {live_matches()}
         WHERE timestamp >= ?
         ORDER BY timestamp ASC, rowid ASC
@@ -880,8 +882,16 @@ def get_current_event_match_elo_snapshot(match_id: int):
 
     # Avatar-mode events: the ladder that counts is the avatars' — report the
     # stored per-avatar before/after instead of the per-player replay.
-    winner_event = {"event_before": snapshot["winner_before"], "event_after": snapshot["winner_after"]}
-    loser_event = {"event_before": snapshot["loser_before"], "event_after": snapshot["loser_after"]}
+    # Each side's game count after the match (Glicko-2 rows; None on Elo rows):
+    # a change made while provisional is not shown (see services/provisional.py)
+    winner_event = {
+        "event_before": snapshot["winner_before"], "event_after": snapshot["winner_after"],
+        "event_games": target_match["winner_event_games"],
+    }
+    loser_event = {
+        "event_before": snapshot["loser_before"], "event_after": snapshot["loser_after"],
+        "event_games": target_match["loser_event_games"],
+    }
     avatar_row = None
     if active_event.get("elo_mode") == AVATAR_MODE:
         conn = sqlite3.connect("match_records.db")
@@ -899,11 +909,13 @@ def get_current_event_match_elo_snapshot(match_id: int):
             "avatar": avatar_row["winner_avatar"],
             "event_before": avatar_row["winner_avatar_elo_after"] - (avatar_row["winner_avatar_elo_change"] or 0),
             "event_after": avatar_row["winner_avatar_elo_after"],
+            "event_games": target_match["winner_avatar_games"],
         }
         loser_event = {
             "avatar": avatar_row["loser_avatar"],
             "event_before": avatar_row["loser_avatar_elo_after"] - (avatar_row["loser_avatar_elo_change"] or 0),
             "event_after": avatar_row["loser_avatar_elo_after"],
+            "event_games": target_match["loser_avatar_games"],
         }
         notes.append("Avatar-mode event: event Elo shown is each player's entry for the avatar they played.")
 
@@ -921,11 +933,13 @@ def get_current_event_match_elo_snapshot(match_id: int):
         "winner": {
             "lifetime_before": lifetime_snapshot["winner_before"] if lifetime_snapshot else None,
             "lifetime_after": lifetime_snapshot["winner_after"] if lifetime_snapshot else None,
+            "lifetime_games": target_match["winner_lifetime_games"],
             **winner_event,
         },
         "loser": {
             "lifetime_before": lifetime_snapshot["loser_before"] if lifetime_snapshot else None,
             "lifetime_after": lifetime_snapshot["loser_after"] if lifetime_snapshot else None,
+            "lifetime_games": target_match["loser_lifetime_games"],
             **loser_event,
         },
         "notes": notes,

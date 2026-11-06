@@ -5,6 +5,7 @@ import sqlite3
 from collections import Counter
 from flask import Blueprint, jsonify, request
 
+from services import provisional
 from services.leaderboard import LeaderboardService
 from services.ticket_leaderboard import TicketLeaderboardService
 from utils.api_auth import require_integration_api_key
@@ -289,11 +290,35 @@ def get_player_event_stats(player_id, event_id):
         # Keep as string to avoid overflow with large Google IDs
         stats = repo.get_player_event_elo(player_id, event_id)
         if stats:
+            ladder = _archived_glicko2_ladder(repo, event_id)
+            if ladder is not None:
+                # Glicko-2 season: rank among settled players; provisional shows no ELO
+                row = next((r for r in ladder if str(r["user_id"]) == str(player_id)), None)
+                if row:
+                    stats.update(elo=row["event_elo"], rank=row["rank"],
+                                 provisional=row["provisional"],
+                                 provisional_games=row["provisional_games"])
             return jsonify(stats)
         return jsonify({"error": "No data found for this player in this event"}), 404
     except Exception as e:
         logger.error(f"Error fetching player event stats: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+def _archived_glicko2_ladder(repo, event_id):
+    """An ended Glicko-2 season's archived ladder with provisional entries marked.
+
+    Ratings of players short of the provisional minimum are hidden and the
+    rest are ranked among themselves (game counts come from the season's
+    matches). None for Elo seasons.
+    """
+    games = provisional.archived_season_games(event_id, repo._db_path)
+    if games is None:
+        return None
+    rows = repo.get_archived_event_leaderboard(event_id)
+    for row in rows:
+        provisional.mark(row, games.get(str(row["user_id"]), 0), value_keys=("event_elo",))
+    return provisional.rank_settled_first(rows, "event_elo", name_key="display_name")
 
 
 @leaderboard_bp.route("/leaderboard/archived/<int:event_id>")
@@ -304,7 +329,8 @@ def get_archived_event_leaderboard(event_id):
         from repositories.matches import MatchRepository
 
         repo = EloRepository()
-        leaderboard = repo.get_archived_event_leaderboard(event_id)
+        ladder = _archived_glicko2_ladder(repo, event_id)
+        leaderboard = ladder if ladder is not None else repo.get_archived_event_leaderboard(event_id)
 
         # Season records come from the match archive (older events may have none)
         records = MatchRepository().get_event_archive_records(event_id)

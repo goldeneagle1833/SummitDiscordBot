@@ -30,6 +30,7 @@ import { PaperFinishesSection, usePaperFinishes } from '@/components/player/Pape
 import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
 import BlockListModal from '@/components/player/BlockListModal'
 import QueueSettingsModal from '@/components/player/QueueSettingsModal'
+import DataExportModal from '@/components/player/DataExportModal'
 import CardStats from '@/components/player/CardStats'
 import { useBracketMarks } from '@/components/player/BracketMarks'
 import { useAuth } from '@/context/AuthContext'
@@ -43,6 +44,9 @@ export default function Player() {
   const isAdmin = authUser && authUser.is_admin
   const isOwner = authUser && String(authUser.user_id) === String(playerId)
   const canSeeLifetime = isAdmin || isOwner
+  // The logged-in player on their own page (Google ids may or may not carry the prefix)
+  const bareId = (id) => String(id ?? '').replace(/^google_/, '')
+  const isSelf = Boolean(authUser) && bareId(authUser.user_id) === bareId(playerId)
   const [data, setData] = useState(null)
   const [events, setEvents] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -66,6 +70,7 @@ export default function Player() {
   const [showPrivacyModal, setShowPrivacyModal] = useState(false)
   const [showBlockListModal, setShowBlockListModal] = useState(false)
   const [showQueueSettingsModal, setShowQueueSettingsModal] = useState(false)
+  const [showDataExportModal, setShowDataExportModal] = useState(false)
   const [showResetModal, setShowResetModal] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [editDeck, setEditDeck] = useState(null)
@@ -194,6 +199,8 @@ export default function Player() {
     /^\d+$/.test(String(playerId)) && { label: 'Queue settings', onClick: () => setShowQueueSettingsModal(true) },
     { label: data.profile_reset_at ? 'Undo Fresh Start' : 'Fresh Start', onClick: () => setShowResetModal(true) },
     authUser?.is_store_admin && { label: 'My orders', onClick: () => navigate('/store/orders') },
+    // Only the player themselves, not an admin viewing their profile
+    isSelf && { label: 'Export my data', onClick: () => setShowDataExportModal(true) },
   ].filter(Boolean)
 
   const hiddenSections = !data.is_owner && Object.values(vis).some((v) => !v)
@@ -456,6 +463,13 @@ export default function Player() {
         <QueueSettingsModal
           playerId={playerId}
           onClose={() => setShowQueueSettingsModal(false)}
+        />
+      )}
+
+      {showDataExportModal && (
+        <DataExportModal
+          playerId={playerId}
+          onClose={() => setShowDataExportModal(false)}
         />
       )}
 

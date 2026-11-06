@@ -14,6 +14,7 @@ JSON contract (shared with the React app):
 - A hidden per-match change is ``null`` with a sibling ``<field>_hidden: true``.
 """
 
+import os
 import sqlite3
 
 import webapp_config
@@ -143,8 +144,14 @@ def rank_settled_first(rows: list, value_key: str, name_key: str = "name",
 
 # --- Ladder state from elo.db ------------------------------------------------
 
+def _connect(path) -> sqlite3.Connection:
+    """Open a database that exists; a missing one reads as empty (never created)."""
+    path = str(path)
+    return sqlite3.connect(path if os.path.isfile(path) else ":memory:")
+
+
 def _elo_conn(elo_db_path=None):
-    return sqlite3.connect(str(elo_db_path or webapp_config.ELO_DB_PATH))
+    return _connect(elo_db_path or webapp_config.ELO_DB_PATH)
 
 
 def _columns(conn, table) -> set:
@@ -216,7 +223,7 @@ def archived_season_games(event_id, elo_db_path=None, match_db_path=None) -> dic
         conn.close()
     if not g2.is_glicko2(event):
         return None
-    match_conn = sqlite3.connect(str(match_db_path or webapp_config.MATCH_RECORDS_DB_PATH))
+    match_conn = _connect(match_db_path or webapp_config.MATCH_RECORDS_DB_PATH)
     try:
         matches = g2.season_matches(match_conn, event)
     except sqlite3.OperationalError:

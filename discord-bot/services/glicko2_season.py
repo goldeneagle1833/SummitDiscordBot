@@ -219,6 +219,14 @@ def ensure_elo_schema(conn: sqlite3.Connection) -> None:
 # Seasons 1-8 live in match_records / match_records_archive and never change.
 # The first Glicko-2 season creates SEASON_MATCH_TABLE; from then on every
 # new match goes there (tagged with its event) and is never archived.
+SNAPSHOT_COLUMNS = (
+    "winner_event_before", "loser_event_before",      # season rating before the game
+    "winner_event_rank", "loser_event_rank",          # season rank before it (NULL: unranked/provisional)
+    "winner_avatar_before", "loser_avatar_before",    # Avatar mode: the avatar entry's rating
+    "winner_avatar_rank", "loser_avatar_rank",
+    "winner_lifetime_before", "loser_lifetime_before",
+)
+
 LEGACY_MATCH_TABLE = "match_records"
 SEASON_MATCH_TABLE = "season_match_records"
 
@@ -248,6 +256,9 @@ def ensure_match_schema(conn: sqlite3.Connection) -> None:
         ("loser_avatar_games", "INTEGER"),
         ("winner_lifetime_games", "INTEGER"),
         ("loser_lifetime_games", "INTEGER"),
+        # Each side's standing just before the game (every season from the
+        # switch on, Elo or Glicko-2): for skill matrices and history
+        *((c, "INTEGER") for c in SNAPSHOT_COLUMNS),
     ))
     if _table_exists(conn, LEGACY_MATCH_TABLE):
         conn.execute(
@@ -505,6 +516,65 @@ def add_adjustment(elo_conn, event, user_id, name, rating, avatar=None, at=None)
         _save_player(elo_conn, user_id, name, entry, games_delta=0)
 
 
+# --- Standing before each game -------------------------------------------------
+
+
+def _ranked(games, glicko) -> bool:
+    """Whether an entry holds a rank: it has played, and is settled on Glicko-2."""
+    return (games or 0) >= (PROVISIONAL_GAMES if glicko else 1)
+
+
+def _rank_of(rating, games, others, glicko):
+    """1 + how many ranked entries are above ``rating``; None when unranked.
+
+    ``others`` is (rating, games) for every entry on the ladder (the entry
+    itself included; it never counts as above itself).
+    """
+    if rating is None or not _ranked(games, glicko):
+        return None
+    return 1 + sum(1 for r, g in others if _ranked(g, glicko) and r > rating)
+
+
+def pre_game_snapshot(elo_conn, event, winner_id, loser_id, winner_avatar=None, loser_avatar=None) -> dict:
+    """Both players' ratings and ranks just before a game, from the live standings.
+
+    Read before the game is applied. Keys are SNAPSHOT_COLUMNS; values None
+    where there is nothing to say (no season running, Player mode avatars).
+    """
+    out = dict.fromkeys(SNAPSHOT_COLUMNS)
+    glicko = is_glicko2(event)
+    cols = _columns(elo_conn, "overall_standings")
+    games_col = "online_event_games" if "online_event_games" in cols else "0"
+    rows = {
+        uid: (elo, games, life)
+        for uid, elo, games, life in elo_conn.execute(
+            f"SELECT user_id, online_event_elo, {games_col}, online_elo FROM overall_standings"
+        ).fetchall()
+    }
+    ladder = [(r[0], r[1]) for r in rows.values() if r[0] is not None]
+    for side, uid in (("winner", winner_id), ("loser", loser_id)):
+        elo, games, life = rows.get(uid, (1500, 0, 1500))
+        out[f"{side}_lifetime_before"] = life if life is not None else 1500
+        if event:
+            elo = elo if elo is not None else 1500
+            out[f"{side}_event_before"] = elo
+            out[f"{side}_event_rank"] = _rank_of(elo, games, ladder, glicko)
+
+    if event and event.get("elo_mode") == "avatar" and winner_avatar and loser_avatar \
+            and _table_exists(elo_conn, "event_avatar_standings"):
+        entries = elo_conn.execute(
+            "SELECT user_id, avatar, event_elo, games_played FROM event_avatar_standings WHERE event_id = ?",
+            (event["event_id"],),
+        ).fetchall()
+        lookup = {(u, a): (e, g) for u, a, e, g in entries}
+        others = [(e, g) for _, _, e, g in entries if e is not None]
+        for side, uid, avatar in (("winner", winner_id, winner_avatar), ("loser", loser_id, loser_avatar)):
+            elo, games = lookup.get((uid, avatar), (1500, 0))
+            out[f"{side}_avatar_before"] = elo
+            out[f"{side}_avatar_rank"] = _rank_of(elo, games, others, glicko)
+    return out
+
+
 # --- Rebuilding a season -----------------------------------------------------
 
 
@@ -573,6 +643,11 @@ def rebuild_season(elo_conn, match_conn, event) -> dict:
         w, l = m["winner_id"], m["losser_id"]
         names[w], names[l] = m["winner_display_name"], m["losser_display_name"]
         w_before, l_before = players.get(w, Rating()), players.get(l, Rating())
+        ladder = [(e.display, player_games.get(u, 0)) for u, e in players.items()]
+        snapshot = [w_before.display, l_before.display,
+                    _rank_of(w_before.display, player_games.get(w, 0), ladder, True),
+                    _rank_of(l_before.display, player_games.get(l, 0), ladder, True),
+                    None, None, None, None]
         players[w], players[l] = play(w_before, l_before, m["timestamp"])
         player_games[w] = player_games.get(w, 0) + 1
         player_games[l] = player_games.get(l, 0) + 1
@@ -581,13 +656,17 @@ def rebuild_season(elo_conn, match_conn, event) -> dict:
         if avatar_mode and m["winner_avatar"] and m["loser_avatar"]:
             wk, lk = (w, m["winner_avatar"]), (l, m["loser_avatar"])
             wa_before, la_before = avatars.get(wk, Rating()), avatars.get(lk, Rating())
+            entries = [(e.display, avatar_games.get(k, 0)) for k, e in avatars.items()]
+            snapshot[4:] = [wa_before.display, la_before.display,
+                            _rank_of(wa_before.display, avatar_games.get(wk, 0), entries, True),
+                            _rank_of(la_before.display, avatar_games.get(lk, 0), entries, True)]
             avatars[wk], avatars[lk] = play(wa_before, la_before, m["timestamp"])
             avatar_games[wk] = avatar_games.get(wk, 0) + 1
             avatar_games[lk] = avatar_games.get(lk, 0) + 1
             change[2:6] = [avatars[wk].display - wa_before.display, avatars[lk].display - la_before.display,
                            avatars[wk].display, avatars[lk].display]
             change[8:10] = [avatar_games[wk], avatar_games[lk]]
-        match_updates.append((*change, m["row_id"]))
+        match_updates.append((*change, *snapshot, m["row_id"]))
 
     # event_k is the Elo K a match was played at; a Glicko-2 match has none
     table = live_match_table(match_conn)
@@ -597,7 +676,10 @@ def rebuild_season(elo_conn, match_conn, event) -> dict:
         "winner_avatar_elo_change = ?, loser_avatar_elo_change = ?, "
         f"winner_avatar_elo_after = ?, loser_avatar_elo_after = ?, "
         "winner_event_games = ?, loser_event_games = ?, "
-        f"winner_avatar_games = ?, loser_avatar_games = ?{clear_k} WHERE rowid = ?",
+        "winner_avatar_games = ?, loser_avatar_games = ?, "
+        "winner_event_before = ?, loser_event_before = ?, winner_event_rank = ?, loser_event_rank = ?, "
+        "winner_avatar_before = ?, loser_avatar_before = ?, winner_avatar_rank = ?, loser_avatar_rank = ?"
+        f"{clear_k} WHERE rowid = ?",
         match_updates,
     )
 
@@ -858,7 +940,7 @@ def rebuild_lifetime(elo_conn, match_conn) -> dict:
         w_change = players[w].display - w_before.display
         l_change = players[l].display - l_before.display
         updates.append((w_change, l_change, players[w].display, players[l].display,
-                        games[w], games[l], m["row_id"]))
+                        games[w], games[l], w_before.display, l_before.display, m["row_id"]))
 
     table = live_match_table(match_conn)
     cols = _columns(match_conn, table)
@@ -866,14 +948,16 @@ def rebuild_lifetime(elo_conn, match_conn) -> dict:
         match_conn.executemany(
             f"UPDATE {table} SET winner_lifetime_elo_change = ?, loser_lifetime_elo_change = ?, "
             "winner_lifetime_elo_after = ?, loser_lifetime_elo_after = ?, "
-            "winner_lifetime_games = ?, loser_lifetime_games = ? WHERE rowid = ?",
+            "winner_lifetime_games = ?, loser_lifetime_games = ?, "
+            "winner_lifetime_before = ?, loser_lifetime_before = ? WHERE rowid = ?",
             updates,
         )
     else:
         match_conn.executemany(
             f"UPDATE {table} SET winner_lifetime_elo_change = ?, loser_lifetime_elo_change = ?, "
-            "winner_lifetime_games = ?, loser_lifetime_games = ? WHERE rowid = ?",
-            [(u[0], u[1], u[4], u[5], u[6]) for u in updates],
+            "winner_lifetime_games = ?, loser_lifetime_games = ?, "
+            "winner_lifetime_before = ?, loser_lifetime_before = ? WHERE rowid = ?",
+            [(u[0], u[1], u[4], u[5], u[6], u[7], u[8]) for u in updates],
         )
 
     existing = {row[0] for row in elo_conn.execute("SELECT user_id FROM overall_standings")}

@@ -604,3 +604,51 @@ def test_web_app_copy_is_identical():
     bot = os.path.join(here, "services", "glicko2_season.py")
     web = os.path.join(os.path.dirname(here), "web-app", "services", "glicko2_season.py")
     assert filecmp.cmp(bot, web, shallow=False), "update web-app/services/glicko2_season.py too"
+
+
+# ── Standing before each game (skill matrices, history) ──
+
+
+def _snapshots(table="season_match_records"):
+    cols = ", ".join(g2.SNAPSHOT_COLUMNS)
+    return [tuple(r.values()) for r in _rows(f"SELECT match_id, {cols} FROM {table} ORDER BY match_id")]
+
+
+@pytest.mark.asyncio
+async def test_each_game_stores_both_ratings_and_ranks_before_it():
+    start_new_event("Season 9", elo_mode="avatar", rating_system="glicko2")
+    for _ in range(8):
+        await _record(A, B, winner_avatar="Seer", loser_avatar="Witch")
+    before = _standings()
+    match_id = await _record(C, A, winner_avatar="Druid", loser_avatar="Seer")
+    row = _rows("SELECT * FROM season_match_records WHERE match_id = ?", (match_id,))[0]
+
+    assert row["loser_event_before"] == before[A]["online_event_elo"]
+    assert row["loser_event_rank"] == 1          # A is the top settled player
+    assert row["winner_event_before"] == 1500 and row["winner_event_rank"] is None  # C: new, unranked
+    assert row["loser_avatar_before"] == before[A]["online_event_elo"]  # A only ever played Seer
+    assert row["loser_avatar_rank"] == 1 and row["winner_avatar_rank"] is None
+    assert row["loser_lifetime_before"] == before[A]["online_elo"]
+
+
+@pytest.mark.asyncio
+async def test_rebuild_rewrites_the_same_standings_before_each_game():
+    start_new_event("Season 9", elo_mode="avatar", rating_system="glicko2")
+    games = [(A, B, "Seer", "Witch")] * 8 + [(C, D, "Druid", "Imposter"), (B, A, "Witch", "Seer"),
+                                             (A, C, "Seer", "Druid")]
+    for w, l, wa, la in games:
+        await _record(winner_id=w, loser_id=l, winner_avatar=wa, loser_avatar=la)
+    recorded = _snapshots()
+    _rebuild()
+    _rebuild_lifetime()
+    assert _snapshots() == recorded
+
+
+@pytest.mark.asyncio
+async def test_elo_seasons_store_the_standing_before_each_game_too():
+    start_new_event("Season 8")
+    await _record(A, B)
+    match_id = await _record(A, C)
+    row = _rows("SELECT * FROM match_records WHERE match_id = ?", (match_id,))[0]
+    assert row["winner_event_before"] > 1500 and row["winner_event_rank"] == 1
+    assert row["loser_event_before"] == 1500 and row["loser_event_rank"] is None

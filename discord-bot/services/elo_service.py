@@ -1344,6 +1344,21 @@ async def record_match(
             match_event_id = stamp_event.get("event_id")
             match_rating_system = stamp_event.get("rating_system") or glicko2_season.ELO
 
+    # Each side's rating and rank just before this game (skill matrices, history)
+    snapshot = dict.fromkeys(glicko2_season.SNAPSHOT_COLUMNS)
+    if match_type not in NON_ELO_MATCH_TYPES and event_active:
+        conn_elo = sqlite3.connect("elo.db")
+        try:
+            snapshot = glicko2_season.pre_game_snapshot(
+                conn_elo, active_event, winner_id, loser_id,
+                winner_avatar if avatar_event_id is not None else None,
+                loser_avatar if avatar_event_id is not None else None,
+            )
+        except sqlite3.Error as e:
+            logger.warning("record_match: pre-game snapshot skipped: %s", e)
+        finally:
+            conn_elo.close()
+
     # ── Step 2: write both ELOs atomically ──
     if match_type not in NON_ELO_MATCH_TYPES and event_active and glicko:
         # Glicko-2 season: the lifetime ladder stays Elo; the season ladders
@@ -1487,9 +1502,11 @@ async def record_match(
             "winner_avatar_elo_after, loser_avatar_elo_after, event_k, replay_url, "
             "event_id, rating_system, lifetime_system, winner_lifetime_mult, loser_lifetime_mult, "
             "winner_event_games, loser_event_games, winner_avatar_games, loser_avatar_games, "
-            "winner_lifetime_games, loser_lifetime_games) "
+            "winner_lifetime_games, loser_lifetime_games, "
+            f"{', '.join(glicko2_season.SNAPSHOT_COLUMNS)}) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
+            + ", ?" * len(glicko2_season.SNAPSHOT_COLUMNS) + ")",
             (
                 reporter_id,
                 winner_id, winner_global,
@@ -1530,6 +1547,7 @@ async def record_match(
                 winner_lifetime_mult,
                 loser_lifetime_mult,
                 *match_games.values(),
+                *(snapshot[c] for c in glicko2_season.SNAPSHOT_COLUMNS),
             ),
         )
         table_name = "match_records"

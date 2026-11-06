@@ -1714,6 +1714,12 @@ def end_current_event():
         (archived_at, event_id),
     )
 
+    # Glicko-2 season: only settled ratings make the summary's top 3
+    settled_games = (
+        dict(cur_elo.execute("SELECT user_id, COALESCE(online_event_games, 0) FROM overall_standings"))
+        if glicko2_season.is_glicko2(active_event) else None
+    )
+
     conn_elo.commit()
     conn_elo.close()
 
@@ -1805,11 +1811,18 @@ def end_current_event():
     if active_event.get("elo_mode") == AVATAR_MODE:
         # The avatar entries stay in event_avatar_standings as this event's archive
         top_players = []
-        for row in get_avatar_standings(event_id)[:3]:
+        avatar_rows = [
+            row for row in get_avatar_standings(event_id)
+            if settled_games is None or not glicko2_season.is_provisional(row["games_played"])
+        ]
+        for row in avatar_rows[:3]:
             name = row["user_display_name"] or "User#{}".format(row["user_id"])
             top_players.append(("{} ({})".format(name, row["avatar"]), row["event_elo"]))
     else:
-        top_players = [(name, elo) for _, name, elo in standings[:3]]
+        top_players = [
+            (name, elo) for uid, name, elo in standings
+            if settled_games is None or not glicko2_season.is_provisional(settled_games.get(uid))
+        ][:3]
     return {
         "event_id": event_id,
         "event_name": event_name,
@@ -1928,14 +1941,16 @@ def _recalculate_glicko2_event(active_event) -> dict:
         if active_event.get("elo_mode") == AVATAR_MODE:
             rows = elo_conn.execute(
                 "SELECT user_display_name, user_id, avatar, event_elo FROM event_avatar_standings "
-                "WHERE event_id = ? ORDER BY rating DESC LIMIT 5",
-                (active_event["event_id"],),
+                "WHERE event_id = ? AND games_played >= ? ORDER BY rating DESC LIMIT 5",
+                (active_event["event_id"], glicko2_season.PROVISIONAL_GAMES),
             ).fetchall()
             top_players = [(f"{name or uid} ({avatar})", elo) for name, uid, avatar, elo in rows]
         else:
             top_players = elo_conn.execute(
                 "SELECT user_display_name, online_event_elo FROM overall_standings "
-                "WHERE online_event_rating IS NOT NULL ORDER BY online_event_rating DESC LIMIT 5"
+                "WHERE online_event_rating IS NOT NULL AND COALESCE(online_event_games, 0) >= ? "
+                "ORDER BY online_event_rating DESC LIMIT 5",
+                (glicko2_season.PROVISIONAL_GAMES,),
             ).fetchall()
     except Exception:
         elo_conn.rollback()
@@ -2048,7 +2063,9 @@ _ADMIN_MATCH_COLUMNS = """rowid AS row_id, winner_id, losser_id, winner_display_
        timestamp, match_type, winner_elo_change, loser_elo_change,
        winner_lifetime_elo_change, loser_lifetime_elo_change,
        winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, event_k,
-       source, event_id, rating_system"""
+       source, event_id, rating_system,
+       winner_event_games, loser_event_games, winner_avatar_games, loser_avatar_games,
+       winner_lifetime_games, loser_lifetime_games"""
 
 
 def _load_admin_match_rows(match_cur, where: str, params) -> list[dict]:
@@ -2287,6 +2304,7 @@ def correct_match_record(match_id: int) -> dict:
         flipped = _load_admin_match_rows(match_cur, "rowid = ?", (match_id,))[0]
 
         new_w_change = new_l_change = 0
+        new_w_games = new_l_games = None  # game counts after it (Glicko-2 only)
         recalculated = 0
         if rated:
             _replay_match_elo(elo_cur, match_cur, flipped, active_event, avatar_event_id)
@@ -2296,8 +2314,9 @@ def correct_match_record(match_id: int) -> dict:
                 recalculated += 1
             _glicko2_rebuild(elo_conn, match_conn, active_event)
             if glicko2_season.is_glicko2(active_event):
-                new_w_change, new_l_change = match_conn.execute(
-                    f"SELECT winner_elo_change, loser_elo_change FROM {live_matches()} WHERE rowid = ?",
+                new_w_change, new_l_change, new_w_games, new_l_games = match_conn.execute(
+                    f"SELECT winner_elo_change, loser_elo_change, winner_event_games, loser_event_games "
+                    f"FROM {live_matches()} WHERE rowid = ?",
                     (match_id,),
                 ).fetchone()
 
@@ -2323,6 +2342,9 @@ def correct_match_record(match_id: int) -> dict:
         "new_loser_name": orig_winner_name,
         "new_winner_elo_change": new_w_change,
         "new_loser_elo_change": new_l_change,
+        # A change made while that side was provisional (first 8 Glicko-2 games) isn't shown
+        "new_winner_elo_change_hidden": glicko2_season.change_hidden(new_w_games),
+        "new_loser_elo_change_hidden": glicko2_season.change_hidden(new_l_games),
         "recalculated_count": recalculated,
         "affected_players": affected_players,
     }
@@ -2367,11 +2389,18 @@ def remove_match_record(match_id: int) -> dict:
             event = match[f"{side}_elo_change"] or 0
             if not (lifetime or event):
                 continue
-            text = f"**{match[name_col]}**: Lifetime {sign * abs(lifetime):+d}, Event {sign * abs(event):+d} ELO"
+            # A change made while that side was provisional (Glicko-2) isn't shown
+            parts = []
+            if not glicko2_season.change_hidden(match[f"{side}_lifetime_games"]):
+                parts.append(f"Lifetime {sign * abs(lifetime):+d}")
+            if not glicko2_season.change_hidden(match[f"{side}_event_games"]):
+                parts.append(f"Event {sign * abs(event):+d}")
+            text = ", ".join(parts) + (" ELO" if parts else "")
             avatar_change = match[f"{side}_avatar_elo_change"]
-            if avatar_event_id and match[f"{side}_avatar"] and avatar_change is not None:
-                text += f", {match[f'{side}_avatar']} {-avatar_change:+d}"
-            reverted_info.append(text)
+            if (avatar_event_id and match[f"{side}_avatar"] and avatar_change is not None
+                    and not glicko2_season.change_hidden(match[f"{side}_avatar_games"])):
+                text += f"{', ' if text else ''}{match[f'{side}_avatar']} {-avatar_change:+d}"
+            reverted_info.append(f"**{match[name_col]}**: {text or 'provisional, change not shown'}")
 
         match_cur.execute(f"DELETE FROM {live_matches()} WHERE rowid = ?", (match_id,))
         # Glicko-2 numbers (season, lifetime) come from a full replay without this match
@@ -2432,6 +2461,8 @@ def remove_player(user_id: int, user_name: str) -> dict:
         # Per opponent: (lifetime, event, name) adjustment; avatar entries apply directly
         elo_adjustments: dict[int, tuple[int, str]] = {}
         lifetime_adjustments: dict[int, int] = {}
+        # What the message shows: changes made while provisional (Glicko-2) left out
+        shown_adjustments: dict[int, int] = {}
         for m in matches:
             opp_side = "loser" if m["winner_id"] == user_id else "winner"
             opp_id = m["losser_id"] if opp_side == "loser" else m["winner_id"]
@@ -2442,6 +2473,8 @@ def remove_player(user_id: int, user_name: str) -> dict:
             lifetime = _lifetime_change(m, opp_side)
             adj, name = elo_adjustments.get(opp_id, (0, opp_name))
             elo_adjustments[opp_id] = (adj - event, name)
+            if event and not glicko2_season.change_hidden(m[f"{opp_side}_event_games"]):
+                shown_adjustments[opp_id] = shown_adjustments.get(opp_id, 0) - event
             lifetime_adjustments[opp_id] = lifetime_adjustments.get(opp_id, 0) - lifetime
             if m["event_k"] is not None:
                 elo_cur.execute(
@@ -2468,7 +2501,10 @@ def remove_player(user_id: int, user_name: str) -> dict:
                     "online_event_elo = online_event_elo + ? WHERE user_id = ?",
                     (lifetime_adj, event_adj, opp_id),
                 )
-                adjustments_made.append(f"{opp_name}: {event_adj:+d}")
+                if opp_id in shown_adjustments:
+                    adjustments_made.append(f"{opp_name}: {shown_adjustments[opp_id]:+d}")
+                else:
+                    adjustments_made.append(f"{opp_name}: provisional, change not shown")
 
         match_cur.execute(
             f"DELETE FROM {live_matches()} WHERE (winner_id = ? OR losser_id = ?) AND {current_sql}",

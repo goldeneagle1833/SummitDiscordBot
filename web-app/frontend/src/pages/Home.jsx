@@ -690,7 +690,7 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
           </td>
         )}
         <td className="py-2.5 px-4 text-right whitespace-nowrap">
-          {topCutMinGames > 0 && player.top_cut_eligible === false && (
+          {topCutMinGames > 0 && player.top_cut_eligible === false && !prov && (
             <span
               className="mr-2 text-xs text-text-muted"
               title={`Needs ${topCutMinGames} ranked games to count for top cut`}

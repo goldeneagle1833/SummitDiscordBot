@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { HiddenChange } from '@/components/common/Provisional'
+import { isHidden } from '@/utils/provisional'
 
 function Side({
   seed,
@@ -11,6 +13,7 @@ function Side({
   reported,
   fromBye,
   eloChange,
+  eloHidden = false,
   linkTo = true,
   dragHandlers,
   highlighted = false,
@@ -90,7 +93,8 @@ function Side({
           {eloChange > 0 ? `+${eloChange}` : eloChange}
         </span>
       )}
-      {isWinner && !reported && eloChange == null && (
+      {eloHidden && !reported && <HiddenChange className="ml-auto text-[11px]" />}
+      {isWinner && !reported && eloChange == null && !eloHidden && (
         <span className="ml-auto text-[11px] font-bold tracking-wider text-secondary">W</span>
       )}
     </div>
@@ -130,6 +134,9 @@ export default function MatchCard({
   const rated = match.elo_applied_at != null
   const p1Elo = rated ? (p1Wins ? match.winner_elo_change : match.loser_elo_change) : null
   const p2Elo = rated ? (p2Wins ? match.winner_elo_change : match.loser_elo_change) : null
+  // Provisional (first 8 games) changes come back null with a _hidden flag
+  const p1EloHidden = rated && isHidden(match, p1Wins ? 'winner_elo_change' : 'loser_elo_change')
+  const p2EloHidden = rated && isHidden(match, p2Wins ? 'winner_elo_change' : 'loser_elo_change')
 
   // A seat that has already been played, reported or given a table is a
   // result rather than a pairing, so it cannot be dragged or dropped on.
@@ -197,6 +204,7 @@ export default function MatchCard({
         reported={reportedWinner && String(reportedWinner) === String(match.p1_user_id)}
         fromBye={match.p1_from_bye}
         eloChange={p1Elo}
+        eloHidden={p1EloHidden}
         linkTo={!onSwap}
         dragHandlers={dragFor(match.p1_seed, 1)}
         highlighted={isFollowed(match.p1_seed)}
@@ -213,6 +221,7 @@ export default function MatchCard({
         reported={reportedWinner && String(reportedWinner) === String(match.p2_user_id)}
         fromBye={match.p2_from_bye}
         eloChange={p2Elo}
+        eloHidden={p2EloHidden}
         linkTo={!onSwap}
         dragHandlers={dragFor(match.p2_seed, 2)}
         highlighted={isFollowed(match.p2_seed)}

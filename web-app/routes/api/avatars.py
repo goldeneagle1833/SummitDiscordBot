@@ -15,6 +15,7 @@ from flask import Blueprint, jsonify, request
 from repositories.card_catalog import CardCatalogRepository
 from services.data_release import released_connection
 from services.elo_gap import pre_match_sql
+from services import provisional
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS, AVATAR_IMAGES_DIR
 from utils.formatting import generate_pseudonym
 from utils.auth import is_admin
@@ -1023,6 +1024,9 @@ def get_avatar(avatar_name):
         # Source filter clause for Discord matches
         discord_source_clause = "AND (source = 'Discord' OR source IS NULL)"
 
+        # Season game counts after each live match (Glicko-2), to hide provisional changes
+        live_games = provisional.event_games_select(cur, live_matches())
+
         # Query current match_records (Discord matches)
         if source_filter in ("all", "discord"):
             if event_filter in ("all", "current"):
@@ -1043,7 +1047,8 @@ def get_avatar(avatar_name):
                             curiosa_url_loser,
                             rowid as match_id,
                             winner_went_first,
-                            loser_went_first
+                            loser_went_first,
+                            {live_games}
                         FROM {live_matches()}
                         WHERE (json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL)
                           {discord_source_clause}
@@ -1123,7 +1128,8 @@ def get_avatar(avatar_name):
                                 curiosa_url_loser,
                                 rowid as match_id,
                                 winner_went_first,
-                                loser_went_first
+                                loser_went_first,
+                                {live_games}
                             """
                             try:
                                 cur.execute(f"""
@@ -1235,7 +1241,8 @@ def get_avatar(avatar_name):
                         curiosa_url_loser,
                         rowid as match_id,
                         winner_went_first,
-                        loser_went_first
+                        loser_went_first,
+                        {live_games}
                     FROM {live_matches()}
                     WHERE {' AND '.join(where_parts)}
                     ORDER BY timestamp DESC
@@ -1303,6 +1310,9 @@ def get_avatar(avatar_name):
                 "winner_deck_url": row[11] if len(row) > 11 else None,
                 "loser_deck_url": row[12] if len(row) > 12 else None,
             }
+            # Live rows end with each side's season games: hide provisional changes
+            if len(row) > 17:
+                provisional.mask_pair(match_obj, row[16], row[17])
 
             if avatar_in_winner:
                 total_wins += 1
@@ -2104,6 +2114,8 @@ def get_elo_breakdown_matches():
                     ("match_time", "NULL"),
                     ("winner_elo_change", "NULL"),
                     ("loser_elo_change", "NULL"),
+                    ("winner_event_games", "NULL"),
+                    ("loser_event_games", "NULL"),
                 ]
                 extra_cols = ", ".join(
                     col if col in table_cols else f"{fallback} as {col}"
@@ -2142,7 +2154,13 @@ def get_elo_breakdown_matches():
         (match_id, winner_id, loser_id, winner_name, loser_name,
          w_deck_json, l_deck_json, w_url, l_url,
          timestamp, _life1, _life2, w_first, l_first, match_time,
-         w_elo_change, l_elo_change) = row
+         w_elo_change, l_elo_change, w_games, l_games) = row
+        # Glicko-2: a change made while that side was provisional stays hidden
+        w_hidden, l_hidden = provisional.change_hidden(w_games), provisional.change_hidden(l_games)
+        if w_hidden:
+            w_elo_change = None
+        if l_hidden:
+            l_elo_change = None
 
         w_id_str = str(winner_id) if winner_id else None
         l_id_str = str(loser_id) if loser_id else None
@@ -2177,6 +2195,7 @@ def get_elo_breakdown_matches():
                 "went_first": w_first == "y" if w_first else None,
                 "match_time": match_time,
                 "elo_change": w_elo_change,
+                **({"elo_change_hidden": True} if w_hidden else {}),
             })
 
         # Check loser side
@@ -2203,6 +2222,7 @@ def get_elo_breakdown_matches():
                 "went_first": l_first == "y" if l_first else None,
                 "match_time": match_time,
                 "elo_change": l_elo_change,
+                **({"elo_change_hidden": True} if l_hidden else {}),
             })
 
     # Sort by timestamp descending

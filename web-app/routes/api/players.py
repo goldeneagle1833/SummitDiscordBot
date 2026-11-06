@@ -332,6 +332,7 @@ def get_deck_stats(player_id):
     # Pull every match for this player from both active and archive tables
     all_rows = []
     for table, id_col in [("match_records", "rowid"), ("match_records_archive", "rowid + 1000000000"), ("season_match_records", "rowid")]:
+        games_select = provisional.table_games_select(conn, table)
         try:
             cur.execute(
                 f"""
@@ -351,7 +352,8 @@ def get_deck_stats(player_id):
                     json_deck_data_winner as winner_json,
                     json_deck_data_loser as loser_json,
                     winner_went_first,
-                    loser_went_first
+                    loser_went_first,
+                    {games_select}
                 FROM {table}
                 WHERE winner_id = ? OR losser_id = ?
                 ORDER BY timestamp DESC
@@ -415,7 +417,8 @@ def get_deck_stats(player_id):
         opp_json = row["loser_json"] if did_win else row["winner_json"]
         opp_name = row["losser_display_name"] if did_win else row["winner_display_name"]
         opp_id = str(row["losser_id"]) if did_win else str(row["winner_id"])
-        elo_change = row["winner_elo_change"] if did_win else row["loser_elo_change"]
+        # Glicko-2: null (with elo_change_hidden) while the player was provisional
+        elo_change, change_hidden = provisional.side_change(dict(row), did_win)
 
         # Extract own deck info (use first match that has it)
         if avatar == "Unknown" and player_json and player_json not in ("{}", ""):
@@ -463,6 +466,7 @@ def get_deck_stats(player_id):
             "opponent_id": opp_id,
             "opponent_avatar": opp_avatar,
             "elo_change": elo_change,
+            **({"elo_change_hidden": True} if change_hidden else {}),
             "match_time": row["match_time"],
         })
 
@@ -600,6 +604,7 @@ def player_avatar_stats(player_id, avatar_name):
         elif season_range:
             date_filter = " AND timestamp >= ? AND timestamp <= ?"
             params.extend(season_range)
+        games_select = provisional.table_games_select(conn, table)
         try:
             cur.execute(
                 f"""
@@ -620,7 +625,8 @@ def player_avatar_stats(player_id, avatar_name):
                     json_deck_data,
                     winner_went_first,
                     loser_went_first,
-                    match_type
+                    match_type,
+                    {games_select}
                 FROM {table}
                 WHERE (winner_id = ? OR losser_id = ?){date_filter}
                 ORDER BY timestamp DESC
@@ -735,7 +741,8 @@ def player_avatar_stats(player_id, avatar_name):
         opp_avatar = _get_main_avatar(opp_json) or "Unknown"
         opp_name = row["losser_display_name"] if did_win else row["winner_display_name"]
         opp_id = str(row["losser_id"]) if did_win else str(row["winner_id"])
-        elo_change = row["winner_elo_change"] if did_win else row["loser_elo_change"]
+        # Glicko-2: null (with elo_change_hidden) while the player was provisional
+        elo_change, change_hidden = provisional.side_change(dict(row), did_win)
 
         if did_win:
             wins += 1
@@ -786,6 +793,7 @@ def player_avatar_stats(player_id, avatar_name):
             "opponent_id": opp_id,
             "opponent_avatar": opp_avatar,
             "elo_change": elo_change,
+            **({"elo_change_hidden": True} if change_hidden else {}),
             "match_time": row["match_time"],
             "match_type": match_type,
             "first_player": "Play" if player_on_play else "Draw" if player_on_play is False else None,
@@ -1090,6 +1098,25 @@ def _profile_picture_url(profile):
     if profile.get("provider") == "google":
         return profile["avatar"]
     return f"https://cdn.discordapp.com/avatars/{profile['user_id']}/{profile['avatar']}.png?size=256"
+
+
+def _visible_rating_flags(flags: dict, event_filter, show_lifetime) -> dict:
+    """The profile's provisional flags, with lifetime ones only where lifetime ELO shows.
+
+    Visitors see the event rating in place of lifetime ELO (see displayed_elo),
+    so the displayed_ flags follow the event rating for them.
+    """
+    flags = dict(flags)
+    if not show_lifetime:
+        for key in ("lifetime_provisional", "lifetime_provisional_games"):
+            flags.pop(key, None)
+        if event_filter == "lifetime":
+            flags.pop("displayed_provisional", None)
+            flags.pop("displayed_provisional_games", None)
+            if "event_provisional" in flags:
+                flags["displayed_provisional"] = flags["event_provisional"]
+                flags["displayed_provisional_games"] = flags["event_provisional_games"]
+    return flags
 
 
 @players_bp.route("/player/<player_id>")
@@ -1743,6 +1770,45 @@ def player_api(player_id):
     except sqlite3.OperationalError:
         pass
 
+    # Glicko-2 ladders (Season 9 on): a provisional rating shows no number and
+    # no rank, and settled players rank among settled players only
+    season_games, lifetime_games = provisional.standings_games(ELO_DB_PATH).get(
+        str(player_id_normalized), (0, 0)
+    )
+    rating_flags = {}  # event_/lifetime_/displayed_ provisional flags
+    if provisional.event_is_glicko2(elo_db_path=ELO_DB_PATH):
+        if provisional.mark(rating_flags, season_games, prefix="event_"):
+            online_event_elo = None
+        if source == "bot":
+            event_elo = online_event_elo
+            if event_filter == "current":
+                provisional.mark(rating_flags, season_games, prefix="displayed_")
+                displayed_elo = event_elo
+                displayed_rank = None if event_elo is None else provisional.settled_rank(
+                    event_elo, "online_event_elo", "online_event_games", ELO_DB_PATH
+                )
+    if provisional.lifetime_is_glicko2(ELO_DB_PATH):
+        if provisional.mark(rating_flags, lifetime_games, prefix="lifetime_"):
+            online_elo = None
+        if source == "bot":
+            player_elo = online_elo
+            rank = None if online_elo is None else provisional.settled_rank(
+                online_elo, "online_elo", "online_games", ELO_DB_PATH
+            )
+            if event_filter == "lifetime":
+                provisional.mark(rating_flags, lifetime_games, prefix="displayed_")
+                displayed_elo, displayed_rank = player_elo, rank
+    if archive_event_id is not None and source == "bot":
+        ladder = provisional.archived_ladder(archive_event_id, ELO_DB_PATH, MATCH_RECORDS_DB_PATH)
+        own = next(
+            (r for r in ladder or [] if str(r["user_id"]) == str(player_id_normalized)), None
+        )
+        if own:
+            displayed_elo, displayed_rank = own["event_elo"], own["rank"]
+            rating_flags["displayed_provisional"] = own["provisional"]
+            rating_flags["displayed_provisional_games"] = own["provisional_games"]
+    legacy_elo = provisional.legacy_elo(player_id_normalized, ELO_DB_PATH)
+
     # Get player name - custom_display_name has highest priority
     player_name = None
     profile = None
@@ -1971,6 +2037,8 @@ def player_api(player_id):
         own_avatar, _ = _extract_deck_info(winner_json if did_win else loser_json)
         opponent_avatar, _ = _extract_deck_info(loser_json if did_win else winner_json)
         elo_change = (row[7] if did_win else row[8]) if len(row) > 8 else None
+        if _row_change_hidden(row, did_win):
+            elo_change = None  # made while provisional: left out of the sums
         avatar_change = history_avatar_changes.get((str(row[6]), str(row[10]), str(row[11])))
         if avatar_change is not None:
             elo_change = avatar_change[0] if did_win else avatar_change[1]
@@ -2031,6 +2099,9 @@ def player_api(player_id):
         entry = entries_by_avatar.get(perf["name"])
         perf["event_elo"] = entry["event_elo"] if entry else None
         perf["event_rank"] = entry["rank"] if entry else None
+        if entry and "provisional" in entry:
+            perf["event_provisional"] = entry["provisional"]
+            perf["event_provisional_games"] = entry["provisional_games"]
 
     def _matchup_rows(counts):
         result = []
@@ -2342,9 +2413,11 @@ def player_api(player_id):
         opponent_name = row[5] if did_win else row[4]
         opponent_id = str(row[11]) if did_win else str(row[10])
         elo_change = row[7] if did_win else row[8]
+        change_hidden = _row_change_hidden(row, did_win)
         avatar_change = avatar_changes.get((str(row[6]), str(row[10]), str(row[11])))
         if avatar_change is not None:
             elo_change = avatar_change[0] if did_win else avatar_change[1]
+            change_hidden = avatar_change[2] if did_win else avatar_change[3]
 
         player_deck_url = None
         opponent_deck_url = None
@@ -2391,7 +2464,9 @@ def player_api(player_id):
             "opponent": opponent_name,
             "opponent_id": opponent_id,
             "result": "Win" if did_win else "Loss",
-            "elo_change": elo_change if elo_change else 0,
+            # Glicko-2: null (with elo_change_hidden) while the player was provisional
+            "elo_change": None if change_hidden else (elo_change if elo_change else 0),
+            **({"elo_change_hidden": True} if change_hidden else {}),
             "date": row[6],
             "first_player": "Play"
             if player_on_play
@@ -2513,14 +2588,21 @@ def player_api(player_id):
                 event_idx += 1
             elo += elo_change or 0
 
+        # Glicko-2: no point while lifetime was provisional; a season change
+        # made while provisional is null (elo_change_hidden)
+        if _row_change_hidden(row, did_win, "lifetime"):
+            continue
         opponent_name = row[5] if did_win else row[4]
-        elo_history.append({
+        point = {
             "date": match_date,
             "elo_change": elo_change,
             "elo_after": round(elo),
             "result": "Win" if did_win else "Loss",
             "opponent": opponent_name,
-        })
+        }
+        if _row_change_hidden(row, did_win):
+            point.update(elo_change=None, elo_change_hidden=True)
+        elo_history.append(point)
 
     # Recent decks - group matches by deck URL to calculate win rates and ELO impact.
     # Both ELO figures sum the per-match *lifetime* ELO deltas: "season" over the
@@ -2597,9 +2679,9 @@ def player_api(player_id):
 
             deck_stats[player_deck_url] = _new_deck_stats(avatar_name, deck_name, row[6])
 
-        _add_deck_result(
-            deck_stats[player_deck_url], did_win, row[6], _row_lifetime_delta(row, did_win)
-        )
+        # Changes made while provisional (Glicko-2) stay out of the totals
+        lifetime_delta = 0 if _row_lifetime_delta_hidden(row, did_win) else _row_lifetime_delta(row, did_win)
+        _add_deck_result(deck_stats[player_deck_url], did_win, row[6], lifetime_delta)
 
     # Include external matches in recent decks
     for em in external_matches_raw:
@@ -2767,10 +2849,15 @@ def player_api(player_id):
             "name": player_name,
             "avatar_url": _profile_picture_url(profile),
             "elo": player_elo if show_lifetime else None,
+            # Seasons 1-8 lifetime ELO, frozen when lifetime moved to Glicko-2
+            "legacy_elo": legacy_elo if show_lifetime else None,
             "event_elo": event_elo,
             "displayed_elo": displayed_elo if event_filter != "lifetime" or show_lifetime else event_elo,
             "rank": rank if show_lifetime else None,
             "displayed_rank": displayed_rank if event_filter != "lifetime" or show_lifetime else 0,
+            # Glicko-2 only: event_provisional(_games), lifetime_provisional(_games)
+            # and displayed_provisional(_games) for whichever rating displayed_elo is
+            **_visible_rating_flags(rating_flags, event_filter, show_lifetime),
             "event_filter": event_filter,
             "wins": wins,
             "losses": losses,

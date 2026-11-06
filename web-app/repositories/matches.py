@@ -113,10 +113,26 @@ class MatchRepository:
             conn.close()
         return json.loads(row[0]) if row else None
 
+    @staticmethod
+    def _event_games_select(cur, table) -> str:
+        """Each side's season game count after the match (Glicko-2 rows), NULL when absent."""
+        from services.provisional import event_games_select
+
+        return event_games_select(cur, table)
+
+    @staticmethod
+    def _mask_changes(d: dict, winner_games, loser_games) -> dict:
+        """Hide a change made while that side was provisional (see services/provisional.py)."""
+        from services.provisional import mask_pair
+
+        return mask_pair(d, winner_games, loser_games)
+
     def get_matches_by_date(self, date: str) -> list[dict]:
         """Get matches for a specific date."""
         conn = self._get_connection()
         cur = conn.cursor()
+        table = live_matches(self._db_path)
+        games = self._event_games_select(cur, table)
         cur.execute(
             f"""
             SELECT
@@ -129,8 +145,9 @@ class MatchRepository:
                 timestamp,
                 winner_id,
                 losser_id,
-                replay_url
-            FROM {live_matches(self._db_path)}
+                replay_url,
+                {games}
+            FROM {table}
             WHERE date(timestamp) = ?
             ORDER BY rowid DESC
         """,
@@ -183,6 +200,8 @@ class MatchRepository:
                 "winner_id": str(row[7]),
                 "loser_id": str(row[8]),
             }
+            games = row[11:13] if has_new_columns else row[10:12]
+            self._mask_changes(d, *(games if len(games) == 2 else (None, None)))
             if has_new_columns:
                 raw_w = row[9]
                 raw_l = row[10]
@@ -216,9 +235,10 @@ class MatchRepository:
 
         # --- Current season ---
         for table in ("match_records", "match_records_archive", "season_match_records"):
+            games = self._event_games_select(cur, table)
             try:
                 cur.execute(
-                    f"SELECT {self._DATE_RANGE_COLS_NEW} FROM {table}"
+                    f"SELECT {self._DATE_RANGE_COLS_NEW}, {games} FROM {table}"
                     " WHERE date(timestamp) >= ? AND date(timestamp) <= ?"
                     " ORDER BY rowid DESC",
                     (start_date, end_date),
@@ -228,7 +248,7 @@ class MatchRepository:
                 # New columns don't exist — try old schema
                 try:
                     cur.execute(
-                        f"SELECT {self._DATE_RANGE_COLS_OLD} FROM {table}"
+                        f"SELECT {self._DATE_RANGE_COLS_OLD}, {games} FROM {table}"
                         " WHERE date(timestamp) >= ? AND date(timestamp) <= ?"
                         " ORDER BY rowid DESC",
                         (start_date, end_date),
@@ -254,6 +274,8 @@ class MatchRepository:
         # Use parameterized query - SQLite datetime modifier needs string concatenation
         # but we've validated hours is a safe integer above
         hours_modifier = f"-{hours} hours"
+        table = live_matches(self._db_path)
+        games = self._event_games_select(cur, table)
         cur.execute(
             f"""
             SELECT
@@ -266,8 +288,9 @@ class MatchRepository:
                 timestamp,
                 winner_id,
                 losser_id,
-                replay_url
-            FROM {live_matches(self._db_path)}
+                replay_url,
+                {games}
+            FROM {table}
             WHERE timestamp >= datetime('now', ?)
             ORDER BY rowid DESC
         """,
@@ -278,9 +301,13 @@ class MatchRepository:
         return self._rows_to_match_dicts(rows)
 
     def _rows_to_match_dicts(self, rows) -> list[dict]:
-        """Convert database rows to match dictionaries."""
+        """Convert database rows to match dictionaries.
+
+        Rows may end with each side's season game count (index 10/11), which
+        hides changes made while provisional.
+        """
         return [
-            {
+            self._mask_changes({
                 "match_id": row[0],
                 "winner": row[1] or "Unknown",
                 "winner_elo_change": row[2] or 0,
@@ -291,7 +318,7 @@ class MatchRepository:
                 "winner_id": str(row[7]),
                 "loser_id": str(row[8]),
                 "replay_url": row[9] if len(row) > 9 else None,
-            }
+            }, *(row[10:12] if len(row) > 11 else (None, None)))
             for row in rows
         ]
 

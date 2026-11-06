@@ -290,7 +290,7 @@ def get_player_event_stats(player_id, event_id):
         # Keep as string to avoid overflow with large Google IDs
         stats = repo.get_player_event_elo(player_id, event_id)
         if stats:
-            ladder = _archived_glicko2_ladder(repo, event_id)
+            ladder = provisional.archived_ladder(event_id, repo._db_path)
             if ladder is not None:
                 # Glicko-2 season: rank among settled players; provisional shows no ELO
                 row = next((r for r in ladder if str(r["user_id"]) == str(player_id)), None)
@@ -305,22 +305,6 @@ def get_player_event_stats(player_id, event_id):
         return jsonify({"error": str(e)}), 500
 
 
-def _archived_glicko2_ladder(repo, event_id):
-    """An ended Glicko-2 season's archived ladder with provisional entries marked.
-
-    Ratings of players short of the provisional minimum are hidden and the
-    rest are ranked among themselves (game counts come from the season's
-    matches). None for Elo seasons.
-    """
-    games = provisional.archived_season_games(event_id, repo._db_path)
-    if games is None:
-        return None
-    rows = repo.get_archived_event_leaderboard(event_id)
-    for row in rows:
-        provisional.mark(row, games.get(str(row["user_id"]), 0), value_keys=("event_elo",))
-    return provisional.rank_settled_first(rows, "event_elo", name_key="display_name")
-
-
 @leaderboard_bp.route("/leaderboard/archived/<int:event_id>")
 def get_archived_event_leaderboard(event_id):
     """Get full leaderboard for a specific archived event."""
@@ -329,7 +313,7 @@ def get_archived_event_leaderboard(event_id):
         from repositories.matches import MatchRepository
 
         repo = EloRepository()
-        ladder = _archived_glicko2_ladder(repo, event_id)
+        ladder = provisional.archived_ladder(event_id, repo._db_path)
         leaderboard = ladder if ladder is not None else repo.get_archived_event_leaderboard(event_id)
 
         # Season records come from the match archive (older events may have none)

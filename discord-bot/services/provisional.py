@@ -20,6 +20,7 @@ from services import glicko2_season as g2
 PROVISIONAL_GAMES = g2.PROVISIONAL_GAMES
 provisional_label = g2.provisional_label
 change_hidden = g2.change_hidden
+is_provisional = g2.is_provisional
 
 
 def season_provisional(event, games) -> bool:
@@ -124,3 +125,11 @@ def lifetime_games(user_ids=None, elo_db: str = "elo.db") -> dict[int, int]:
     if user_ids is not None:
         return {uid: games.get(uid, 0) for uid in user_ids}
     return games
+
+
+def corrected_side_text(result: dict, side: str) -> str:
+    """'**Name** (+12 ELO)' for a correct_match_record result; no number if hidden."""
+    name = result[f"new_{side}_name"]
+    if result.get(f"new_{side}_elo_change_hidden"):
+        return f"**{name}**"
+    return f"**{name}** ({result[f'new_{side}_elo_change']:+d} ELO)"

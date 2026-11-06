@@ -12,6 +12,7 @@ import discord
 from discord.ext import commands, tasks
 
 import config
+from services.glicko2_season import PROVISIONAL_GAMES, lifetime_is_glicko2
 
 logger = logging.getLogger("discord_bot")
 
@@ -25,6 +26,19 @@ MATCH_TYPES = (
     ("limited_matches", "Limited"),
     ("rumble_matches", "Rumble"),
 )
+
+
+def _visible_change_sql(side: str) -> str:
+    """SQL keeping a side's lifetime change only when it is shown (see glicko2_season.change_hidden)."""
+    return f"({side}_lifetime_games IS NULL OR {side}_lifetime_games > {PROVISIONAL_GAMES})"
+
+
+def _lifetime_is_glicko2() -> bool:
+    conn = sqlite3.connect("elo.db")
+    try:
+        return lifetime_is_glicko2(conn)
+    finally:
+        conn.close()
 
 
 def _player(guild, user_id, name) -> str:
@@ -364,6 +378,11 @@ class DailySummaryCog(commands.Cog):
             if row:
                 stats["most_active"] = (row[0], row[1], row[2])  # (user_id, name, count)
 
+            # Lifetime changes made while a side was provisional (its first
+            # Glicko-2 lifetime games) aren't shown, so they don't count here
+            visible_winner = _visible_change_sql("winner")
+            visible_loser = _visible_change_sql("loser")
+
             # 3. Top ELO gainer (net across all matches)
             cur.execute(
                 f"""
@@ -372,11 +391,13 @@ class DailySummaryCog(commands.Cog):
                            winner_lifetime_elo_change as elo_change
                     FROM {live_matches()} WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                                              AND winner_lifetime_elo_change IS NOT NULL
+                                             AND {visible_winner}
                     UNION ALL
                     SELECT losser_id as player_id, losser_display_name as player_name,
                            loser_lifetime_elo_change as elo_change
                     FROM {live_matches()} WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                                              AND loser_lifetime_elo_change IS NOT NULL
+                                             AND {visible_loser}
                 ) GROUP BY player_id ORDER BY net_change DESC LIMIT 1
                 """,
                 (start, end, start, end),
@@ -393,11 +414,13 @@ class DailySummaryCog(commands.Cog):
                            winner_lifetime_elo_change as elo_change
                     FROM {live_matches()} WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                                              AND winner_lifetime_elo_change IS NOT NULL
+                                             AND {visible_winner}
                     UNION ALL
                     SELECT losser_id as player_id, losser_display_name as player_name,
                            loser_lifetime_elo_change as elo_change
                     FROM {live_matches()} WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                                              AND loser_lifetime_elo_change IS NOT NULL
+                                             AND {visible_loser}
                 ) GROUP BY player_id ORDER BY net_change ASC LIMIT 1
                 """,
                 (start, end, start, end),
@@ -423,6 +446,7 @@ class DailySummaryCog(commands.Cog):
                 WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                       AND winner_lifetime_elo_change IS NOT NULL
                       AND winner_lifetime_elo_change > 0
+                      AND {visible_winner}
                 ORDER BY winner_lifetime_elo_change DESC LIMIT 1
                 """,
                 (start, end),
@@ -474,6 +498,13 @@ class DailySummaryCog(commands.Cog):
             # 10. Highest Rated Match (highest combined ELO)
             try:
                 cur.execute("ATTACH DATABASE 'elo.db' AS elo_db")
+                # A Glicko-2 lifetime rating isn't shown while provisional: skip those matches
+                settled = ""
+                if _lifetime_is_glicko2():
+                    settled = (
+                        f"AND COALESCE(w.online_games, 0) >= {PROVISIONAL_GAMES} "
+                        f"AND COALESCE(l.online_games, 0) >= {PROVISIONAL_GAMES}"
+                    )
                 cur.execute(
                     f"""
                     SELECT m.winner_id, m.winner_display_name, m.losser_id, m.losser_display_name,
@@ -483,6 +514,7 @@ class DailySummaryCog(commands.Cog):
                     LEFT JOIN elo_db.overall_standings w ON w.user_id = m.winner_id
                     LEFT JOIN elo_db.overall_standings l ON l.user_id = m.losser_id
                     WHERE m.timestamp >= ? AND m.timestamp < ? AND m.match_type = 'ranked'
+                          {settled}
                     ORDER BY (COALESCE(w.online_elo, w.elo, 1500)
                               + COALESCE(l.online_elo, l.elo, 1500)) DESC
                     LIMIT 1

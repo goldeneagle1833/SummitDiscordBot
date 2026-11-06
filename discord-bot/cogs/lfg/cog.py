@@ -159,15 +159,44 @@ def _avatar_suffix(avatar):
 
 def _new_ranks_text(winner_id, winner_name, winner_avatar, winner_event_elo,
                     loser_id, loser_name, loser_avatar, loser_event_elo):
-    """The admin report's "New Ranks" block, per avatar in Avatar mode."""
-    if winner_avatar and loser_avatar and is_avatar_mode():
+    """The admin report's "New Ranks" block, per avatar in Avatar mode.
+
+    Posted in the channel, so a provisional Glicko-2 rating shows as
+    "Provisional (n/8)" instead of its number.
+    """
+    per_avatar = bool(winner_avatar and loser_avatar and is_avatar_mode())
+    if per_avatar:
         winner_event_elo = ladder_elo(winner_id, winner_avatar)
         loser_event_elo = ladder_elo(loser_id, loser_avatar)
+    winner_text = provisional.season_rating_text(
+        winner_id, winner_event_elo, winner_avatar if per_avatar else None
+    )
+    loser_text = provisional.season_rating_text(
+        loser_id, loser_event_elo, loser_avatar if per_avatar else None
+    )
     return (
         f"\n\n**New Ranks:**\n"
-        f"{winner_name}{_avatar_suffix(winner_avatar)}: **{winner_event_elo}** event\n"
-        f"{loser_name}{_avatar_suffix(loser_avatar)}: **{loser_event_elo}** event"
+        f"{winner_name}{_avatar_suffix(winner_avatar)}: **{winner_text}** event\n"
+        f"{loser_name}{_avatar_suffix(loser_avatar)}: **{loser_text}** event"
     )
+
+
+def _lifetime_result_text(rating, change, games) -> str:
+    """"**1612** lifetime (+14)"; ``games`` is the Glicko-2 lifetime count (None on Elo)."""
+    glicko2 = games is not None
+    shown = provisional.change_text(change, games) if glicko2 else f"{change:+d}"
+    return f"**{provisional.rating_text(rating, games, glicko2)}** lifetime" + (f" ({shown})" if shown else "")
+
+
+def _settled_lifetime(rows):
+    """(user_id, name, elo) lifetime rows without provisional Glicko-2 players.
+
+    A provisional lifetime rating isn't shown and can't take a top 16 place.
+    """
+    if not provisional.lifetime_is_glicko2():
+        return rows
+    games = provisional.lifetime_games()
+    return [row for row in rows if not provisional.is_provisional(games.get(row[0]))]
 
 
 class LFGCog(commands.Cog):
@@ -2513,9 +2542,16 @@ class LFGCog(commands.Cog):
             # Update leaderboard
             await self.update_leaderboard()
 
-            # Get event ELOs (unchanged) for display
-            winner_event_elo = get_user_event_elo(winner.id)
-            loser_event_elo = get_user_event_elo(loser.id)
+            # Get event ELOs (unchanged) for display; provisional Glicko-2
+            # ratings and changes made while provisional aren't shown
+            winner_event_elo = provisional.season_rating_text(winner.id, get_user_event_elo(winner.id))
+            loser_event_elo = provisional.season_rating_text(loser.id, get_user_event_elo(loser.id))
+            life_games = (
+                provisional.lifetime_games([winner.id, loser.id])
+                if provisional.lifetime_is_glicko2() else {}
+            )
+            winner_lifetime = _lifetime_result_text(new_winner_elo, winner_change, life_games.get(winner.id))
+            loser_lifetime = _lifetime_result_text(new_loser_elo, loser_change, life_games.get(loser.id))
 
             description = (
                 f"**Match ID:** #{match_id}\n"
@@ -2523,8 +2559,8 @@ class LFGCog(commands.Cog):
                 f"**Loser:** {loser.mention} ({loser_name})\n"
                 f"**Type:** Top Cut (lifetime ELO only)\n\n"
                 f"**Updated Ranks:**\n"
-                f"{winner_name}: **{new_winner_elo}** lifetime ({winner_change:+d}) / **{winner_event_elo}** event (unchanged)\n"
-                f"{loser_name}: **{new_loser_elo}** lifetime ({loser_change:+d}) / **{loser_event_elo}** event (unchanged)"
+                f"{winner_name}: {winner_lifetime} / **{winner_event_elo}** event (unchanged)\n"
+                f"{loser_name}: {loser_lifetime} / **{loser_event_elo}** event (unchanged)"
             )
             success_embed = discord.Embed(
                 title="Top Cut Match Reported",
@@ -2907,6 +2943,12 @@ class LFGCog(commands.Cog):
                 elo_multiplier_winner = 2.0
                 elo_multiplier_loser = 0.5
                 stakes_label = f"Special stakes (ELO diff {elo_diff} >= 100)"
+            if any(
+                provisional.entry_provisional(uid, avatars.get(uid) if is_avatar_mode() else None)
+                for uid in (top16_player.id, opponent_id)
+            ):
+                # A provisional rating isn't shown, so neither is the gap to it
+                stakes_label = stakes_label.split(" (")[0]
 
             guild_id = ctx.guild.id if ctx.guild else None
 
@@ -3931,8 +3973,8 @@ class LFGCog(commands.Cog):
                         f"~~Winner: {result['original_winner_name']}~~\n"
                         f"~~Loser: {result['original_loser_name']}~~\n\n"
                         f"**Corrected Result:**\n"
-                        f"Winner: **{result['new_winner_name']}** ({result['new_winner_elo_change']:+d} ELO)\n"
-                        f"Loser: **{result['new_loser_name']}** ({result['new_loser_elo_change']:+d} ELO)"
+                        f"Winner: {provisional.corrected_side_text(result, 'winner')}\n"
+                        f"Loser: {provisional.corrected_side_text(result, 'loser')}"
                     ),
                     color=discord.Color.green(),
                 )
@@ -4853,7 +4895,7 @@ class LFGCog(commands.Cog):
             cur.execute(
                 "SELECT user_id, user_display_name, online_elo FROM overall_standings ORDER BY online_elo DESC"
             )
-            rows = cur.fetchall()
+            rows = _settled_lifetime(cur.fetchall())
             conn.close()
 
             eligible = []
@@ -4905,7 +4947,7 @@ class LFGCog(commands.Cog):
             cur.execute(
                 "SELECT user_id, user_display_name, online_elo FROM overall_standings ORDER BY online_elo DESC"
             )
-            rows = cur.fetchall()
+            rows = _settled_lifetime(cur.fetchall())
             conn.close()
 
             if not rows:

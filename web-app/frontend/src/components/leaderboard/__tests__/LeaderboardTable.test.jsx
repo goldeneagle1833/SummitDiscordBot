@@ -93,4 +93,40 @@ describe('LeaderboardTable', () => {
     expect(screen.queryByTestId('top-cut-min-note')).toBeNull()
     expect(screen.queryByText('not yet eligible')).toBeNull()
   })
+
+  it('shows provisional event entries without a rank or number', () => {
+    const rows = [
+      { id: '1', name: 'Alice', event_elo: 1620, top_cut_eligible: true },
+      { id: '2', name: 'Bob', event_elo: 1580, top_cut_eligible: true },
+      { id: '3', name: 'Cara', event_elo: null, provisional: true, provisional_games: 5, top_cut_eligible: false },
+      { id: '4', name: 'Dan', event_elo: null, provisional: true, provisional_games: 2, top_cut_eligible: false },
+    ]
+    renderWithRouter(<LeaderboardTable data={rows} columns="event" topCutMinGames={8} />)
+    const cara = screen.getByRole('link', { name: 'Cara' }).closest('tr')
+    expect(within(cara).getByText('Provisional (5/8)')).toBeInTheDocument()
+    // No rank cell content, no "null", and no duplicate "not yet eligible" tag
+    expect(within(cara).getAllByRole('cell')[0]).toHaveTextContent(/^$/)
+    expect(cara).not.toHaveTextContent('null')
+    expect(screen.queryByText('not yet eligible')).toBeNull()
+    expect(screen.getByText('Provisional (2/8)')).toBeInTheDocument()
+    // Settled players keep their medals
+    expect(screen.getByText('\u{1F947}')).toBeInTheDocument()
+    expect(screen.getByText('\u{1F948}')).toBeInTheDocument()
+    expect(screen.queryByText('\u{1F949}')).toBeNull()
+  })
+
+  it('does not let provisional rows take rank positions from settled players', () => {
+    const rows = [
+      { id: '1', name: 'A', elo: 1700, wins: 9, losses: 0 },
+      { id: '2', name: 'B', elo: 1690, wins: 9, losses: 0 },
+      { id: '3', name: 'C', elo: 1680, wins: 9, losses: 0 },
+      { id: '4', name: 'D', elo: null, provisional: true, provisional_games: 7, wins: 7, losses: 0 },
+      { id: '5', name: 'E', elo: 1670, wins: 9, losses: 0 },
+    ]
+    renderWithRouter(<LeaderboardTable data={rows} columns="lifetime" />)
+    expect(screen.getByRole('link', { name: 'E' }).closest('tr')).toHaveTextContent('#4')
+    const d = screen.getByRole('link', { name: 'D' }).closest('tr')
+    expect(within(d).getByText('Provisional (7/8)')).toBeInTheDocument()
+    expect(d).not.toHaveTextContent('#')
+  })
 })

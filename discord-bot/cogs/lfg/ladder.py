@@ -569,11 +569,18 @@ async def _resolve_ladder_challenge(bot, challenger_id):
     opponent_elo = get_user_event_elo(selected_id)
     elo_diff = abs(challenger_elo - opponent_elo)
 
+    # A provisional (Glicko-2) rating isn't shown, so neither is the gap to it
+    from services.provisional import entry_provisional
+
+    gap_hidden = entry_provisional(challenger_id) or entry_provisional(selected_id)
     if elo_diff < 100:
         # Normal stakes
         winner_mult = 1.0
         loser_mult = 1.0
-        stakes_text = "ELO difference < 100 \u2014 **Normal ELO stakes** apply."
+        stakes_text = (
+            "**Normal ELO stakes** apply." if gap_hidden
+            else "ELO difference < 100 \u2014 **Normal ELO stakes** apply."
+        )
     else:
         # Special stakes
         winner_mult = 2.0  # Non-Top16 winner gets 2x

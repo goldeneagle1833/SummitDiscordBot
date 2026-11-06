@@ -168,8 +168,9 @@ export default function Player() {
     }
   } else if (avatarMode) {
     if (!avatarEntries.length) headline.note = 'No avatar games this event yet'
-  } else if (eventProv || provisionalOf(data, 'displayed')) {
-    headline.provisional = provisionalOf(data, 'displayed') || eventProv
+  } else if (provisionalOf(data, 'displayed')) {
+    // displayed_* is the selected event's rating (event_* is the running one)
+    headline.provisional = provisionalOf(data, 'displayed')
     headline.eloLabel = eventFilter === 'current' ? 'Current event ELO' : 'Event ELO'
   } else if (data.displayed_elo != null && data.displayed_elo !== 1500) {
     headline.elo = data.displayed_elo

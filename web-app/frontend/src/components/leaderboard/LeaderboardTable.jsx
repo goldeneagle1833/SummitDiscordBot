@@ -140,7 +140,7 @@ export default function LeaderboardTable({
                   )}
                   {columns === 'event' && (
                     <td className="px-3 py-2 text-sm text-right whitespace-nowrap">
-                      {topCutMinGames > 0 && entry.top_cut_eligible === false && (
+                      {topCutMinGames > 0 && entry.top_cut_eligible === false && !prov && (
                         <span
                           className="mr-2 text-xs text-text-muted"
                           title={`Needs ${topCutMinGames} ranked games to count for top cut`}

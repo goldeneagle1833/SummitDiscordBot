@@ -55,9 +55,28 @@ def games_select(columns, alias: str = "") -> str:
     )
 
 
-def table_games_select(conn: sqlite3.Connection, table: str, alias: str = "") -> str:
-    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+def table_games_select(conn, table: str, alias: str = "") -> str:
+    """games_select for a table (``conn`` may be a connection or a cursor)."""
+    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
     return games_select(columns, alias)
+
+
+def event_games_select(conn, table: str) -> str:
+    """Just ``winner_event_games, loser_event_games`` (NULLs when the table lacks them)."""
+    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if {"winner_event_games", "loser_event_games"} <= columns:
+        return "winner_event_games, loser_event_games"
+    return "NULL, NULL"
+
+
+def mask_pair(match: dict, winner_games, loser_games,
+              fields=("winner_elo_change", "loser_elo_change")) -> dict:
+    """Null a winner/loser change pair where that side was provisional, adding ``<field>_hidden``."""
+    for field, games in zip(fields, (winner_games, loser_games)):
+        if change_hidden(games):
+            match[field] = None
+            match[f"{field}_hidden"] = True
+    return match
 
 
 # --- Per-match changes -------------------------------------------------------
@@ -209,3 +228,52 @@ def archived_season_games(event_id, elo_db_path=None, match_db_path=None) -> dic
         for uid in (m["winner_id"], m["losser_id"]):
             games[str(uid)] = games.get(str(uid), 0) + 1
     return games
+
+
+def archived_ladder(event_id, elo_db_path=None, match_db_path=None) -> list | None:
+    """An ended Glicko-2 season's archived ladder with provisional entries marked.
+
+    Ratings of players short of the minimum are hidden and the rest are
+    ranked among themselves (game counts come from the season's matches).
+    None for Elo seasons.
+    """
+    from repositories.elo import EloRepository
+
+    games = archived_season_games(event_id, elo_db_path, match_db_path)
+    if games is None:
+        return None
+    rows = EloRepository(elo_db_path or webapp_config.ELO_DB_PATH).get_archived_event_leaderboard(event_id)
+    for row in rows:
+        mark(row, games.get(str(row["user_id"]), 0), value_keys=("event_elo",))
+    return rank_settled_first(rows, "event_elo", name_key="display_name")
+
+
+def settled_rank(rating, rating_column: str, games_column: str, elo_db_path=None):
+    """1 + settled players rated above ``rating`` on an overall_standings ladder."""
+    conn = _elo_conn(elo_db_path)
+    try:
+        return conn.execute(
+            f"SELECT COUNT(*) FROM overall_standings WHERE {rating_column} > ? "
+            f"AND COALESCE({games_column}, 0) >= ?",
+            (rating, NEEDED),
+        ).fetchone()[0] + 1
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()
+
+
+def legacy_elo(user_id, elo_db_path=None):
+    """The frozen Seasons 1-8 lifetime ELO (None when absent)."""
+    conn = _elo_conn(elo_db_path)
+    try:
+        if "legacy_online_elo" not in _columns(conn, "overall_standings"):
+            return None
+        row = conn.execute(
+            "SELECT legacy_online_elo FROM overall_standings WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        return row[0] if row else None
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()

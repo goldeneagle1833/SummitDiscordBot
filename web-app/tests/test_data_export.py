@@ -44,7 +44,8 @@ def _seed(match_db, elo_db):
         # I won, I reported (legacy deck column is mine)
         (ME, ME, "Me", OPP, "Opp", "2026-11-01T10:00:00", 12, -12,
          "https://curiosa.io/decks/MINE", "https://curiosa.io/decks/THEIRS",
-         '{"avatar": "Sparkmage"}', '{"avatar": "SECRET_OPP_DECK"}',
+         '{"avatar": "Sparkmage"}',
+         '{"avatar": [{"name": "Seer", "type": "Avatar"}], "spellbook": [{"name": "SECRET_OPP_CARD", "elements": "Water,Air"}]}',
          "legacy-mine", "gg", "Sparkmage", "Seer"),
         # I lost, opponent reported (their legacy deck + comment stay out)
         (OPP, OPP, "Opp", ME, "Me", "2026-11-02T10:00:00", 10, -10,
@@ -161,6 +162,7 @@ def test_export_contents(client, match_db, elo_db):
     assert won["opponent_display_name"] == "Opp"
     assert won["json_deck_data"] == "legacy-mine"  # I reported it
     assert "opponent_curiosa_url" not in won and "opponent_elo_change" not in won
+    assert won["opponent_elements"] == ["Air", "Water"]  # from their deck, list itself stays out
 
     lost = by_ts["2026-11-02T10:00:00"]
     assert lost["result"] == "loss"
@@ -172,7 +174,7 @@ def test_export_contents(client, match_db, elo_db):
     assert "opponent_rating_after" not in s9
 
     # Other players' private data never appears
-    for secret in ("THEIRS", "SECRET_OPP_DECK", "legacy-theirs", "opp private comment", "Other", "1700"):
+    for secret in ("THEIRS", "SECRET_OPP_DECK", "SECRET_OPP_CARD", "legacy-theirs", "opp private comment", "Other", "1700"):
         assert secret not in raw, secret
 
     assert data["profile"]["user_profiles"][0]["email"] == "me@example.com"
@@ -188,6 +190,7 @@ def test_export_contents(client, match_db, elo_db):
 
     header = matches_csv.splitlines()[0]
     assert header.startswith("timestamp,table,match_id,result")
+    assert "opponent_elements" in header and "Air Water" in matches_csv
     assert len(matches_csv.strip().splitlines()) == 4
 
 

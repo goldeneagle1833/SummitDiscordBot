@@ -9,8 +9,8 @@ store orders and so on.
 Other players' private data never goes in:
 
 * Match rows are turned around to the player's point of view ("my_*" and
-  "opponent_*" columns). For the opponent only their id, name and avatar
-  are kept, so opponent deck lists, deck links and ratings stay out.
+  "opponent_*" columns). For the opponent only their id, name, avatar and
+  elements are kept, so opponent deck lists, deck links and ratings stay out.
 * Old single-deck columns (``curiosa_url``, ``json_deck_data``) and the
   match comment are kept only when this player reported the match.
 * Blocks, reports and kudos only include the rows the player made, except
@@ -146,6 +146,8 @@ def _db_paths() -> dict[str, Path]:
 def _clean(value):
     if isinstance(value, bytes):
         return None
+    if isinstance(value, int) and not isinstance(value, bool) and abs(value) > 2**53:
+        return str(value)  # Discord ids: JSON readers would round them
     if isinstance(value, str) and value[:1] in "[{":
         try:
             return json.loads(value)
@@ -174,10 +176,34 @@ def _match_side_columns(cols: list[str]) -> tuple[str, str] | None:
     return None
 
 
+def _deck_json(row: dict, side: str):
+    """The raw deck JSON for one side ("winner" / "loser"), if stored."""
+    for col in (f"json_deck_data_{side}", f"{side}_json", f"{side}_deck_json"):
+        if row.get(col):
+            return row[col]
+    return None
+
+
+def _avatar_and_elements(deck_json) -> tuple[str | None, list[str]]:
+    """Avatar name and elements of a deck, the same way the profile shows them."""
+    if not isinstance(deck_json, str) or not deck_json.strip():
+        return None, []
+    from routes.api.players import _extract_deck_info  # lazy: avoid import cycle
+    return _extract_deck_info(deck_json)
+
+
 def _as_player_view(row: dict, i_won: bool, i_reported: bool) -> dict:
     """Turn a winner/loser match row into my_* / opponent_* fields."""
     me = "winner" if i_won else "loser"
+    them = "loser" if i_won else "winner"
     out = {"result": "win" if i_won else "loss"}
+    # Avatar and elements for both sides, read from the deck lists before the
+    # opponent's list is dropped (the profile's Matches tab shows the same).
+    for who, side in (("my", me), ("opponent", them)):
+        avatar, elements = _avatar_and_elements(_deck_json(row, side))
+        out[f"{who}_elements"] = elements
+        if avatar:
+            out[f"{who}_deck_avatar"] = avatar
     for col, value in row.items():
         if col in DROP_COLUMNS or col in MATCH_DROP:
             continue
@@ -196,6 +222,10 @@ def _as_player_view(row: dict, i_won: bool, i_reported: bool) -> dict:
                 out[col] = _clean(value)
             continue
         out[col] = _clean(value)
+    for who in ("my", "opponent"):
+        deck_avatar = out.pop(f"{who}_deck_avatar", None)
+        if not out.get(f"{who}_avatar") and deck_avatar:
+            out[f"{who}_avatar"] = deck_avatar
     return out
 
 
@@ -336,7 +366,8 @@ def build_export(user_id: str) -> dict:
 
 MATCH_CSV_COLUMNS = [
     "timestamp", "table", "match_id", "result", "match_type", "source",
-    "opponent_id", "opponent_display_name", "my_avatar", "opponent_avatar",
+    "opponent_id", "opponent_display_name", "my_avatar", "my_elements",
+    "opponent_avatar", "opponent_elements",
     "my_elo_change", "my_lifetime_elo_change", "my_lifetime_elo_after",
     "my_avatar_elo_change", "my_went_first", "match_time", "voice",
     "my_curiosa_url", "my_deck_url", "replay_url",
@@ -353,7 +384,8 @@ summit-data.json  Everything we hold for you, grouped by section:
 matches.csv       Your match history as a spreadsheet, newest first.
 
 In matches, "my_" fields are yours and "opponent_" fields are the other
-player's. Opponents' deck lists and deck links are not included.
+player's. You get your opponent's avatar and elements, but not their deck
+list or deck link.
 """
 
 
@@ -362,7 +394,10 @@ def matches_csv(matches: list[dict]) -> str:
     writer = csv.DictWriter(buf, fieldnames=MATCH_CSV_COLUMNS, extrasaction="ignore")
     writer.writeheader()
     for m in matches:
-        writer.writerow({k: m.get(k) for k in MATCH_CSV_COLUMNS})
+        row = {k: m.get(k) for k in MATCH_CSV_COLUMNS}
+        for k in ("my_elements", "opponent_elements"):
+            row[k] = " ".join(m.get(k) or [])
+        writer.writerow(row)
     return buf.getvalue()
 
 

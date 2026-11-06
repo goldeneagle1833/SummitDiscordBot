@@ -67,7 +67,7 @@ export default function DataExportModal({ playerId, onClose }) {
 
         <p className="text-xs text-text-muted">
           The zip has <code>summit-data.json</code> with everything, and <code>matches.csv</code> you can
-          open in a spreadsheet. Your opponents&apos; deck lists are not included. Only you can download this.
+          open in a spreadsheet. You get your opponents&apos; avatars and elements, but not their deck lists. Only you can download this.
         </p>
 
         {error && <p className="text-xs text-accent-red mt-3">{error}</p>}

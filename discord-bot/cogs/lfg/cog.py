@@ -67,6 +67,7 @@ from utils.database import (
     get_user_elo,
     get_user_event_elo,
     update_elo_db_lifetime_only,
+    rate_top_cut_lifetime,
     log_admin_action,
     cleanup_old_pairings,
     cancel_pairing,
@@ -2480,11 +2481,8 @@ class LFGCog(commands.Cog):
             )
 
             # Update only lifetime ELO for both players
-            new_winner_elo, winner_change = update_elo_db_lifetime_only(
-                winner.id, winner_name, True, loser.id
-            )
-            new_loser_elo, loser_change = update_elo_db_lifetime_only(
-                loser.id, loser_name, False, winner.id
+            new_winner_elo, winner_change, new_loser_elo, loser_change = rate_top_cut_lifetime(
+                match_id, winner.id, winner_name, loser.id, loser_name
             )
 
             # Update leaderboard

@@ -187,6 +187,52 @@ def update_elo_db(user_id, user_display_name, did_win, opponent_id):
     return (new_online_elo, online_change, new_online_event_elo, online_event_change, True)
 
 
+def rate_top_cut_lifetime(match_id, winner_id, winner_name, loser_id, loser_name):
+    """Move only lifetime ELO for an admin-reported top cut match.
+
+    Elo lifetime: each side with K=32, as before. Glicko-2 lifetime: one
+    Glicko-2 game, stored on the match record so a lifetime rebuild replays it.
+
+    Returns (winner_new, winner_change, loser_new, loser_change).
+    """
+    conn = sqlite3.connect("elo.db")
+    try:
+        glicko = glicko2_season.lifetime_is_glicko2(conn)
+    finally:
+        conn.close()
+    if not glicko:
+        w_new, w_change = update_elo_db_lifetime_only(winner_id, winner_name, True, loser_id)
+        l_new, l_change = update_elo_db_lifetime_only(loser_id, loser_name, False, winner_id)
+        return w_new, w_change, l_new, l_change
+
+    elo_conn = sqlite3.connect("elo.db")
+    match_conn = sqlite3.connect("match_records.db")
+    try:
+        at = match_conn.execute(
+            f"SELECT timestamp FROM {live_matches()} WHERE rowid = ?", (match_id,)
+        ).fetchone()[0]
+        life = glicko2_season.apply_lifetime_match(
+            elo_conn, winner_id, winner_name, loser_id, loser_name, at,
+        )
+        match_conn.execute(
+            f"UPDATE {live_matches()} SET lifetime_system = ?, winner_lifetime_elo_change = ?, "
+            "loser_lifetime_elo_change = ?, winner_lifetime_elo_after = ?, loser_lifetime_elo_after = ? "
+            "WHERE rowid = ?",
+            (glicko2_season.GLICKO2, life["winner_change"], life["loser_change"],
+             life["winner_rating"], life["loser_rating"], match_id),
+        )
+        elo_conn.commit()
+        match_conn.commit()
+    except Exception:
+        elo_conn.rollback()
+        match_conn.rollback()
+        raise
+    finally:
+        elo_conn.close()
+        match_conn.close()
+    return life["winner_rating"], life["winner_change"], life["loser_rating"], life["loser_change"]
+
+
 def update_elo_db_lifetime_only(user_id, user_display_name, did_win, opponent_id):
     """
     Update only the lifetime (online_elo) for a player, leaving event ELO unchanged.
@@ -1293,10 +1339,11 @@ async def record_match(
                     "INSERT OR IGNORE INTO overall_standings (user_id, user_display_name) VALUES (?, ?)",
                     (uid, name),
                 )
-                conn_elo.execute(
-                    "UPDATE overall_standings SET online_elo = ?, user_display_name = ? WHERE user_id = ?",
-                    (new_elo, name, uid),
-                )
+                if not glicko2_season.lifetime_is_glicko2(conn_elo):
+                    conn_elo.execute(
+                        "UPDATE overall_standings SET online_elo = ?, user_display_name = ? WHERE user_id = ?",
+                        (new_elo, name, uid),
+                    )
             result = glicko2_season.apply_match(
                 conn_elo, active_event, winner_id, winner_global, loser_id, loser_global, now_iso,
                 winner_avatar if avatar_event_id is not None else None,
@@ -1343,6 +1390,30 @@ async def record_match(
                 loser_global, loser_avatar, loser_avatar_change, loser_avatar_after,
             )
 
+    # ── Step 2b: lifetime on Glicko-2 (from the first Glicko-2 season on) ──
+    # Replaces the Elo lifetime numbers worked out above; ladder challenge
+    # stakes scale the move and are kept on the record for rebuilds.
+    lifetime_system = None
+    winner_lifetime_mult = loser_lifetime_mult = None
+    if match_type not in NON_ELO_MATCH_TYPES and event_active:
+        conn_elo = sqlite3.connect("elo.db")
+        try:
+            if glicko2_season.lifetime_is_glicko2(conn_elo):
+                life = glicko2_season.apply_lifetime_match(
+                    conn_elo, winner_id, winner_global, loser_id, loser_global, now_iso,
+                    elo_multiplier_winner, elo_multiplier_loser,
+                )
+                conn_elo.commit()
+                lifetime_system = glicko2_season.GLICKO2
+                winner_lifetime_mult, loser_lifetime_mult = elo_multiplier_winner, elo_multiplier_loser
+                winner_lifetime_change, loser_lifetime_change = life["winner_change"], life["loser_change"]
+                winner_new_elo, loser_new_elo = life["winner_rating"], life["loser_rating"]
+        except Exception:
+            conn_elo.rollback()
+            raise
+        finally:
+            conn_elo.close()
+
     # ── Step 3: insert match record (deck data filled in async below) ──
     create_db()
     conn = sqlite3.connect("match_records.db")
@@ -1387,9 +1458,9 @@ async def record_match(
             "winner_lifetime_elo_after, loser_lifetime_elo_after, pairing_id, voice, "
             "winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, "
             "winner_avatar_elo_after, loser_avatar_elo_after, event_k, replay_url, "
-            "event_id, rating_system) "
+            "event_id, rating_system, lifetime_system, winner_lifetime_mult, loser_lifetime_mult) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 reporter_id,
                 winner_id, winner_global,
@@ -1426,6 +1497,9 @@ async def record_match(
                 get_pairing_replay(pairing_id) if match_type != "limited" else None,
                 match_event_id,
                 match_rating_system,
+                lifetime_system,
+                winner_lifetime_mult,
+                loser_lifetime_mult,
             ),
         )
         table_name = "match_records"
@@ -1497,6 +1571,10 @@ def start_new_event(event_name, elo_mode=PLAYER_MODE, scheduled_end_at=None, rat
     cur = conn.cursor()
 
     start_date = datetime.datetime.now().isoformat()
+    if rating_system == glicko2_season.GLICKO2 and glicko2_season.freeze_lifetime(conn, start_date):
+        # Lifetime moves to Glicko-2 with the first Glicko-2 season: the Elo
+        # lifetime is kept as Legacy ELO (Seasons 1-8) and everyone restarts at 1500
+        logger.info("Lifetime ELO frozen as legacy_online_elo; lifetime now Glicko-2")
     cur.execute(
         "INSERT INTO events (event_name, start_date, is_active, elo_mode, scheduled_end_at, rating_system) "
         "VALUES (?, ?, 1, ?, ?, ?)",
@@ -2055,18 +2133,21 @@ def _replay_match_elo(elo_cur, match_cur, row: dict, active_event, avatar_event_
 
 
 def _glicko2_rebuild(elo_conn, match_conn, active_event) -> None:
-    """After a fix in a Glicko-2 season: replay the whole season (not committed).
+    """After a fix: replay every ladder rated by Glicko-2 (not committed).
 
-    The lifetime ladder has already been fixed the usual way; Glicko-2 can't
-    be undone by subtracting a stored change, so the season ladders (player
-    and avatar entries) and every match's season change are rebuilt.
+    Glicko-2 can't be undone by subtracting a stored change, so a Glicko-2
+    season (player and avatar entries, each match's season change) and, once
+    lifetime is Glicko-2, the lifetime ladder are rebuilt from their matches.
+    Elo ladders have already been fixed the usual way.
     """
-    if glicko2_season.is_glicko2(active_event):
-        result = glicko2_season.rebuild_season(elo_conn, match_conn, active_event)
+    result = glicko2_season.rebuild_after_fix(elo_conn, match_conn, active_event)
+    if "season" in result:
         logger.info(
             "Glicko-2 season %s rebuilt: %d matches, %d ratings moved",
-            active_event["event_id"], result["matches"], len(result["moved"]),
+            active_event["event_id"], result["season"]["matches"], len(result["season"]["moved"]),
         )
+    if "lifetime" in result:
+        logger.info("Glicko-2 lifetime rebuilt: %d matches", result["lifetime"]["matches"])
 
 
 def _closed_season_row(row: dict, active_event) -> bool:
@@ -2183,8 +2264,8 @@ def correct_match_record(match_id: int) -> dict:
             for m in subsequent:
                 _replay_match_elo(elo_cur, match_cur, m, active_event, avatar_event_id)
                 recalculated += 1
+            _glicko2_rebuild(elo_conn, match_conn, active_event)
             if glicko2_season.is_glicko2(active_event):
-                _glicko2_rebuild(elo_conn, match_conn, active_event)
                 new_w_change, new_l_change = match_conn.execute(
                     f"SELECT winner_elo_change, loser_elo_change FROM {live_matches()} WHERE rowid = ?",
                     (match_id,),
@@ -2263,9 +2344,8 @@ def remove_match_record(match_id: int) -> dict:
             reverted_info.append(text)
 
         match_cur.execute(f"DELETE FROM {live_matches()} WHERE rowid = ?", (match_id,))
-        if match["rating_system"] == glicko2_season.GLICKO2:
-            # The season's numbers come from a full replay without this match
-            _glicko2_rebuild(elo_conn, match_conn, active_event)
+        # Glicko-2 numbers (season, lifetime) come from a full replay without this match
+        _glicko2_rebuild(elo_conn, match_conn, active_event)
         elo_conn.commit()
         match_conn.commit()
     except Exception:
@@ -2379,7 +2459,9 @@ def remove_player(user_id: int, user_name: str) -> dict:
                 "DELETE FROM event_rating_adjustments WHERE user_id = ? AND event_id = ?",
                 (user_id, active_event["event_id"]),
             )
-            _glicko2_rebuild(elo_conn, match_conn, active_event)
+        if glicko2_season.lifetime_is_glicko2(elo_conn):
+            elo_conn.execute("DELETE FROM lifetime_rating_adjustments WHERE user_id = ?", (user_id,))
+        _glicko2_rebuild(elo_conn, match_conn, active_event)
 
         elo_conn.commit()
         match_conn.commit()

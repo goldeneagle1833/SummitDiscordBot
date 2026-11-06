@@ -194,7 +194,7 @@ def test_start_event_defaults_to_elo_and_rejects_unknown_systems():
 
 
 @pytest.mark.asyncio
-async def test_report_moves_glicko2_season_and_elo_lifetime():
+async def test_report_moves_glicko2_season_and_lifetime():
     event = start_new_event("Season 9", rating_system="glicko2")
     match_id = await _record()
 
@@ -207,9 +207,11 @@ async def test_report_moves_glicko2_season_and_elo_lifetime():
     assert s[A]["online_event_rd"] < g2.START_RD
     # A new entry moves much more than Elo's K=16 opening game (+8)
     assert row["winner_elo_change"] > 50
-    # Lifetime stays Elo
+    # Lifetime moved to Glicko-2 with the first Glicko-2 season: a fresh
+    # lifetime moves exactly like a fresh season entry
+    assert row["lifetime_system"] == "glicko2"
     assert s[A]["online_elo"] == 1500 + row["winner_lifetime_elo_change"]
-    assert row["winner_lifetime_elo_change"] == 16
+    assert row["winner_lifetime_elo_change"] == row["winner_elo_change"]
 
 
 @pytest.mark.asyncio
@@ -265,7 +267,7 @@ async def test_remove_match_rebuilds_the_season_without_it():
     _rebuild()
     assert _season_snapshot() == after  # consistent with a clean replay
     assert len(after[1]) == 2
-    # Lifetime still undone by its own stored change
+    # B's last game is gone, so B's lifetime is back where it was before it
     assert _standings()[B]["online_elo"] == lifetime_before - bad_row["winner_lifetime_elo_change"]
 
 
@@ -460,6 +462,138 @@ def test_season_table_picks_up_columns_added_to_match_records():
 def test_an_elo_season_does_not_create_the_season_table():
     start_new_event("Season 9")
     assert not _rows("SELECT name FROM sqlite_master WHERE name = 'season_match_records'")
+
+
+# ── Lifetime: frozen as Legacy ELO, then Glicko-2 ──
+
+
+def _legacy():
+    return {r["user_id"]: r["legacy_online_elo"] for r in _rows(
+        "SELECT user_id, legacy_online_elo FROM overall_standings", db="elo.db")}
+
+
+def _lifetime_snapshot():
+    players = {
+        r["user_id"]: (r["online_elo"], r["online_games"], round(r["online_rating"] or 0, 6))
+        for r in _rows("SELECT * FROM overall_standings", db="elo.db")
+    }
+    matches = [
+        (r["match_id"], r["winner_lifetime_elo_change"], r["loser_lifetime_elo_change"])
+        for r in _rows("SELECT * FROM season_match_records ORDER BY match_id")
+    ]
+    return players, matches
+
+
+@pytest.mark.asyncio
+async def test_first_glicko2_season_freezes_lifetime_as_legacy_and_restarts_it():
+    start_new_event("Season 8")
+    await _record(A, B)
+    await _record(A, C)
+    elo_lifetime = {uid: r["online_elo"] for uid, r in _standings().items()}
+    assert elo_lifetime[A] > 1500
+
+    start_new_event("Season 9", rating_system="glicko2")
+
+    assert _legacy() == elo_lifetime
+    assert {r["online_elo"] for r in _standings().values()} == {1500}
+
+    # Season 10 carries lifetime on and never re-freezes it
+    await _record(B, A)
+    after_s9 = _standings()[B]["online_elo"]
+    start_new_event("Season 10", rating_system="glicko2")
+    assert _legacy() == elo_lifetime
+    assert _standings()[B]["online_elo"] == after_s9
+    assert _rows("SELECT online_games FROM overall_standings WHERE user_id = ?", (B,), db="elo.db")[0][
+        "online_games"] == 1
+
+
+@pytest.mark.asyncio
+async def test_lifetime_rebuild_matches_incremental_across_seasons_and_elo_seasons():
+    start_new_event("Season 9", rating_system="glicko2")
+    for w, l in ((A, B), (B, C), (C, A), (A, D)):
+        await _record(w, l)
+    start_new_event("Season 10")  # an Elo season after the switch: lifetime stays Glicko-2
+    for w, l in ((D, A), (B, A), (C, D)):
+        await _record(w, l)
+    assert {r["lifetime_system"] for r in _rows("SELECT lifetime_system FROM season_match_records")} == {
+        "glicko2"}
+
+    before = _lifetime_snapshot()
+    elo_conn, match_conn = sqlite3.connect("elo.db"), sqlite3.connect("match_records.db")
+    g2.rebuild_lifetime(elo_conn, match_conn)
+    elo_conn.commit()
+    match_conn.commit()
+    elo_conn.close()
+    match_conn.close()
+    assert _lifetime_snapshot() == before
+
+
+@pytest.mark.asyncio
+async def test_remove_match_rebuilds_lifetime_across_seasons():
+    start_new_event("Season 9", rating_system="glicko2")
+    bad = await _record(A, B)
+    start_new_event("Season 10", rating_system="glicko2")
+    await _record(B, C)
+    with pytest.raises(ValueError):
+        remove_match_record(bad)  # ended season: left alone
+    current = await _record(C, A)
+    remove_match_record(current)
+
+    # Lifetime equals a replay of the two games that are left
+    a, b = g2.play(g2.Rating(), g2.Rating(), _rows(
+        "SELECT timestamp FROM season_match_records WHERE match_id = ?", (bad,))[0]["timestamp"])
+    b, c = g2.play(b, g2.Rating(), _rows(
+        "SELECT timestamp FROM season_match_records WHERE match_id != ?", (bad,))[0]["timestamp"])
+    s = _standings()
+    assert (s[A]["online_elo"], s[B]["online_elo"], s[C]["online_elo"]) == (a.display, b.display, c.display)
+
+
+@pytest.mark.asyncio
+async def test_ladder_stakes_scale_the_glicko2_lifetime_move():
+    start_new_event("Season 9", rating_system="glicko2")
+    match_id = await _record(A, B, elo_multiplier_winner=2.0, elo_multiplier_loser=0.5)
+    row = _rows("SELECT * FROM season_match_records WHERE match_id = ?", (match_id,))[0]
+    plain_w, plain_l = row["winner_elo_change"], row["loser_elo_change"]  # season ignores stakes
+    assert abs(row["winner_lifetime_elo_change"] - 2 * plain_w) <= 1
+    assert abs(row["loser_lifetime_elo_change"] - 0.5 * plain_l) <= 1
+    before = _lifetime_snapshot()
+    _rebuild_lifetime()
+    assert _lifetime_snapshot() == before
+
+
+def _rebuild_lifetime():
+    elo_conn, match_conn = sqlite3.connect("elo.db"), sqlite3.connect("match_records.db")
+    try:
+        g2.rebuild_lifetime(elo_conn, match_conn)
+        elo_conn.commit()
+        match_conn.commit()
+    finally:
+        elo_conn.close()
+        match_conn.close()
+
+
+@pytest.mark.asyncio
+async def test_top_cut_report_moves_glicko2_lifetime_only_and_survives_rebuilds():
+    from services.elo_service import rate_top_cut_lifetime
+
+    start_new_event("Season 9", rating_system="glicko2")
+    match_id = await _record(A, B, match_type="testing")
+    w_new, w_change, l_new, l_change = rate_top_cut_lifetime(match_id, A, "PA", B, "PB")
+    s = _standings()
+    assert s[A]["online_elo"] == w_new == 1500 + w_change and w_change > 0
+    assert s[A]["online_event_rating"] is None  # season untouched
+    before = _lifetime_snapshot()
+    _rebuild_lifetime()
+    assert _lifetime_snapshot() == before
+
+
+def test_elo_lifetime_stays_elo_until_a_glicko2_season():
+    start_new_event("Season 8")
+    conn = sqlite3.connect("elo.db")
+    try:
+        assert not g2.lifetime_is_glicko2(conn)
+    finally:
+        conn.close()
 
 
 # ── The web app's copy ──

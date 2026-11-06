@@ -117,8 +117,9 @@ class AdminService:
             logger.warning(f"Could not reverse ELO for match #{match_id}: {e}")
 
         deleted = self._match_repo.delete_match(numeric_id)
-        if deleted and glicko_row:
-            # A Glicko-2 result can't be subtracted: replay the season without it
+        if deleted:
+            # A Glicko-2 result can't be subtracted: replay the Glicko-2 season
+            # and lifetime ladders without it
             self._rebuild_glicko2_season(active_event)
         if deleted:
             logger.info(
@@ -148,14 +149,16 @@ class AdminService:
         finally:
             conn.close()
 
-    def _rebuild_glicko2_season(self, active_event) -> None:
-        """Replay the running Glicko-2 season after a fix (same as the bot's)."""
+    def _rebuild_glicko2_season(self, active_event) -> dict:
+        """Replay what Glicko-2 rates after a fix (same as the bot's): the running
+        Glicko-2 season and, once lifetime is Glicko-2, the lifetime ladder."""
         elo_conn = self._elo_repo._get_connection()
         match_conn = self._match_repo._get_connection()
         try:
-            glicko2_season.rebuild_season(elo_conn, match_conn, active_event)
+            result = glicko2_season.rebuild_after_fix(elo_conn, match_conn, active_event)
             elo_conn.commit()
             match_conn.commit()
+            return result
         except Exception:
             elo_conn.rollback()
             match_conn.rollback()
@@ -417,6 +420,14 @@ class AdminService:
                 )
                 updates["event_rating_adjustments"] = cur.rowcount
 
+            # lifetime_rating_adjustments (Glicko-2 lifetime admin resets)
+            if "lifetime_rating_adjustments" in tables:
+                cur.execute(
+                    "UPDATE lifetime_rating_adjustments SET user_id = ? WHERE user_id = ?",
+                    (new_user_id, old_user_id),
+                )
+                updates["lifetime_rating_adjustments"] = cur.rowcount
+
             # limited_event_standings_archive
             if "limited_event_standings_archive" in tables:
                 cur.execute("UPDATE limited_event_standings_archive SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
@@ -441,13 +452,12 @@ class AdminService:
         # A Glicko-2 season's ratings follow its matches: replay it so the
         # moved games count as the new account's
         active_event = self._elo_repo.get_active_event()
-        if glicko2_season.is_glicko2(active_event):
-            try:
-                self._rebuild_glicko2_season(active_event)
+        try:
+            if self._rebuild_glicko2_season(active_event):
                 updates["glicko2_season_rebuilt"] = "yes"
-            except Exception as e:
-                logger.error(f"Transfer done but the Glicko-2 season rebuild failed: {e}")
-                updates["glicko2_season_rebuilt"] = f"failed: {e}"
+        except Exception as e:
+            logger.error(f"Transfer done but the Glicko-2 season rebuild failed: {e}")
+            updates["glicko2_season_rebuilt"] = f"failed: {e}"
 
         summary = {k: v for k, v in updates.items() if v}
         total_rows = sum(v for v in updates.values() if isinstance(v, int))

@@ -488,16 +488,19 @@ class EloRepository:
             if not row:
                 return False
             event = glicko2_season.get_event(conn)
-            if glicko2_season.is_glicko2(event):
+            if glicko2_season.lifetime_is_glicko2(conn):
+                glicko2_season.add_lifetime_adjustment(conn, user_id, row[0], default_elo)
+            else:
                 cur.execute(
                     "UPDATE overall_standings SET online_elo = ? WHERE user_id = ?",
                     (default_elo, user_id),
                 )
+            if glicko2_season.is_glicko2(event):
                 glicko2_season.add_adjustment(conn, event, user_id, row[0], default_elo)
             else:
                 cur.execute(
-                    "UPDATE overall_standings SET online_elo = ?, online_event_elo = ? WHERE user_id = ?",
-                    (default_elo, default_elo, user_id),
+                    "UPDATE overall_standings SET online_event_elo = ? WHERE user_id = ?",
+                    (default_elo, user_id),
                 )
             conn.commit()
             return True

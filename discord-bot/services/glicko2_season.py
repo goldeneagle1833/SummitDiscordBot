@@ -1,8 +1,8 @@
 """Glicko-2 season ratings (Season 9 on).
 
 A season is rated with Elo or Glicko-2, chosen when it starts and locked from
-then on (``events.rating_system``). Elo seasons, the lifetime ladder, paper and
-Limited ratings are untouched by this module.
+then on (``events.rating_system``). Elo seasons, paper and Limited ratings are
+untouched by this module.
 
 How a Glicko-2 season is stored:
 
@@ -19,6 +19,15 @@ How a Glicko-2 season is stored:
   columns hold the change in the rounded rating, so they add up to the
   number on the leaderboard.
 - ``event_rating_adjustments``: admin spot resets, replayed at their time.
+
+The lifetime ladder moves to Glicko-2 too when the first Glicko-2 season starts
+(``freeze_lifetime``): everyone's Elo lifetime is kept in
+``overall_standings.legacy_online_elo`` ("Legacy ELO, Seasons 1-8") and
+lifetime restarts at 1500. From then on ``online_elo`` is the rounded Glicko-2
+lifetime rating (``online_rating`` / ``online_rd`` / ``online_vol``), rated
+across seasons from every match marked ``lifetime_system = 'glicko2'``, and
+rebuilt the same way after a fix (``rebuild_lifetime``). Ladder challenge
+stakes scale the rating move (``*_lifetime_mult``).
 
 Recording a match updates the two entries in place (``apply_match``). Anything
 that changes the past (removing, correcting, removing a player) rebuilds the
@@ -185,6 +194,7 @@ def ensure_elo_schema(conn: sqlite3.Connection) -> None:
         ("online_event_vol", "REAL"),
         ("online_event_last_at", "TEXT"),
     ))
+    ensure_lifetime_schema(conn)
     _add_columns(conn, "event_avatar_standings", (
         ("rating", "REAL"),
         ("rd", "REAL"),
@@ -219,6 +229,13 @@ def ensure_match_schema(conn: sqlite3.Connection) -> None:
     _add_columns(conn, LEGACY_MATCH_TABLE, (
         ("event_id", "INTEGER"),
         ("rating_system", "TEXT"),
+        ("winner_lifetime_elo_change", "INTEGER"),
+        ("loser_lifetime_elo_change", "INTEGER"),
+        # Lifetime on Glicko-2 (from the first Glicko-2 season): which rows it
+        # replays, and the ladder challenge stakes each side played at
+        ("lifetime_system", "TEXT"),
+        ("winner_lifetime_mult", "REAL"),
+        ("loser_lifetime_mult", "REAL"),
     ))
     if _table_exists(conn, LEGACY_MATCH_TABLE):
         conn.execute(
@@ -588,3 +605,251 @@ def rebuild_season(elo_conn, match_conn, event) -> dict:
         "entries": len(avatars) if avatar_mode else len(players),
         "moved": moved,
     }
+
+
+# --- Lifetime ladder ---------------------------------------------------------
+
+LIFETIME_SETTING = "lifetime_rating_system"
+LIFETIME_SINCE_SETTING = "lifetime_glicko2_since"
+
+
+def ensure_lifetime_schema(conn: sqlite3.Connection) -> None:
+    _add_columns(conn, "overall_standings", (
+        ("legacy_online_elo", "INTEGER"),  # Elo lifetime frozen at the switch (Seasons 1-8)
+        ("online_rating", "REAL"),
+        ("online_rd", "REAL"),
+        ("online_vol", "REAL"),
+        ("online_last_at", "TEXT"),
+        ("online_games", "INTEGER DEFAULT 0"),
+    ))
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS rating_settings (key TEXT PRIMARY KEY, value TEXT)"
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS lifetime_rating_adjustments (
+               adjustment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+               user_id       INTEGER NOT NULL,
+               rating        REAL    NOT NULL,
+               created_at    TEXT    NOT NULL
+           )"""
+    )
+
+
+def _setting(elo_conn, key):
+    if not _table_exists(elo_conn, "rating_settings"):
+        return None
+    row = elo_conn.execute("SELECT value FROM rating_settings WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else None
+
+
+def lifetime_is_glicko2(elo_conn: sqlite3.Connection) -> bool:
+    """True once the lifetime ladder has moved to Glicko-2 (first Glicko-2 season on)."""
+    return _setting(elo_conn, LIFETIME_SETTING) == GLICKO2
+
+
+def freeze_lifetime(elo_conn: sqlite3.Connection, at: str | None = None) -> bool:
+    """Keep everyone's Elo lifetime as Legacy ELO and restart lifetime at 1500 on Glicko-2.
+
+    Runs once, when the first Glicko-2 season starts. Returns True if it ran now.
+    Does not commit.
+    """
+    ensure_lifetime_schema(elo_conn)
+    if lifetime_is_glicko2(elo_conn):
+        return False
+    at = at or datetime.datetime.now().isoformat()
+    if _table_exists(elo_conn, "overall_standings"):
+        elo_conn.execute(
+            """UPDATE overall_standings SET
+                   legacy_online_elo = COALESCE(online_elo, 1500),
+                   online_elo = 1500, online_rating = NULL, online_rd = NULL,
+                   online_vol = NULL, online_last_at = NULL, online_games = 0"""
+        )
+    elo_conn.executemany(
+        "INSERT OR REPLACE INTO rating_settings (key, value) VALUES (?, ?)",
+        ((LIFETIME_SETTING, GLICKO2), (LIFETIME_SINCE_SETTING, at)),
+    )
+    return True
+
+
+def load_lifetime(elo_conn, user_id) -> Rating:
+    row = elo_conn.execute(
+        "SELECT online_rating, online_rd, online_vol, online_last_at FROM overall_standings "
+        "WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    if not row or row[0] is None:
+        return Rating()
+    return Rating(row[0], row[1] or START_RD, row[2] or START_VOL, row[3])
+
+
+def _save_lifetime(elo_conn, user_id, name, entry: Rating, games_delta=1):
+    elo_conn.execute(
+        "INSERT OR IGNORE INTO overall_standings (user_id, user_display_name) VALUES (?, ?)",
+        (user_id, name),
+    )
+    elo_conn.execute(
+        """UPDATE overall_standings SET
+               online_elo = ?, online_rating = ?, online_rd = ?, online_vol = ?,
+               online_last_at = ?, online_games = COALESCE(online_games, 0) + ?,
+               user_display_name = COALESCE(?, user_display_name)
+           WHERE user_id = ?""",
+        (entry.display, entry.rating, entry.rd, entry.vol, entry.last_at, games_delta, name, user_id),
+    )
+
+
+def _staked(before: Rating, after: Rating, mult) -> Rating:
+    """A ladder challenge's stakes scale how far the rating moves."""
+    if mult is None or mult == 1:
+        return after
+    return Rating(before.rating + (after.rating - before.rating) * mult, after.rd, after.vol, after.last_at)
+
+
+def play_lifetime(w_before: Rating, l_before: Rating, at: str, winner_mult=1.0, loser_mult=1.0):
+    w_after, l_after = play(w_before, l_before, at)
+    return _staked(w_before, w_after, winner_mult), _staked(l_before, l_after, loser_mult)
+
+
+def apply_lifetime_match(elo_conn, winner_id, winner_name, loser_id, loser_name, at,
+                         winner_mult=1.0, loser_mult=1.0) -> dict:
+    """Rate one new match on the Glicko-2 lifetime ladder. Does not commit.
+
+    The caller marks the match row ``lifetime_system = 'glicko2'`` with the
+    changes and multipliers returned, so a rebuild replays it.
+    """
+    w_before, l_before = load_lifetime(elo_conn, winner_id), load_lifetime(elo_conn, loser_id)
+    w_after, l_after = play_lifetime(w_before, l_before, at, winner_mult, loser_mult)
+    _save_lifetime(elo_conn, winner_id, winner_name, w_after)
+    _save_lifetime(elo_conn, loser_id, loser_name, l_after)
+    return {
+        "winner_change": w_after.display - w_before.display,
+        "loser_change": l_after.display - l_before.display,
+        "winner_rating": w_after.display,
+        "loser_rating": l_after.display,
+        "winner_games": lifetime_games(elo_conn, winner_id),
+        "loser_games": lifetime_games(elo_conn, loser_id),
+    }
+
+
+def lifetime_games(elo_conn, user_id) -> int:
+    row = elo_conn.execute(
+        "SELECT online_games FROM overall_standings WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    return (row[0] or 0) if row else 0
+
+
+def add_lifetime_adjustment(elo_conn, user_id, name, rating, at=None) -> None:
+    """An admin reset of a Glicko-2 lifetime rating, kept so rebuilds apply it again."""
+    at = at or datetime.datetime.now().isoformat()
+    ensure_lifetime_schema(elo_conn)
+    elo_conn.execute(
+        "INSERT INTO lifetime_rating_adjustments (user_id, rating, created_at) VALUES (?, ?, ?)",
+        (user_id, float(rating), at),
+    )
+    _save_lifetime(elo_conn, user_id, name, Rating(float(rating), START_RD, START_VOL, at), games_delta=0)
+
+
+def lifetime_matches(match_conn) -> list[dict]:
+    """Every match rated on the Glicko-2 lifetime ladder, oldest first."""
+    table = live_match_table(match_conn)
+    if "lifetime_system" not in _columns(match_conn, table):
+        return []
+    conn_factory = match_conn.row_factory
+    match_conn.row_factory = sqlite3.Row
+    try:
+        rows = match_conn.execute(
+            f"""SELECT rowid AS row_id, winner_id, losser_id, winner_display_name,
+                       losser_display_name, timestamp, winner_lifetime_mult, loser_lifetime_mult
+                FROM {table} WHERE lifetime_system = '{GLICKO2}'
+                ORDER BY timestamp ASC, rowid ASC"""
+        ).fetchall()
+    finally:
+        match_conn.row_factory = conn_factory
+    return [dict(r) for r in rows]
+
+
+def rebuild_lifetime(elo_conn, match_conn) -> dict:
+    """Replay the Glicko-2 lifetime ladder from its matches and admin resets.
+
+    Rewrites everyone's lifetime rating and each match's lifetime change.
+    Legacy ELO is never touched. Does not commit.
+    """
+    if not lifetime_is_glicko2(elo_conn):
+        raise ValueError("the lifetime ladder is still Elo")
+    matches = lifetime_matches(match_conn)
+    adjustments = elo_conn.execute(
+        "SELECT user_id, rating, created_at FROM lifetime_rating_adjustments "
+        "ORDER BY created_at, adjustment_id"
+    ).fetchall()
+    timeline = [(str(a[2]), 0, i, "adj", a) for i, a in enumerate(adjustments)]
+    timeline += [(str(m["timestamp"]), 1, i, "match", m) for i, m in enumerate(matches)]
+    timeline.sort(key=lambda item: (item[0], item[1], item[2]))
+
+    players: dict[int, Rating] = {}
+    games: dict[int, int] = {}
+    names: dict[int, str] = {}
+    updates = []
+    for _, _, _, kind, item in timeline:
+        if kind == "adj":
+            user_id, rating, created_at = item
+            players[user_id] = Rating(float(rating), START_RD, START_VOL, created_at)
+            continue
+        m = item
+        w, l = m["winner_id"], m["losser_id"]
+        names[w], names[l] = m["winner_display_name"], m["losser_display_name"]
+        w_before, l_before = players.get(w, Rating()), players.get(l, Rating())
+        players[w], players[l] = play_lifetime(
+            w_before, l_before, m["timestamp"], m["winner_lifetime_mult"], m["loser_lifetime_mult"]
+        )
+        games[w] = games.get(w, 0) + 1
+        games[l] = games.get(l, 0) + 1
+        w_change = players[w].display - w_before.display
+        l_change = players[l].display - l_before.display
+        updates.append((w_change, l_change, players[w].display, players[l].display, m["row_id"]))
+
+    table = live_match_table(match_conn)
+    cols = _columns(match_conn, table)
+    if "winner_lifetime_elo_after" in cols:
+        match_conn.executemany(
+            f"UPDATE {table} SET winner_lifetime_elo_change = ?, loser_lifetime_elo_change = ?, "
+            "winner_lifetime_elo_after = ?, loser_lifetime_elo_after = ? WHERE rowid = ?",
+            updates,
+        )
+    else:
+        match_conn.executemany(
+            f"UPDATE {table} SET winner_lifetime_elo_change = ?, loser_lifetime_elo_change = ? "
+            "WHERE rowid = ?",
+            [(u[0], u[1], u[4]) for u in updates],
+        )
+
+    existing = {row[0] for row in elo_conn.execute("SELECT user_id FROM overall_standings")}
+    elo_conn.execute(
+        "UPDATE overall_standings SET online_elo = 1500, online_rating = NULL, online_rd = NULL, "
+        "online_vol = NULL, online_last_at = NULL, online_games = 0"
+    )
+    for uid, entry in players.items():
+        if uid not in existing and not games.get(uid):
+            continue  # a removed player's reset alone doesn't bring them back
+        elo_conn.execute(
+            "INSERT OR IGNORE INTO overall_standings (user_id, user_display_name) VALUES (?, ?)",
+            (uid, names.get(uid)),
+        )
+        elo_conn.execute(
+            """UPDATE overall_standings SET online_elo = ?, online_rating = ?, online_rd = ?,
+                   online_vol = ?, online_last_at = ?, online_games = ? WHERE user_id = ?""",
+            (entry.display, entry.rating, entry.rd, entry.vol, entry.last_at, games.get(uid, 0), uid),
+        )
+    return {"matches": len(matches), "players": len(players)}
+
+
+def rebuild_after_fix(elo_conn, match_conn, event) -> dict:
+    """After any change to past matches: replay whatever is rated by Glicko-2.
+
+    The running season (if it is a Glicko-2 season) and the lifetime ladder
+    (once it is Glicko-2). Elo ladders are left to the caller. Does not commit.
+    """
+    out = {}
+    if is_glicko2(event):
+        out["season"] = rebuild_season(elo_conn, match_conn, event)
+    if lifetime_is_glicko2(elo_conn):
+        out["lifetime"] = rebuild_lifetime(elo_conn, match_conn)
+    return out

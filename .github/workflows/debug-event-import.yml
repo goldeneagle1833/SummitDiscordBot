@@ -1,0 +1,10 @@
+name: Debug event import (temporary)
+on:
+  push:
+    branches: [debug-event-import-cmw5]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install requests && python scratch_debug/check_event.py

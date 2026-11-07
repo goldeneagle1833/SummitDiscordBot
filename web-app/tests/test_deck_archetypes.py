@@ -318,7 +318,7 @@ def test_decks_link_to_deck_rec_and_cards_carry_images(repo, monkeypatch):
     assert detail["patterns"]["spellbook"][0]["image"].endswith(".webp")
 
 
-def test_recommendations_only_use_top8_page_decks(repo):
+def test_recommendations_include_seed_tournament_decks(repo):
     f1 = fire_deck("f1", swap=2)
     write_event(repo._top8_dir, "Cup", top8=[f1])
     repo._seed_events_path.write_text(json.dumps({"decks": [
@@ -335,12 +335,35 @@ def test_recommendations_only_use_top8_page_decks(repo):
     detail = result["details"][group["id"]]
 
     assert {"s1", "r1"} <= set(result["grouped"][group["id"]])
-    assert [r["deckId"] for r in detail["recommendations"]] == ["f1"]
+    recommended_ids = [r["deckId"] for r in detail["recommendations"]]
+    assert "s1" in recommended_ids
+    assert "r1" not in recommended_ids
     # The deck list shows tournament lists (Top 8 page and seed events), not ranked-only decks.
     assert set(detail["members"]) == {"f1", "s1"}
 
 
-def test_group_without_top8_page_decks_has_no_recommendations(repo):
+def test_seed_only_tournament_winner_is_recommended(repo):
+    # The winner has a verified result but does not originate from a Top 8 folder.
+    repo._seed_events_path.write_text(json.dumps({"decks": [
+        {"id": "seed_winner", "name": "Historical winner", "avatar": "Sorcerer",
+         "entries": [{"event": "SCG CON Washington DC", "date": "2026-05-30",
+                      "player": "Champion", "placement": 1, "top8": True, "topCut": True}]},
+    ]}))
+    repo.save_seed_cache_entry("seed_winner", fire_deck("seed_winner"))
+
+    result = built(repo, "tournament")
+    group = groups_by_member(result)["seed_winner"]
+    detail = result["details"][group["id"]]
+
+    assert group["wins"] == 1
+    assert group["top8"] == 1
+    assert detail["recommendations"] == [
+        {"deckId": "seed_winner", "label": "Representative deck"}
+    ]
+    assert detail["members"] == ["seed_winner"]
+
+
+def test_ranked_only_group_has_no_recommendations(repo):
     make_match_db(repo._db_path, [(fire_deck("r1"), fire_deck("r2", swap=1), "ranked")])
 
     result = built(repo, "all")

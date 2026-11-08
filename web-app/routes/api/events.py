@@ -896,6 +896,10 @@ def _run_event_import(job_id, title, event_url):
         decks = []
         for n, player in enumerate(players, 1):
             deck_id = player["deck_id"]
+            if player.get("deck"):
+                # Built from the event snapshot already; nothing to fetch
+                decks.append(player["deck"])
+                continue
             if deck_id in cache:
                 decks.append(cache[deck_id])
                 continue

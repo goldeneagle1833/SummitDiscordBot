@@ -10,6 +10,7 @@ import unicodedata
 from pathlib import Path
 
 from webapp_config import TOP_8_DIR, EVENT_RATINGS, EVENT_TAGS
+from services.curiosa import EVENT_SNAPSHOT_DECK_SOURCE
 from utils.formatting import (
     format_event_name,
     extract_year_from_name,
@@ -1008,6 +1009,7 @@ class EventRepository:
         if event_path is None or not event_path.exists():
             return {"success": False, "error": "Event not found"}
 
+        self._keep_known_deck_ids(event_folder, history)
         try:
             with open(
                 event_path / self.MATCH_HISTORY_FILE, "w", encoding="utf-8"
@@ -1018,6 +1020,35 @@ class EventRepository:
             return {"success": False, "error": "Failed to save match history"}
 
         return {"success": True, "players": len(history.get("players", []))}
+
+    def _keep_known_deck_ids(self, event_folder: str, history: dict) -> None:
+        """Keep the real deck ids a re-imported history would otherwise lose.
+
+        sorcerytcg.com stopped naming each player's source deck, so a fresh
+        import keys decks by registration id. Events imported before that
+        store the real deck ids, which is what links a Top 8 deck to its
+        player, so carry them over from the saved history.
+        """
+        old = self._load_match_history(event_folder) or {}
+        known = {
+            p.get("registration_id"): p.get("deck_id")
+            for p in old.get("players", [])
+            if p.get("registration_id") and p.get("deck_id")
+        }
+        if not known:
+            return
+
+        def fix(entry):
+            if not isinstance(entry, dict):
+                return
+            reg = entry.get("registration_id")
+            if reg and reg in known and entry.get("deck_id") in ("", reg):
+                entry["deck_id"] = known[reg]
+
+        for player in history.get("players", []):
+            fix(player)
+            for match in player.get("matches", []):
+                fix(match.get("opponent"))
 
     def _load_match_history(self, event_folder: str) -> dict | None:
         """Load the raw match history file for an event, or None."""
@@ -1473,7 +1504,10 @@ class EventRepository:
         no_id_decks = []
         for deck in old_decks:
             deck_id = deck.get("id", "")
-            if deck_id:
+            if deck.get("source") == EVENT_SNAPSHOT_DECK_SOURCE:
+                # Frozen event list with no sorcerytcg.com deck to re-fetch
+                no_id_decks.append(deck)
+            elif deck_id:
                 deck_ids.append(deck_id)
                 old_by_id[deck_id] = deck
             else:
@@ -1491,7 +1525,7 @@ class EventRepository:
         refreshed = 0
         for deck in old_decks:
             deck_id = deck.get("id", "")
-            if not deck_id:
+            if not deck_id or deck.get("source") == EVENT_SNAPSHOT_DECK_SOURCE:
                 new_decks.append(deck)
                 continue
             if deck_id in fresh_by_id:

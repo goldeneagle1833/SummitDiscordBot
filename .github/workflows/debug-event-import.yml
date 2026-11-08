@@ -7,4 +7,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pip install requests && python scratch_debug/check_event.py
+      - run: pip install requests && PYTHONPATH=web-app python scratch_debug/check_event.py

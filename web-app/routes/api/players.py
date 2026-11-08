@@ -17,7 +17,7 @@ from repositories.external_matches import ExternalMatchRepository
 from repositories.user_profiles import UserProfileRepository
 from repositories.blocked_users_repo import BlockedUsersRepository
 from repositories.voice_only_repo import VoiceOnlyRepository
-from utils.auth import is_admin
+from utils.auth import is_admin, require_auth
 from utils.card_images import attach_images, resolve_card_image
 from services.curiosa import deck_url_source, is_deck_url, normalize_deck_url
 from services.avatar_elo import get_player_avatar_changes, get_player_avatar_elo
@@ -3466,3 +3466,52 @@ def delete_own_account(player_id):
 
     status = 200 if result.get("success") else 500
     return jsonify(result), status
+
+
+@players_bp.route("/player/<path:player_id>/data-export", methods=["GET"])
+@require_auth
+def export_own_data(player_id):
+    """Download a zip of everything the site holds for the logged-in player.
+
+    Owner only: admins and API keys cannot pull another player's export.
+    """
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Log in to export your data"}), 401
+
+    logged_in_id_str = str(logged_in_user_id)
+    player_id_normalized = str(player_id)
+    if logged_in_id_str.startswith("google_"):
+        logged_in_id_str = logged_in_id_str[7:]
+    if player_id_normalized.startswith("google_"):
+        player_id_normalized = player_id_normalized[7:]
+    if logged_in_id_str != player_id_normalized:
+        return jsonify({"error": "You can only export your own data"}), 403
+
+    from io import BytesIO
+    from flask import send_file
+    from services.data_export import build_export_zip
+
+    try:
+        payload, filename = build_export_zip(str(logged_in_user_id))
+    except Exception as e:
+        logger.error(f"Data export failed for {logged_in_user_id}: {e}", exc_info=True)
+        return jsonify({"error": "Could not build your export, please try again"}), 500
+
+    try:
+        from repositories.audit import AuditRepository
+        display_name = session.get("username", str(logged_in_user_id))
+        AuditRepository().log_action(
+            str(logged_in_user_id), display_name, "self_data_export",
+            target_id=str(logged_in_user_id), target_name=display_name,
+            details=f"User {display_name} downloaded their data export",
+        )
+    except Exception:
+        logger.warning("Could not audit-log data export", exc_info=True)
+
+    resp = send_file(
+        BytesIO(payload), mimetype="application/zip",
+        as_attachment=True, download_name=filename,
+    )
+    resp.headers["Cache-Control"] = "no-store"
+    return resp

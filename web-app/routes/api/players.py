@@ -3490,24 +3490,34 @@ def export_own_data(player_id):
 
     from io import BytesIO
     from flask import send_file
-    from services.data_export import build_export_zip
+    from services.data_export import build_export_zip_with_stats
+    from repositories.audit import AuditRepository
+
+    display_name = session.get("username", str(logged_in_user_id))
+
+    def _audit(action, details, new_state=None):
+        # Feeds the admin "Data Exports" tile; never block the download on it
+        try:
+            AuditRepository().log_action(
+                str(logged_in_user_id), display_name, action,
+                target_id=str(logged_in_user_id), target_name=display_name,
+                new_state=new_state, details=details,
+            )
+        except Exception:
+            logger.warning("Could not audit-log data export", exc_info=True)
 
     try:
-        payload, filename = build_export_zip(str(logged_in_user_id))
+        payload, filename, stats = build_export_zip_with_stats(str(logged_in_user_id))
     except Exception as e:
         logger.error(f"Data export failed for {logged_in_user_id}: {e}", exc_info=True)
+        _audit("self_data_export_failed", f"Data export failed for {display_name}: {type(e).__name__}")
         return jsonify({"error": "Could not build your export, please try again"}), 500
 
-    try:
-        from repositories.audit import AuditRepository
-        display_name = session.get("username", str(logged_in_user_id))
-        AuditRepository().log_action(
-            str(logged_in_user_id), display_name, "self_data_export",
-            target_id=str(logged_in_user_id), target_name=display_name,
-            details=f"User {display_name} downloaded their data export",
-        )
-    except Exception:
-        logger.warning("Could not audit-log data export", exc_info=True)
+    _audit(
+        "self_data_export",
+        f"User {display_name} downloaded their data export ({stats['bytes']} bytes, {stats['matches']} matches)",
+        new_state=stats,
+    )
 
     resp = send_file(
         BytesIO(payload), mimetype="application/zip",

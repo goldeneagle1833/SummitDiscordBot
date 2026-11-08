@@ -1926,3 +1926,73 @@ def delete_user_profile(user_id):
     )
 
     return jsonify({"success": True}), 200
+
+
+@admin_bp.route("/admin/data-exports", methods=["GET"])
+@require_admin
+def data_exports_summary():
+    """Who downloaded their "Export my data" zip, when, and how big (admin only).
+
+    Reads the self_data_export / self_data_export_failed audit log rows that
+    the player export route writes. ``days`` sets the tile window (default 30).
+    """
+    import json as _json
+
+    days = min(max(1, request.args.get("days", 30, type=int)), 3650)
+    limit = min(max(1, request.args.get("limit", 100, type=int)), 500)
+    since = (datetime.now() - timedelta(days=days)).isoformat()
+
+    conn = AuditRepository()._get_connection()  # same database the export logs to
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """SELECT timestamp, admin_id AS user_id, admin_name, action, new_state
+               FROM admin_audit_log
+               WHERE action IN ('self_data_export', 'self_data_export_failed')
+               ORDER BY timestamp DESC""",
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []  # audit table not created yet
+    finally:
+        conn.close()
+
+    resolve_name = _player_name_resolver()
+    entries = []
+    for r in rows:
+        stats = {}
+        if r["new_state"]:
+            try:
+                stats = _json.loads(r["new_state"]) or {}
+            except (ValueError, TypeError):
+                stats = {}
+        entries.append({
+            "user_id": str(r["user_id"]),  # 18-digit ids lose precision as JSON numbers
+            "name": resolve_name(str(r["user_id"]), r["admin_name"]),
+            "timestamp": r["timestamp"],
+            "ok": r["action"] == "self_data_export",
+            "bytes": stats.get("bytes"),
+            "matches": stats.get("matches"),
+            "sections": stats.get("sections") or [],
+        })
+
+    recent = [e for e in entries if (e["timestamp"] or "") >= since]
+    ok_recent = [e for e in recent if e["ok"]]
+    per_player: dict[str, dict] = {}
+    for e in ok_recent:
+        p = per_player.setdefault(e["user_id"], {"user_id": e["user_id"], "name": e["name"], "downloads": 0, "bytes": 0})
+        p["downloads"] += 1
+        p["bytes"] += e["bytes"] or 0
+
+    return jsonify({
+        "success": True,
+        "days": days,
+        "summary": {
+            "downloads": len(ok_recent),
+            "players": len(per_player),
+            "bytes": sum(e["bytes"] or 0 for e in ok_recent),
+            "failed": len(recent) - len(ok_recent),
+            "all_time_downloads": sum(1 for e in entries if e["ok"]),
+        },
+        "top_players": sorted(per_player.values(), key=lambda p: (-p["downloads"], -p["bytes"]))[:10],
+        "entries": entries[:limit],
+    }), 200

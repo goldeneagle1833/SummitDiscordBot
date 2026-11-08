@@ -406,8 +406,23 @@ def matches_csv(matches: list[dict]) -> str:
     return buf.getvalue()
 
 
+def export_stats(data: dict) -> dict:
+    """What went into an export, for the admin Data Exports tile."""
+    sections = sorted(
+        k for k, v in data.items()
+        if k not in ("player_id", "exported_at", "site", "summary") and v
+    )
+    return {"matches": len(data.get("matches") or []), "sections": sections}
+
+
 def build_export_zip(user_id: str) -> tuple[bytes, str]:
     """Return (zip bytes, file name) for the player's export."""
+    payload, filename, _ = build_export_zip_with_stats(user_id)
+    return payload, filename
+
+
+def build_export_zip_with_stats(user_id: str) -> tuple[bytes, str, dict]:
+    """Return (zip bytes, file name, stats) for the player's export."""
     data = build_export(user_id)
     stamp = data["exported_at"][:10]
     buf = io.BytesIO()
@@ -415,4 +430,7 @@ def build_export_zip(user_id: str) -> tuple[bytes, str]:
         zf.writestr("summit-data.json", json.dumps(data, indent=2, default=str))
         zf.writestr("matches.csv", matches_csv(data["matches"]))
         zf.writestr("README.txt", README.format(**data))
-    return buf.getvalue(), f"sorcerers-summit-data-{stamp}.zip"
+    payload = buf.getvalue()
+    stats = export_stats(data)
+    stats["bytes"] = len(payload)
+    return payload, f"sorcerers-summit-data-{stamp}.zip", stats

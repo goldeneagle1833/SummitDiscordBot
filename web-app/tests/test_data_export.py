@@ -238,3 +238,34 @@ def test_one_bad_table_is_skipped(client, match_db, elo_db, monkeypatch):
     data, _ = _download(client)
     assert data["summary"]["matches"] == 3 and "kudos" not in data
     monkeypatch.setattr(de, "_export_kudos", real)
+
+
+class TestAdminDataExportsTile:
+    URL = "/api/admin/data-exports"
+
+    def test_admin_only(self, client):
+        assert client.get(self.URL).status_code in (401, 403)
+        _login(client, ME)
+        assert client.get(self.URL).status_code == 403
+
+    def test_counts_who_and_how_much(self, client, match_db, elo_db, monkeypatch):
+        _seed(match_db, elo_db)
+        _login(client, ME)
+        _download(client)
+        _download(client)
+        import services.data_export as de
+        monkeypatch.setattr(de, "build_export", lambda uid: (_ for _ in ()).throw(RuntimeError("boom")))
+        assert client.get(URL.format(ME)).status_code == 500
+
+        with client.session_transaction() as sess:
+            sess["user_id"] = "admin_user_1"
+            sess["username"] = "AdminUser"
+        body = client.get(self.URL).get_json()
+        s = body["summary"]
+        assert s["downloads"] == 2 and s["players"] == 1 and s["failed"] == 1
+        assert s["bytes"] > 0 and s["all_time_downloads"] == 2
+        assert body["top_players"][0]["user_id"] == ME and body["top_players"][0]["downloads"] == 2
+        latest_ok = next(e for e in body["entries"] if e["ok"])
+        assert latest_ok["matches"] == 3 and latest_ok["bytes"] > 0
+        assert "matches" in latest_ok["sections"]
+        assert body["entries"][0]["ok"] is False  # newest first

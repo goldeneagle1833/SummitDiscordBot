@@ -243,3 +243,55 @@ class TestRememberedVoiceAnswers:
 
         modal = DeckURLModal(MagicMock(), queue_type="ranked", voice_answers=(True, False))
         assert [o.default for o in modal.voice_select.options] == [True, False]
+
+
+class TestEitherVoiceAnswer:
+    """Ira's report: willing to play voice or no voice, a no-voice-only player waiting."""
+
+    def test_old_either_value_counts_as_both_boxes_ticked(self):
+        from cogs.lfg.voice import is_legacy_either
+        assert is_legacy_either("either") and is_legacy_either(" Either ")
+        assert not is_legacy_either(VOICE) and not is_legacy_either(NO_VOICE)
+        assert not is_legacy_either(None)
+
+    def test_both_boxes_pairs_with_a_waiting_no_voice_player_after_the_hold(self, lfg_cog):
+        # The no-voice player is already waiting when the either player joins
+        lfg_queue[333] = entry("ranked", 60, NO_VOICE)
+        voice, flexible = voice_choice_from_checkboxes([VOICE, NO_VOICE])
+        joiner = Mock(author=Mock(id=111))
+        with patch("cogs.lfg.cog.is_blocked_pair", return_value=False), \
+                patch("cogs.lfg.cog.is_pairing_banned", return_value=False):
+            # During the voice hold the either player waits for a voice partner
+            assert lfg_cog.check_if_someone_is_lfg(joiner, "ranked", voice, flexible) is None
+            lfg_queue[111] = entry("ranked", VOICE_HOLD_SECONDS + 1, voice, flexible=flexible)
+            # Once the hold is over the sweep pairs them with the no-voice player
+            ready = held_players_ready(lfg_cog)
+        assert [(user_id, queue_type) for user_id, queue_type, _ in ready] == [(111, "ranked")]
+
+    def test_no_voice_player_joining_after_the_hold_pairs_straight_away(self, lfg_cog):
+        voice, flexible = voice_choice_from_checkboxes([VOICE, NO_VOICE])
+        lfg_queue[111] = entry("ranked", VOICE_HOLD_SECONDS + 1, voice, flexible=flexible)
+        joiner = Mock(author=Mock(id=333))
+        with patch("cogs.lfg.cog.is_blocked_pair", return_value=False), \
+                patch("cogs.lfg.cog.is_pairing_banned", return_value=False):
+            assert lfg_cog.check_if_someone_is_lfg(joiner, "ranked", NO_VOICE, False) == 111
+
+    @pytest.mark.asyncio
+    async def test_old_either_join_is_queued_as_flexible(self):
+        from cogs.lfg import queue as queue_mod
+        lfg_cog = MagicMock()
+        lfg_cog.check_if_someone_is_lfg.return_value = None
+        lfg_cog.update_lfg_status = AsyncMock()
+        bot = MagicMock()
+        bot.get_cog.return_value = lfg_cog
+        interaction = MagicMock()
+        interaction.user.id = 111
+        interaction.followup.send = AsyncMock()
+        interaction.user.send = AsyncMock()
+        with patch.object(queue_mod, "get_pairing_ban", return_value=None), \
+                patch.object(queue_mod, "ranked_block_message", return_value=None), \
+                patch.object(queue_mod, "needs_avatar", return_value=False):
+            await queue_mod._process_queue_join(bot, interaction, "testing", 30, None, voice="either")
+        kwargs = lfg_cog.check_if_someone_is_lfg.call_args.kwargs
+        assert kwargs["voice"] == VOICE and kwargs["voice_flexible"] is True
+        assert lfg_cog.add_to_lfg_queue.call_args.kwargs["voice_flexible"] is True

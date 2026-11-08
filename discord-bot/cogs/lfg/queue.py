@@ -21,6 +21,7 @@ from cogs.lfg.voice import (
     WILL_PLAY_VOICE,
     VOICE_HOLD_SECONDS,
     entry_voice_flexible,
+    is_legacy_either,
     normalize_voice_preference,
     queue_has_voice_choice,
     resolve_match_voice,
@@ -621,6 +622,8 @@ async def _process_queue_join(
     """
     # Limited decks come from a draft run, so Limited has no avatar alert
     alert_avatar = bool(alert_avatar) and queue_type != "limited"
+    # An old "either" answer means both boxes ticked: voice first, no voice OK
+    voice_flexible = bool(voice_flexible) or is_legacy_either(voice)
     voice = normalize_voice_preference(voice) or DEFAULT_VOICE
     # "Also OK with the other" only means something where players choose voice
     voice_flexible = bool(voice_flexible) and queue_has_voice_choice(queue_type)
@@ -770,6 +773,11 @@ async def _process_queue_join(
                 alert_avatar=alert_avatar,
                 deck_avatar=deck_avatar,
                 voice_flexible=voice_flexible,
+            )
+            # Who's waiting with which voice answer, so a "we didn't pair" report can be checked
+            logger.info(
+                f"LFG join {interaction.user.id} queued for {queue_type} via {origin}: "
+                f"voice={voice} voice_flexible={voice_flexible} voice_hold={voice_hold}"
             )
 
     if matched_user_id:

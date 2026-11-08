@@ -71,7 +71,7 @@ OWNED_TABLES = [
     ("seasons", "bracket_entrants", ("user_id",)),
     ("limited", "limited_arena_runs", ("user_id",)),
     ("limited", "limited_arena_runs_archive", ("user_id",)),
-    ("matches", "solo_match_reports", ("reporter_id", "user_id")),
+    ("match_related", "solo_match_reports", ("reporter_id", "user_id")),
     ("paper", "paper_manual_finishes", ("user_id",)),
     ("paper", "paper_name_links", ("user_id",)),
     ("paper", "paper_result_assignments", ("user_id",)),
@@ -324,7 +324,12 @@ def build_export(user_id: str) -> dict:
             continue
         try:
             cur = conn.cursor()
-            for table in _tables(cur):
+            try:
+                tables = _tables(cur)
+            except sqlite3.Error as e:
+                logger.warning("Export: could not read %s: %s", label, e)
+                continue
+            for table in tables:
                 if table.startswith("sqlite_"):
                     continue
                 try:
@@ -350,8 +355,8 @@ def build_export(user_id: str) -> dict:
                             items = _order_items(cur, [r.get("id") for r in rows if r.get("id") is not None])
                             if items:
                                 data[section]["order_items"] = items
-                except sqlite3.Error as e:
-                    logger.warning("Export: skipped %s.%s: %s", label, table, e)
+                except Exception as e:  # one odd table must never sink the whole export
+                    logger.warning("Export: skipped %s.%s: %s", label, table, e, exc_info=True)
         finally:
             conn.close()
 

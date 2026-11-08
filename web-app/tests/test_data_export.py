@@ -213,3 +213,28 @@ def test_export_is_audit_logged(client, match_db, elo_db):
     n = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {action_col} = 'self_data_export'").fetchone()[0]
     conn.close()
     assert n == 1
+
+
+def test_solo_reports_dont_break_the_export(client, match_db, elo_db):
+    # Regression: a player with a solo match report got a 500 on the live site,
+    # because those rows were filed under the "matches" list.
+    _seed(match_db, elo_db)
+    conn = sqlite3.connect(str(match_db))
+    conn.execute("INSERT INTO solo_match_reports (user_id, opponent_name, result) VALUES (?, 'Someone', 'win')", (ME,))
+    conn.commit()
+    conn.close()
+    _login(client, ME)
+    data, _ = _download(client)
+    assert data["summary"]["matches"] == 3
+    assert data["match_related"]["solo_match_reports"][0]["opponent_name"] == "Someone"
+
+
+def test_one_bad_table_is_skipped(client, match_db, elo_db, monkeypatch):
+    _seed(match_db, elo_db)
+    import services.data_export as de
+    real = de._export_kudos
+    monkeypatch.setattr(de, "_export_kudos", lambda *a: (_ for _ in ()).throw(ValueError("boom")))
+    _login(client, ME)
+    data, _ = _download(client)
+    assert data["summary"]["matches"] == 3 and "kudos" not in data
+    monkeypatch.setattr(de, "_export_kudos", real)

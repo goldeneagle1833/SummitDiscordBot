@@ -17,9 +17,17 @@ export function formatBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
+// The server writes audit times in UTC without a zone; read them as UTC so
+// they show in the viewer's own time.
+export function parseServerTime(value) {
+  if (!value) return new Date(NaN)
+  const hasZone = /([zZ]|[+-]\d\d:?\d\d)$/.test(value)
+  return new Date(hasZone ? value : `${value.replace(' ', 'T')}Z`)
+}
+
 function formatWhen(value) {
   if (!value) return '-'
-  const d = new Date(value)
+  const d = parseServerTime(value)
   if (isNaN(d.getTime())) return value
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
@@ -52,7 +60,7 @@ export default function DataExportsSection() {
   const s = data?.summary
   const rangeLabel = RANGES.find((r) => r.days === days)?.label ?? `${days} days`
   const since = days >= 3650 ? null : Date.now() - days * 86400000
-  const rows = (data?.entries ?? []).filter((e) => !since || new Date(e.timestamp).getTime() >= since)
+  const rows = (data?.entries ?? []).filter((e) => !since || parseServerTime(e.timestamp).getTime() >= since)
 
   return (
     <section className="space-y-4">

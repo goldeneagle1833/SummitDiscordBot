@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
-import DataExportsSection, { formatBytes } from '../DataExportsSection'
+import DataExportsSection, { formatBytes, parseServerTime } from '../DataExportsSection'
 import { get } from '@/api/client'
 
 vi.mock('@/api/client', () => ({ get: vi.fn() }))
@@ -41,5 +41,10 @@ describe('DataExportsSection', () => {
     expect(formatBytes(null)).toBe('-')
     expect(formatBytes(500)).toBe('500 B')
     expect(formatBytes(3 * 1024 * 1024)).toBe('3.0 MB')
+  })
+
+  it('reads server times as UTC', () => {
+    expect(parseServerTime('2026-11-08T15:21:00.123456').toISOString()).toBe('2026-11-08T15:21:00.123Z')
+    expect(parseServerTime('2026-11-08T15:21:00+00:00').toISOString()).toBe('2026-11-08T15:21:00.000Z')
   })
 })

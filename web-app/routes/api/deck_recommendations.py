@@ -491,10 +491,20 @@ def get_deck_info(deck_id: str):
 
 
 def _fetch_curiosa_deck_info(deck_id: str):
-    """Fetch deck info directly from Curiosa API for non-seed decks."""
+    """Deck info for non-seed decks (e.g. top cut decks linked from an event).
+
+    A deck saved in an event file is served from that saved copy; only a deck
+    we don't have is fetched from Curiosa.
+    """
     curiosa_url = f"https://sorcerytcg.com/decks/{deck_id}"
+    event_name = ""
     try:
-        fresh_data = _fetch_live_deck(curiosa_url)
+        saved = DeckRecRepository().find_event_deck(deck_id)
+        if saved:
+            fresh_data, event_name = saved
+            curiosa_url = DeckRecRepository().deck_url(fresh_data)
+        else:
+            fresh_data = _fetch_live_deck(curiosa_url)
         if not fresh_data:
             return jsonify({"error": f"Deck '{deck_id}' not found on Curiosa"}), 404
 
@@ -537,7 +547,7 @@ def _fetch_curiosa_deck_info(deck_id: str):
                 "deck_name": deck_name,
                 "avatar_name": avatar_name,
                 "player_name": username,
-                "event_name": "",
+                "event_name": event_name,
                 "card_count": sum(c["qty"] for c in detail_source),
                 "curiosa_url": curiosa_url,
                 "primer": "",
@@ -693,7 +703,14 @@ def _resolve_deck_url(deck_id: str) -> tuple[str | None, str]:
     if seed is not None:
         if seed.deck_id in repo.get_hidden_deck_ids() and not is_admin():
             return None, ""
+        if not seed.curiosa_url and not getattr(seed, "is_admin_rec", False):
+            # Frozen event list: no deck page Play Sorcery Online could load
+            return None, ""
         return seed.curiosa_url or f"https://sorcerytcg.com/decks/{deck_id}", seed.deck_name or ""
+    saved = repo.find_event_deck(deck_id)
+    if saved:
+        url = repo.deck_url(saved[0])
+        return (url or None), (saved[0].get("name") or "")
     return f"https://sorcerytcg.com/decks/{deck_id}", ""
 
 

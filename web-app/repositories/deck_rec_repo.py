@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from webapp_config import MATCH_RECORDS_DB_PATH, TOP_8_DIR
+from services.curiosa import EVENT_SNAPSHOT_DECK_SOURCE
 
 logger = logging.getLogger(__name__)
 
@@ -279,6 +280,42 @@ class DeckRecRepository:
         logger.info("Loaded %d tournament decks from %s", len(decks), self._top8_dir)
         return decks
 
+    def deck_url(self, raw: dict) -> str:
+        """The sorcerytcg.com link for a saved event deck, or "" when it has none.
+
+        Decks built from an event's frozen lists are keyed by registration id
+        and have no sorcerytcg.com deck page.
+        """
+        deck_id = str(raw.get("id", "")).strip()
+        if not deck_id or raw.get("source") == EVENT_SNAPSHOT_DECK_SOURCE:
+            return ""
+        return f"{self.CURIOSA_BASE}{deck_id}"
+
+    def find_event_deck(self, deck_id: str) -> tuple[dict, str] | None:
+        """Find a deck saved in any event file (top cut or full list) by id.
+
+        Returns (raw deck dict, event folder name), or None.
+        """
+        if not deck_id or not self._top8_dir.exists():
+            return None
+        for folder in self._top8_dir.iterdir():
+            if not folder.is_dir() or folder.name.startswith("_"):
+                continue
+            for path in folder.glob("*.json"):
+                if path.name.startswith("_"):
+                    continue
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:
+                    continue
+                if not isinstance(data, list):
+                    continue
+                for raw in data:
+                    if isinstance(raw, dict) and str(raw.get("id", "")).strip() == deck_id:
+                        return raw, folder.name
+        return None
+
     def _best_json_file(self, folder: Path) -> Path | None:
         """Return the best JSON file in an event folder (full list > top8)."""
         top8_file = None
@@ -316,7 +353,7 @@ class DeckRecRepository:
                 is_seed=True,
                 card_names=card_names,
                 card_count=len(card_names),
-                curiosa_url=f"{self.CURIOSA_BASE}{deck_id}",
+                curiosa_url=self.deck_url(raw),
                 elements=_extract_elements(spellbook),
                 event_year=_extract_year(event_name),
                 card_quantities=card_quantities,

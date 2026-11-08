@@ -61,7 +61,7 @@ def is_legacy_either(value):
 
 # A voice-first player who is also OK without voice waits this long for a voice
 # partner before a no-voice game is made for them.
-VOICE_HOLD_SECONDS = 30
+VOICE_HOLD_SECONDS = 10
 
 
 def normalize_voice_flexible(value):

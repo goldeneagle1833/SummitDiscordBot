@@ -70,68 +70,101 @@ def parse_time(value, naive_is_utc: bool) -> datetime | None:
     return dt.astimezone(timezone.utc)
 
 
-def _scalar(db_path, query: str, params: tuple = ()) -> str | None:
+def _row(db_path, query: str, params: tuple = ()):
     if not db_path or not os.path.exists(str(db_path)):
         return None
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
     try:
-        row = conn.execute(query, params).fetchone()
-        return row[0] if row else None
+        return conn.execute(query, params).fetchone()
     finally:
         conn.close()
 
 
+def _item(at: datetime | None, text: str, link: str | None = None) -> dict | None:
+    """One source's newest content: when, a short line for the page's "What's new" bar, a link."""
+    if at is None:
+        return None
+    return {"at": at, "text": text, "link": link}
+
+
 # -- Sources -----------------------------------------------------------
 
-def latest_event_import() -> datetime | None:
-    """When the newest Top 8 event was imported (latest_event.json)."""
+def latest_event_import() -> dict | None:
+    """The newest Top 8 event import (latest_event.json)."""
     path = webapp_config.TOP_8_DIR / "latest_event.json"
     if not path.exists():
         return None
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return parse_time(data.get("added_at"), naive_is_utc=False)
+    folder = data.get("folder") or ""
+    name = folder
+    try:
+        from utils.formatting import format_event_name
+        name = format_event_name(folder)
+        meta_path = webapp_config.TOP_8_DIR / "_event_metadata.json"
+        if meta_path.exists():
+            with open(meta_path, "r", encoding="utf-8") as f:
+                name = (json.load(f).get(folder) or {}).get("name") or name
+    except Exception:
+        pass
+    return _item(parse_time(data.get("added_at"), naive_is_utc=False),
+                 f"New Top 8 event: {name}", f"/top-8/{folder}" if folder else "/top-8")
 
 
-def latest_stats_release(now: datetime | None = None) -> datetime | None:
-    """Publish time of the newest stats batch (00:01 UTC on the 1st/15th)."""
+def latest_stats_release(now: datetime | None = None) -> dict | None:
+    """The newest stats batch (out at 00:01 UTC on the 1st/15th)."""
     from services.meta_report import PUBLISH_DELAY
     from services.data_release import latest_released_period
 
-    day = latest_released_period(now).publish_day
-    return datetime.combine(day, dtime(0), tzinfo=timezone.utc) + PUBLISH_DELAY
+    period = latest_released_period(now)
+    at = datetime.combine(period.publish_day, dtime(0), tzinfo=timezone.utc) + PUBLISH_DELAY
+    through = f"{period.end:%b} {period.end.day}"
+    return _item(at, f"New stats batch: games through {through}", "/meta-report")
 
 
-def latest_article() -> datetime | None:
-    value = _scalar(
+def latest_article() -> dict | None:
+    row = _row(
         webapp_config.ARTICLES_DB_PATH,
-        "SELECT MAX(published_at) FROM articles WHERE status = 'approved'",
+        "SELECT published_at, id, slug, title FROM articles WHERE status = 'approved' "
+        "AND published_at IS NOT NULL ORDER BY published_at DESC LIMIT 1",
     )
-    return parse_time(value, naive_is_utc=True)
+    if not row:
+        return None
+    return _item(parse_time(row[0], naive_is_utc=True), f"New article: {row[3]}", f"/articles/{row[1]}-{row[2]}")
 
 
-def latest_bracket() -> datetime | None:
-    value = _scalar(
+def latest_bracket() -> dict | None:
+    row = _row(
         webapp_config.MATCH_RECORDS_DB_PATH,
-        "SELECT MAX(published_at) FROM brackets WHERE published_at IS NOT NULL",
+        "SELECT published_at, slug, name FROM brackets WHERE published_at IS NOT NULL "
+        "ORDER BY published_at DESC LIMIT 1",
     )
-    return parse_time(value, naive_is_utc=False)
+    if not row:
+        return None
+    return _item(parse_time(row[0], naive_is_utc=False), f"New bracket: {row[2]}", f"/brackets/{row[1]}")
 
 
-def latest_explorer_event() -> datetime | None:
-    value = _scalar(webapp_config.EXPLORER_DB_PATH, "SELECT MAX(fetched_at) FROM explorer_events")
-    return parse_time(value, naive_is_utc=True)  # sqlite datetime('now') is UTC
+def latest_explorer_event() -> dict | None:
+    row = _row(webapp_config.EXPLORER_DB_PATH,
+               "SELECT fetched_at, event_name FROM explorer_events ORDER BY fetched_at DESC LIMIT 1")
+    if not row:
+        return None
+    # sqlite datetime('now') is UTC
+    return _item(parse_time(row[0], naive_is_utc=True), f"New Community Series event: {row[1]}", "/explorer")
 
 
-def latest_store_product() -> datetime | None:
+def latest_store_product() -> dict | None:
     from repositories.store import STORE_DB_PATH
 
-    value = _scalar(
+    row = _row(
         STORE_DB_PATH,
-        "SELECT MAX(p.created_at) FROM products p WHERE p.is_active = 1 AND "
-        "p.storefront_id IN (SELECT id FROM storefronts WHERE is_active = 1)",
+        "SELECT p.created_at, p.name FROM products p WHERE p.is_active = 1 AND "
+        "p.storefront_id IN (SELECT id FROM storefronts WHERE is_active = 1) "
+        "ORDER BY p.created_at DESC LIMIT 1",
     )
-    return parse_time(value, naive_is_utc=True)
+    if not row:
+        return None
+    return _item(parse_time(row[0], naive_is_utc=True), f"New in the store: {row[1]}", "/store")
 
 
 SOURCES = {
@@ -144,35 +177,41 @@ SOURCES = {
 }
 
 
-def compute_latest(now: datetime | None = None) -> dict[str, str]:
-    """page key -> ISO time of its newest content, only for content in the window."""
+def compute_new_content(now: datetime | None = None) -> dict:
+    """{"latest": page key -> ISO time of its newest content,
+        "notes": page key -> {"text", "link"}}, only for content in the window."""
     now = now or datetime.now(timezone.utc)
     cutoff = now - timedelta(days=NEW_WINDOW_DAYS)
-    times: dict[str, datetime | None] = {}
+    items: dict[str, dict | None] = {}
     for name, fn in SOURCES.items():
         try:
-            times[name] = fn(now) if name == "release" else fn()
+            items[name] = fn(now) if name == "release" else fn()
         except Exception:
             logger.warning("new-content source %s failed", name, exc_info=True)
-            times[name] = None
-    latest = {}
+            items[name] = None
+    latest, notes = {}, {}
     for page, source in PAGE_SOURCES.items():
-        dt = times.get(source)
-        if dt is not None and cutoff <= dt <= now + timedelta(minutes=5):
-            latest[page] = _iso(dt)
-    return latest
+        item = items.get(source)
+        if item and cutoff <= item["at"] <= now + timedelta(minutes=5):
+            latest[page] = _iso(item["at"])
+            notes[page] = {"text": item["text"], "link": item["link"]}
+    return {"latest": latest, "notes": notes}
 
 
-def get_latest() -> dict[str, str]:
-    """Cached compute_latest(): worked out at most once every CACHE_SECONDS per worker."""
+def compute_latest(now: datetime | None = None) -> dict[str, str]:
+    return compute_new_content(now)["latest"]
+
+
+def get_new_content() -> dict:
+    """Cached compute_new_content(): worked out at most once every CACHE_SECONDS per worker."""
     with _lock:
         if _cache["latest"] is not None and time.time() - _cache["at"] < CACHE_SECONDS:
             return _cache["latest"]
-    latest = compute_latest()
+    data = compute_new_content()
     with _lock:
-        _cache["latest"] = latest
+        _cache["latest"] = data
         _cache["at"] = time.time()
-    return latest
+    return data
 
 
 def clear_cache() -> None:

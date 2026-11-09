@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
-  loadLocalSeen, mergeSeen, newPageKeys, pageKeyForPath, saveLocalSeen,
+  getArrivals, loadLocalSeen, mergeSeen, newPageKeys, pageKeyForPath, recordArrival,
+  saveLocalSeen, subscribeArrivals, isNewSince,
 } from '@/utils/newContent'
 
 const REFRESH_MS = 15 * 60 * 1000
 
 // Which menu pages have content this person hasn't seen yet. Opening a page
-// clears its dot.
+// clears its dot and remembers, for this browser session, what was new.
 export default function useNewContent(user, pathname) {
   const [latest, setLatest] = useState({})
+  const [notes, setNotes] = useState({})
   const [seen, setSeen] = useState(() => loadLocalSeen())
   const userId = user?.user_id || null
   const userRef = useRef(userId)
@@ -20,6 +22,7 @@ export default function useNewContent(user, pathname) {
       .then((data) => {
         if (!data) return
         setLatest(data.latest || {})
+        setNotes(data.notes || {})
         if (data.seen) {
           setSeen((prev) => {
             const merged = mergeSeen(prev, data.seen)
@@ -45,6 +48,7 @@ export default function useNewContent(user, pathname) {
   const pageKey = pageKeyForPath(pathname)
   useEffect(() => {
     if (!pageKey || !newKeys.has(pageKey)) return
+    recordArrival(pageKey, { since: seen[pageKey], note: notes[pageKey], at: latest[pageKey] })
     // Mark with the content's own time so a slow device clock can't bring the dot back
     const stamp = latest[pageKey]
     setSeen((prev) => {
@@ -60,7 +64,23 @@ export default function useNewContent(user, pathname) {
         body: JSON.stringify({ pages: [pageKey] }),
       }).catch(() => {})
     }
-  }, [pageKey, newKeys, latest])
+  }, [pageKey, newKeys, latest, notes, seen])
 
   return newKeys
+}
+
+// What was new on this page when it was opened with a dot (or null)
+export function useArrival(key) {
+  const all = useSyncExternalStore(subscribeArrivals, getArrivals, getArrivals)
+  return key ? all[key] || null : null
+}
+
+// For a page: is an item from `time` new to this person? Only after they
+// opened the page from a dot, so the tags match the dot they just cleared.
+export function useIsNew(key) {
+  const arrival = useArrival(key)
+  return useCallback(
+    (time) => !!arrival && isNewSince(time, arrival.since),
+    [arrival],
+  )
 }

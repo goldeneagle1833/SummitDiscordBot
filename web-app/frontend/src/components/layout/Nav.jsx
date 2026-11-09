@@ -6,7 +6,8 @@ import { DECK_URL_PLACEHOLDER } from '@/utils/deckLinks'
 import { STORE_LIVE } from '@/utils/store'
 import SocialLinks from '@/components/layout/SocialLinks'
 import useNewContent from '@/hooks/useNewContent'
-import { pageKeyForPath } from '@/utils/newContent'
+import { dismissArrival, pageKeyForPath } from '@/utils/newContent'
+import WhatsNewBar from '@/components/layout/WhatsNewBar'
 
 // Discord, Patreon and Reddit live in SocialLinks as icons, and the logo is
 // the Home link, so none of them are text options here.
@@ -536,6 +537,13 @@ export default function Nav() {
   // Store sits in the menu only on phones (top bar from md up)
   const menuHasNew = [...newKeys].some((k) => k !== 'store')
   const menuStoreNew = storeShown && newKeys.has('store')
+  // The "What's new" bar shows for one visit: leaving the page closes it
+  const currentKey = pageKeyForPath(location.pathname)
+  const prevKeyRef = useRef(currentKey)
+  useEffect(() => {
+    if (prevKeyRef.current && prevKeyRef.current !== currentKey) dismissArrival(prevKeyRef.current)
+    prevKeyRef.current = currentKey
+  }, [currentKey])
 
   // Sync nav prefs from server when user logs in
   useEffect(() => {
@@ -702,6 +710,8 @@ export default function Nav() {
         </div>
       </nav>
 
+      <WhatsNewBar pageKey={currentKey} pathname={location.pathname} />
+
       {/* Sidebar */}
       <aside
         className={`fixed top-0 left-0 h-full w-72 bg-bg-surface border-r border-border z-[950] transform transition-transform duration-300 overflow-y-auto ${
@@ -801,35 +811,35 @@ export default function Nav() {
 
         <div className="pb-4">
           {/* Sections and links ordered by page views (last 90 days, Oct 2026) */}
-          <SidebarHeading label="Decks" dot={['/deck-rec', '/top-8', '/deck-builder', '/deck-archetypes'].some(isNew)} />
+          <SidebarHeading label="Decks" />
           <SidebarLink to="/deck-rec" dot={isNew('/deck-rec')} label="Sorcery Deck Rec" location={location} onClick={close} />
           <SidebarLink to="/top-8" dot={isNew('/top-8')} label="Top 8 Decks" location={location} onClick={close} />
           <SidebarLink to="/deck-builder" dot={isNew('/deck-builder')} label="Deck Visualizer" location={location} onClick={close} />
           <SidebarLink to="/deck-archetypes" dot={isNew('/deck-archetypes')} label="Deck Archetypes" location={location} onClick={close} />
 
-          <SidebarHeading label="Meta & Stats" dot={['/avatars', '/meta-report', '/elements', '/card-stats', '/articles'].some(isNew)} />
+          <SidebarHeading label="Meta & Stats" />
           <SidebarLink to="/avatars" dot={isNew('/avatars')} label="Avatars" location={location} onClick={close} match={['/avatars', '/avatars/top-players']} />
           <SidebarLink to="/meta-report" dot={isNew('/meta-report')} label="Meta Report" location={location} onClick={close} />
           <SidebarLink to="/elements" dot={isNew('/elements')} label="Element Winrates" location={location} onClick={close} />
           <SidebarLink to="/card-stats" dot={isNew('/card-stats')} label="Card Stats" location={location} onClick={close} />
           <SidebarLink to="/articles" dot={isNew('/articles')} label="Player Articles" location={location} onClick={close} match={['/articles', '/articles/mine', '/articles/new']} />
 
-          <SidebarHeading label="Summit Ranked" dot={['/elo', '/brackets', '/match-history', '/rumble', '/fun-stats'].some(isNew)} />
+          <SidebarHeading label="Summit Ranked" />
           <SidebarLink to="/elo" dot={isNew('/elo')} label="ELO Leaderboards" location={location} onClick={close} />
           <SidebarLink to="/brackets" dot={isNew('/brackets')} label="Season Top Cut" location={location} onClick={close} />
           <SidebarLink to="/match-history" dot={isNew('/match-history')} label="Match History" location={location} onClick={close} />
           <SidebarLink to="/rumble" dot={isNew('/rumble')} label="Rumble" location={location} onClick={close} />
           <SidebarLink to="/fun-stats" dot={isNew('/fun-stats')} label="Fun Stats" location={location} onClick={close} />
 
-          <SidebarHeading label="Events" dot={['/card-points', '/explorer'].some(isNew)} />
+          <SidebarHeading label="Events" />
           <SidebarLink to="/card-points" dot={isNew('/card-points')} label="Omens" location={location} onClick={close} />
           <SidebarLink to="/explorer" dot={isNew('/explorer')} label="Community Series" location={location} onClick={close} match={['/explorer', '/explorer/apply']} />
 
-          <SidebarHeading label="Tools" dot={['/life-counter', '/help'].some(isNew)} />
+          <SidebarHeading label="Tools" />
           <SidebarLink to="/life-counter" dot={isNew('/life-counter')} label="Life Counter" location={location} onClick={close} />
           <SidebarLink to="/help" dot={isNew('/help')} label="Help" location={location} onClick={close} match={['/help', '/about', '/feedback']} />
 
-          <SidebarHeading label="Community" dot={menuStoreNew} dotClassName="md:hidden" />
+          <SidebarHeading label="Community" />
           <SidebarLink to="/community" dot={isNew('/community')} label="Community Links" location={location} onClick={close} />
           {/* Phones only: from md up Store is on the top bar */}
           {(STORE_LIVE || user?.is_store_admin) && (
@@ -938,11 +948,10 @@ function NewDot({ className = '' }) {
   )
 }
 
-function SidebarHeading({ label, dot, dotClassName = '' }) {
+function SidebarHeading({ label }) {
   return (
-    <div className="px-4 pt-4 pb-1 flex items-center gap-1.5">
+    <div className="px-4 pt-4 pb-1">
       <span className="text-xs font-bold text-text-muted uppercase tracking-wider">{label}</span>
-      {dot && <NewDot className={`!w-1.5 !h-1.5 ${dotClassName}`} />}
     </div>
   )
 }

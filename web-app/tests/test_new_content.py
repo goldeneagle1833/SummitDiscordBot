@@ -50,6 +50,8 @@ class TestComputeLatest:
         latest = new_content.compute_latest(NOW)
         assert latest["meta-report"] == "2026-11-01T00:01:00Z"
         assert latest["avatars"] == latest["card-stats"] == latest["meta-report"]
+        notes = new_content.compute_new_content(NOW)["notes"]
+        assert notes["avatars"]["text"] == "New stats batch: games through Oct 31"
 
     def test_old_content_is_outside_window(self, sources):
         added = (NOW - timedelta(days=20)).astimezone().replace(tzinfo=None)
@@ -63,6 +65,8 @@ class TestComputeLatest:
             json.dumps({"folder": "X", "added_at": added.strftime("%Y-%m-%dT%H:%M:%S")}))
         latest = new_content.compute_latest(NOW)
         assert latest["top-8"] == latest["deck-rec"] == latest["deck-archetypes"] == _iso(NOW - timedelta(days=1))
+        note = new_content.compute_new_content(NOW)["notes"]["top-8"]
+        assert note == {"text": "New Top 8 event: X", "link": "/top-8/X"}
 
     def test_approved_article_only(self, sources):
         from repositories.articles import ArticleRepository
@@ -76,6 +80,8 @@ class TestComputeLatest:
         conn.commit()
         conn.close()
         assert new_content.compute_latest(NOW)["articles"] == _iso(NOW - timedelta(days=2))
+        note = new_content.compute_new_content(NOW)["notes"]["articles"]
+        assert note["text"] == "New article: A" and note["link"].endswith("-a")
 
     def test_store_ignores_hidden_products(self, sources):
         from repositories.store import StoreRepository
@@ -109,15 +115,15 @@ class TestSeenRepo:
 
 class TestRoutes:
     def test_logged_out_gets_latest_only(self, client, sources, monkeypatch):
-        monkeypatch.setattr(new_content, "get_latest", lambda: {"top-8": "2026-11-08T00:00:00Z"})
         import routes.api.nav as nav
-        monkeypatch.setattr(nav, "get_latest", lambda: {"top-8": "2026-11-08T00:00:00Z"})
+        fake = {"latest": {"top-8": "2026-11-08T00:00:00Z"}, "notes": {"top-8": {"text": "New Top 8 event: X", "link": "/top-8/X"}}}
+        monkeypatch.setattr(nav, "get_new_content", lambda: fake)
         data = client.get("/api/nav/new-content").get_json()
-        assert data == {"latest": {"top-8": "2026-11-08T00:00:00Z"}, "seen": None}
+        assert data == {**fake, "seen": None}
 
     def test_logged_in_mark_seen_round_trip(self, client, sources, monkeypatch):
         import routes.api.nav as nav
-        monkeypatch.setattr(nav, "get_latest", lambda: {"top-8": "2026-11-08T00:00:00Z"})
+        monkeypatch.setattr(nav, "get_new_content", lambda: {"latest": {"top-8": "2026-11-08T00:00:00Z"}, "notes": {}})
         with client.session_transaction() as sess:
             sess["user_id"] = "123"
         assert client.get("/api/nav/new-content").get_json()["seen"] == {}

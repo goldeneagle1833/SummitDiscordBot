@@ -250,3 +250,15 @@ def test_failed_first_build_answers_503(timeline, monkeypatch):
 
     monkeypatch.setattr(cards, "_build_timeline", boom)
     assert timeline.get("/api/elements/timeline").status_code == 503
+
+
+def test_cache_files_from_an_older_build_are_not_served(timeline, monkeypatch):
+    import json as _json
+    import routes.api.cards as cards
+    # A cache file the previous version wrote (no "matchups") must not be read.
+    cards._TIMELINE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    old = cards._TIMELINE_CACHE_DIR / "elements-timeline-all.json"
+    old.write_text(_json.dumps({"meta": {"dates": [], "avatars": {}, "pairs": {}, "daily_totals": {}},
+                                "elements": {"dates": [], "days": {}}}))
+    data = timeline.get("/api/elements/avatar-meta").get_json()
+    assert data["matchups"]

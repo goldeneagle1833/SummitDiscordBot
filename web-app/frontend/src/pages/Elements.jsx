@@ -245,36 +245,52 @@ export default function Elements() {
         <p className="text-text-muted text-sm">Win rates by element based on cards in reported decklists</p>
       </section>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center justify-center gap-4 mb-4">
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-text-muted">Event:</label>
-          <select
-            className="bg-bg-raised border border-border rounded px-2 py-1 text-sm"
-            value={eventFilter}
-            onChange={(e) => setEventFilter(e.target.value)}
-          >
-            <option value="all">All Events</option>
-            {events.map((evt) => {
-              const startFmt = formatEventDate(evt.start_date)
-              const endFmt = formatEventDate(evt.end_date)
-              if (evt.is_active) {
+      {/* One filter box: Event, your deck, and the timeline that drives every chart.
+          Stays in view under the nav on wider screens. */}
+      <div className="sm:sticky sm:top-16 z-20 mb-6 bg-bg-surface/95 backdrop-blur border border-border rounded-lg px-4 py-3">
+        <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-x-5 gap-y-2">
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-text-muted">Event:</label>
+            <select
+              className="bg-bg-raised border border-border rounded px-2 py-1 text-sm"
+              value={eventFilter}
+              onChange={(e) => setEventFilter(e.target.value)}
+            >
+              <option value="all">All Events</option>
+              {events.map((evt) => {
+                const startFmt = formatEventDate(evt.start_date)
+                const endFmt = formatEventDate(evt.end_date)
+                if (evt.is_active) {
+                  return (
+                    <option key="current" value="current">
+                      {evt.event_name} ({startFmt} - Present)
+                    </option>
+                  )
+                }
                 return (
-                  <option key="current" value="current">
-                    {evt.event_name} ({startFmt} - Present)
+                  <option key={evt.event_id} value={String(evt.event_id)}>
+                    {evt.event_name} ({startFmt} - {endFmt || '?'})
                   </option>
                 )
-              }
-              return (
-                <option key={evt.event_id} value={String(evt.event_id)}>
-                  {evt.event_name} ({startFmt} - {endFmt || '?'})
-                </option>
-              )
-            })}
-          </select>
+              })}
+            </select>
+          </div>
+          {!loading && !error && dates.length > 0 && (
+            <DeckTypeFilters data={deckTypes} value={deckPick} onChange={setDeckPick} compact />
+          )}
         </div>
         {!loading && !error && dates.length > 0 && (
-          <DeckTypeFilters data={deckTypes} value={deckPick} onChange={setDeckPick} compact />
+          <div className="border-t border-border mt-3 pt-3">
+            <TimelineControls
+              bare
+              dates={dates}
+              windowKey={view.windowKey}
+              endIdx={endIdx}
+              playing={view.playing}
+              speed={view.speed}
+              onChange={setView}
+            />
+          </div>
         )}
       </div>
 
@@ -288,23 +304,12 @@ export default function Elements() {
         </p>
       ) : (
         <>
-          {/* Timeline: one slider drives every chart below; stays in view under the nav */}
-          <div className="sticky top-16 z-20 mb-6">
-            <TimelineControls
-              dates={dates}
-              windowKey={view.windowKey}
-              endIdx={endIdx}
-              playing={view.playing}
-              speed={view.speed}
-              onChange={setView}
-            />
-          </div>
 
           {/* Deck type matchups: picked with "Your deck" in the top bar */}
           <section className="mb-10">
             <h2 className="text-xl font-display text-secondary mb-1 text-center">Your Deck&apos;s Matchups</h2>
             <p className="text-text-muted text-sm mb-4 text-center max-w-2xl mx-auto">
-              Pick your deck type (and an Avatar if you like) at the top of the page to see what it beats and what it loses to. Deck types use the same element groups as Deck Archetypes: a deck&apos;s top two elements by Spellbook copies. Follows the Event filter and the timeline.
+              Pick your deck type (and an Avatar if you like) in the filters at the top to see what it beats and what it loses to. Deck types use the same element groups as Deck Archetypes: a deck&apos;s top two elements by Spellbook copies. Follows the Event filter and the timeline.
             </p>
             <div className="bg-bg-surface border border-border rounded-lg p-4">
               <DeckTypeResults data={deckTypes} value={deckPick} gamesLabel="games in this window"

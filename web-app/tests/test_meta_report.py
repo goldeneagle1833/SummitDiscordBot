@@ -131,6 +131,55 @@ def test_matchups_are_avatar_against_avatar():
     assert few["cells"][a][b]["winRate"] is None
 
 
+def test_deck_type_matchups_show_what_a_deck_loses_to():
+    games = ([{"winner": ("B", "Water"), "loser": ("A", "Fire")}] * 8
+             + [{"winner": ("A", "Fire"), "loser": ("B", "Water")}] * 4
+             + [{"winner": ("A", "Fire"), "loser": ("C", "Air / Earth")}] * 9
+             + [{"winner": ("C", "Air / Earth"), "loser": ("A", "Fire")}] * 1
+             + [{"winner": ("D", "Fire"), "loser": ("A", "Fire")}] * 30)  # mirrors
+    dt = meta_report.deck_type_matchups(games, min_deck_games=20)
+    keys = [o["key"] for o in dt["options"]]
+    assert keys[0] == "Fire" and "any:Fire" in keys and dt["options"][0]["label"] == "Mono Fire"
+    mono = dt["picks"]["Fire|"]
+    # Fire vs Fire is a mirror for "Mono Fire, any Avatar", so only the 22 other games count.
+    assert mono["games"] == 22 and mono["winRate"] == 59.1
+    assert [r["elements"] for r in mono["deckType"]] == ["Water", "Air / Earth"]
+    assert mono["deckType"][0] == {"elements": "Water", "games": 12, "winRate": 33.3}
+    assert mono["avatar"][0]["avatar"] == "B"
+    # With an Avatar picked, the other Avatar's Fire decks are opponents, not mirrors.
+    a_fire = dt["picks"]["Fire|A"]
+    assert a_fire["games"] == 52
+    assert {"avatar": "D", "elements": "Fire", "games": 30, "winRate": 0.0} in a_fire["both"]
+    assert {"avatar": "A", "games": 52} in dt["options"][0]["avatars"]
+    # Water only has 12 games: under the minimum, so it isn't offered.
+    assert "Water" not in keys
+
+
+def test_deck_type_matchups_any_element_and_minimums():
+    games = ([{"winner": ("A", "Air / Water"), "loser": ("B", "Earth")}] * 12
+             + [{"winner": ("C", "Water"), "loser": ("B", "Earth")}] * 9)
+    dt = meta_report.deck_type_matchups(games, min_deck_games=20)
+    water = dt["picks"]["any:Water|"]
+    assert water["games"] == 21 and water["winRate"] == 100.0
+    assert water["deckType"] == [{"elements": "Earth", "games": 21, "winRate": 100.0}]
+    # C's 9 games are under the 10-game row minimum.
+    assert [r["avatar"] for r in water["avatar"]] == ["B"]
+    assert water["both"] == [{"avatar": "B", "elements": "Earth", "games": 21, "winRate": 100.0}]
+    assert [r["avatar"] for r in dt["picks"]["Earth|"]["both"]] == ["A"]
+
+
+def test_old_reports_get_deck_types_from_saved_games(match_db, repo, no_events):
+    db = match_db
+    for _ in range(25):
+        add_game(db, "2026-09-05", ("A", "Fire"), ("B", "Water"))
+    payload = {"ranked": {"archetypes": [], "minArchetypeGames": 20}}
+    repo.save_build("2026-09-a", "2026-09-01", "2026-09-15", payload, [])
+    report = meta_report.with_deck_types(repo.get("2026-09-a"), repo, db_path=str(db))
+    assert report["payload"]["ranked"]["deckTypes"]["picks"]["Fire|"]["winRate"] == 100.0
+    saved = repo.get("2026-09-a")["payload"]["ranked"]["deckTypes"]
+    assert saved["picks"]["Water|"]["deckType"][0] == {"elements": "Fire", "games": 25, "winRate": 0.0}
+
+
 def test_tier_moves_against_previous_period():
     current = [{"avatar": "A", "elements": "Fire", "tier": "S"}, {"avatar": "B", "elements": "Water", "tier": "C"}]
     previous = [{"avatar": "A", "elements": "Fire", "tier": "B"}]

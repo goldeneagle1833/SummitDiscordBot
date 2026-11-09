@@ -33,6 +33,28 @@ const REPORT = {
       target: 'Sparkmage', counter: 'Pathfinder', winRate: 60, games: 30, targetElsewhere: 58, targetVsCounter: 40,
       signals: ['Lower curve: 2.6 average cost vs 3.4'], why: 'Pathfinder does it on a lower curve.',
     }],
+    deckTypes: {
+      minDeckGames: 20,
+      minGames: 10,
+      options: [
+        { key: 'Fire', label: 'Mono Fire', kind: 'mono', games: 40, avatars: [{ avatar: 'Sparkmage', games: 25 }] },
+        { key: 'Air / Water', label: 'Air / Water', kind: 'pair', games: 30, avatars: [] },
+      ],
+      picks: {
+        'Fire|': {
+          games: 40, winRate: 47.5,
+          avatar: [{ avatar: 'Deathspeaker', games: 12, winRate: 25 }, { avatar: 'Pathfinder', games: 14, winRate: 64.3 }],
+          deckType: [{ elements: 'Water', games: 11, winRate: 36.4 }],
+          both: [],
+        },
+        'Fire|Sparkmage': {
+          games: 25, winRate: 60,
+          avatar: [{ avatar: 'Battlemage', games: 10, winRate: 30 }],
+          deckType: [], both: [],
+        },
+        'Air / Water|': { games: 30, winRate: 55, avatar: [], deckType: [], both: [] },
+      },
+    },
     elementTrend: {
       days: ['2026-09-16', '2026-09-17', '2026-09-18'],
       series: { Air: [50, 55, null], Earth: [40, 35, 30], Fire: [45, 45, 50], Water: [40, 42, 44] },
@@ -97,6 +119,30 @@ describe('MetaReport', () => {
     expect(screen.getByRole('img', { name: 'Element share of ranked decks by day' })).toBeInTheDocument()
     expect(screen.getByText('Wins Top 8s, rare on the ladder')).toBeInTheDocument()
     expect(screen.getByText('Geomancer')).toBeInTheDocument()
+  })
+
+  it('shows what a deck type loses to and beats', async () => {
+    renderPage()
+    expect(await screen.findByText("Your deck's matchups")).toBeInTheDocument()
+    expect(screen.getByText('Mono Fire decks')).toBeInTheDocument()
+    expect(screen.getByText('Deathspeaker')).toBeInTheDocument()
+    expect(screen.getByText('25%')).toBeInTheDocument()
+    expect(screen.getByText('64.3%')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Deck types' }))
+    expect(screen.getByText('36.4%')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Avatars' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Your Avatar' }), 'Sparkmage')
+    expect(screen.getByText('Sparkmage Mono Fire decks')).toBeInTheDocument()
+    expect(screen.getByText('Battlemage')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Your deck type' }), 'Air / Water')
+    expect(screen.getByText('Air / Water decks')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Your Avatar' })).toHaveValue('')
+  })
+
+  it('says so when no deck type has enough games', async () => {
+    getMetaReport.mockResolvedValue({ ...REPORT, ranked: { ...REPORT.ranked, deckTypes: { options: [], picks: {} } } })
+    renderPage()
+    expect(await screen.findByText(/Not enough ranked games to break matchups down by deck type/)).toBeInTheDocument()
   })
 
   it('loads an older report from the picker', async () => {

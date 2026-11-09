@@ -414,6 +414,129 @@ function Matchups({ matchups }) {
   )
 }
 
+const VS_VIEWS = [
+  { key: 'avatar', label: 'Avatars' },
+  { key: 'deckType', label: 'Deck types' },
+  { key: 'both', label: 'Avatar + deck type' },
+]
+const KIND_GROUPS = [
+  { kind: 'mono', label: 'Mono element' },
+  { kind: 'pair', label: 'Two elements' },
+  { kind: 'any', label: 'Any deck with' },
+]
+const selectCls = 'bg-bg-raised border border-border rounded px-3 py-2 text-sm text-text-primary w-full'
+
+function deckTypeName(elements) {
+  if (!elements) return null
+  return elements.includes(' / ') ? <ElementPair pair={elements} /> : <span className="text-xs">Mono <ElementPair pair={elements} /></span>
+}
+
+function OpponentList({ title, rows, color, empty }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs uppercase tracking-wider mb-2" style={{ color }}>{title}</p>
+      {rows.length ? (
+        <ul className="grid gap-1.5">
+          {rows.map((r) => (
+            <li key={`${r.avatar || ''}|${r.elements || ''}`} className="grid grid-cols-[1fr_auto] gap-3 items-center text-sm">
+              <span className="min-w-0 truncate">
+                {r.avatar && <span className="mr-1.5">{r.avatar}</span>}
+                {deckTypeName(r.elements)}
+              </span>
+              <span className="text-right whitespace-nowrap">
+                <span className="font-mono rounded px-1.5 py-0.5" style={cellStyle(r.winRate)}>{r.winRate}%</span>
+                <span className="text-xs text-text-muted ml-2 inline-block w-16 text-left">{r.games} games</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-sm text-text-muted">{empty}</p>}
+    </div>
+  )
+}
+
+function DeckTypeMatchups({ data }) {
+  const options = data?.options || []
+  const [type, setType] = useState('')
+  const [avatar, setAvatar] = useState('')
+  const [view, setView] = useState('avatar')
+  const option = options.find((o) => o.key === type) || options[0]
+  const pick = option ? data.picks?.[`${option.key}|${option.avatars.some((a) => a.avatar === avatar) ? avatar : ''}`] : null
+  const chosenAvatar = option?.avatars.some((a) => a.avatar === avatar) ? avatar : ''
+
+  if (!option || !pick) {
+    return (
+      <div className={`${panel} text-sm text-text-muted mt-4`}>
+        Not enough ranked games to break matchups down by deck type this period.
+      </div>
+    )
+  }
+  const rows = pick[view] || []
+  const losesTo = rows.filter((r) => r.winRate < 50)
+  const beats = rows.filter((r) => r.winRate > 50).reverse()
+  const even = rows.filter((r) => r.winRate === 50)
+  const deckLabel = option.kind === 'any'
+    ? `${chosenAvatar ? `${chosenAvatar} ` : ''}Decks with ${option.key.slice(4)}`
+    : `${chosenAvatar ? `${chosenAvatar} ` : ''}${option.label} decks`
+
+  return (
+    <div className={`${panel} mt-4 grid gap-4`}>
+      <div>
+        <p className="text-xs uppercase tracking-wider text-text-muted">Your deck&apos;s matchups</p>
+        <p className="text-sm text-text-muted mt-1">
+          Pick your deck type, and an Avatar if you like, to see what it beats and what it loses to. Deck types use the same element groups as Deck Archetypes: a deck&apos;s top two elements by Spellbook copies.
+        </p>
+      </div>
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+        <label className="grid gap-1 text-xs text-text-muted">
+          Your deck
+          <select aria-label="Your deck type" value={option.key} onChange={(e) => { setType(e.target.value); setAvatar('') }} className={selectCls}>
+            {KIND_GROUPS.map((g) => {
+              const opts = options.filter((o) => o.kind === g.kind)
+              return opts.length ? (
+                <optgroup key={g.kind} label={g.label}>
+                  {opts.map((o) => <option key={o.key} value={o.key}>{o.label} ({o.games} games)</option>)}
+                </optgroup>
+              ) : null
+            })}
+          </select>
+        </label>
+        <label className="grid gap-1 text-xs text-text-muted">
+          Avatar
+          <select aria-label="Your Avatar" value={chosenAvatar} onChange={(e) => setAvatar(e.target.value)} className={selectCls}>
+            <option value="">Any Avatar</option>
+            {option.avatars.map((a) => <option key={a.avatar} value={a.avatar}>{a.avatar} ({a.games} games)</option>)}
+          </select>
+        </label>
+        <div className="grid gap-1 text-xs text-text-muted">
+          Against
+          <div className="flex rounded border border-border overflow-hidden" role="group" aria-label="Group opponents by">
+            {VS_VIEWS.map((v) => (
+              <button key={v.key} type="button" onClick={() => setView(v.key)} aria-pressed={view === v.key}
+                      className={`flex-1 px-2 py-2 text-xs ${view === v.key ? 'bg-secondary/20 text-secondary' : 'bg-bg-raised text-text-muted hover:text-text-primary'}`}>
+                {v.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <p className="text-sm">
+        <b>{deckLabel}</b> won <span className="font-mono" style={{ color: pick.winRate >= 50 ? UP : DOWN }}>{pick.winRate}%</span> of {pick.games} ranked games this period.
+      </p>
+      <div className="grid gap-5 grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))]">
+        <OpponentList title="Loses to" rows={losesTo} color={DOWN} empty="Nothing with enough games beats it more often than not." />
+        <OpponentList title="Beats" rows={beats} color={UP} empty="Nothing with enough games that it beats more often than not." />
+      </div>
+      {even.length > 0 && (
+        <p className="text-xs text-text-muted">Dead even (50%): {even.map((r) => [r.avatar, r.elements].filter(Boolean).join(' ')).join(', ')}.</p>
+      )}
+      <p className="text-xs text-text-muted">
+        Win rates are for your deck. Your pick needs {data.minDeckGames} games to be listed and each opponent needs {data.minGames}; anything smaller is left out. Games where both decks fit your pick (mirrors) don&apos;t count. Totals only, never a deck list.
+      </p>
+    </div>
+  )
+}
+
 function Tournaments({ events }) {
   if (!events?.length) {
     return <div className={`${panel} text-sm text-text-muted`}>No Top 8 events were added for this period.</div>
@@ -656,6 +779,7 @@ export default function MetaReport() {
           <Section title="What beats what" sub={`The six most-played Avatars, row against column, in Summit ranked games. Totals only; cells under ${report.ranked?.matchups?.minGames || 10} games stay blank.`}>
             <CounterPicks counters={report.ranked?.counters} />
             <Matchups matchups={report.ranked?.matchups} />
+            <DeckTypeMatchups data={report.ranked?.deckTypes} />
           </Section>
 
           <div className="grid gap-5 grid-cols-[repeat(auto-fit,minmax(min(100%,460px),1fr))]">
@@ -676,7 +800,7 @@ export default function MetaReport() {
               <li>Each report covers half a month and comes out as soon as that half ends, in step with the two-week batches of ranked card data on Card Win Rates. The report on the 15th covers the 1st to 14th; the report on the 1st covers the 15th to the end of the month before. Reports come out at 00:01 UTC, which is 8:01 PM Eastern the evening before (7:01 PM in winter).</li>
               <li>Ranked games count toward totals only. No ranked deck lists or player names appear in a report.</li>
               <li>Deck lists come only from public Top 8 events.</li>
-              <li>Small samples are hidden: an Avatar needs 20 games (or 1% of decks) for the tiers, matchups and counter picks need 10, and card win rates need 20.</li>
+              <li>Small samples are hidden: an Avatar needs 20 games (or 1% of decks) for the tiers, matchups and counter picks need 10, and card win rates need 20. In Your deck&apos;s matchups, a deck type (or deck type and Avatar) needs as many games as an Avatar does for the tiers, and each opponent needs 10.</li>
               <li>Counter pick explanations use game length, who went first, mana curve, element pairs and how often winning decks ran a card. A card is only named when 10 or more winning decks ran it.</li>
             </ul>
           </Section>

@@ -183,3 +183,93 @@ def get_player_avatar_elo(
         "entries": entries,
         "history": _history(player_id, event_id, is_current, match_db_path or MATCH_RECORDS_DB_PATH),
     }
+
+
+# --- Lifetime avatar ELO -----------------------------------------------------
+# One Glicko-2 rating per player and avatar across every season from the first
+# Glicko-2 season on (elo.db lifetime_avatar_standings, kept by the bot). Before
+# that season the table is empty or missing, and everything here returns empty.
+
+def lifetime_avatar_ladders(elo_db_path: Path | str | None = None) -> dict[str, list[dict]]:
+    """{avatar: ladder} for the lifetime avatar ELO.
+
+    Each ladder lists settled entries by rating (``rank`` 1..n), then
+    provisional ones (``elo`` and ``rank`` None, see services/provisional.py).
+    Entries: user_id (str), display_name, elo, games, rank, provisional,
+    provisional_games.
+    """
+    path = str(elo_db_path or ELO_DB_PATH)
+    if not Path(path).is_file():
+        return {}
+    conn = sqlite3.connect(path)
+    try:
+        rows = conn.execute(
+            "SELECT user_id, avatar, user_display_name, elo, games "
+            "FROM lifetime_avatar_standings WHERE games > 0"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}  # no table before the first Glicko-2 season
+    finally:
+        conn.close()
+    groups: dict[str, list[dict]] = {}
+    for user_id, avatar, name, elo, games in rows:
+        entry = {"user_id": str(user_id), "display_name": name, "elo": elo, "games": games or 0}
+        provisional.mark(entry, games, value_keys=("elo",))
+        groups.setdefault(avatar, []).append(entry)
+    return {
+        avatar: provisional.rank_settled_first(entries, "elo", name_key="display_name")
+        for avatar, entries in groups.items()
+    }
+
+
+def get_player_lifetime_avatar_elo(player_id, elo_db_path: Path | str | None = None,
+                                   avatar: str | None = None) -> list[dict]:
+    """A player's lifetime avatar ELO entries, most played first.
+
+    ``[{avatar, elo, games, rank, provisional, provisional_games}]``; ``rank``
+    is the place among settled entries on that avatar. ``avatar`` narrows to
+    one avatar (case-insensitive).
+    """
+    player_id = str(player_id).removeprefix("google_")
+    wanted = avatar.casefold() if avatar else None
+    entries = []
+    for name, ladder in lifetime_avatar_ladders(elo_db_path).items():
+        if wanted is not None and name.casefold() != wanted:
+            continue
+        for row in ladder:
+            if row["user_id"] == player_id:
+                entries.append({
+                    "avatar": name,
+                    "elo": row["elo"],
+                    "games": row["games"],
+                    "rank": row["rank"],
+                    "provisional": row["provisional"],
+                    "provisional_games": row["provisional_games"],
+                })
+    entries.sort(key=lambda e: (-e["games"], e["avatar"].casefold()))
+    return entries
+
+
+def lifetime_avatar_records(match_db_path: Path | str | None = None) -> dict[tuple[str, str], list[int]]:
+    """{(user_id, avatar): [wins, losses]} over the matches rated on lifetime avatar ELO."""
+    path = str(match_db_path or MATCH_RECORDS_DB_PATH)
+    if not Path(path).is_file():
+        return {}
+    records: dict[tuple[str, str], list[int]] = {}
+    conn = sqlite3.connect(path)
+    try:
+        table = live_matches(path)
+        cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if "winner_avatar_lifetime_games" not in cols:
+            return {}
+        for winner, w_avatar, loser, l_avatar in conn.execute(
+            f"SELECT winner_id, winner_avatar, losser_id, loser_avatar FROM {table} "
+            "WHERE winner_avatar_lifetime_games IS NOT NULL"
+        ):
+            records.setdefault((str(winner), w_avatar), [0, 0])[0] += 1
+            records.setdefault((str(loser), l_avatar), [0, 0])[1] += 1
+    except sqlite3.OperationalError:
+        return {}
+    finally:
+        conn.close()
+    return records

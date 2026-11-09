@@ -324,6 +324,7 @@ export default function Player() {
         <AvatarPerformance
           avatars={data.avatar_performance}
           playerId={playerId}
+          lifetimeElo={data.lifetime_avatar_elo}
           period={eventFilter}
           isAdmin={Boolean(isAdmin)}
           canEdit={Boolean(data.is_owner)}

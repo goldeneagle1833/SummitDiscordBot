@@ -21,7 +21,11 @@ from repositories.voice_only_repo import VoiceOnlyRepository
 from utils.auth import is_admin
 from utils.card_images import attach_images, resolve_card_image
 from services.curiosa import deck_url_source, is_deck_url, normalize_deck_url
-from services.avatar_elo import get_player_avatar_changes, get_player_avatar_elo
+from services.avatar_elo import (
+    get_player_avatar_changes,
+    get_player_avatar_elo,
+    get_player_lifetime_avatar_elo,
+)
 from services import provisional
 from services.elo_gap import current_ratings, pre_match_select, ratings_then
 
@@ -906,7 +910,19 @@ def player_avatar_stats(player_id, avatar_name):
         "on_draw": _play_draw_stats(on_draw),
         "matches": match_history,
         "event_filter": event_filter,
+        # This avatar's lifetime avatar ELO entry (shown to everyone here), or
+        # null before the player has one (always null before Glicko-2 seasons)
+        "lifetime_avatar_elo": _lifetime_avatar_entry(player_id, display_avatar_name),
     })
+
+
+def _lifetime_avatar_entry(player_id, avatar):
+    try:
+        entries = get_player_lifetime_avatar_elo(player_id, ELO_DB_PATH, avatar=avatar)
+    except Exception:
+        logger.exception("Could not load lifetime avatar ELO for %s", player_id)
+        return None
+    return entries[0] if entries else None
 
 
 def _get_limited_stats(player_id: str, event_filter: str = "current", is_owner: bool = False) -> dict:
@@ -2875,6 +2891,18 @@ def player_api(player_id):
             return True
         return visibility.get(section_key, False)
 
+    # Lifetime avatar ELO (Glicko-2, first Glicko-2 season on): same visibility
+    # as the profile's lifetime ELO; empty before that season
+    lifetime_avatar_elo = []
+    if show_lifetime:
+        try:
+            lifetime_avatar_elo = [
+                e for e in get_player_lifetime_avatar_elo(player_id_normalized, ELO_DB_PATH)
+                if is_owner or e["avatar"] not in hidden_avatars
+            ]
+        except Exception:
+            logger.exception("Could not load lifetime avatar ELO for %s", player_id_normalized)
+
     return jsonify(
         {
             "id": player_id_normalized,
@@ -2924,6 +2952,9 @@ def player_api(player_id):
                 "entries": avatar_elo["entries"],
                 "history": avatar_elo["history"] if _section_visible("elo_history") else {},
             },
+            # [{avatar, elo, games, rank, provisional, provisional_games}]; elo and
+            # rank are null while provisional (rank counts settled entries only)
+            "lifetime_avatar_elo": lifetime_avatar_elo,
             "avatar_matchups": avatar_matchups if _section_visible("avatar_matchups") else [],
             "avatar_matchups_by_avatar": avatar_matchups_by_avatar if _section_visible("avatar_matchups") else {},
             "recent_decks": recent_decks if _section_visible("recent_decks") else [],

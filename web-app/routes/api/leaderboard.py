@@ -50,6 +50,8 @@ def get_avatar_leaderboards():
         rank_by: "elo" (default) or "avatar_score" (like the Top Players page)
         min_games: entries with fewer games rank after the rest (default 10,
             like the Top Players page; 0 turns it off)
+        scope: "season" (default) or "lifetime": the lifetime avatar ELO
+            ladders (Glicko-2, first Glicko-2 season on), same shape
     """
     limit = request.args.get("limit", type=int)
     if limit is not None and limit < 1:
@@ -60,9 +62,13 @@ def get_avatar_leaderboards():
     min_games = request.args.get("min_games", 10, type=int)
     if min_games < 0:
         return jsonify({"success": False, "error": "min_games must be 0 or more"}), 400
+    scope = (request.args.get("scope") or "season").strip().lower()
+    if scope not in ("season", "lifetime"):
+        return jsonify({"success": False, "error": "scope must be season or lifetime"}), 400
     try:
         data = LeaderboardService().get_avatar_leaderboards(
-            avatar=request.args.get("avatar"), limit=limit, rank_by=rank_by, min_games=min_games
+            avatar=request.args.get("avatar"), limit=limit, rank_by=rank_by, min_games=min_games,
+            scope=scope,
         )
         return jsonify({"success": True, **data})
     except Exception as e:

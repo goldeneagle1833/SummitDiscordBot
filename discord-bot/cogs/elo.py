@@ -258,6 +258,7 @@ class EloCog(commands.Cog):
                     msg += f"**Event ELO ({active_event['event_name']}):** {event_elo} (Rank #{event_rank})"
             else:
                 msg += "*No active event*"
+            msg += _lifetime_avatar_lines(target_user.id)
 
             await ctx.send(msg + k_line)
         else:
@@ -480,6 +481,46 @@ def _avatar_rank_lines(active_event, user_id) -> str:
         else:
             lines.append(f"- **{entry['avatar']}:** {entry['event_elo']} (Rank #{rank}, {games})")
     return header + "\n" + "\n".join(lines)
+
+
+def _lifetime_avatar_lines(user_id, elo_db: str = "elo.db") -> str:
+    """!rank: the player's lifetime avatar ELO per avatar, with its rank on that avatar.
+
+    Glicko-2, from the first Glicko-2 season on: an entry under 8 games shows
+    "Provisional (n/8)" and takes no rank. Empty (nothing added) when the
+    player has no entry, including before that season when the table is missing.
+    """
+    conn = sqlite3.connect(elo_db)
+    try:
+        rows = conn.execute(
+            """SELECT user_id, avatar, user_display_name, elo, games
+               FROM lifetime_avatar_standings
+               WHERE games > 0 AND avatar IN (
+                   SELECT avatar FROM lifetime_avatar_standings WHERE user_id = ? AND games > 0)
+               ORDER BY elo DESC""",
+            (user_id,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return ""
+    finally:
+        conn.close()
+    ladders: dict[str, list] = {}
+    for row in rows:
+        ladders.setdefault(row[1], []).append(row)
+    entries = []
+    for avatar, ladder in ladders.items():
+        ranked = provisional.settled_first(ladder, True, lambda e: e[4], lambda e: e[2])
+        entries += [(rank, entry) for rank, entry in ranked if entry[0] == user_id]
+    if not entries:
+        return ""
+    entries.sort(key=lambda item: (-item[1][4], item[1][1].lower()))  # most played first
+    lines = []
+    for rank, (_, avatar, _, elo, games) in entries:
+        if rank is None:
+            lines.append(f"- **{avatar}:** {g2.provisional_label(games)}")
+        else:
+            lines.append(f"- **{avatar}:** {elo} (Rank #{rank}, {games} game{'s' if games != 1 else ''})")
+    return "\n**Lifetime avatar ELO:**\n" + "\n".join(lines)
 
 
 async def setup(bot):

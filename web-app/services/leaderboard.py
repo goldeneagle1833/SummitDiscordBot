@@ -84,6 +84,51 @@ def voice_requirement() -> dict:
     }
 
 
+def _avatar_ladders(groups, avatar, limit, rank_by, min_games, glicko) -> list:
+    """Order and number each avatar's entries; the ``avatars`` list of an avatar leaderboard.
+
+    ``rank_by`` "avatar_score" orders by Avatar Score, else the given (Elo)
+    order is kept; entries with ``min_games`` games go ahead of the rest. On
+    Glicko-2 ladders provisional entries go last and take no rank.
+    """
+    for entries in groups.values():
+        if rank_by == "avatar_score":
+            # Stable sort: equal scores keep their Elo ladder order
+            entries.sort(
+                key=lambda e: (
+                    e["games"] >= min_games,
+                    e["avatar_score"],
+                    e["wins"] / e["games"] if e["games"] else 0,
+                    e["wins"],
+                ),
+                reverse=True,
+            )
+        else:
+            # Stable sort: Elo ladder order within each side of the minimum
+            entries.sort(key=lambda e: e["games"] >= min_games, reverse=True)
+        if glicko:
+            # Stable: provisional entries go last and take no rank
+            entries.sort(key=lambda e: e["provisional"])
+        rank = 0
+        for entry in entries:
+            if entry.get("provisional"):
+                entry["rank"] = None
+                continue
+            rank += 1
+            entry["rank"] = rank
+    wanted = avatar.strip().casefold() if avatar else None
+    avatars = [
+        {
+            "avatar": name,
+            "players": len(entries),
+            "entries": entries[:limit] if limit else entries,
+        }
+        for name, entries in sorted(groups.items())
+        if wanted is None or name.casefold() == wanted
+    ]
+    return avatars
+
+
 class LeaderboardService:
     """Business logic for leaderboard operations."""
 
@@ -263,6 +308,7 @@ class LeaderboardService:
         limit: int | None = None,
         rank_by: str = "elo",
         min_games: int = 10,
+        scope: str = "season",
     ) -> dict:
         """The season ladder split per avatar (Avatar-mode events).
 
@@ -276,9 +322,14 @@ class LeaderboardService:
         Elo ladder order; ``"avatar_score"`` is the same Avatar Score the Top
         Players page uses. Either way, entries with at least ``min_games`` games
         rank ahead of the rest (``0`` turns the minimum off).
+
+        ``scope="lifetime"`` gives the lifetime avatar ELO ladders instead (see
+        ``get_lifetime_avatar_leaderboards``).
         """
         from routes.api.avatars import calculate_avatar_score
 
+        if scope == "lifetime":
+            return self.get_lifetime_avatar_leaderboards(avatar, limit, rank_by, min_games)
         data = self.get_event_leaderboard()
         event = data["event"]
         glicko = is_glicko2(event)
@@ -305,48 +356,63 @@ class LeaderboardService:
                         "voice_games": row["voice_games"],
                     }
                 )
-        for entries in groups.values():
-            if rank_by == "avatar_score":
-                # Stable sort: equal scores keep their Elo ladder order
-                entries.sort(
-                    key=lambda e: (
-                        e["games"] >= min_games,
-                        e["avatar_score"],
-                        e["wins"] / e["games"] if e["games"] else 0,
-                        e["wins"],
-                    ),
-                    reverse=True,
-                )
-            else:
-                # Stable sort: Elo ladder order within each side of the minimum
-                entries.sort(key=lambda e: e["games"] >= min_games, reverse=True)
-            if glicko:
-                # Stable: provisional entries go last and take no rank
-                entries.sort(key=lambda e: e["provisional"])
-            rank = 0
-            for entry in entries:
-                if entry.get("provisional"):
-                    entry["rank"] = None
-                    continue
-                rank += 1
-                entry["rank"] = rank
-        wanted = avatar.strip().casefold() if avatar else None
-        avatars = [
-            {
-                "avatar": name,
-                "players": len(entries),
-                "entries": entries[:limit] if limit else entries,
-            }
-            for name, entries in sorted(groups.items())
-            if wanted is None or name.casefold() == wanted
-        ]
+        avatars = _avatar_ladders(groups, avatar, limit, rank_by, min_games, glicko)
         return {
             "event": event,
             "elo_mode": (event or {}).get("elo_mode", "player"),
+            "scope": "season",
             "rank_by": rank_by,
             "min_games": min_games,
             "avatars": avatars,
             "voice_requirement": voice_requirement(),
+        }
+
+    def get_lifetime_avatar_leaderboards(
+        self,
+        avatar: str | None = None,
+        limit: int | None = None,
+        rank_by: str = "elo",
+        min_games: int = 10,
+    ) -> dict:
+        """Lifetime avatar ELO split per avatar, shaped like the season version.
+
+        Glicko-2, from the first Glicko-2 season on (empty before). Settled
+        entries rank first; provisional ones follow with no rating or rank.
+        Lifetime entries have no place on an overall ladder (``overall_rank``
+        is None) and no voice count.
+        """
+        from routes.api.avatars import calculate_avatar_score
+        from services.avatar_elo import lifetime_avatar_ladders, lifetime_avatar_records
+
+        elo_db = getattr(self._elo_repo, "_db_path", None)
+        match_db = getattr(self._match_repo, "_db_path", None)
+        records = lifetime_avatar_records(match_db)
+        groups: dict[str, list[dict]] = {}
+        for name, ladder in lifetime_avatar_ladders(elo_db).items():
+            for row in ladder:
+                wins, losses = records.get((row["user_id"], name), (0, 0))
+                groups.setdefault(name, []).append(
+                    {
+                        "provisional": row["provisional"],
+                        "provisional_games": row["provisional_games"],
+                        "overall_rank": None,
+                        "user_id": row["user_id"],
+                        "display_name": self._name(row["user_id"], row["display_name"]),
+                        "elo": row["elo"],
+                        "avatar_score": calculate_avatar_score(wins, losses),
+                        "games": row["games"],
+                        "wins": wins,
+                        "losses": losses,
+                    }
+                )
+        return {
+            "event": None,
+            "elo_mode": "avatar",
+            "scope": "lifetime",
+            "rank_by": rank_by,
+            "min_games": min_games,
+            "avatars": _avatar_ladders(groups, avatar, limit, rank_by, min_games, glicko=True),
+            "provisional_games_needed": provisional.NEEDED,
         }
 
     def get_combined_leaderboard(self) -> dict:

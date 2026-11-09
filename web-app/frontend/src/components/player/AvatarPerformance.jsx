@@ -41,6 +41,18 @@ function Form({ results = [] }) {
   )
 }
 
+/** Lifetime avatar ELO with its rank on that avatar, or the provisional tag. */
+function LifetimeElo({ entry }) {
+  if (!entry) return '-'
+  if (provisionalOf(entry)) return <ProvisionalTag games={provisionalOf(entry).games} />
+  return (
+    <>
+      {entry.elo}
+      {entry.rank != null && <span className="text-text-muted"> · #{entry.rank}</span>}
+    </>
+  )
+}
+
 function Highlight({ label, avatar, detail }) {
   return (
     <div className="bg-bg-surface border border-border rounded-xl px-4 py-3.5 min-w-0">
@@ -55,7 +67,7 @@ function Highlight({ label, avatar, detail }) {
  * The Avatars tab: one art card per avatar the player has been on, showing how
  * it is doing for them next to how it does for everyone.
  */
-export default function AvatarPerformance({ avatars, playerId, period = 'lifetime', isAdmin = false, canEdit = false, onHiddenChange }) {
+export default function AvatarPerformance({ avatars, playerId, period = 'lifetime', isAdmin = false, canEdit = false, onHiddenChange, lifetimeElo = [] }) {
   // The site only shares the running event's avatar stats with admins, so
   // everyone else compares against all events, and the label says so.
   const communityPeriod = period === 'current' && !isAdmin ? 'lifetime' : period
@@ -69,6 +81,11 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
   const shown = useMemo(() => (avatars || []).filter((a) => !a.hidden), [avatars])
   const hidden = useMemo(() => (avatars || []).filter((a) => a.hidden), [avatars])
   const sorted = useMemo(() => [...shown].sort(SORTS[sort].fn), [shown, sort])
+  // Lifetime avatar ELO by avatar (Glicko-2, Season 9 on; only where lifetime ELO shows)
+  const lifetimeByAvatar = useMemo(
+    () => Object.fromEntries((lifetimeElo || []).map((entry) => [entry.avatar, entry])),
+    [lifetimeElo],
+  )
 
   if (!avatars?.length) return null
 
@@ -90,6 +107,7 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
 
   const games = (a) => a.wins + a.losses
   const showEventElo = shown.some((av) => av.event_elo != null || eventProv(av))
+  const showLifetimeElo = shown.some((av) => lifetimeByAvatar[av.name])
   const mostPlayed = [...shown].sort(SORTS.games.fn)[0]
   const qualified = shown.filter((a) => games(a) >= 5)
   const best = [...qualified].sort(SORTS.win_rate.fn)[0]
@@ -232,6 +250,7 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
                 <th className="py-3 px-3 font-bold">Games</th>
                 {showEventElo && <th className="py-3 px-3 font-bold">Event ELO</th>}
                 {showEventElo && <th className="py-3 px-3 font-bold">Rank</th>}
+                {showLifetimeElo && <th className="py-3 px-3 font-bold">Lifetime avatar ELO</th>}
                 <th className="py-3 px-5 font-bold">Last played</th>
               </tr>
             </thead>
@@ -252,6 +271,7 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
                     </td>
                   )}
                   {showEventElo && <td className="py-2.5 px-3 tabular-nums">{av.event_rank && !eventProv(av) ? `#${av.event_rank}` : '-'}</td>}
+                  {showLifetimeElo && <td className="py-2.5 px-3 tabular-nums"><LifetimeElo entry={lifetimeByAvatar[av.name]} /></td>}
                   <td className="py-2.5 px-5 text-text-muted">{shortDate(av.last_played) ?? '-'}</td>
                 </tr>
               ))}
@@ -262,6 +282,7 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
 
       <p className="text-xs text-text-muted">
         &ldquo;Everyone&rdquo; is the win rate of every reported game on that avatar in this period, and the number in brackets is how far you are above or below it. The squares are your last 10 games, newest first.
+        {showLifetimeElo && ' Lifetime avatar ELO is your rating on that avatar across seasons, with your place on it among settled players; it shows after 8 games.'}
       </p>
     </div>
   )

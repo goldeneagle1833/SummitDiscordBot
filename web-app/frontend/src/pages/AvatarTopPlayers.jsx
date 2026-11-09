@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { getAvatarFilters, getAvatarTopPlayers } from '@/api/cards'
-import { getAvatarLeaderboards } from '@/api/leaderboard'
+import { getAvatarLeaderboards, getLifetimeAvatarLeaderboards } from '@/api/leaderboard'
 import Spinner from '@/components/ui/Spinner'
 import PageTabs from '@/components/ui/PageTabs'
 import { AVATAR_TABS } from '@/utils/pageTabs'
 import usePageTitle from '@/hooks/usePageTitle'
 import { Rating } from '@/components/common/Provisional'
 
-// Season Elo reads the running season's per-avatar ladder (Avatar-mode seasons only)
-const ELO_SORT = { value: 'elo', label: 'Season Elo' }
+// Elo reads a per-avatar ladder: the running season's (Avatar-mode seasons only)
+// or the lifetime avatar Elo (Glicko-2, from the first Glicko-2 season on)
+const ELO_SORT = { value: 'elo', label: 'Elo' }
+const LADDERS = {
+  season: { label: 'Season', column: 'Season Elo', rated: 'this season', empty: 'this season' },
+  lifetime: { label: 'Lifetime', column: 'Lifetime Elo', rated: 'across seasons', empty: 'yet' },
+}
 
 const SORT_OPTIONS = [
   { value: 'avatar_score', label: 'Avatar Score' },
@@ -36,9 +41,32 @@ function sortPlayers(players, sortBy) {
   }
 }
 
-function SeasonEloTable({ avatar, entry }) {
+function LadderSwitch({ ladder, available, onChange }) {
+  return (
+    <div role="group" aria-label="Elo ladder" className="flex justify-center gap-2 mb-4">
+      {Object.entries(LADDERS).map(([key, { label }]) => (
+        <button
+          key={key}
+          type="button"
+          aria-pressed={ladder === key}
+          disabled={!available[key]}
+          title={available[key] ? undefined : `No ${label.toLowerCase()} avatar Elo yet`}
+          onClick={() => onChange(key)}
+          className={`h-9 px-4 rounded-full border text-sm font-semibold disabled:opacity-40 ${
+            ladder === key ? 'border-secondary text-secondary bg-bg-elevated' : 'border-border text-text-muted'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function EloTable({ avatar, entry, ladder = 'season' }) {
+  const text = LADDERS[ladder]
   if (!entry) {
-    return <p className="text-center text-text-muted py-10">No rated games on {avatar || 'this avatar'} this season yet.</p>
+    return <p className="text-center text-text-muted py-10">No rated games on {avatar || 'this avatar'} {text.empty}.</p>
   }
   return (
     <section className="bg-bg-surface border border-border rounded-soft overflow-hidden">
@@ -46,7 +74,7 @@ function SeasonEloTable({ avatar, entry }) {
         <div>
           <h2 className="text-xl font-display text-text-primary">{avatar}</h2>
           <p className="text-sm text-text-muted">
-            {entry.players} player{entry.players === 1 ? '' : 's'} rated on {avatar} this season
+            {entry.players} player{entry.players === 1 ? '' : 's'} rated on {avatar} {text.rated}
           </p>
         </div>
         <Link to={`/avatar/${encodeURIComponent(avatar)}`} className="text-sm text-primary hover:underline">
@@ -59,7 +87,7 @@ function SeasonEloTable({ avatar, entry }) {
             <tr>
               <th className="px-3 py-3 text-left text-xs uppercase tracking-wide text-text-muted">Rank</th>
               <th className="px-3 py-3 text-left text-xs uppercase tracking-wide text-text-muted">Player</th>
-              <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">Season Elo</th>
+              <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">{text.column}</th>
               <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">Record</th>
               <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">Win Rate</th>
               <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">Games</th>
@@ -108,10 +136,13 @@ export default function AvatarTopPlayers() {
   const [selectedAvatar, setSelectedAvatarState] = useState(() => searchParams.get('avatar') || '')
   const [eventFilter, setEventFilterState] = useState(() => searchParams.get('event') || 'current')
   const [sourceFilter, setSourceFilter] = useState('discord')
-  // null = the page's default: Season Elo during an Avatar-mode season, else Avatar Score
+  // null = the page's default: Elo during an Avatar-mode season, else Avatar Score
   const [sortChoice, setSortChoice] = useState(() => searchParams.get('sort'))
   const [minGames, setMinGames] = useState(10)
   const [eloBoard, setEloBoard] = useState(null)
+  const [lifetimeBoard, setLifetimeBoard] = useState(null)
+  // Which Elo ladder the Elo sort shows: the running season's or lifetime
+  const [ladderChoice, setLadderChoice] = useState(() => searchParams.get('ladder') || 'season')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -136,19 +167,36 @@ export default function AvatarTopPlayers() {
     setSortChoice(value)
     updateParam('sort', value, '')
   }
+  const setLadder = (value) => {
+    setLadderChoice(value)
+    updateParam('ladder', value, 'season')
+  }
 
   // The running season's per-avatar Elo ladder, the same one the home page ranks by
   useEffect(() => {
     getAvatarLeaderboards()
       .then(setEloBoard)
       .catch(() => setEloBoard(null))
+    // Lifetime avatar Elo; empty before the first Glicko-2 season, so no switch then
+    getLifetimeAvatarLeaderboards()
+      .then(setLifetimeBoard)
+      .catch(() => setLifetimeBoard(null))
   }, [])
 
-  const eloAvailable = eventFilter === 'current' && eloBoard?.elo_mode === 'avatar'
+  const ladderAvailable = {
+    season: eventFilter === 'current' && eloBoard?.elo_mode === 'avatar',
+    lifetime: (lifetimeBoard?.avatars?.length ?? 0) > 0,
+  }
+  const ladder = (ladderChoice === 'lifetime' && ladderAvailable.lifetime) || !ladderAvailable.season
+    ? 'lifetime'
+    : 'season'
+  const activeBoard = ladder === 'lifetime' ? lifetimeBoard : eloBoard
+  const eloAvailable = ladderAvailable.season || ladderAvailable.lifetime
   const sortOptions = eloAvailable ? [ELO_SORT, ...SORT_OPTIONS] : SORT_OPTIONS
   const sortBy = sortOptions.some((option) => option.value === sortChoice)
     ? sortChoice
-    : eloAvailable ? 'elo' : 'avatar_score'
+    // Default as before: Elo during an Avatar-mode season, else Avatar Score
+    : ladderAvailable.season ? 'elo' : 'avatar_score'
   const eloMode = sortBy === 'elo'
 
   useEffect(() => {
@@ -179,12 +227,12 @@ export default function AvatarTopPlayers() {
       .finally(() => setLoading(false))
   }, [eventFilter, sourceFilter, minGames])
 
-  // Season Elo lists every avatar with a rated game this season; the other
-  // sorts list avatars with a player past the minimum games
+  // Elo lists every avatar with a rated game on that ladder; the other sorts
+  // list avatars with a player past the minimum games
   const avatarNames = useMemo(() => {
-    const source = eloMode ? eloBoard?.avatars || [] : data.avatars
+    const source = eloMode ? activeBoard?.avatars || [] : data.avatars
     return source.map((avatar) => avatar.avatar || avatar.name).sort((a, b) => a.localeCompare(b))
-  }, [eloMode, eloBoard, data.avatars])
+  }, [eloMode, activeBoard, data.avatars])
   const avatarName = avatarNames.includes(selectedAvatar) ? selectedAvatar : avatarNames[0] || ''
 
   const selected = useMemo(
@@ -192,8 +240,8 @@ export default function AvatarTopPlayers() {
     [data.avatars, avatarName],
   )
   const eloEntry = useMemo(
-    () => (eloBoard?.avatars || []).find((avatar) => avatar.avatar === avatarName),
-    [eloBoard, avatarName],
+    () => (activeBoard?.avatars || []).find((avatar) => avatar.avatar === avatarName),
+    [activeBoard, avatarName],
   )
   const players = useMemo(
     () => sortPlayers(selected?.players || [], sortBy).map((player, index) => ({ ...player, displayRank: index + 1 })),
@@ -208,12 +256,14 @@ export default function AvatarTopPlayers() {
 
       <section className="text-center mb-6">
         <h1 className="text-2xl font-display text-secondary">
-          {eloMode ? 'Season Elo by Avatar' : 'Top 16 Players by Avatar'}
+          {eloMode ? `${LADDERS[ladder].column} by Avatar` : 'Top 16 Players by Avatar'}
         </h1>
         <p className="text-sm text-text-muted mt-1">
-          {eloMode
-            ? 'Every player rated on an avatar this season, ranked by their season Elo on it.'
-            : 'Pick an avatar to see its strongest pilots ranked by Avatar Score.'}
+          {!eloMode
+            ? 'Pick an avatar to see its strongest pilots ranked by Avatar Score.'
+            : ladder === 'lifetime'
+              ? 'Every player rated on an avatar, ranked by their lifetime Elo on it across seasons.'
+              : 'Every player rated on an avatar this season, ranked by their season Elo on it.'}
         </p>
       </section>
 
@@ -254,7 +304,7 @@ export default function AvatarTopPlayers() {
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
               disabled={eloMode}
-              title={eloMode ? 'Season Elo is the ranked ladder (online games)' : undefined}
+              title={eloMode ? 'Elo is the ranked ladder (online games)' : undefined}
               className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm disabled:opacity-50"
             >
               <option value="discord">Online</option>
@@ -284,7 +334,7 @@ export default function AvatarTopPlayers() {
               value={minGames}
               onChange={(e) => setMinGames(Number(e.target.value) || 1)}
               disabled={eloMode}
-              title={eloMode ? 'Season Elo lists every rated player' : undefined}
+              title={eloMode ? 'Elo lists every rated player' : undefined}
               className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm disabled:opacity-50"
             />
           </label>
@@ -292,7 +342,10 @@ export default function AvatarTopPlayers() {
       </div>
 
       {eloMode ? (
-        <SeasonEloTable avatar={avatarName} entry={eloEntry} />
+        <>
+          <LadderSwitch ladder={ladder} available={ladderAvailable} onChange={setLadder} />
+          <EloTable avatar={avatarName} entry={eloEntry} ladder={ladder} />
+        </>
       ) : loading ? (
         <Spinner className="py-20" />
       ) : !selected ? (

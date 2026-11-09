@@ -60,3 +60,33 @@ describe('PlayerAvatar period picker', () => {
     expect(await screen.findByText('3')).toBeInTheDocument()
   })
 })
+
+describe('PlayerAvatar lifetime avatar ELO', () => {
+  const base = { player_name: 'Hicham', avatar: 'Pathfinder', wins: 5, losses: 2, total: 7, win_rate: 71, matchups: [], matches: [] }
+
+  it('shows the rating and its rank on this avatar', async () => {
+    getPlayerAvatarStats.mockResolvedValueOnce({
+      ...base,
+      lifetime_avatar_elo: { avatar: 'Pathfinder', elo: 1612, games: 14, rank: 3, provisional: false, provisional_games: 14 },
+    })
+    renderAt('/player/1/avatar/Pathfinder')
+    const card = (await screen.findByText('Lifetime avatar ELO')).parentElement
+    expect(card).toHaveTextContent('1612 · #3')
+  })
+
+  it('shows Provisional (n/8) until the entry settles', async () => {
+    getPlayerAvatarStats.mockResolvedValueOnce({
+      ...base,
+      lifetime_avatar_elo: { avatar: 'Pathfinder', elo: null, games: 4, rank: null, provisional: true, provisional_games: 4 },
+    })
+    renderAt('/player/1/avatar/Pathfinder')
+    expect(await screen.findByText('Provisional (4/8)')).toBeInTheDocument()
+  })
+
+  it('has no lifetime card before Season 9', async () => {
+    getPlayerAvatarStats.mockResolvedValueOnce({ ...base, lifetime_avatar_elo: null })
+    renderAt('/player/1/avatar/Pathfinder')
+    await screen.findByText('Total Games')
+    expect(screen.queryByText('Lifetime avatar ELO')).not.toBeInTheDocument()
+  })
+})

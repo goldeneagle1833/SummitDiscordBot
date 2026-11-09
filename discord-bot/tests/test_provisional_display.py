@@ -278,3 +278,62 @@ async def test_leaderboard_channel_embed_ranks_settled_players_only():
 async def _no_messages():
     return
     yield
+
+
+# ── Lifetime avatar ELO in !rank ──
+
+
+def _seed_lifetime_avatars(rows):
+    """rows: (user_id, avatar, name, elo, games); the table exists from Season 9 on."""
+    conn = sqlite3.connect("elo.db")
+    from services import glicko2_season as g2
+
+    g2.ensure_lifetime_schema(conn)
+    conn.executemany(
+        "INSERT INTO lifetime_avatar_standings (user_id, avatar, user_display_name, elo, rating, games) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        [(uid, avatar, name, elo, float(elo), games) for uid, avatar, name, elo, games in rows],
+    )
+    conn.commit()
+    conn.close()
+
+
+@pytest.mark.asyncio
+async def test_rank_lists_lifetime_avatar_elo_settled_ranked_provisional_not():
+    start_new_event("Season 9", rating_system="glicko2")
+    await _play(1)
+    _seed_lifetime_avatars([
+        (A, "Witch", "PA", 1580, 12),
+        (B, "Witch", "PB", 1620, 9),
+        (C, "Witch", "PC", 1700, 3),   # provisional: takes no rank from A
+        (A, "Druid", "PA", 1650, 5),
+    ])
+
+    text = await _rank_text(A)
+
+    assert "**Lifetime avatar ELO:**" in text
+    assert "- **Witch:** 1580 (Rank #2, 12 games)" in text
+    assert "- **Druid:** Provisional (5/8)" in text
+    assert "1650" not in text
+    # Most played first
+    assert text.index("Witch:** 1580") < text.index("Druid:**")
+
+
+@pytest.mark.asyncio
+async def test_rank_lifetime_avatar_elo_from_recorded_avatar_mode_matches():
+    start_new_event("Season 9", elo_mode="avatar", rating_system="glicko2")
+    for _ in range(8):
+        await _record(A, B, winner_avatar="Seer", loser_avatar="Witch")
+
+    text = await _rank_text(A)
+    assert "**Lifetime avatar ELO:**" in text
+    assert "- **Seer:** " in text and "(Rank #1, 8 games)" in text
+    assert "- **Witch:**" not in text  # B's avatar, not A's
+
+
+@pytest.mark.asyncio
+async def test_rank_has_no_lifetime_avatar_section_before_season_9():
+    start_new_event("Season 8")
+    await _play(1)
+    text = await _rank_text(A)
+    assert "Lifetime avatar ELO" not in text

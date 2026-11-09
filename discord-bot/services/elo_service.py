@@ -1434,6 +1434,7 @@ async def record_match(
     # stakes scale the move and are kept on the record for rebuilds.
     lifetime_system = None
     winner_lifetime_mult = loser_lifetime_mult = None
+    avatar_lifetime = dict.fromkeys(glicko2_season.AVATAR_LIFETIME_COLUMNS)
     if match_type not in NON_ELO_MATCH_TYPES and event_active:
         conn_elo = sqlite3.connect("elo.db")
         try:
@@ -1450,6 +1451,13 @@ async def record_match(
                 match_games.update(
                     winner_lifetime_games=life["winner_games"], loser_lifetime_games=life["loser_games"],
                 )
+                if avatar_event_id is not None and winner_avatar and loser_avatar:
+                    avatar_lifetime = glicko2_season.apply_lifetime_avatar_match(
+                        conn_elo, winner_id, winner_global, winner_avatar,
+                        loser_id, loser_global, loser_avatar, now_iso,
+                        elo_multiplier_winner, elo_multiplier_loser,
+                    )
+                conn_elo.commit()
         except Exception:
             conn_elo.rollback()
             raise
@@ -1503,10 +1511,12 @@ async def record_match(
             "event_id, rating_system, lifetime_system, winner_lifetime_mult, loser_lifetime_mult, "
             "winner_event_games, loser_event_games, winner_avatar_games, loser_avatar_games, "
             "winner_lifetime_games, loser_lifetime_games, "
-            f"{', '.join(glicko2_season.SNAPSHOT_COLUMNS)}) "
+            f"{', '.join(glicko2_season.SNAPSHOT_COLUMNS)}, "
+            f"{', '.join(glicko2_season.AVATAR_LIFETIME_COLUMNS)}) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
-            + ", ?" * len(glicko2_season.SNAPSHOT_COLUMNS) + ")",
+            + ", ?" * (len(glicko2_season.SNAPSHOT_COLUMNS) + len(glicko2_season.AVATAR_LIFETIME_COLUMNS))
+            + ")",
             (
                 reporter_id,
                 winner_id, winner_global,
@@ -1548,6 +1558,7 @@ async def record_match(
                 loser_lifetime_mult,
                 *match_games.values(),
                 *(snapshot[c] for c in glicko2_season.SNAPSHOT_COLUMNS),
+                *(avatar_lifetime[c] for c in glicko2_season.AVATAR_LIFETIME_COLUMNS),
             ),
         )
         table_name = "match_records"

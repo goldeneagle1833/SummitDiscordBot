@@ -227,6 +227,13 @@ SNAPSHOT_COLUMNS = (
     "winner_lifetime_before", "loser_lifetime_before",
 )
 
+AVATAR_LIFETIME_COLUMNS = (
+    "winner_avatar_lifetime_change", "loser_avatar_lifetime_change",
+    "winner_avatar_lifetime_after", "loser_avatar_lifetime_after",
+    "winner_avatar_lifetime_before", "loser_avatar_lifetime_before",
+    "winner_avatar_lifetime_games", "loser_avatar_lifetime_games",
+)
+
 LEGACY_MATCH_TABLE = "match_records"
 SEASON_MATCH_TABLE = "season_match_records"
 
@@ -259,6 +266,8 @@ def ensure_match_schema(conn: sqlite3.Connection) -> None:
         # Each side's standing just before the game (every season from the
         # switch on, Elo or Glicko-2): for skill matrices and history
         *((c, "INTEGER") for c in SNAPSHOT_COLUMNS),
+        # Lifetime avatar ELO (per player and avatar, across seasons)
+        *((c, "INTEGER") for c in AVATAR_LIFETIME_COLUMNS),
     ))
     if _table_exists(conn, LEGACY_MATCH_TABLE):
         conn.execute(
@@ -760,6 +769,21 @@ def ensure_lifetime_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE TABLE IF NOT EXISTS rating_settings (key TEXT PRIMARY KEY, value TEXT)"
     )
+    # Lifetime avatar ELO: one Glicko-2 entry per player and avatar, never reset
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS lifetime_avatar_standings (
+               user_id           INTEGER NOT NULL,
+               avatar            TEXT    NOT NULL,
+               user_display_name TEXT,
+               elo               INTEGER NOT NULL DEFAULT 1500,
+               rating            REAL,
+               rd                REAL,
+               vol               REAL,
+               last_at           TEXT,
+               games             INTEGER NOT NULL DEFAULT 0,
+               PRIMARY KEY (user_id, avatar)
+           )"""
+    )
     conn.execute(
         """CREATE TABLE IF NOT EXISTS lifetime_rating_adjustments (
                adjustment_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -872,6 +896,57 @@ def lifetime_games(elo_conn, user_id) -> int:
     return (row[0] or 0) if row else 0
 
 
+def load_lifetime_avatar(elo_conn, user_id, avatar) -> Rating:
+    row = elo_conn.execute(
+        "SELECT rating, rd, vol, last_at FROM lifetime_avatar_standings WHERE user_id = ? AND avatar = ?",
+        (user_id, avatar),
+    ).fetchone()
+    if not row or row[0] is None:
+        return Rating()
+    return Rating(row[0], row[1] or START_RD, row[2] or START_VOL, row[3])
+
+
+def _save_lifetime_avatar(elo_conn, user_id, name, avatar, entry: Rating) -> int:
+    elo_conn.execute(
+        """INSERT INTO lifetime_avatar_standings
+               (user_id, avatar, user_display_name, elo, rating, rd, vol, last_at, games)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+           ON CONFLICT (user_id, avatar) DO UPDATE SET
+               user_display_name = COALESCE(excluded.user_display_name, user_display_name),
+               elo = excluded.elo, rating = excluded.rating, rd = excluded.rd,
+               vol = excluded.vol, last_at = excluded.last_at, games = games + 1""",
+        (user_id, avatar, name, entry.display, entry.rating, entry.rd, entry.vol, entry.last_at),
+    )
+    return elo_conn.execute(
+        "SELECT games FROM lifetime_avatar_standings WHERE user_id = ? AND avatar = ?", (user_id, avatar)
+    ).fetchone()[0]
+
+
+def apply_lifetime_avatar_match(elo_conn, winner_id, winner_name, winner_avatar,
+                                loser_id, loser_name, loser_avatar, at,
+                                winner_mult=1.0, loser_mult=1.0) -> dict:
+    """Rate one match on the two players' lifetime avatar entries. Does not commit.
+
+    Returns the AVATAR_LIFETIME_COLUMNS values for the match record.
+    """
+    ensure_lifetime_schema(elo_conn)
+    w_before = load_lifetime_avatar(elo_conn, winner_id, winner_avatar)
+    l_before = load_lifetime_avatar(elo_conn, loser_id, loser_avatar)
+    w_after, l_after = play_lifetime(w_before, l_before, at, winner_mult, loser_mult)
+    w_games = _save_lifetime_avatar(elo_conn, winner_id, winner_name, winner_avatar, w_after)
+    l_games = _save_lifetime_avatar(elo_conn, loser_id, loser_name, loser_avatar, l_after)
+    return {
+        "winner_avatar_lifetime_change": w_after.display - w_before.display,
+        "loser_avatar_lifetime_change": l_after.display - l_before.display,
+        "winner_avatar_lifetime_after": w_after.display,
+        "loser_avatar_lifetime_after": l_after.display,
+        "winner_avatar_lifetime_before": w_before.display,
+        "loser_avatar_lifetime_before": l_before.display,
+        "winner_avatar_lifetime_games": w_games,
+        "loser_avatar_lifetime_games": l_games,
+    }
+
+
 def add_lifetime_adjustment(elo_conn, user_id, name, rating, at=None) -> None:
     """An admin reset of a Glicko-2 lifetime rating, kept so rebuilds apply it again."""
     at = at or datetime.datetime.now().isoformat()
@@ -893,7 +968,8 @@ def lifetime_matches(match_conn) -> list[dict]:
     try:
         rows = match_conn.execute(
             f"""SELECT rowid AS row_id, winner_id, losser_id, winner_display_name,
-                       losser_display_name, timestamp, winner_lifetime_mult, loser_lifetime_mult
+                       losser_display_name, timestamp, winner_lifetime_mult, loser_lifetime_mult,
+                       winner_avatar, loser_avatar
                 FROM {table} WHERE lifetime_system = '{GLICKO2}'
                 ORDER BY timestamp ASC, rowid ASC"""
         ).fetchall()
@@ -905,8 +981,8 @@ def lifetime_matches(match_conn) -> list[dict]:
 def rebuild_lifetime(elo_conn, match_conn) -> dict:
     """Replay the Glicko-2 lifetime ladder from its matches and admin resets.
 
-    Rewrites everyone's lifetime rating and each match's lifetime change.
-    Legacy ELO is never touched. Does not commit.
+    Rewrites everyone's lifetime rating, every lifetime avatar entry and each
+    match's lifetime changes. Legacy ELO is never touched. Does not commit.
     """
     if not lifetime_is_glicko2(elo_conn):
         raise ValueError("the lifetime ladder is still Elo")
@@ -923,6 +999,10 @@ def rebuild_lifetime(elo_conn, match_conn) -> dict:
     games: dict[int, int] = {}
     names: dict[int, str] = {}
     updates = []
+    avatar_entries: dict[tuple[int, str], Rating] = {}
+    avatar_games: dict[tuple[int, str], int] = {}
+    avatar_names: dict[tuple[int, str], str] = {}
+    avatar_updates = []
     for _, _, _, kind, item in timeline:
         if kind == "adj":
             user_id, rating, created_at = item
@@ -937,6 +1017,20 @@ def rebuild_lifetime(elo_conn, match_conn) -> dict:
         )
         games[w] = games.get(w, 0) + 1
         games[l] = games.get(l, 0) + 1
+        if m["winner_avatar"] and m["loser_avatar"]:
+            wk, lk = (w, m["winner_avatar"]), (l, m["loser_avatar"])
+            wa_before, la_before = avatar_entries.get(wk, Rating()), avatar_entries.get(lk, Rating())
+            avatar_entries[wk], avatar_entries[lk] = play_lifetime(
+                wa_before, la_before, m["timestamp"], m["winner_lifetime_mult"], m["loser_lifetime_mult"]
+            )
+            avatar_games[wk] = avatar_games.get(wk, 0) + 1
+            avatar_games[lk] = avatar_games.get(lk, 0) + 1
+            avatar_names[wk], avatar_names[lk] = names[w], names[l]
+            avatar_updates.append((
+                avatar_entries[wk].display - wa_before.display, avatar_entries[lk].display - la_before.display,
+                avatar_entries[wk].display, avatar_entries[lk].display,
+                wa_before.display, la_before.display, avatar_games[wk], avatar_games[lk], m["row_id"],
+            ))
         w_change = players[w].display - w_before.display
         l_change = players[l].display - l_before.display
         updates.append((w_change, l_change, players[w].display, players[l].display,
@@ -959,6 +1053,23 @@ def rebuild_lifetime(elo_conn, match_conn) -> dict:
             "winner_lifetime_before = ?, loser_lifetime_before = ? WHERE rowid = ?",
             [(u[0], u[1], u[4], u[5], u[6], u[7], u[8]) for u in updates],
         )
+
+    if "winner_avatar_lifetime_change" in cols:
+        match_conn.executemany(
+            f"UPDATE {table} SET {' = ?, '.join(AVATAR_LIFETIME_COLUMNS)} = ? WHERE rowid = ?",
+            avatar_updates,
+        )
+    elo_conn.execute("DELETE FROM lifetime_avatar_standings")
+    elo_conn.executemany(
+        """INSERT INTO lifetime_avatar_standings
+               (user_id, avatar, user_display_name, elo, rating, rd, vol, last_at, games)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        [
+            (uid, avatar, avatar_names.get((uid, avatar)), e.display, e.rating, e.rd, e.vol, e.last_at,
+             avatar_games[(uid, avatar)])
+            for (uid, avatar), e in avatar_entries.items()
+        ],
+    )
 
     existing = {row[0] for row in elo_conn.execute("SELECT user_id FROM overall_standings")}
     elo_conn.execute(

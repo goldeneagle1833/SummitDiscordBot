@@ -652,3 +652,41 @@ async def test_elo_seasons_store_the_standing_before_each_game_too():
     row = _rows("SELECT * FROM match_records WHERE match_id = ?", (match_id,))[0]
     assert row["winner_event_before"] > 1500 and row["winner_event_rank"] == 1
     assert row["loser_event_before"] == 1500 and row["loser_event_rank"] is None
+
+
+# ── Lifetime avatar ELO ──
+
+
+def _avatar_lifetime():
+    return {(r["user_id"], r["avatar"]): (r["elo"], r["games"], round(r["rating"], 6))
+            for r in _rows("SELECT * FROM lifetime_avatar_standings", db="elo.db")}
+
+
+@pytest.mark.asyncio
+async def test_lifetime_avatar_elo_carries_across_seasons_and_rebuilds():
+    start_new_event("Season 9", elo_mode="avatar", rating_system="glicko2")
+    await _record(A, B, winner_avatar="Seer", loser_avatar="Witch")
+    await _record(A, C, winner_avatar="Druid", loser_avatar="Witch")
+    start_new_event("Season 10", elo_mode="avatar", rating_system="glicko2")
+    match_id = await _record(B, A, winner_avatar="Witch", loser_avatar="Seer")
+
+    entries = _avatar_lifetime()
+    assert entries[(A, "Seer")][1] == 2 and entries[(A, "Druid")][1] == 1  # not reset by Season 10
+    row = _rows("SELECT * FROM season_match_records WHERE match_id = ?", (match_id,))[0]
+    assert row["loser_avatar_lifetime_after"] == entries[(A, "Seer")][0]
+    assert row["winner_avatar_lifetime_games"] == 2
+    # Season 10's avatar entry started fresh; the lifetime one didn't
+    assert row["winner_avatar_lifetime_before"] != row["winner_avatar_before"]
+
+    before = (_avatar_lifetime(), _snapshots())
+    _rebuild_lifetime()
+    assert (_avatar_lifetime(), _snapshots()) == before
+
+
+@pytest.mark.asyncio
+async def test_removing_a_match_rebuilds_lifetime_avatar_elo():
+    start_new_event("Season 9", elo_mode="avatar", rating_system="glicko2")
+    await _record(A, B, winner_avatar="Seer", loser_avatar="Witch")
+    bad = await _record(A, B, winner_avatar="Seer", loser_avatar="Witch")
+    remove_match_record(bad)
+    assert _avatar_lifetime()[(A, "Seer")][1] == 1

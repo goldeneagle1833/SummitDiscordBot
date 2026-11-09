@@ -1379,8 +1379,13 @@ _timeline_lock = threading.Lock()
 _EVENT_FILTER_RE = re.compile(r"^(all|current|\d{1,9}|season_[A-Za-z0-9_-]{1,40})$")
 
 
+# Bump when the build's output changes, so a deploy never serves an older
+# shape from the shared cache files (v2: avatar-meta "matchups").
+_TIMELINE_VERSION = 2
+
+
 def _timeline_file(event_filter):
-    return _TIMELINE_CACHE_DIR / f"elements-timeline-{event_filter}.json"
+    return _TIMELINE_CACHE_DIR / f"elements-timeline-v{_TIMELINE_VERSION}-{event_filter}.json"
 
 
 def _fresh_timeline_file(path):

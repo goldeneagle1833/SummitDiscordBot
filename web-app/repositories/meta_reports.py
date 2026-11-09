@@ -205,6 +205,11 @@ class MetaReportRepository:
             conn.execute("UPDATE meta_reports SET notes = ? WHERE slug = ?", (json.dumps(notes), slug))
         return self.get(slug)
 
+    def update_payload(self, slug: str, payload: dict) -> None:
+        """Save a report's numbers without touching built_at, story or status."""
+        with self._connect() as conn:
+            conn.execute("UPDATE meta_reports SET payload = ? WHERE slug = ?", (json.dumps(payload), slug))
+
     def update_story(self, slug: str, story: list) -> dict | None:
         with self._connect() as conn:
             conn.execute("UPDATE meta_reports SET story = ? WHERE slug = ?", (json.dumps(story), slug))

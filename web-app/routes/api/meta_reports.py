@@ -105,10 +105,11 @@ def get_data_release():
 def get_report(slug):
     if not _SLUG_RE.match(slug):
         return jsonify({"error": "Report not found"}), 404
-    report = MetaReportRepository().get(slug)
+    repo = MetaReportRepository()
+    report = repo.get(slug)
     if not report or report["status"] != "published":
         return jsonify({"error": "Report not found"}), 404
-    return jsonify(meta_report.public_report(report))
+    return jsonify(meta_report.public_report(meta_report.with_deck_types(report, repo)))
 
 
 @meta_reports_bp.route("/meta-reports/subscribe", methods=["POST"])
@@ -215,7 +216,7 @@ def admin_get(slug):
     report = repo.get(slug)
     if not report:
         return jsonify({"error": "Report not found"}), 404
-    return jsonify({**_admin_row(repo, report), "report": meta_report.public_report(report)})
+    return jsonify({**_admin_row(repo, report), "report": meta_report.public_report(meta_report.with_deck_types(report, repo))})
 
 
 @meta_reports_bp.route("/meta-reports/admin/build", methods=["POST"])

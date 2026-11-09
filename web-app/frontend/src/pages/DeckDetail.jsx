@@ -291,7 +291,8 @@ export default function DeckDetail() {
             )}
           </div>
           <div className="flex flex-wrap items-start gap-2">
-            <TryDeckButton deckId={seed.deck_id} />
+            {/* Decks kept from an event's frozen lists have no deck page to load */}
+            {seed.curiosa_url && <TryDeckButton deckId={seed.deck_id} />}
             {tcgUrl && (
               <a
                 href={tcgUrl}

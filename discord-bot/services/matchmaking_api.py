@@ -18,6 +18,7 @@ from cogs.lfg.voice import (
     VOICE_HOLD_SECONDS,
     VOICE_PREFERENCES,
     entry_voice_flexible,
+    is_legacy_either,
     normalize_voice_flexible,
     normalize_voice_preference,
     queue_has_voice_choice,
@@ -268,7 +269,10 @@ async def start_matchmaking_api(bot):
         if voice is None:
             raise web.HTTPBadRequest(text="voice must be one of: voice, no_voice")
         # Optional: also OK with the other voice choice. Left out means only ``voice``.
-        voice_flexible = queue_has_voice_choice(queue_type) and normalize_voice_flexible(payload.get("voice_flexible"))
+        # An old client's ``"voice": "either"`` means the same thing (voice first, no voice OK).
+        voice_flexible = queue_has_voice_choice(queue_type) and (
+            normalize_voice_flexible(payload.get("voice_flexible")) or is_legacy_either(payload.get("voice"))
+        )
         deck_url = str(payload.get("deck_url") or "").strip() or None
         run_id = None
         if definition["deck_mode"] == "required" and not deck_url:

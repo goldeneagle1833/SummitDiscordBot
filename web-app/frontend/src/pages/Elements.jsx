@@ -7,6 +7,21 @@ import { getAvatarImageFiles } from '@/api/cards'
 import AvatarMetaChart from '@/components/analytics/AvatarMetaChart'
 import TimelineControls, { windowDays, moveMs, DEFAULT_SPEED } from '@/components/analytics/TimelineControls'
 import { mergeDates, buildCumulative, flattenElementDays, elementStatsAt } from '@/utils/elementTimeline'
+import { DeckTypeFilters, DeckTypeResults, deckTypeMatchups } from '@/components/meta/DeckTypeMatchups'
+
+/** Winner-vs-loser deck totals for the days in the window, as deckTypeMatchups takes them. */
+function matchupGamesIn(matchups, dates, endIdx, days) {
+  if (!matchups || endIdx < 0) return []
+  const start = days == null ? 0 : Math.max(0, endIdx - days + 1)
+  const totals = {}
+  for (let i = start; i <= endIdx; i++) {
+    for (const [key, n] of Object.entries(matchups[dates[i]] || {})) totals[key] = (totals[key] || 0) + n
+  }
+  return Object.entries(totals).map(([key, n]) => {
+    const [w, l] = key.split('>')
+    return { winner: w.split('|'), loser: l.split('|'), n }
+  })
+}
 
 const ELEMENT_COLORS = {
   Fire: { bar: 'bg-red-500', text: 'text-red-400' },
@@ -166,6 +181,8 @@ export default function Elements() {
   const [error, setError] = useState(null)
   // Shared by every chart: which window, ending on which day, and whether it's playing
   const [view, setView] = useState({ windowKey: 'all', endIdx: -1, playing: false, speed: DEFAULT_SPEED })
+  // "Your deck" picker in the top bar for the deck type matchups section
+  const [deckPick, setDeckPick] = useState({ type: '', avatar: '', view: 'avatar' })
 
   // Load event filters and avatar art on mount
   useEffect(() => {
@@ -208,6 +225,10 @@ export default function Elements() {
   const stats = useMemo(() => elementStatsAt(elementCumulative, endIdx, days), [elementCumulative, endIdx, days])
 
   const { elements, dominant, splash, combinations, composition: comp } = stats
+  const deckTypes = useMemo(
+    () => deckTypeMatchups(matchupGamesIn(meta?.matchups, dates, endIdx, days)),
+    [meta, dates, endIdx, days],
+  )
   const hasElementData = elements.some((e) => e.total > 0)
 
   // Bars and rows move at one pace; while playing they ease into each day's
@@ -252,6 +273,9 @@ export default function Elements() {
             })}
           </select>
         </div>
+        {!loading && !error && dates.length > 0 && (
+          <DeckTypeFilters data={deckTypes} value={deckPick} onChange={setDeckPick} compact />
+        )}
       </div>
 
       {loading ? (
@@ -275,6 +299,18 @@ export default function Elements() {
               onChange={setView}
             />
           </div>
+
+          {/* Deck type matchups: picked with "Your deck" in the top bar */}
+          <section className="mb-10">
+            <h2 className="text-xl font-display text-secondary mb-1 text-center">Your Deck&apos;s Matchups</h2>
+            <p className="text-text-muted text-sm mb-4 text-center max-w-2xl mx-auto">
+              Pick your deck type (and an Avatar if you like) at the top of the page to see what it beats and what it loses to. Deck types use the same element groups as Deck Archetypes: a deck&apos;s top two elements by Spellbook copies. Follows the Event filter and the timeline.
+            </p>
+            <div className="bg-bg-surface border border-border rounded-lg p-4">
+              <DeckTypeResults data={deckTypes} value={deckPick} gamesLabel="games in this window"
+                               emptyText="Not enough games in this window to break matchups down by deck type. Try a longer window." />
+            </div>
+          </section>
 
           {/* Meta: avatar counts over time */}
           <section className="mb-10">

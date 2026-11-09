@@ -5,6 +5,9 @@ import { getStreamerBanner } from '@/api/streamers'
 import { DECK_URL_PLACEHOLDER } from '@/utils/deckLinks'
 import { STORE_LIVE } from '@/utils/store'
 import SocialLinks from '@/components/layout/SocialLinks'
+import useNewContent from '@/hooks/useNewContent'
+import { dismissArrival, pageKeyForPath } from '@/utils/newContent'
+import WhatsNewBar from '@/components/layout/WhatsNewBar'
 
 // Discord, Patreon and Reddit live in SocialLinks as icons, and the logo is
 // the Home link, so none of them are text options here.
@@ -527,6 +530,20 @@ export default function Nav() {
   const [navLabels, setNavLabels] = useState(() => getNavPrefs() || DEFAULT_NAV_LABELS)
   const { user, loading } = useAuth()
   const location = useLocation()
+  // New-content dots: pages with something this person hasn't opened yet
+  const newKeys = useNewContent(user, location.pathname)
+  const isNew = (to) => newKeys.has(pageKeyForPath(to))
+  const storeShown = STORE_LIVE || !!user?.is_store_admin
+  // Store sits in the menu only on phones (top bar from md up)
+  const menuHasNew = [...newKeys].some((k) => k !== 'store')
+  const menuStoreNew = storeShown && newKeys.has('store')
+  // The "What's new" bar shows for one visit: leaving the page closes it
+  const currentKey = pageKeyForPath(location.pathname)
+  const prevKeyRef = useRef(currentKey)
+  useEffect(() => {
+    if (prevKeyRef.current && prevKeyRef.current !== currentKey) dismissArrival(prevKeyRef.current)
+    prevKeyRef.current = currentKey
+  }, [currentKey])
 
   // Sync nav prefs from server when user logs in
   useEffect(() => {
@@ -582,11 +599,14 @@ export default function Nav() {
           {/* Left: Hamburger (mobile only) + Brand */}
           <div className="flex items-center gap-4 shrink-0">
             <button
-              className="flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
+              className="relative flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              aria-label="Toggle menu"
+              aria-label={menuHasNew || menuStoreNew ? 'Toggle menu (new content)' : 'Toggle menu'}
             >
               <span className="text-2xl font-bold leading-none text-white">☰</span>
+              {(menuHasNew || menuStoreNew) && (
+                <NewDot className={`absolute top-0.5 right-0 ring-2 ring-bg-surface ${menuHasNew ? '' : 'md:hidden'}`} />
+              )}
             </button>
             <Link to="/" className="flex items-center gap-2.5 whitespace-nowrap font-display text-lg md:text-xl text-secondary hover:text-text transition-colors">
               <img src="/static/images/favicon-32.png" alt="" width={28} height={28} className="w-7 h-7 rounded" />
@@ -614,25 +634,27 @@ export default function Nav() {
                 <Link
                   key={label}
                   to={to}
-                  className={`hidden md:inline-block whitespace-nowrap text-sm lg:text-base font-medium transition-colors ${
+                  className={`hidden md:inline-flex items-center whitespace-nowrap text-sm lg:text-base font-medium transition-colors ${
                     location.pathname === to ? 'text-secondary' : 'text-text hover:text-secondary'
                   }`}
                 >
                   {label}
+                  {isNew(to) && <NewDot className="ml-1.5" />}
                 </Link>
               )
             )}
 
             {/* Store sits on the top bar for everyone, after the other links;
                 it isn't a Customize option (Bruce, 2026-10-23) */}
-            {(STORE_LIVE || user?.is_store_admin) && (
+            {storeShown && (
               <Link
                 to="/store"
-                className={`hidden md:inline-block whitespace-nowrap text-sm lg:text-base font-medium transition-colors ${
+                className={`hidden md:inline-flex items-center whitespace-nowrap text-sm lg:text-base font-medium transition-colors ${
                   location.pathname === '/store' ? 'text-secondary' : 'text-text hover:text-secondary'
                 }`}
               >
                 Store
+                {isNew('/store') && <NewDot className="ml-1.5" />}
               </Link>
             )}
 
@@ -687,6 +709,8 @@ export default function Nav() {
           </div>
         </div>
       </nav>
+
+      <WhatsNewBar pageKey={currentKey} pathname={location.pathname} />
 
       {/* Sidebar */}
       <aside
@@ -788,39 +812,39 @@ export default function Nav() {
         <div className="pb-4">
           {/* Sections and links ordered by page views (last 90 days, Oct 2026) */}
           <SidebarHeading label="Decks" />
-          <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
-          <SidebarLink to="/top-8" label="Top 8 Decks" location={location} onClick={close} />
-          <SidebarLink to="/deck-builder" label="Deck Visualizer" location={location} onClick={close} />
-          <SidebarLink to="/deck-archetypes" label="Deck Archetypes" location={location} onClick={close} />
+          <SidebarLink to="/deck-rec" dot={isNew('/deck-rec')} label="Sorcery Deck Rec" location={location} onClick={close} />
+          <SidebarLink to="/top-8" dot={isNew('/top-8')} label="Top 8 Decks" location={location} onClick={close} />
+          <SidebarLink to="/deck-builder" dot={isNew('/deck-builder')} label="Deck Visualizer" location={location} onClick={close} />
+          <SidebarLink to="/deck-archetypes" dot={isNew('/deck-archetypes')} label="Deck Archetypes" location={location} onClick={close} />
 
           <SidebarHeading label="Meta & Stats" />
-          <SidebarLink to="/avatars" label="Avatars" location={location} onClick={close} match={['/avatars', '/avatars/top-players']} />
-          <SidebarLink to="/meta-report" label="Meta Report" location={location} onClick={close} />
-          <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
-          <SidebarLink to="/card-stats" label="Card Stats" location={location} onClick={close} />
-          <SidebarLink to="/articles" label="Player Articles" location={location} onClick={close} match={['/articles', '/articles/mine', '/articles/new']} />
+          <SidebarLink to="/avatars" dot={isNew('/avatars')} label="Avatars" location={location} onClick={close} match={['/avatars', '/avatars/top-players']} />
+          <SidebarLink to="/meta-report" dot={isNew('/meta-report')} label="Meta Report" location={location} onClick={close} />
+          <SidebarLink to="/elements" dot={isNew('/elements')} label="Element Winrates" location={location} onClick={close} />
+          <SidebarLink to="/card-stats" dot={isNew('/card-stats')} label="Card Stats" location={location} onClick={close} />
+          <SidebarLink to="/articles" dot={isNew('/articles')} label="Player Articles" location={location} onClick={close} match={['/articles', '/articles/mine', '/articles/new']} />
 
           <SidebarHeading label="Summit Ranked" />
-          <SidebarLink to="/elo" label="ELO Leaderboards" location={location} onClick={close} />
-          <SidebarLink to="/brackets" label="Season Top Cut" location={location} onClick={close} />
-          <SidebarLink to="/match-history" label="Match History" location={location} onClick={close} />
-          <SidebarLink to="/rumble" label="Rumble" location={location} onClick={close} />
-          <SidebarLink to="/fun-stats" label="Fun Stats" location={location} onClick={close} />
+          <SidebarLink to="/elo" dot={isNew('/elo')} label="ELO Leaderboards" location={location} onClick={close} />
+          <SidebarLink to="/brackets" dot={isNew('/brackets')} label="Season Top Cut" location={location} onClick={close} />
+          <SidebarLink to="/match-history" dot={isNew('/match-history')} label="Match History" location={location} onClick={close} />
+          <SidebarLink to="/rumble" dot={isNew('/rumble')} label="Rumble" location={location} onClick={close} />
+          <SidebarLink to="/fun-stats" dot={isNew('/fun-stats')} label="Fun Stats" location={location} onClick={close} />
 
           <SidebarHeading label="Events" />
-          <SidebarLink to="/card-points" label="Omens" location={location} onClick={close} />
-          <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} match={['/explorer', '/explorer/apply']} />
+          <SidebarLink to="/card-points" dot={isNew('/card-points')} label="Omens" location={location} onClick={close} />
+          <SidebarLink to="/explorer" dot={isNew('/explorer')} label="Community Series" location={location} onClick={close} match={['/explorer', '/explorer/apply']} />
 
           <SidebarHeading label="Tools" />
-          <SidebarLink to="/life-counter" label="Life Counter" location={location} onClick={close} />
-          <SidebarLink to="/help" label="Help" location={location} onClick={close} match={['/help', '/about', '/feedback']} />
+          <SidebarLink to="/life-counter" dot={isNew('/life-counter')} label="Life Counter" location={location} onClick={close} />
+          <SidebarLink to="/help" dot={isNew('/help')} label="Help" location={location} onClick={close} match={['/help', '/about', '/feedback']} />
 
           <SidebarHeading label="Community" />
-          <SidebarLink to="/community" label="Community Links" location={location} onClick={close} />
+          <SidebarLink to="/community" dot={isNew('/community')} label="Community Links" location={location} onClick={close} />
           {/* Phones only: from md up Store is on the top bar */}
           {(STORE_LIVE || user?.is_store_admin) && (
             <div className="md:hidden">
-              <SidebarLink to="/store" label="Store" location={location} onClick={close} />
+              <SidebarLink to="/store" dot={isNew('/store')} label="Store" location={location} onClick={close} />
             </div>
           )}
           <SocialLinks className="px-2 pt-2" />
@@ -912,6 +936,18 @@ function UserMenu({ user }) {
   )
 }
 
+// Small white dot: this page has something new the person hasn't opened yet
+function NewDot({ className = '' }) {
+  return (
+    <span
+      className={`inline-block w-2 h-2 rounded-full bg-white shadow-[0_0_4px_rgba(255,255,255,0.6)] shrink-0 ${className}`}
+      title="New since your last visit"
+      aria-label="new"
+      role="img"
+    />
+  )
+}
+
 function SidebarHeading({ label }) {
   return (
     <div className="px-4 pt-4 pb-1">
@@ -920,7 +956,7 @@ function SidebarHeading({ label }) {
   )
 }
 
-function SidebarLink({ to, label, location, onClick, match }) {
+function SidebarLink({ to, label, location, onClick, match, dot }) {
   const active = (match || [to]).includes(location.pathname)
   return (
     <Link
@@ -933,6 +969,7 @@ function SidebarLink({ to, label, location, onClick, match }) {
       onClick={onClick}
     >
       {label}
+      {dot && <NewDot className="ml-2 align-middle" />}
     </Link>
   )
 }

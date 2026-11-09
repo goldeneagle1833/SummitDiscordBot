@@ -99,6 +99,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.undo_profile_reset",
     "api.players.delete_own_account",
     "api.players.get_nav_prefs",
+    "api.nav.get_new_content",
+    "api.nav.mark_seen",
     "api.players.set_nav_prefs",
     "api.players.player_avatar_stats",
     "api.players.player_card_stats",  # owner/admin, or public when the player opts in

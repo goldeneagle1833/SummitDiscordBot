@@ -10,6 +10,8 @@ import FramedImage from '@/components/store/FramedImage'
 import LinkifiedText from '@/components/ui/LinkifiedText'
 import usePageTitle from '@/hooks/usePageTitle'
 import ImageLightbox from '@/components/store/ImageLightbox'
+import NewTag from '@/components/common/NewTag'
+import { useIsNew } from '@/hooks/useNewContent'
 
 function LoginPromptModal({ onClose }) {
   const returnUrl = encodeURIComponent(window.location.href)
@@ -175,6 +177,7 @@ const FALLBACK_STOREFRONTS = [{ id: null, slug: DEFAULT_STOREFRONT, name: 'Summi
 export default function Store() {
   usePageTitle('Store')
   const { user } = useAuth()
+  const isNewProduct = useIsNew('store')
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [allProducts, setAllProducts] = useState([])
@@ -326,7 +329,10 @@ export default function Store() {
               >
                 <ProductGallery product={p} />
                 <div className="p-4 flex flex-col flex-1">
-                  <h2 className="font-semibold text-text-primary">{p.name}</h2>
+                  <h2 className="font-semibold text-text-primary flex items-center gap-2">
+                    {p.name}
+                    {isNewProduct(p.created_at) && <NewTag />}
+                  </h2>
                   {p.description && (
                     <p className="text-sm text-text-muted mt-1 flex-1">{p.description}</p>
                   )}

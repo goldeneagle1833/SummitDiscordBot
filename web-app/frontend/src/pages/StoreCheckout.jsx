@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
-import { getProducts, getCheckoutPrefill, createCheckout, formatMoney } from '@/api/store'
-import { DEFAULT_STOREFRONT, loadCart, saveCart, reconcileCart } from '@/hooks/useStoreCart'
+import { getProducts, getPrivateProduct, getCheckoutPrefill, createCheckout, formatMoney } from '@/api/store'
+import { DEFAULT_STOREFRONT, loadCart, saveCart, reconcileCart, maxQuantity } from '@/hooks/useStoreCart'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import { DEFAULT_SHIPPING_RULES, cartShipping, shippingLabel } from '@/utils/storeShipping'
@@ -53,9 +53,14 @@ export default function StoreCheckout() {
   const [params] = useSearchParams()
   // Each storefront checks out on its own, from its own cart
   const storefront = params.get('storefront') || DEFAULT_STOREFRONT
-  const storeUrl = storefront === DEFAULT_STOREFRONT
-    ? '/store'
-    : `/store?storefront=${encodeURIComponent(storefront)}`
+  // A private (link only) listing checks out on its own, outside the cart
+  const privateToken = params.get('private')
+  const privateQty = parseInt(params.get('qty') || '1', 10)
+  const storeUrl = privateToken
+    ? `/store/p/${encodeURIComponent(privateToken)}`
+    : storefront === DEFAULT_STOREFRONT
+      ? '/store'
+      : `/store?storefront=${encodeURIComponent(storefront)}`
 
   const [items, setItems] = useState([])
   const [email, setEmail] = useState('')
@@ -71,8 +76,22 @@ export default function StoreCheckout() {
     if (!user) return
     // Build the order from the saved cart and current product data, so a
     // refresh keeps the cart and prices/stock/limits are never stale.
-    Promise.all([
-      getProducts().then((data) => {
+    const loadItems = privateToken
+      ? getPrivateProduct(privateToken).then((data) => {
+        const p = data.product
+        if (data.shipping_rules) setShippingRules(data.shipping_rules)
+        const quantity = Math.min(Number.isFinite(privateQty) && privateQty > 0 ? privateQty : 1, maxQuantity(p))
+        setItems(quantity > 0 ? [{
+          product_id: p.id,
+          quantity,
+          private_token: privateToken,
+          name: p.name,
+          price_cents: p.price_cents,
+          ship_cards: p.ship_cards,
+          shipping_cents: p.shipping_cents,
+        }] : [])
+      })
+      : getProducts().then((data) => {
         const products = data.products || []
         if (data.shipping_rules) setShippingRules(data.shipping_rules)
         const cart = reconcileCart(loadCart(storefront), products)
@@ -89,7 +108,9 @@ export default function StoreCheckout() {
               shipping_cents: p.shipping_cents,
             })),
         )
-      }),
+      })
+    Promise.all([
+      loadItems,
       getCheckoutPrefill()
         .then((pre) => {
           if (pre.email) setEmail(pre.email)
@@ -99,7 +120,7 @@ export default function StoreCheckout() {
     ])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [user, storefront])
+  }, [user, storefront, privateToken, privateQty])
 
   if (authLoading) return <Spinner className="py-20" />
   if (!user) return <Navigate to={`/login?next=${encodeURIComponent(storeUrl)}`} replace />
@@ -131,7 +152,8 @@ export default function StoreCheckout() {
     setSubmitting(true)
     try {
       const { checkout_url } = await createCheckout({
-        items: items.map(({ product_id, quantity }) => ({ product_id, quantity })),
+        items: items.map(({ product_id, quantity, private_token }) => (
+          private_token ? { product_id, quantity, private_token } : { product_id, quantity })),
         email: trimmed || undefined,
       })
       window.location.assign(checkout_url)
@@ -255,7 +277,7 @@ export default function StoreCheckout() {
 
       <div className="text-center mt-3">
         <Link to={storeUrl} className="text-sm text-text-muted hover:text-text transition-colors">
-          &larr; Back to store
+          &larr; {privateToken ? 'Back to the listing' : 'Back to store'}
         </Link>
       </div>
     </div>

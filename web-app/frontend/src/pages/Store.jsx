@@ -13,7 +13,7 @@ import ImageLightbox from '@/components/store/ImageLightbox'
 import NewTag from '@/components/common/NewTag'
 import { useIsNew } from '@/hooks/useNewContent'
 
-function LoginPromptModal({ onClose }) {
+export function LoginPromptModal({ onClose }) {
   const returnUrl = encodeURIComponent(window.location.href)
 
   useEffect(() => {
@@ -63,7 +63,7 @@ function productImages(p) {
 
 // Main image plus a thumbnail strip when a product has more than one image.
 // Clicking the main image opens it full screen, uncropped.
-function ProductGallery({ product }) {
+export function ProductGallery({ product }) {
   const images = productImages(product)
   const [index, setIndex] = useState(0)
   const [viewing, setViewing] = useState(false)

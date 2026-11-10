@@ -278,6 +278,24 @@ class StoreRepository:
                     pass  # column already exists
 
             try:
+                # Private (link only) listings: left off /store, sold only to
+                # people who open the listing's own link (QR code in person).
+                # The token stays when the listing goes public again, so a
+                # printed QR code keeps working if it is made private later.
+                conn.execute("ALTER TABLE products ADD COLUMN is_private "
+                             "INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+            try:
+                conn.execute("ALTER TABLE products ADD COLUMN private_token TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_private_token "
+                "ON products(private_token)"
+            )
+
+            try:
                 # Orders an admin paired to go out in one package. Every
                 # order in the pair shares the same value; NULL = on its own.
                 conn.execute("ALTER TABLE orders ADD COLUMN ship_group TEXT")
@@ -459,8 +477,9 @@ class StoreRepository:
         conditions = []
         params: list = []
         if not include_inactive:
+            # Private listings are only reachable by their own link
             conditions.append(
-                "p.is_active = 1 AND p.storefront_id IN "
+                "p.is_active = 1 AND p.is_private = 0 AND p.storefront_id IN "
                 "(SELECT id FROM storefronts WHERE is_active = 1)"
             )
         if storefront_ids is not None:
@@ -488,6 +507,51 @@ class StoreRepository:
                 "SELECT * FROM products WHERE id = ?", (product_id,)
             ).fetchone()
             return self._product_from_row(row) if row else None
+
+    @staticmethod
+    def new_private_token() -> str:
+        return secrets.token_urlsafe(12)
+
+    def get_private_product(self, token: str) -> dict | None:
+        """The private listing a link points at, if it can be bought now.
+
+        None for an unknown token, a listing that was made public again
+        (it's on /store then), a hidden listing, or a hidden storefront.
+        """
+        token = (token or "").strip()
+        if not token:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM products WHERE private_token = ? AND is_private = 1"
+                " AND is_active = 1 AND storefront_id IN"
+                " (SELECT id FROM storefronts WHERE is_active = 1)",
+                (token,),
+            ).fetchone()
+            return self._product_from_row(row) if row else None
+
+    def set_private(self, product_id: int, private: bool,
+                    new_link: bool = False) -> dict | None:
+        """Make a listing private (link only) or public again.
+
+        A private listing gets a link token the first time and keeps it, so
+        printed QR codes stay valid; new_link swaps it for a fresh one (the
+        old link and QR stop working). Returns the updated product.
+        """
+        with self._connect() as conn:
+            row = conn.execute("SELECT private_token FROM products WHERE id = ?",
+                               (product_id,)).fetchone()
+            if row is None:
+                return None
+            token = row["private_token"]
+            if private and (new_link or not token):
+                token = self.new_private_token()
+            conn.execute(
+                "UPDATE products SET is_private = ?, private_token = ?, updated_at = ?"
+                " WHERE id = ?",
+                (1 if private else 0, token, self._now(), product_id),
+            )
+        return self.get_product(product_id)
 
     def create_product(
         self,
@@ -658,6 +722,13 @@ class StoreRepository:
                         (item["product_id"],),
                     ).fetchone()
                     if row is None:
+                        raise ValueError(f"Product {item['product_id']} not available")
+                    # Private listings sell only through their own link
+                    if row["is_private"] and (
+                        not item.get("private_token")
+                        or not secrets.compare_digest(
+                            str(item.get("private_token")), row["private_token"] or "")
+                    ):
                         raise ValueError(f"Product {item['product_id']} not available")
                     # Each storefront is its own order and its own checkout
                     if storefront_id is None:

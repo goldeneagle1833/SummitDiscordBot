@@ -82,6 +82,7 @@ const DeckBuilder = lazyPage(() => import('@/pages/DeckBuilder'))
 const Login = lazyPage(() => import('@/pages/Login'))
 const Store = lazyPage(() => import('@/pages/Store'))
 const StoreCheckout = lazyPage(() => import('@/pages/StoreCheckout'))
+const StorePrivateProduct = lazyPage(() => import('@/pages/StorePrivateProduct'))
 const StoreSuccess = lazyPage(() => import('@/pages/StoreSuccess'))
 const StoreCancelled = lazyPage(() => import('@/pages/StoreCancelled'))
 const MyOrders = lazyPage(() => import('@/pages/MyOrders'))
@@ -267,6 +268,8 @@ const router = createBrowserRouter([
       // Store (soft launch: public by direct link, not yet in the nav)
       { path: '/store', element: <Store /> },
       { path: '/store/checkout', element: <StoreCheckout /> },
+      // Private (link only) listing, opened from its link or QR code
+      { path: '/store/p/:token', element: <StorePrivateProduct /> },
       { path: '/store/success', element: <StoreSuccess /> },
       { path: '/store/cancelled', element: <StoreCancelled /> },
       { path: '/store/orders', element: <LoginGuard><MyOrders /></LoginGuard> },

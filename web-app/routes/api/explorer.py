@@ -1,9 +1,12 @@
 """Explorer Standings API routes."""
 
+import csv
+import io
 import json
 import logging
+import re
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 from repositories.explorer import ExplorerRepository
 from utils.auth import require_admin, require_explorer_admin
@@ -219,6 +222,94 @@ def get_leaderboard(season_id):
     except Exception as e:
         logger.error(f"Error computing explorer leaderboard: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+STANDINGS_CSV_COLUMNS = [
+    ("rank", "Rank"),
+    ("display_name", "Player"),
+    ("team_name", "Team"),
+    ("grand_explorer", "Grand Explorer"),
+    ("pathfinder_total", "Pathfinder"),
+    ("persecutor_total", "Persecutor"),
+    ("events_played", "Events"),
+    ("qualified", "Qualified"),
+    ("cardeio_user_id", "Player ID"),
+]
+
+RESULTS_CSV_COLUMNS = [
+    ("event_name", "Event"),
+    ("event_date", "Date"),
+    ("venue_name", "Venue"),
+    ("event_total_players", "Event Players"),
+    ("display_name", "Player"),
+    ("team_name", "Team"),
+    ("final_standing", "Place"),
+    ("wins", "Wins"),
+    ("pathfinder", "Pathfinder"),
+    ("persecutor", "Persecutor"),
+    ("grand_explorer", "Grand Explorer"),
+    ("rank", "Series Rank"),
+    ("cardeio_user_id", "Player ID"),
+    ("source_url", "Event Link"),
+]
+
+
+def _csv_safe(value):
+    """Stop spreadsheet apps treating imported names as formulas."""
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if value is None:
+        return ""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
+
+
+def _csv_response(columns, rows, filename):
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([label for _, label in columns])
+    for row in rows:
+        writer.writerow([_csv_safe(row.get(key)) for key, _ in columns])
+    # A BOM lets Excel open names with accents correctly.
+    return Response(
+        "\ufeff" + buffer.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@explorer_bp.route("/leaderboard/<int:season_id>/export.csv")
+@require_explorer_admin
+def export_leaderboard_csv(season_id):
+    """Download a series as CSV. Explorer admins only.
+
+    ``?view=standings`` (default) gives one row per player as the leaderboard
+    shows it; ``?view=results`` gives one row per player per event.
+    """
+    view = request.args.get("view", "standings")
+    if view not in ("standings", "results"):
+        return jsonify({"error": "view must be standings or results"}), 400
+
+    from services.explorer import ExplorerService
+    board = ExplorerService().compute_leaderboard(season_id)
+    if board is None:
+        return jsonify({"error": "Season not found"}), 404
+
+    slug = re.sub(r"[^a-z0-9]+", "-", (board.get("season_name") or "series").lower()).strip("-")
+    slug = slug or f"series-{season_id}"
+    players = board["players"]
+
+    if view == "standings":
+        return _csv_response(STANDINGS_CSV_COLUMNS, players, f"{slug}-standings.csv")
+
+    rows = []
+    for player in players:
+        for result in player["event_results"]:
+            rows.append({**player, **result})
+    rows.sort(key=lambda r: (r.get("event_date") or "", str(r.get("event_id") or ""),
+                             r.get("final_standing") or 10**6))
+    return _csv_response(RESULTS_CSV_COLUMNS, rows, f"{slug}-results.csv")
 
 
 # ── Venue Attendance ──────────────────────────────────────────────────────

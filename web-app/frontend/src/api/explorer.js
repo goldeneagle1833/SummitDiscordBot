@@ -66,3 +66,7 @@ export const fetchUnmappedEvents = () => get('/api/explorer/events/unmapped')
 
 export const geocodeEvent = (eventId) =>
   post(`/api/explorer/events/${eventId}/geocode`)
+
+// Plain links so the browser downloads the file with the session cookie.
+export const leaderboardExportUrl = (seasonId, view = 'standings') =>
+  `/api/explorer/leaderboard/${seasonId}/export.csv?view=${view}`

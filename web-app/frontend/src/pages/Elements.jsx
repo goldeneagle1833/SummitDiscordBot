@@ -8,6 +8,7 @@ import AvatarMetaChart from '@/components/analytics/AvatarMetaChart'
 import TimelineControls, { windowDays, moveMs, DEFAULT_SPEED } from '@/components/analytics/TimelineControls'
 import { mergeDates, buildCumulative, flattenElementDays, elementStatsAt } from '@/utils/elementTimeline'
 import { DeckTypeFilters, DeckTypeResults, deckTypeMatchups } from '@/components/meta/DeckTypeMatchups'
+import MatchupLoops from '@/components/meta/MatchupLoops'
 
 /** Winner-vs-loser deck totals for the days in the window, as deckTypeMatchups takes them. */
 function matchupGamesIn(matchups, dates, endIdx, days) {
@@ -225,10 +226,8 @@ export default function Elements() {
   const stats = useMemo(() => elementStatsAt(elementCumulative, endIdx, days), [elementCumulative, endIdx, days])
 
   const { elements, dominant, splash, combinations, composition: comp } = stats
-  const deckTypes = useMemo(
-    () => deckTypeMatchups(matchupGamesIn(meta?.matchups, dates, endIdx, days)),
-    [meta, dates, endIdx, days],
-  )
+  const matchupGames = useMemo(() => matchupGamesIn(meta?.matchups, dates, endIdx, days), [meta, dates, endIdx, days])
+  const deckTypes = useMemo(() => deckTypeMatchups(matchupGames), [matchupGames])
   const hasElementData = elements.some((e) => e.total > 0)
 
   // Bars and rows move at one pace; while playing they ease into each day's
@@ -315,6 +314,15 @@ export default function Elements() {
               <DeckTypeResults data={deckTypes} value={deckPick} gamesLabel="games in this window"
                                emptyText="Not enough games in this window to break matchups down by deck type. Try a longer window." />
             </div>
+          </section>
+
+          {/* Rock-paper-scissors loops between decks */}
+          <section className="mb-10">
+            <h2 className="text-xl font-display text-secondary mb-1 text-center">Matchup Loops</h2>
+            <p className="text-text-muted text-sm mb-4 text-center max-w-2xl mx-auto">
+              Rock, paper, scissors between decks: one deck beats a second, the second beats a third, and the third beats the first. Follows the Event filter and the timeline.
+            </p>
+            <MatchupLoops games={matchupGames} />
           </section>
 
           {/* Meta: avatar counts over time */}

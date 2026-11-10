@@ -75,6 +75,9 @@ export const adminShipOrder = (id, tracking_number, tracking_carrier) =>
   post(`/api/store/admin/orders/${id}/ship`, { tracking_number, tracking_carrier })
 export const adminSetOrderStatus = (id, status) =>
   post(`/api/store/admin/orders/${id}/status`, { status })
+// Pair paid orders from one buyer so they ship in one package
+export const adminPairOrders = (order_ids) => post('/api/store/admin/orders/pair', { order_ids })
+export const adminUnpairOrder = (id) => post(`/api/store/admin/orders/${id}/unpair`, {})
 
 // Storefronts, their admins, and applications (full store admins)
 export const adminCreateStorefront = (data) => post('/api/store/admin/storefronts', data)

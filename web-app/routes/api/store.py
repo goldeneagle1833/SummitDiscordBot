@@ -350,6 +350,7 @@ def admin_list_orders():
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    StoreRepository.group_orders_by_buyer(orders)
     return jsonify({"orders": orders, "statuses": ORDER_STATUSES})
 
 
@@ -372,6 +373,8 @@ def admin_get_order(order_id: int):
 @store_bp.route("/store/admin/orders/<int:order_id>/ship", methods=["POST"])
 @require_store_staff
 def admin_ship_order(order_id: int):
+    """Mark an order shipped. A paired order ships with the rest of its
+    pair: every paid order in the group gets the same tracking number."""
     data = request.get_json(silent=True) or {}
     tracking = (data.get("tracking_number") or "").strip() or None
     carrier = (data.get("tracking_carrier") or "").strip() or None
@@ -380,25 +383,81 @@ def admin_ship_order(order_id: int):
     order = _scoped_order(repo, order_id)
     if not order:
         return _not_found("Order")
-    if not tracking and order["total_cents"] > TRACKING_REQUIRED_OVER_CENTS:
+    if order["status"] != "paid":
+        return jsonify({"error": "Order not found or not in 'paid' status"}), 409
+
+    batch = [order]
+    if order.get("ship_group"):
+        batch = [o for o in repo.orders_in_ship_group(order["ship_group"])
+                 if o["status"] == "paid" and _can(o["storefront_id"], "orders")]
+    package_cents = sum(o["total_cents"] for o in batch)
+    if not tracking and package_cents > TRACKING_REQUIRED_OVER_CENTS:
         return jsonify({
             "error": f"Tracking is required for orders over "
                      f"${TRACKING_REQUIRED_OVER_CENTS / 100:.0f}"
+                     + (" (paired orders count together)" if len(batch) > 1 else "")
         }), 400
     if not tracking:
         carrier = None
 
-    if not repo.mark_shipped(order_id, tracking, carrier):
+    shipped = []
+    for o in batch:
+        if repo.mark_shipped(o["id"], tracking, carrier):
+            shipped.append(o["id"])
+    if order_id not in shipped:
         return jsonify({"error": "Order not found or not in 'paid' status"}), 409
 
     actor_id, actor_name = _actor()
-    repo.log_action(actor_id, actor_name, "ship_order",
-                    f"id={order_id} tracking={tracking or 'none'}")
+    for oid in shipped:
+        repo.log_action(actor_id, actor_name, "ship_order",
+                        f"id={oid} tracking={tracking or 'none'}"
+                        + (f" group={order['ship_group']}" if len(batch) > 1 else ""))
     try:
         from services.store_notifications import StoreNotificationService
-        StoreNotificationService(repo).notify_order_shipped(repo.get_order(order_id))
+        notifier = StoreNotificationService(repo)
+        for oid in shipped:
+            notifier.notify_order_shipped(repo.get_order(oid))
     except Exception:
         logger.exception(f"Shipped notification failed for order {order_id}")
+    return jsonify({"success": True, "shipped_ids": shipped})
+
+
+@store_bp.route("/store/admin/orders/pair", methods=["POST"])
+@require_store_staff
+def admin_pair_orders():
+    """Pair paid orders from one buyer so they ship in one package."""
+    data = request.get_json(silent=True) or {}
+    try:
+        ids = [int(i) for i in (data.get("order_ids") or [])]
+    except (TypeError, ValueError):
+        return jsonify({"error": "order_ids must be a list of order ids"}), 400
+    repo = _repo()
+    for oid in ids:
+        if not _scoped_order(repo, oid):
+            return _not_found("Order")
+    try:
+        group = repo.pair_orders(ids)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "pair_orders",
+                    f"group={group} ids={','.join(str(i) for i in sorted(ids))}")
+    return jsonify({"success": True, "ship_group": group})
+
+
+@store_bp.route("/store/admin/orders/<int:order_id>/unpair", methods=["POST"])
+@require_store_staff
+def admin_unpair_order(order_id: int):
+    """Take an order out of its pair so it ships on its own."""
+    repo = _repo()
+    order = _scoped_order(repo, order_id)
+    if not order:
+        return _not_found("Order")
+    if not repo.unpair_order(order_id):
+        return jsonify({"error": "That order isn't paired"}), 409
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "unpair_order",
+                    f"id={order_id} group={order['ship_group']}")
     return jsonify({"success": True})
 
 
@@ -425,6 +484,9 @@ def admin_set_order_status(order_id: int):
             return jsonify({
                 "error": "Only paid orders that aren't already refunded can be marked refunded"
             }), 409
+        if order.get("ship_group") and order["status"] == "paid":
+            # A refunded order no longer goes out with the rest of its pair
+            repo.unpair_order(order_id)
         try:
             from services.store_notifications import StoreNotificationService
             StoreNotificationService(repo).notify_order_refunded(repo.get_order(order_id))

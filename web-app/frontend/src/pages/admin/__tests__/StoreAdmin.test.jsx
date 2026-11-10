@@ -12,6 +12,7 @@ vi.mock('@/api/store', async () => {
     adminUpdateProduct: vi.fn(),
     adminDeactivateProduct: vi.fn(),
     adminReorderProducts: vi.fn(),
+    adminSetProductPrivate: vi.fn(),
     adminUploadProductImages: vi.fn(),
     adminGetOrders: vi.fn(),
     adminPairOrders: vi.fn(),
@@ -31,7 +32,7 @@ import {
   adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminUploadProductImages, adminGetOrders,
   adminStartStripeOnboarding, adminDeleteStorefront, adminGetStorefrontApplications, adminLinkStripe,
   adminGetStorefrontAdmins, adminSetSaleAlerts, adminSetStorefrontDescription, adminReorderProducts,
-  adminPairOrders, adminShipOrder,
+  adminPairOrders, adminShipOrder, adminSetProductPrivate,
 } from '@/api/store'
 import StoreAdmin from '../StoreAdmin'
 
@@ -172,6 +173,7 @@ describe('StoreAdmin products', () => {
       shipping_cents: null,
       images: ['/two.png'],
       image_framing: {},
+      is_private: false,
     })
     // Editor closes and the list reloads
     const callsBefore = adminGetProducts.mock.calls.length
@@ -271,6 +273,7 @@ describe('StoreAdmin products', () => {
       shipping_cents: null,
       images: ['https://img.example/ice.png'],
       image_framing: {},
+      is_private: false,
       storefront_id: 1,
     })
   })
@@ -508,5 +511,57 @@ describe('StoreAdmin product order', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Move Product B up' }))
     expect(await screen.findByText(/product list changed/)).toBeInTheDocument()
     await waitFor(() => expect(adminGetProducts.mock.calls.length).toBeGreaterThan(calls))
+  })
+})
+
+describe('StoreAdmin private listings', () => {
+  const PRIVATE = {
+    ...TOKEN,
+    is_private: 1,
+    private_token: 'abc123',
+    private_url: 'https://sorcererssummit.com/store/p/abc123',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    adminGetMe.mockResolvedValue(FULL_ADMIN)
+    adminGetProducts.mockResolvedValue({ products: [PRIVATE] })
+    adminGetOrders.mockResolvedValue({ orders: [] })
+    adminSetProductPrivate.mockResolvedValue({ product: PRIVATE })
+  })
+
+  it('marks private listings and shows their link and QR code', async () => {
+    await openProductsTab()
+    expect(screen.getByText('Private · link only')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Link and QR code for Fire Token' }))
+    expect(screen.getByRole('textbox', { name: 'Private link for Fire Token' })).toHaveValue(PRIVATE.private_url)
+    expect(screen.getByRole('img', { name: 'QR code for Fire Token' }).getAttribute('src'))
+      .toContain('/api/store/admin/products/7/qr.png')
+    expect(screen.getByRole('link', { name: 'Download QR (PNG)' }).getAttribute('href')).toContain('download=1')
+    expect(screen.getByRole('link', { name: 'Print sign (PDF)' }).getAttribute('href'))
+      .toContain('/api/store/admin/products/7/qr-sign.pdf')
+  })
+
+  it('makes a new link only after confirming', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    await openProductsTab()
+    await userEvent.click(screen.getByRole('button', { name: 'Link and QR code for Fire Token' }))
+    await userEvent.click(screen.getByRole('button', { name: 'New link' }))
+    expect(adminSetProductPrivate).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'New link' }))
+    await waitFor(() => expect(adminSetProductPrivate).toHaveBeenCalledWith(7, true, true))
+    confirm.mockRestore()
+  })
+
+  it('saves the private switch from the editor', async () => {
+    adminGetProducts.mockResolvedValue({ products: [TOKEN] })
+    adminUpdateProduct.mockResolvedValue({ success: true })
+    await openProductsTab()
+    expect(screen.queryByText('Private · link only')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Edit Fire Token' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /Private \(link only\)/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(adminUpdateProduct).toHaveBeenCalledTimes(1))
+    expect(adminUpdateProduct.mock.calls[0][1].is_private).toBe(true)
   })
 })

@@ -106,6 +106,9 @@ def _not_found(what: str):
 def list_products():
     repo = _repo()
     products = repo.list_products(include_inactive=False)
+    for p in products:
+        # A listing that was private keeps its link; don't hand it out
+        p.pop("private_token", None)
 
     # Logged-in buyers also get what's left of each monthly limit, so the
     # storefront can cap quantities instead of failing at checkout.
@@ -121,9 +124,42 @@ def list_products():
     return jsonify({"products": products, "shipping_rules": shipping_rules()})
 
 
+@store_bp.route("/store/private/<token>", methods=["GET"])
+def get_private_product(token: str):
+    """A private (link only) listing, for the page its QR code opens."""
+    repo = _repo()
+    product = repo.get_private_product(token)
+    storefront = repo.get_storefront(product["storefront_id"]) if product else None
+    if not product or not storefront:
+        return _not_found("Listing")
+    user_id = session.get("user_id")
+    cap = product["max_per_user_monthly"]
+    if user_id and cap is not None:
+        counts = repo.user_monthly_product_counts(str(user_id))
+        product["remaining_this_month"] = max(0, cap - counts.get(product["id"], 0))
+    return jsonify({
+        "product": product,
+        "storefront": {
+            "id": storefront["id"],
+            "slug": storefront["slug"],
+            "name": storefront["name"],
+            "shipping_note": storefront.get("shipping_note"),
+            "accepts_payments": repo.accepts_payments(storefront),
+        },
+        "shipping_rules": shipping_rules(),
+    })
+
+
 # ----------------------------------------------------------------------
 # Store admin: product management
 # ----------------------------------------------------------------------
+
+
+def _with_private_url(product: dict) -> dict:
+    from services.store_private_link import private_url
+    token = product.get("private_token")
+    product["private_url"] = private_url(token) if token else None
+    return product
 
 @store_bp.route("/store/admin/products", methods=["GET"])
 @require_store_staff
@@ -136,7 +172,8 @@ def admin_list_products():
             return jsonify({"products": []})
         ids = [wanted]
     return jsonify({
-        "products": _repo().list_products(include_inactive=True, storefront_ids=ids),
+        "products": [_with_private_url(p) for p in
+                     _repo().list_products(include_inactive=True, storefront_ids=ids)],
         "shipping_rules": shipping_rules(),
     })
 
@@ -200,6 +237,9 @@ def admin_create_product():
         return jsonify({"error": str(e)}), 400
     except sqlite3.IntegrityError:
         return jsonify({"error": "A product with that SKU already exists"}), 409
+
+    if data.get("is_private") in (1, True, "1", "true"):
+        repo.set_private(product_id, True)
 
     actor_id, actor_name = _actor()
     repo.log_action(actor_id, actor_name, "create_product",
@@ -313,12 +353,20 @@ def admin_update_product(product_id: int):
     if ("storefront_id" in fields and fields["storefront_id"] != product["storefront_id"]
             and not is_store_admin()):
         return jsonify({"error": "Only full store admins can move products"}), 403
+    private = None
+    if "is_private" in data:
+        private = data["is_private"] in (1, True, "1", "true")
     try:
-        updated = repo.update_product(product_id, **fields)
+        updated = repo.update_product(product_id, **fields) if fields else False
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except sqlite3.IntegrityError:
         return jsonify({"error": "A product with that SKU already exists"}), 409
+    if private is not None and bool(product.get("is_private")) != private:
+        repo.set_private(product_id, private)
+        updated = True
+    elif private is not None:
+        updated = True
     if not updated:
         return jsonify({"error": "No valid fields to update"}), 400
 
@@ -351,6 +399,76 @@ def admin_reorder_products():
     repo.log_action(actor_id, actor_name, "reorder_products",
                     f"storefront={storefront_id} order={product_ids}")
     return jsonify({"success": True})
+
+
+@store_bp.route("/store/admin/products/<int:product_id>/private", methods=["POST"])
+@require_store_staff
+def admin_set_product_private(product_id: int):
+    """Body {private: bool, new_link?: bool}. Private = off /store, own link."""
+    data = request.get_json(silent=True) or {}
+    repo = _repo()
+    product = repo.get_product(product_id)
+    if not product or not _can(product["storefront_id"], "orders"):
+        return _not_found("Product")
+    if not _can(product["storefront_id"], "products"):
+        return jsonify({"error": "Only storefront managers can edit products"}), 403
+    private = data.get("private") in (1, True, "1", "true")
+    new_link = bool(data.get("new_link")) and private
+    updated = repo.set_private(product_id, private, new_link=new_link)
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "set_product_private",
+                    f"id={product_id} private={private} new_link={new_link}")
+    return jsonify({"product": _with_private_url(updated)})
+
+
+def _private_product_for_staff(product_id: int):
+    """(product, error response) for the QR code downloads."""
+    product = _repo().get_product(product_id)
+    if not product or not _can(product["storefront_id"], "orders"):
+        return None, _not_found("Product")
+    if not product.get("is_private") or not product.get("private_token"):
+        return None, (jsonify({"error": "Make the listing private to get its link"}), 409)
+    return product, None
+
+
+def _qr_filename(product: dict, ext: str) -> str:
+    return f"{slugify(product.get('sku') or product.get('name') or 'listing')}-qr.{ext}"
+
+
+@store_bp.route("/store/admin/products/<int:product_id>/qr.png", methods=["GET"])
+@require_store_staff
+def admin_private_product_qr(product_id: int):
+    """QR code image of a private listing's link. ?download=1 saves it."""
+    from io import BytesIO
+    from services.store_private_link import private_url, qr_png
+
+    product, error = _private_product_for_staff(product_id)
+    if error:
+        return error
+    png = qr_png(private_url(product["private_token"]))
+    return send_file(
+        BytesIO(png), mimetype="image/png",
+        as_attachment=request.args.get("download") == "1",
+        download_name=_qr_filename(product, "png"), max_age=0,
+    )
+
+
+@store_bp.route("/store/admin/products/<int:product_id>/qr-sign.pdf", methods=["GET"])
+@require_store_staff
+def admin_private_product_sign(product_id: int):
+    """Printable Letter page: listing name, price, big QR code, link."""
+    from io import BytesIO
+    from services.store_private_link import private_url, sign_pdf
+
+    product, error = _private_product_for_staff(product_id)
+    if error:
+        return error
+    storefront = _repo().get_storefront(product["storefront_id"]) or {}
+    pdf = sign_pdf(product, private_url(product["private_token"]), storefront.get("name", ""))
+    return send_file(
+        BytesIO(pdf), mimetype="application/pdf", as_attachment=False,
+        download_name=_qr_filename(product, "pdf"), max_age=0,
+    )
 
 
 @store_bp.route("/store/admin/products/<int:product_id>/deactivate", methods=["POST"])

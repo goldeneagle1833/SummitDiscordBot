@@ -158,8 +158,9 @@ def latest_store_product() -> dict | None:
 
     row = _row(
         STORE_DB_PATH,
+        # Private (link only) listings don't announce themselves
         "SELECT p.created_at, p.name FROM products p WHERE p.is_active = 1 AND "
-        "p.storefront_id IN (SELECT id FROM storefronts WHERE is_active = 1) "
+        "p.is_private = 0 AND p.storefront_id IN (SELECT id FROM storefronts WHERE is_active = 1) "
         "ORDER BY p.created_at DESC LIMIT 1",
     )
     if not row:

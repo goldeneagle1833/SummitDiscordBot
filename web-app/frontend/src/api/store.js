@@ -2,6 +2,9 @@ import { get, post, put, patch, del } from './client'
 
 // Buyer
 export const getProducts = () => get('/api/store/products')
+// Private (link only) listing, by the token in its link
+export const getPrivateProduct = (token) =>
+  get(`/api/store/private/${encodeURIComponent(token)}`)
 export const getStorefronts = () => get('/api/store/storefronts')
 export const searchMembers = (q) => get(`/api/store/user-search?q=${encodeURIComponent(q)}`)
 export const getCheckoutPrefill = () => get('/api/store/checkout/prefill')
@@ -40,6 +43,13 @@ export const adminUpdateProduct = (id, data) =>
 // product_ids: every product of that storefront, first shown first
 export const adminReorderProducts = (storefrontId, productIds) =>
   post('/api/store/admin/products/reorder', { storefront_id: storefrontId, product_ids: productIds })
+// Private = off /store, sold by its own link. newLink swaps the link (old QR stops working).
+export const adminSetProductPrivate = (id, isPrivate, newLink = false) =>
+  post(`/api/store/admin/products/${id}/private`, { private: isPrivate, new_link: newLink })
+export const adminProductQrUrl = (id, { download = false, bust = '' } = {}) =>
+  `/api/store/admin/products/${id}/qr.png?${download ? 'download=1&' : ''}v=${encodeURIComponent(bust)}`
+export const adminProductSignUrl = (id, bust = '') =>
+  `/api/store/admin/products/${id}/qr-sign.pdf?v=${encodeURIComponent(bust)}`
 export const adminDeactivateProduct = (id) =>
   post(`/api/store/admin/products/${id}/deactivate`)
 // Uploads one or more image files; resolves to { url, urls } in upload order.

@@ -323,6 +323,13 @@ class StoreCheckoutService:
 
         # The success/cancel pages clear or keep this storefront's cart only
         sf = f"&storefront={storefront.get('slug', '')}" if storefront else ""
+        # A private (link only) listing is bought outside the cart: the
+        # pages leave the cart alone and lead back to the listing's link
+        for item in full_order["items"]:
+            product = self.repo.get_product(item["product_id"]) or {}
+            if product.get("is_private") and product.get("private_token"):
+                sf += f"&p={product['private_token']}"
+                break
         number = full_order["order_number"]
 
         session_params = {

@@ -10,9 +10,12 @@ export default function StoreCancelled() {
   const [params] = useSearchParams()
   const orderNumber = params.get('order')
   const storefront = params.get('storefront')
-  const storeUrl = storefront && storefront !== 'summit'
-    ? `/store?storefront=${encodeURIComponent(storefront)}`
-    : '/store'
+  const privateListing = params.get('p')
+  const storeUrl = privateListing
+    ? `/store/p/${encodeURIComponent(privateListing)}`
+    : storefront && storefront !== 'summit'
+      ? `/store?storefront=${encodeURIComponent(storefront)}`
+      : '/store'
   // releasing | released | paid | unknown
   const [release, setRelease] = useState(orderNumber ? 'releasing' : 'unknown')
 
@@ -73,7 +76,7 @@ export default function StoreCancelled() {
         className="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white font-medium px-5 py-2.5 rounded-lg transition-colors"
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-        Back to store
+        {privateListing ? 'Back to the listing' : 'Back to store'}
       </Link>
     </div>
   )

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminDeactivateProduct,
-  adminReorderProducts,
+  adminReorderProducts, adminSetProductPrivate, adminProductQrUrl, adminProductSignUrl,
   adminUploadProductImages,
   adminGetOrders, adminGetOrder, adminShipOrder, adminSetOrderStatus, formatMoney,
   adminPairOrders, adminUnpairOrder,
@@ -27,7 +27,7 @@ const inputCls =
 
 const EMPTY_PRODUCT = {
   sku: '', name: '', description: '', price: '', stock_quantity: '', max_per_user_monthly: '', product_line: '',
-  ship_cards: '', shipping_price: '', images: [], framing: {},
+  ship_cards: '', shipping_price: '', images: [], framing: {}, is_private: false,
 }
 
 function productToForm(p) {
@@ -43,6 +43,7 @@ function productToForm(p) {
     shipping_price: p.shipping_cents == null ? '' : (p.shipping_cents / 100).toFixed(2),
     images: p.images?.length ? [...p.images] : p.image_url ? [p.image_url] : [],
     framing: { ...(p.image_framing || {}) },
+    is_private: Boolean(p.is_private),
   }
 }
 
@@ -218,6 +219,7 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
       shipping_cents,
       images: form.images,
       image_framing: form.framing,
+      is_private: form.is_private,
     }
     setSaving(true)
     try {
@@ -298,6 +300,22 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
             Groups listings in the sales rundown, e.g. both Skeleton packs under &quot;Skeleton Tokens&quot;.
           </p>
         </div>
+
+        <label className="sm:col-span-2 flex items-start gap-3 rounded border border-border p-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-secondary"
+            checked={form.is_private}
+            onChange={(e) => setForm((x) => ({ ...x, is_private: e.target.checked }))}
+          />
+          <span className="text-sm">
+            <span className="font-medium">Private (link only)</span>
+            <span className="block text-xs text-text-muted mt-0.5">
+              Not shown on the store. Only people with its link or QR code can see and buy it.
+              After saving, use &quot;Link &amp; QR&quot; in the list below to copy the link or print the QR code.
+            </span>
+          </span>
+        </label>
 
         <fieldset className="sm:col-span-2 min-w-0 rounded border border-border p-3">
           <legend className="px-1 text-xs font-semibold text-text-muted uppercase tracking-wide">Shipping</legend>
@@ -471,11 +489,116 @@ function ListingShippingTag({ product }) {
   )
 }
 
+// The link and QR code of a private (link only) listing
+function PrivateLinkPanel({ product, onChanged, onClose }) {
+  const [copied, setCopied] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const url = product.private_url
+  // Changes when the link does, so the browser doesn't show an old QR code
+  const bust = product.private_token || ''
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url)
+    } catch {
+      // Clipboard blocked: select the text so it can be copied by hand
+      document.getElementById(`private-url-${product.id}`)?.select()
+      return
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const share = async () => {
+    try {
+      await navigator.share({ title: product.name, url })
+    } catch {
+      // Cancelled or not supported
+    }
+  }
+
+  const newLink = async () => {
+    if (!window.confirm('Make a new link? The old link and any printed QR codes for it will stop working.')) return
+    setBusy(true)
+    setError(null)
+    try {
+      await adminSetProductPrivate(product.id, true, true)
+      onChanged()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const btn = 'rounded border border-border bg-bg-elevated px-3 py-2 text-sm hover:border-primary transition-colors text-center'
+  return (
+    <div className="flex flex-col sm:flex-row gap-4 p-3 rounded-lg border border-secondary/40 bg-secondary/5">
+      <img
+        src={adminProductQrUrl(product.id, { bust })}
+        alt={`QR code for ${product.name}`}
+        className="w-40 h-40 self-center sm:self-start rounded bg-white p-1"
+      />
+      <div className="flex-1 min-w-0 space-y-3">
+        <div className="relative pr-8">
+          <p className="text-sm font-medium">Private link: {product.name}</p>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="absolute top-0 right-0 text-text-muted hover:text-text px-1"
+              aria-label="Close link and QR code"
+            >
+              ✕
+            </button>
+          )}
+          <p className="text-xs text-text-muted">
+            Only people with this link or QR code can see and buy {product.name}. It&apos;s not on the store page.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <input
+            id={`private-url-${product.id}`}
+            readOnly
+            value={url || ''}
+            onFocus={(e) => e.target.select()}
+            className={`${inputCls} flex-1 min-w-0 font-mono text-xs`}
+            aria-label={`Private link for ${product.name}`}
+          />
+          <button type="button" onClick={copy} className={`${btn} shrink-0`}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+          <a href={adminProductQrUrl(product.id, { download: true, bust })} className={btn} download>
+            Download QR (PNG)
+          </a>
+          <a href={adminProductSignUrl(product.id, bust)} target="_blank" rel="noopener noreferrer" className={btn}>
+            Print sign (PDF)
+          </a>
+          <a href={url} target="_blank" rel="noopener noreferrer" className={btn}>
+            Open page
+          </a>
+          {typeof navigator !== 'undefined' && navigator.share && (
+            <button type="button" onClick={share} className={btn}>Share</button>
+          )}
+          <button type="button" onClick={newLink} disabled={busy} className={`${btn} text-text-muted disabled:opacity-50`}>
+            {busy ? 'Making…' : 'New link'}
+          </button>
+        </div>
+        {error && <p className="text-accent-red text-sm">{error}</p>}
+      </div>
+    </div>
+  )
+}
+
 function ProductsPanel({ storefrontId, storefronts }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(null) // product row being edited
+  const [linkOpen, setLinkOpen] = useState(null) // id of the private listing showing its link & QR
   const [shippingRules, setShippingRules] = useState(DEFAULT_SHIPPING_RULES)
 
   const load = useCallback(() => {
@@ -575,6 +698,7 @@ function ProductsPanel({ storefrontId, storefronts }) {
 
   if (loading) return <Spinner className="py-12" />
 
+  const linkProduct = products.find((p) => p.id === linkOpen && p.is_private)
   const productLines = [...new Set(products.map((p) => (p.product_line || '').trim()).filter(Boolean))].sort()
 
   return (
@@ -604,6 +728,12 @@ function ProductsPanel({ storefrontId, storefronts }) {
       )}
 
       {error && <p className="text-accent-red text-sm mb-3">{error}</p>}
+
+      {linkProduct && (
+        <div className="mb-4" id="private-link-panel">
+          <PrivateLinkPanel product={linkProduct} onChanged={load} onClose={() => setLinkOpen(null)} />
+        </div>
+      )}
 
       {products.length > 1 && (
         <p className="text-xs text-text-muted mb-2">
@@ -638,7 +768,6 @@ function ProductsPanel({ storefrontId, storefronts }) {
               const arrowCls = 'block px-1 leading-none text-text-muted hover:text-text disabled:opacity-20 disabled:cursor-default'
               return (
                 <tr
-                  key={p.id}
                   data-product-id={p.id}
                   className={`border-b border-border/50 hover:bg-bg-surface/50 ${editing?.id === p.id ? 'bg-primary/5' : ''} ${
                     dragId === p.id ? 'bg-primary/10 outline outline-1 outline-primary' : ''} ${
@@ -714,6 +843,9 @@ function ProductsPanel({ storefrontId, storefronts }) {
                     ) : (
                       <span className="text-text-muted">Hidden</span>
                     )}
+                    {p.is_private ? (
+                      <span className="block text-xs font-medium text-secondary whitespace-nowrap">Private · link only</span>
+                    ) : null}
                   </td>
                   <td className="py-2 px-3 text-right whitespace-nowrap">
                     <button
@@ -726,6 +858,24 @@ function ProductsPanel({ storefrontId, storefronts }) {
                     >
                       Edit
                     </button>
+                    {p.is_private ? (
+                      <button
+                        onClick={() => {
+                          const opening = linkOpen !== p.id
+                          setLinkOpen(opening ? p.id : null)
+                          // The panel sits above the list, so bring it into view
+                          if (opening) {
+                            setTimeout(() => document.getElementById('private-link-panel')
+                              ?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }), 0)
+                          }
+                        }}
+                        className="text-primary hover:underline mr-3"
+                        aria-expanded={linkOpen === p.id}
+                        aria-label={`Link and QR code for ${p.name}`}
+                      >
+                        Link &amp; QR
+                      </button>
+                    ) : null}
                     <button onClick={() => toggleActive(p)} className="text-primary hover:underline">
                       {p.is_active ? 'Hide' : 'Show'}
                     </button>

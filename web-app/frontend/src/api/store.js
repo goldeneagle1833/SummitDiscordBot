@@ -37,6 +37,9 @@ export const adminUpdateProduct = (id, data) =>
     }
     return res.json()
   })
+// product_ids: every product of that storefront, first shown first
+export const adminReorderProducts = (storefrontId, productIds) =>
+  post('/api/store/admin/products/reorder', { storefront_id: storefrontId, product_ids: productIds })
 export const adminDeactivateProduct = (id) =>
   post(`/api/store/admin/products/${id}/deactivate`)
 // Uploads one or more image files; resolves to { url, urls } in upload order.

@@ -11,6 +11,7 @@ vi.mock('@/api/store', async () => {
     adminCreateProduct: vi.fn(),
     adminUpdateProduct: vi.fn(),
     adminDeactivateProduct: vi.fn(),
+    adminReorderProducts: vi.fn(),
     adminUploadProductImages: vi.fn(),
     adminGetOrders: vi.fn(),
     adminStartStripeOnboarding: vi.fn(),
@@ -27,7 +28,7 @@ vi.mock('@/api/store', async () => {
 import {
   adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminUploadProductImages, adminGetOrders,
   adminStartStripeOnboarding, adminDeleteStorefront, adminGetStorefrontApplications, adminLinkStripe,
-  adminGetStorefrontAdmins, adminSetSaleAlerts, adminSetStorefrontDescription,
+  adminGetStorefrontAdmins, adminSetSaleAlerts, adminSetStorefrontDescription, adminReorderProducts,
 } from '@/api/store'
 import StoreAdmin from '../StoreAdmin'
 
@@ -388,5 +389,66 @@ describe('StoreAdmin sale messages', () => {
     await userEvent.click(toggle)
     expect(adminSetSaleAlerts).toHaveBeenCalledWith(2, false)
     expect(toggle).toHaveAttribute('aria-checked', 'false')
+  })
+})
+
+describe('StoreAdmin product order', () => {
+  const p = (id, sku, storefront_id = 1) => ({ ...TOKEN, id, sku, name: `Product ${sku}`, storefront_id, images: [] })
+  const skus = () => screen.getAllByText(/^(A|B|C|X)$/).map((el) => el.textContent)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    adminGetMe.mockResolvedValue(FULL_ADMIN)
+    adminGetProducts.mockResolvedValue({ products: [p(1, 'A'), p(2, 'B'), p(3, 'C')] })
+    adminGetOrders.mockResolvedValue({ orders: [] })
+    adminReorderProducts.mockResolvedValue({ success: true })
+  })
+
+  async function open() {
+    renderWithRouter(<StoreAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Products' }))
+    await screen.findByText('A')
+  }
+
+  it('moves a listing with the arrows and saves the storefront order', async () => {
+    await open()
+    expect(screen.getByRole('button', { name: 'Move Product A up' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Move Product C up' }))
+    expect(skus()).toEqual(['A', 'C', 'B'])
+    expect(adminReorderProducts).toHaveBeenCalledWith(1, [1, 3, 2])
+    expect(await screen.findByText('Order saved.')).toBeInTheDocument()
+  })
+
+  it('drags a listing with the grip (mouse or finger)', async () => {
+    await open()
+    const rowOf = (sku) => screen.getByText(sku).closest('tr')
+    const grip = screen.getByRole('button', { name: 'Drag to reorder Product A' })
+    document.elementFromPoint = vi.fn(() => rowOf('C'))
+    fireEvent.pointerDown(grip, { pointerId: 1, button: 0, clientX: 5, clientY: 300 })
+    fireEvent.pointerMove(grip, { pointerId: 1, clientX: 5, clientY: 300 })
+    fireEvent.pointerUp(grip, { pointerId: 1 })
+    expect(skus()).toEqual(['B', 'C', 'A'])
+    await waitFor(() => expect(adminReorderProducts).toHaveBeenCalledWith(1, [2, 3, 1]))
+    delete document.elementFromPoint
+  })
+
+  it('keeps each storefront in its own group in the all-storefronts view', async () => {
+    const explorer = { id: 2, slug: 'explorer', name: 'Explorer', role: 'owner', is_active: 1 }
+    adminGetMe.mockResolvedValue({ is_full_admin: true, storefronts: [SUMMIT, explorer] })
+    adminGetProducts.mockResolvedValue({ products: [p(1, 'A'), p(2, 'B'), p(9, 'X', 2)] })
+    await open()
+    expect(screen.getByRole('button', { name: 'Move Product B down' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Move Product X up' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Move Product B up' }))
+    expect(adminReorderProducts).toHaveBeenCalledWith(1, [2, 1])
+  })
+
+  it('reloads the list when saving fails', async () => {
+    adminReorderProducts.mockRejectedValue(new Error('The product list changed since this page loaded. Reload and try again.'))
+    await open()
+    const calls = adminGetProducts.mock.calls.length
+    await userEvent.click(screen.getByRole('button', { name: 'Move Product B up' }))
+    expect(await screen.findByText(/product list changed/)).toBeInTheDocument()
+    await waitFor(() => expect(adminGetProducts.mock.calls.length).toBeGreaterThan(calls))
   })
 })

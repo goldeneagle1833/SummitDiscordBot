@@ -244,6 +244,14 @@ class StoreRepository:
                 conn.execute("ALTER TABLE products ADD COLUMN image_framing TEXT")
             except sqlite3.OperationalError:
                 pass  # column already exists
+            try:
+                # Position of the product on its storefront's page, set by
+                # dragging in Store Admin. Lower shows first.
+                conn.execute("ALTER TABLE products ADD COLUMN sort_order "
+                             "INTEGER NOT NULL DEFAULT 0")
+                added_sort_order = True
+            except sqlite3.OperationalError:
+                added_sort_order = False  # column already exists
             for table in ("products", "orders"):
                 try:
                     conn.execute(
@@ -293,6 +301,15 @@ class StoreRepository:
                 conn.execute(
                     f"UPDATE {table} SET storefront_id = ? WHERE storefront_id IS NULL",
                     (default_id,),
+                )
+            if added_sort_order:
+                # Keep the order the store showed before (A to Z by name)
+                conn.execute(
+                    """UPDATE products SET sort_order = (
+                           SELECT COUNT(*) FROM products p2
+                           WHERE p2.storefront_id IS products.storefront_id
+                             AND (p2.name < products.name
+                                  OR (p2.name = products.name AND p2.id < products.id)))"""
                 )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_products_storefront ON products(storefront_id)"
@@ -431,7 +448,13 @@ class StoreRepository:
             )
             params.extend(storefront_ids)
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-        query = f"SELECT p.* FROM products p{where} ORDER BY p.name ASC"
+        # Grouped by storefront (in storefront order), then the order set
+        # in Store Admin; name breaks ties.
+        query = (
+            f"SELECT p.* FROM products p{where} ORDER BY "
+            "(SELECT s.sort_order FROM storefronts s WHERE s.id = p.storefront_id), "
+            "p.storefront_id, p.sort_order ASC, p.name ASC, p.id ASC"
+        )
         with self._connect() as conn:
             return [self._product_from_row(r)
                     for r in conn.execute(query, params).fetchall()]
@@ -466,16 +489,19 @@ class StoreRepository:
             raise ValueError("Unknown storefront")
         now = self._now()
         with self._connect() as conn:
+            # New listings go to the end of their storefront's page
             cur = conn.execute(
                 """INSERT INTO products
                    (sku, name, description, price_cents, image_url, images,
                     image_framing, stock_quantity, max_per_user_monthly,
-                    storefront_id, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    storefront_id, sort_order, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                           (SELECT COALESCE(MAX(sort_order), -1) + 1
+                            FROM products WHERE storefront_id = ?), ?, ?)""",
                 (sku, name, description, price_cents,
                  images[0] if images else None, json.dumps(images),
                  json.dumps(framing), stock_quantity, max_per_user_monthly,
-                 storefront_id, now, now),
+                 storefront_id, storefront_id, now, now),
             )
             return cur.lastrowid
 
@@ -507,11 +533,42 @@ class StoreRepository:
         updates["updated_at"] = self._now()
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         with self._connect() as conn:
+            if "storefront_id" in updates:
+                # Moving to another storefront puts it at the end of that page
+                row = conn.execute("SELECT storefront_id FROM products WHERE id = ?",
+                                   (product_id,)).fetchone()
+                if row and row["storefront_id"] != updates["storefront_id"]:
+                    conn.execute(
+                        """UPDATE products SET sort_order = (
+                               SELECT COALESCE(MAX(sort_order), -1) + 1
+                               FROM products WHERE storefront_id = ?)
+                           WHERE id = ?""",
+                        (updates["storefront_id"], product_id),
+                    )
             cur = conn.execute(
                 f"UPDATE products SET {set_clause} WHERE id = ?",
                 (*updates.values(), product_id),
             )
             return cur.rowcount > 0
+
+    def reorder_products(self, storefront_id: int, product_ids: list[int]) -> None:
+        """Set the display order of one storefront's products.
+
+        product_ids must be exactly that storefront's products (hidden ones
+        included), first shown first. Raises ValueError otherwise, so a
+        stale page can't drop or duplicate positions.
+        """
+        with self._connect() as conn:
+            current = {r["id"] for r in conn.execute(
+                "SELECT id FROM products WHERE storefront_id = ?", (storefront_id,))}
+            if len(product_ids) != len(set(product_ids)) or set(product_ids) != current:
+                raise ValueError(
+                    "The product list changed since this page loaded. Reload and try again.")
+            now = self._now()
+            conn.executemany(
+                "UPDATE products SET sort_order = ?, updated_at = ? WHERE id = ?",
+                [(i, now, pid) for i, pid in enumerate(product_ids)],
+            )
 
     def adjust_stock(self, product_id: int, delta: int) -> bool:
         """Atomically adjust stock; refuses to go below zero."""

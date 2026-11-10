@@ -277,6 +277,31 @@ def admin_update_product(product_id: int):
     return jsonify({"success": True})
 
 
+@store_bp.route("/store/admin/products/reorder", methods=["POST"])
+@require_store_staff
+def admin_reorder_products():
+    """Set the order a storefront's products show in on /store."""
+    data = request.get_json(silent=True) or {}
+    try:
+        storefront_id = int(data.get("storefront_id"))
+        product_ids = [int(x) for x in data.get("product_ids") or []]
+    except (TypeError, ValueError):
+        return jsonify({"error": "storefront_id and product_ids must be integers"}), 400
+    repo = _repo()
+    if not repo.get_storefront(storefront_id) or not _can(storefront_id, "orders"):
+        return _not_found("Storefront")
+    if not _can(storefront_id, "products"):
+        return jsonify({"error": "Only storefront managers can reorder products"}), 403
+    try:
+        repo.reorder_products(storefront_id, product_ids)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "reorder_products",
+                    f"storefront={storefront_id} order={product_ids}")
+    return jsonify({"success": True})
+
+
 @store_bp.route("/store/admin/products/<int:product_id>/deactivate", methods=["POST"])
 @require_store_staff
 def admin_deactivate_product(product_id: int):

@@ -171,7 +171,7 @@ function ProductLines({ lines }) {
   const top = Math.max(...lines.map((l) => l.sales_cents), 1)
   return (
     <>
-      <ul className="divide-y divide-bg-elevated">
+      <ul className="max-h-48 overflow-y-auto pr-1 divide-y divide-bg-elevated">
         {lines.map((l) => {
           const isOpen = !!open[l.line]
           const stats = `${l.units} sold · ${l.orders} ${l.orders === 1 ? 'order' : 'orders'} · ${Math.round(l.share * 100)}%`

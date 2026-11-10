@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminDeactivateProduct,
+  adminReorderProducts,
   adminUploadProductImages,
   adminGetOrders, adminGetOrder, adminShipOrder, adminSetOrderStatus, formatMoney,
   adminCreateStorefront, adminUpdateStorefront, adminDeleteStorefront,
@@ -345,6 +346,27 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
   )
 }
 
+// Moves product `id` to where `targetId` is. Only within one storefront,
+// since each storefront has its own page order.
+function moveProduct(products, id, targetId) {
+  const from = products.findIndex((p) => p.id === id)
+  const to = products.findIndex((p) => p.id === targetId)
+  if (from < 0 || to < 0 || from === to) return products
+  if (products[from].storefront_id !== products[to].storefront_id) return products
+  const next = [...products]
+  const [moved] = next.splice(from, 1)
+  next.splice(to, 0, moved)
+  return next
+}
+
+function GripIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+      {[6, 10, 14].map((y) => [7, 13].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.5" />))}
+    </svg>
+  )
+}
+
 function ProductsPanel({ storefrontId, storefronts }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -359,6 +381,68 @@ function ProductsPanel({ storefrontId, storefronts }) {
   }, [storefrontId])
   useEffect(load, [load])
   const storefrontName = (id) => storefronts.find((sf) => sf.id === id)?.name
+
+  // ---- Reordering: drag the grip (mouse or finger) or use the arrows.
+  const [dragId, setDragId] = useState(null)
+  const [orderSaved, setOrderSaved] = useState(false)
+  const productsRef = useRef(products)
+  productsRef.current = products
+  const dragStart = useRef(null)
+
+  const saveOrder = async (list, sfId) => {
+    setOrderSaved(false)
+    try {
+      await adminReorderProducts(sfId, list.filter((p) => p.storefront_id === sfId).map((p) => p.id))
+      setOrderSaved(true)
+    } catch (e) {
+      setError(e.message)
+      load()
+    }
+  }
+
+  const nudge = (p, dir) => {
+    const i = products.findIndex((x) => x.id === p.id)
+    const target = products[i + dir]
+    if (!target || target.storefront_id !== p.storefront_id) return
+    const next = moveProduct(products, p.id, target.id)
+    setProducts(next)
+    saveOrder(next, p.storefront_id)
+  }
+
+  const onGripDown = (e, p) => {
+    if (e.button != null && e.button !== 0) return
+    e.preventDefault()
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    dragStart.current = { id: p.id, order: productsRef.current.map((x) => x.id) }
+    setDragId(p.id)
+    setError(null)
+    // Stop the page selecting text while a row is dragged
+    document.body.style.userSelect = 'none'
+  }
+  const onGripMove = (e) => {
+    if (!dragStart.current) return
+    const { clientX: x, clientY: y } = e
+    // Scroll the page when dragging near the top (under the sticky nav bar)
+    // or bottom edge, so a long list can be dragged on a phone
+    if (y < 120) window.scrollBy?.(0, -14)
+    else if (y > window.innerHeight - 80) window.scrollBy?.(0, 14)
+    const row = document.elementFromPoint?.(x, y)?.closest?.('tr[data-product-id]')
+    const targetId = row ? Number(row.dataset.productId) : null
+    if (targetId && targetId !== dragStart.current.id) {
+      setProducts((list) => moveProduct(list, dragStart.current.id, targetId))
+    }
+  }
+  const onGripUp = () => {
+    const start = dragStart.current
+    dragStart.current = null
+    setDragId(null)
+    document.body.style.userSelect = ''
+    if (!start) return
+    const list = productsRef.current
+    const changed = list.map((x) => x.id).join() !== start.order.join()
+    const moved = list.find((x) => x.id === start.id)
+    if (changed && moved) saveOrder(list, moved.storefront_id)
+  }
 
   const updateStock = async (p, value) => {
     const stock_quantity = parseInt(value, 10)
@@ -407,10 +491,19 @@ function ProductsPanel({ storefrontId, storefronts }) {
 
       {error && <p className="text-accent-red text-sm mb-3">{error}</p>}
 
+      {products.length > 1 && (
+        <p className="text-xs text-text-muted mb-2">
+          Drag <span className="inline-block align-middle"><GripIcon /></span> or use the arrows to set
+          the order listings show in on the store.
+          {orderSaved && <span className="text-accent-green ml-1">Order saved.</span>}
+        </p>
+      )}
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left">
+              <th className="py-2 pl-1 pr-0 w-px"><span className="sr-only">Order</span></th>
               <th className="py-2 px-3" />
               <th className="py-2 px-3 font-semibold text-text-muted">SKU</th>
               <th className="py-2 px-3 font-semibold text-text-muted">Name</th>
@@ -422,10 +515,44 @@ function ProductsPanel({ storefrontId, storefronts }) {
             </tr>
           </thead>
           <tbody>
-            {products.map((p) => {
+            {products.map((p, i) => {
               const imageCount = p.images?.length ?? (p.image_url ? 1 : 0)
+              const canUp = products[i - 1]?.storefront_id === p.storefront_id
+              const canDown = products[i + 1]?.storefront_id === p.storefront_id
+              const firstOfStorefront = storefrontId == null && storefronts.length > 1
+                && products[i - 1]?.storefront_id !== p.storefront_id
+              const arrowCls = 'block px-1 leading-none text-text-muted hover:text-text disabled:opacity-20 disabled:cursor-default'
               return (
-                <tr key={p.id} className={`border-b border-border/50 hover:bg-bg-surface/50 ${editing?.id === p.id ? 'bg-primary/5' : ''}`}>
+                <tr
+                  key={p.id}
+                  data-product-id={p.id}
+                  className={`border-b border-border/50 hover:bg-bg-surface/50 ${editing?.id === p.id ? 'bg-primary/5' : ''} ${
+                    dragId === p.id ? 'bg-primary/10 outline outline-1 outline-primary' : ''} ${
+                    firstOfStorefront && i > 0 ? 'border-t-2 border-t-border' : ''}`}
+                >
+                  <td className="py-2 pl-1 pr-0">
+                    <div className="flex items-center select-none">
+                      <button
+                        type="button"
+                        onPointerDown={(e) => onGripDown(e, p)}
+                        onPointerMove={onGripMove}
+                        onPointerUp={onGripUp}
+                        onPointerCancel={onGripUp}
+                        style={{ touchAction: 'none' }}
+                        className={`p-1.5 rounded text-text-muted hover:text-text ${dragId === p.id ? 'cursor-grabbing' : 'cursor-grab'}`}
+                        aria-label={`Drag to reorder ${p.name}`}
+                        title="Drag to reorder"
+                      >
+                        <GripIcon />
+                      </button>
+                      <div className="flex flex-col">
+                        <button type="button" onClick={() => nudge(p, -1)} disabled={!canUp}
+                          className={arrowCls} aria-label={`Move ${p.name} up`}>▲</button>
+                        <button type="button" onClick={() => nudge(p, 1)} disabled={!canDown}
+                          className={arrowCls} aria-label={`Move ${p.name} down`}>▼</button>
+                      </div>
+                    </div>
+                  </td>
                   <td className="py-2 px-3">
                     <div className="relative h-10 w-10">
                       {p.image_url ? (

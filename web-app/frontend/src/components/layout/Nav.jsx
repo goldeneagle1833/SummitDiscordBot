@@ -14,8 +14,14 @@ import WhatsNewBar from '@/components/layout/WhatsNewBar'
 // About stays reachable from the footer and the Help tabs, and Avatar Top 16
 // from the Avatars page toggle, so neither is a top bar option (Bruce, 2026-10-16)
 
-// Always first on the top bar, in this order; links a user adds follow them
-const PERMANENT_LINKS = ['Avatars', 'Deck Archetypes', 'Top 8 Decks']
+// Always first on the top bar, in this order; links a user adds follow them.
+// Deck Archetypes and Top 8 Decks came off the top bar (Bruce, 2026-11-10);
+// they stay in the menu and can still be added back through Customize.
+const PERMANENT_LINKS = ['Avatars']
+const DROPPED_FROM_TOP_BAR = ['Deck Archetypes', 'Top 8 Decks']
+// Marks saved prefs made after that change, so the two links are dropped
+// from older saves only once and a person can add them back
+const PREFS_VERSION_MARK = '__v2'
 
 // Same order as the hamburger menu; the top bar shows added links in this order
 const ALL_NAV_OPTIONS = [
@@ -50,7 +56,12 @@ const RENAMED_LABELS = {
 }
 
 function normalizeLabels(labels) {
-  return [...new Set(labels.map((l) => RENAMED_LABELS[l] || l))]
+  let out = labels.map((l) => RENAMED_LABELS[l] || l)
+  // Older saves held these because they used to be locked on the top bar
+  if (!out.includes(PREFS_VERSION_MARK)) {
+    out = [...out.filter((l) => !DROPPED_FROM_TOP_BAR.includes(l)), PREFS_VERSION_MARK]
+  }
+  return [...new Set(out)]
 }
 const STORAGE_KEY = 'summit-nav-prefs'
 
@@ -64,6 +75,11 @@ function getNavPrefs() {
 
 function saveNavPrefs(labels) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(labels))
+}
+
+// Thin line between top bar links (desktop/tablet only, like the links)
+function NavDivider() {
+  return <span aria-hidden="true" className="hidden md:block w-px h-4 bg-white/15 shrink-0" />
 }
 
 function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
@@ -568,7 +584,8 @@ export default function Nav() {
     ),
   ]
 
-  const handleSavePrefs = (labels) => {
+  const handleSavePrefs = (picked) => {
+    const labels = [...picked, PREFS_VERSION_MARK]
     setNavLabels(labels)
     saveNavPrefs(labels)
     // Save to server if logged in
@@ -618,8 +635,9 @@ export default function Nav() {
           <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
             <LiveIndicator />
 
-            {/* Nav links - visible on desktop */}
-            {activeNavLinks.map(({ to, href, label }) =>
+            {/* Nav links - visible on desktop, with a light divider between each */}
+            {activeNavLinks.map(({ to, href, label }, i) => [
+              i > 0 && <NavDivider key={`${label}-divider`} />,
               href ? (
                 <a
                   key={label}
@@ -641,11 +659,12 @@ export default function Nav() {
                   {label}
                   {isNew(to) && <NewDot className="ml-1.5" />}
                 </Link>
-              )
-            )}
+              ),
+            ])}
 
             {/* Store sits on the top bar for everyone, after the other links;
                 it isn't a Customize option (Bruce, 2026-10-23) */}
+            {storeShown && activeNavLinks.length > 0 && <NavDivider />}
             {storeShown && (
               <Link
                 to="/store"

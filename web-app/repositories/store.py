@@ -262,6 +262,14 @@ class StoreRepository:
                     pass  # column already exists
 
             try:
+                # Optional family name for the sales dashboard's "Sales by
+                # product line" box (e.g. "Skeleton Tokens" for the foil and
+                # regular packs). NULL = grouped automatically by name.
+                conn.execute("ALTER TABLE products ADD COLUMN product_line TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+
+            try:
                 # Orders an admin paired to go out in one package. Every
                 # order in the pair shares the same value; NULL = on its own.
                 conn.execute("ALTER TABLE orders ADD COLUMN ship_group TEXT")
@@ -485,6 +493,7 @@ class StoreRepository:
         images: list[str] | None = None,
         storefront_id: int | None = None,
         image_framing: dict | None = None,
+        product_line: str | None = None,
     ) -> int:
         images = self._clean_images(images)
         if not images and image_url:
@@ -501,21 +510,22 @@ class StoreRepository:
                 """INSERT INTO products
                    (sku, name, description, price_cents, image_url, images,
                     image_framing, stock_quantity, max_per_user_monthly,
-                    storefront_id, sort_order, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    storefront_id, product_line, sort_order, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                            (SELECT COALESCE(MAX(sort_order), -1) + 1
                             FROM products WHERE storefront_id = ?), ?, ?)""",
                 (sku, name, description, price_cents,
                  images[0] if images else None, json.dumps(images),
                  json.dumps(framing), stock_quantity, max_per_user_monthly,
-                 storefront_id, storefront_id, now, now),
+                 storefront_id, (product_line or "").strip() or None,
+                 storefront_id, now, now),
             )
             return cur.lastrowid
 
     def update_product(self, product_id: int, **fields) -> bool:
         allowed = {"sku", "name", "description", "price_cents", "image_url",
                    "stock_quantity", "is_active", "max_per_user_monthly", "images",
-                   "storefront_id", "image_framing"}
+                   "storefront_id", "image_framing", "product_line"}
         if "storefront_id" in fields and not self.get_storefront(fields["storefront_id"]):
             raise ValueError("Unknown storefront")
         updates = {k: v for k, v in fields.items() if k in allowed}

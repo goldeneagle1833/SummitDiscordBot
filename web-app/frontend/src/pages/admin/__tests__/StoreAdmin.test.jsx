@@ -153,6 +153,7 @@ describe('StoreAdmin products', () => {
     await userEvent.clear(screen.getByLabelText('Price'))
     await userEvent.type(screen.getByLabelText('Price'), '9.50')
     await userEvent.clear(screen.getByLabelText('Monthly limit per user'))
+    await userEvent.type(screen.getByLabelText('Product line'), '  Fire Tokens ')
     await userEvent.click(screen.getByRole('button', { name: 'Remove image 1' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
@@ -164,6 +165,7 @@ describe('StoreAdmin products', () => {
       price_cents: 950,
       stock_quantity: 4,
       max_per_user_monthly: null,
+      product_line: 'Fire Tokens',
       images: ['/two.png'],
       image_framing: {},
     })
@@ -260,6 +262,7 @@ describe('StoreAdmin products', () => {
       price_cents: 500,
       stock_quantity: 3,
       max_per_user_monthly: undefined,
+      product_line: '',
       images: ['https://img.example/ice.png'],
       image_framing: {},
       storefront_id: 1,

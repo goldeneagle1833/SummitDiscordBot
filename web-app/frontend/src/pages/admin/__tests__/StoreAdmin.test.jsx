@@ -14,6 +14,8 @@ vi.mock('@/api/store', async () => {
     adminReorderProducts: vi.fn(),
     adminUploadProductImages: vi.fn(),
     adminGetOrders: vi.fn(),
+    adminPairOrders: vi.fn(),
+    adminShipOrder: vi.fn(),
     adminStartStripeOnboarding: vi.fn(),
     adminDeleteStorefront: vi.fn(),
     adminLinkStripe: vi.fn(),
@@ -29,6 +31,7 @@ import {
   adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminUploadProductImages, adminGetOrders,
   adminStartStripeOnboarding, adminDeleteStorefront, adminGetStorefrontApplications, adminLinkStripe,
   adminGetStorefrontAdmins, adminSetSaleAlerts, adminSetStorefrontDescription, adminReorderProducts,
+  adminPairOrders, adminShipOrder,
 } from '@/api/store'
 import StoreAdmin from '../StoreAdmin'
 
@@ -70,6 +73,52 @@ describe('StoreAdmin order queue', () => {
     const link = await screen.findByRole('link', { name: 'Print order form for SUM-20260930-ABC123' })
     expect(link).toHaveAttribute('href', '/admin/store/orders/42/print?print=1')
     expect(link).toHaveAttribute('target', '_blank')
+  })
+})
+
+describe('StoreAdmin same-buyer orders', () => {
+  const base = { username: 'bruce', currency: 'USD', status: 'paid', storefront_id: 1, buyer_group: 'b1', buyer_match: ['account'],
+    ship_line1: '1 Main St', ship_postal: '43201' }
+  const A = { ...base, id: 1, order_number: 'SUM-A', total_cents: 1198 }
+  const B = { ...base, id: 2, order_number: 'SUM-B', total_cents: 2098 }
+  const OTHER = { id: 3, order_number: 'SUM-C', username: 'grish', total_cents: 599, currency: 'USD', status: 'paid', buyer_group: null }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    adminGetMe.mockResolvedValue(FULL_ADMIN)
+    adminGetProducts.mockResolvedValue({ products: [] })
+  })
+
+  it('boxes one buyer\'s orders together and pairs them', async () => {
+    adminGetOrders.mockResolvedValue({ orders: [A, OTHER, B] })
+    adminPairOrders.mockResolvedValue({ success: true })
+    renderWithRouter(<StoreAdmin />)
+    const box = await screen.findByRole('region', { name: 'Orders from bruce' })
+    expect(within(box).getByText('SUM-A')).toBeInTheDocument()
+    expect(within(box).getByText('SUM-B')).toBeInTheDocument()
+    expect(within(box).queryByText('SUM-C')).not.toBeInTheDocument()
+    expect(within(box).getByText(/2 orders · \$32\.96 · same account/)).toBeInTheDocument()
+    await userEvent.click(within(box).getByRole('button', { name: 'Pair to ship together' }))
+    expect(adminPairOrders).toHaveBeenCalledWith([1, 2])
+  })
+
+  it('ships a pair with one tracking number and prints one slip', async () => {
+    adminGetOrders.mockResolvedValue({ orders: [{ ...A, ship_group: 'SG-1' }, { ...B, ship_group: 'SG-1' }] })
+    adminShipOrder.mockResolvedValue({ success: true })
+    renderWithRouter(<StoreAdmin />)
+    const box = await screen.findByRole('region', { name: 'Orders from bruce' })
+    expect(within(box).getByText(/Paired: 2 orders in one package/)).toBeInTheDocument()
+    expect(within(box).queryByRole('button', { name: 'Pair to ship together' })).not.toBeInTheDocument()
+    expect(within(box).getByRole('link', { name: 'Print one packing slip' }))
+      .toHaveAttribute('href', '/admin/store/orders/1/print?print=1&with=2')
+    await userEvent.click(within(box).getByRole('button', { name: 'Mark all 2 shipped' }))
+    expect(adminShipOrder).toHaveBeenCalledWith(1, null, null)
+  })
+
+  it('warns when the orders go to different addresses', async () => {
+    adminGetOrders.mockResolvedValue({ orders: [A, { ...B, ship_line1: '9 Elm Rd', ship_postal: '45402' }] })
+    renderWithRouter(<StoreAdmin />)
+    expect(await screen.findByText(/different shipping addresses/)).toBeInTheDocument()
   })
 })
 

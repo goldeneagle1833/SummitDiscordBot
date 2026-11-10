@@ -262,6 +262,13 @@ class StoreRepository:
                     pass  # column already exists
 
             try:
+                # Orders an admin paired to go out in one package. Every
+                # order in the pair shares the same value; NULL = on its own.
+                conn.execute("ALTER TABLE orders ADD COLUMN ship_group TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+
+            try:
                 # Discord DM when the storefront makes a sale; each person
                 # turns their own on or off
                 conn.execute("ALTER TABLE storefront_admins ADD COLUMN "
@@ -817,6 +824,80 @@ class StoreRepository:
             )
             return cur.rowcount > 0
 
+    # ------------------------------------------------------------------
+    # Shipping orders together
+    # ------------------------------------------------------------------
+
+    def pair_orders(self, order_ids: list[int]) -> str:
+        """Put paid orders in one ship group so they go out in one package.
+
+        Orders already in a group bring the rest of that group along.
+        All of them must be paid (not yet shipped) and from one storefront.
+        Returns the group's id. Raises ValueError when they can't be paired.
+        """
+        ids = sorted({int(i) for i in order_ids})
+        if len(ids) < 2:
+            raise ValueError("Pick at least two orders to ship together")
+        with self._connect() as conn:
+            marks = ",".join("?" for _ in ids)
+            rows = [dict(r) for r in conn.execute(
+                f"SELECT id, status, storefront_id, ship_group FROM orders "
+                f"WHERE id IN ({marks})", ids,
+            ).fetchall()]
+            if len(rows) != len(ids):
+                raise ValueError("Order not found")
+            if any(r["status"] != "paid" for r in rows):
+                raise ValueError("Only orders that are paid and not shipped yet can be paired")
+            if len({r["storefront_id"] for r in rows}) > 1:
+                raise ValueError("Orders from different storefronts ship separately")
+            existing = sorted({r["ship_group"] for r in rows if r["ship_group"]})
+            group = existing[0] if existing else f"SG-{ids[0]}"
+            now = self._now()
+            conn.execute(
+                f"UPDATE orders SET ship_group = ?, updated_at = ? WHERE id IN ({marks})",
+                [group, now, *ids],
+            )
+            for other in existing[1:]:
+                conn.execute(
+                    "UPDATE orders SET ship_group = ?, updated_at = ? WHERE ship_group = ?",
+                    (group, now, other),
+                )
+            return group
+
+    def unpair_order(self, order_id: int) -> bool:
+        """Take an order out of its ship group.
+
+        A group left with one order is cleared, since there's nothing
+        left to ship it with.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT ship_group FROM orders WHERE id = ?", (order_id,)
+            ).fetchone()
+            if row is None or not row["ship_group"]:
+                return False
+            group = row["ship_group"]
+            now = self._now()
+            conn.execute(
+                "UPDATE orders SET ship_group = NULL, updated_at = ? WHERE id = ?",
+                (now, order_id),
+            )
+            left = conn.execute(
+                "SELECT COUNT(*) FROM orders WHERE ship_group = ?", (group,)
+            ).fetchone()[0]
+            if left < 2:
+                conn.execute(
+                    "UPDATE orders SET ship_group = NULL, updated_at = ? WHERE ship_group = ?",
+                    (now, group),
+                )
+            return True
+
+    def orders_in_ship_group(self, group: str) -> list[dict]:
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(
+                "SELECT * FROM orders WHERE ship_group = ? ORDER BY id", (group,)
+            ).fetchall()]
+
     def set_status(self, order_id: int, status: str) -> bool:
         if status not in ORDER_STATUSES:
             raise ValueError(f"Unknown status: {status}")
@@ -1105,6 +1186,73 @@ class StoreRepository:
 
         with self._connect() as conn:
             return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+    @staticmethod
+    def group_orders_by_buyer(orders: list[dict]) -> list[dict]:
+        """Mark orders in this list that look like they're from one buyer.
+
+        Two orders from the same storefront are the same buyer when they
+        share the account, the email, or the shipping address (street line
+        and ZIP, ignoring case and punctuation), or are already paired to
+        ship together. Matches chain: A and B share an account, B and C an
+        address, so all three are one buyer.
+
+        Sets buyer_group (shared id, or None when the order has no match in
+        the list) and buyer_match (what linked them: account, email,
+        address) on each order, in place. Returns the list.
+        """
+        import re
+
+        def norm(text: str | None) -> str:
+            return re.sub(r"[^a-z0-9]", "", (text or "").lower())
+
+        parent = list(range(len(orders)))
+
+        def find(i: int) -> int:
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        seen: dict[tuple, int] = {}
+        reasons: dict[int, set] = {}
+        for i, o in enumerate(orders):
+            sf = o.get("storefront_id")
+            keys = []
+            if o.get("user_id"):
+                keys.append(("account", f"{o.get('auth_provider') or 'discord'}:{o['user_id']}"))
+            if norm(o.get("email")):
+                keys.append(("email", (o.get("email") or "").strip().lower()))
+            street, postal = norm(o.get("ship_line1")), norm(o.get("ship_postal"))[:5]
+            if street and postal:
+                keys.append(("address", f"{street}|{postal}"))
+            if o.get("ship_group"):
+                keys.append(("paired", o["ship_group"]))
+            for kind, value in keys:
+                k = (sf, kind, value)
+                if k in seen:
+                    j = seen[k]
+                    reasons.setdefault(i, set()).add(kind)
+                    reasons.setdefault(j, set()).add(kind)
+                    parent[find(i)] = find(j)
+                else:
+                    seen[k] = i
+
+        members: dict[int, list[int]] = {}
+        for i in range(len(orders)):
+            members.setdefault(find(i), []).append(i)
+        order_of = ("account", "email", "address", "paired")
+        for idx in members.values():
+            if len(idx) < 2:
+                orders[idx[0]]["buyer_group"] = None
+                orders[idx[0]]["buyer_match"] = []
+                continue
+            group_id = f"b{min(orders[i]['id'] for i in idx)}"
+            why = set().union(*(reasons.get(i, set()) for i in idx))
+            for i in idx:
+                orders[i]["buyer_group"] = group_id
+                orders[i]["buyer_match"] = [k for k in order_of if k in why]
+        return orders
 
     def get_items_for_orders(self, order_ids: list[int]) -> dict[int, list[dict]]:
         """Return order items grouped by order_id, with product image_url."""

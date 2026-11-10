@@ -47,15 +47,20 @@ export default function StoreOrderPrint() {
   const { id } = useParams()
   const [params] = useSearchParams()
   const autoPrint = params.get('print') === '1'
-  const [order, setOrder] = useState(null)
+  // ?with=12,13 adds paired orders: one slip for everything in the package
+  const withIds = (params.get('with') || '').split(',').map((x) => x.trim()).filter(Boolean)
+  const withKey = withIds.join(',')
+  const [orders, setOrders] = useState(null)
   const [error, setError] = useState(null)
-  usePageTitle(order ? `Packing slip ${order.order_number}` : 'Packing slip')
+  const order = orders ? orders[0] : null
+  usePageTitle(order ? `Packing slip ${orders.map((o) => o.order_number).join(', ')}` : 'Packing slip')
 
   useEffect(() => {
-    adminGetOrder(id)
-      .then((d) => setOrder(d.order))
+    const ids = [id, ...(withKey ? withKey.split(',') : [])]
+    Promise.all(ids.map((x) => adminGetOrder(x)))
+      .then((list) => setOrders(list.map((d) => d.order)))
       .catch((e) => setError(e.message))
-  }, [id])
+  }, [id, withKey])
 
   useEffect(() => {
     if (!order || !autoPrint) return
@@ -77,8 +82,11 @@ export default function StoreOrderPrint() {
     return <div className="slip-page"><p>Loading order…</p></div>
   }
 
-  const items = order.items || []
+  const combined = orders.length > 1
+  const items = orders.flatMap((o) => o.items || [])
   const totalQty = items.reduce((n, i) => n + i.quantity, 0)
+  const sum = (key) => orders.reduce((n, o) => n + (o[key] || 0), 0)
+  const numbers = orders.map((o) => o.order_number).join(', ')
   const currency = order.currency || 'USD'
   const address = addressLines(order)
 
@@ -173,7 +181,9 @@ export default function StoreOrderPrint() {
           </div>
         )}
 
-        <div className="slip-order-number">Order Number: {order.order_number}</div>
+        <div className="slip-order-number">
+          {combined ? `Order Numbers: ${numbers}` : `Order Number: ${order.order_number}`}
+        </div>
         <div className="slip-thanks">Thank you for buying from {SELLER_NAME} on {SITE_NAME}.</div>
 
         <div className="slip-columns">
@@ -187,7 +197,7 @@ export default function StoreOrderPrint() {
           </div>
           <div className="slip-kv">
             <div>Order Date:</div>
-            <div>{fmtDate(order.created_at)}</div>
+            <div>{combined ? orders.map((o) => fmtDate(o.created_at)).filter((d, i, a) => a.indexOf(d) === i).join(', ') : fmtDate(order.created_at)}</div>
             <div>Shipping Method:</div>
             <div>
               {shippingMethod(order)}
@@ -221,7 +231,14 @@ export default function StoreOrderPrint() {
             </tr>
           </thead>
           <tbody>
-            {items.map((i) => (
+            {orders.map((o) => [
+              combined && (
+                <tr key={`h${o.id}`}>
+                  <td />
+                  <td className="slip-label" colSpan={3}>Order {o.order_number}</td>
+                </tr>
+              ),
+              ...(o.items || []).map((i) => (
               <tr key={i.id}>
                 <td className="qty">{i.quantity}</td>
                 <td>
@@ -231,32 +248,33 @@ export default function StoreOrderPrint() {
                 <td className="num">{formatMoney(i.unit_price_cents, currency)}</td>
                 <td className="num">{formatMoney(i.unit_price_cents * i.quantity, currency)}</td>
               </tr>
-            ))}
+              )),
+            ])}
             <tr className="total">
               <td className="qty">{totalQty}</td>
               <td className="slip-label">Total</td>
               <td />
-              <td className="num">{formatMoney(order.subtotal_cents, currency)}</td>
+              <td className="num">{formatMoney(sum('subtotal_cents'), currency)}</td>
             </tr>
             <tr className="summary">
               <td />
               <td>Shipping</td>
               <td />
-              <td className="num">{formatMoney(order.shipping_cents, currency)}</td>
+              <td className="num">{formatMoney(sum('shipping_cents'), currency)}</td>
             </tr>
-            {order.tax_cents > 0 && (
+            {sum('tax_cents') > 0 && (
               <tr className="summary">
                 <td />
                 <td>Tax</td>
                 <td />
-                <td className="num">{formatMoney(order.tax_cents, currency)}</td>
+                <td className="num">{formatMoney(sum('tax_cents'), currency)}</td>
               </tr>
             )}
             <tr className="summary">
               <td />
               <td className="slip-label">Order Total</td>
               <td />
-              <td className="num slip-label">{formatMoney(order.total_cents, currency)}</td>
+              <td className="num slip-label">{formatMoney(sum('total_cents'), currency)}</td>
             </tr>
           </tbody>
         </table>
@@ -278,7 +296,7 @@ export default function StoreOrderPrint() {
         </div>
 
         <div className="slip-footer">
-          <span>Order Number: {order.order_number}</span>
+          <span>{combined ? `Order Numbers: ${numbers}` : `Order Number: ${order.order_number}`}</span>
           <span>1 of 1</span>
         </div>
       </div>

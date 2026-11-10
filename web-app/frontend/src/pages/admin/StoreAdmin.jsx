@@ -5,6 +5,7 @@ import {
   adminReorderProducts,
   adminUploadProductImages,
   adminGetOrders, adminGetOrder, adminShipOrder, adminSetOrderStatus, formatMoney,
+  adminPairOrders, adminUnpairOrder,
   adminCreateStorefront, adminUpdateStorefront, adminDeleteStorefront,
   adminGetStorefrontAdmins, adminAddStorefrontAdmin, adminSetStorefrontDescription, adminRemoveStorefrontAdmin, adminSearchUsers,
   adminGetStorefrontApplications, adminApproveStorefrontApplication,
@@ -640,12 +641,51 @@ const QUEUE_FILTERS = [
 // Keep in sync with TRACKING_REQUIRED_OVER_CENTS in routes/api/store.py
 const TRACKING_REQUIRED_OVER_CENTS = 5000
 
-function OrderRow({ order, onChanged, showStorefront = false }) {
-  const trackingRequired = order.total_cents > TRACKING_REQUIRED_OVER_CENTS
-  const [expanded, setExpanded] = useState(false)
-  const [detail, setDetail] = useState(null)
+// Tracking number + carrier + "Mark shipped". totalCents is what's in the
+// package, so paired orders are judged on their combined total.
+function ShipForm({ totalCents, busy, onShip, label = 'Mark shipped' }) {
+  const trackingRequired = totalCents > TRACKING_REQUIRED_OVER_CENTS
   const [tracking, setTracking] = useState('')
   const [carrier, setCarrier] = useState('USPS')
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          className={`${inputCls} flex-1 min-w-40`}
+          placeholder={trackingRequired ? 'Tracking number (required)' : 'Tracking number (optional)'}
+          value={tracking}
+          onChange={(e) => setTracking(e.target.value)}
+        />
+        {tracking.trim() && (
+          <select className={inputCls} value={carrier} onChange={(e) => setCarrier(e.target.value)}>
+            <option>USPS</option>
+            <option>UPS</option>
+            <option>FedEx</option>
+            <option>Other</option>
+          </select>
+        )}
+        <button
+          onClick={() => onShip(tracking.trim() || null, tracking.trim() ? carrier : null)}
+          disabled={busy || (trackingRequired && !tracking.trim())}
+          className="bg-accent-green hover:opacity-90 text-white font-medium px-4 py-2 rounded disabled:opacity-50"
+        >
+          {label}
+        </button>
+      </div>
+      {!tracking.trim() && (
+        <p className="text-xs text-text-muted mt-1">
+          {trackingRequired
+            ? 'This package is over $50, so it needs a tracking number.'
+            : 'Tracking is only required for packages over $50.'}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function OrderRow({ order, onChanged, showStorefront = false, pairedWith = 0, printHref = null }) {
+  const [expanded, setExpanded] = useState(false)
+  const [detail, setDetail] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -657,11 +697,23 @@ function OrderRow({ order, onChanged, showStorefront = false }) {
     setExpanded((x) => !x)
   }
 
-  const ship = async () => {
+  const ship = async (tracking, carrier) => {
     setBusy(true)
     setError(null)
     try {
-      await adminShipOrder(order.id, tracking.trim() || null, tracking.trim() ? carrier : null)
+      await adminShipOrder(order.id, tracking, carrier)
+      onChanged()
+    } catch (e) {
+      setError(e.message)
+      setBusy(false)
+    }
+  }
+
+  const unpair = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await adminUnpairOrder(order.id)
       onChanged()
     } catch (e) {
       setError(e.message)
@@ -705,10 +757,15 @@ function OrderRow({ order, onChanged, showStorefront = false }) {
             <span className="text-xs text-brand-sky">{order.storefront_name}</span>
           )}
           <span className="text-sm text-secondary font-medium">{formatMoney(order.total_cents, order.currency)}</span>
-          <span className="text-sm text-text-muted">{order.status}</span>
+          <span className="text-sm text-text-muted">
+            {order.status}
+            {pairedWith > 0 && order.status === 'paid' && (
+              <span className="ml-2 text-xs rounded-full border border-secondary/40 bg-secondary/10 text-secondary px-2 py-0.5">Paired</span>
+            )}
+          </span>
         </button>
         <a
-          href={`/admin/store/orders/${order.id}/print?print=1`}
+          href={printHref || `/admin/store/orders/${order.id}/print?print=1`}
           target="_blank"
           rel="noopener"
           className="shrink-0 mr-3 inline-flex items-center gap-1.5 rounded border border-border px-2.5 py-1.5 text-xs text-text-muted hover:text-text hover:border-primary transition-colors"
@@ -745,40 +802,26 @@ function OrderRow({ order, onChanged, showStorefront = false }) {
             <Spinner className="py-2" />
           )}
 
-          {order.status === 'paid' && (
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  className={`${inputCls} flex-1 min-w-40`}
-                  placeholder={trackingRequired ? 'Tracking number (required)' : 'Tracking number (optional)'}
-                  value={tracking}
-                  onChange={(e) => setTracking(e.target.value)}
-                />
-                {tracking.trim() && (
-                  <select className={inputCls} value={carrier} onChange={(e) => setCarrier(e.target.value)}>
-                    <option>USPS</option>
-                    <option>UPS</option>
-                    <option>FedEx</option>
-                    <option>Other</option>
-                  </select>
-                )}
-                <button
-                  onClick={ship}
-                  disabled={busy || (trackingRequired && !tracking.trim())}
-                  className="bg-accent-green hover:opacity-90 text-white font-medium px-4 py-2 rounded disabled:opacity-50"
-                >
-                  Mark shipped
-                </button>
-              </div>
-              {!tracking.trim() && (
-                <p className="text-xs text-text-muted mt-1">
-                  {trackingRequired
-                    ? 'This order is over $50, so it needs a tracking number.'
-                    : 'Tracking is only required for orders over $50.'}
+          {order.status === 'paid' && (pairedWith > 0 ? (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="text-text-muted">
+                Ships with the {pairedWith === 1 ? 'other paired order' : `other ${pairedWith} paired orders`}. Use the box above to mark the package shipped.
+              </span>
+              <button onClick={unpair} disabled={busy} className="text-primary hover:underline">
+                Unpair
+              </button>
+            </div>
+          ) : (
+            <>
+              {order.ship_group && (
+                <p className="text-xs text-text-muted">
+                  Paired with an order that isn't in this list. Marking this shipped ships the whole pair.{' '}
+                  <button onClick={unpair} disabled={busy} className="text-primary hover:underline">Unpair</button>
                 </p>
               )}
-            </div>
-          )}
+              <ShipForm totalCents={order.total_cents} busy={busy} onShip={ship} />
+            </>
+          ))}
           {order.status === 'shipped' && (
             <button onClick={() => setStatus('delivered')} disabled={busy} className="text-primary hover:underline">
               Mark delivered
@@ -798,6 +841,139 @@ function OrderRow({ order, onChanged, showStorefront = false }) {
       )}
     </div>
   )
+}
+
+const MATCH_WORDS = { account: 'same account', email: 'same email', address: 'same address', paired: 'paired' }
+
+function addressKey(o) {
+  return `${(o.ship_line1 || '').toLowerCase().replace(/[^a-z0-9]/g, '')}|${(o.ship_postal || '').slice(0, 5)}`
+}
+
+// Orders that look like they're from one buyer, shown together so they can
+// be paired and sent in one package.
+function BuyerGroup({ orders, onChanged, showStorefront }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  const toShip = orders.filter((o) => o.status === 'paid')
+  const pairCounts = {}
+  toShip.forEach((o) => { if (o.ship_group) pairCounts[o.ship_group] = (pairCounts[o.ship_group] || 0) + 1 })
+  const pairs = Object.keys(pairCounts).filter((g) => pairCounts[g] > 1)
+  const pairedIds = toShip.filter((o) => pairs.includes(o.ship_group))
+  const unpaired = toShip.filter((o) => !pairs.includes(o.ship_group))
+  const canPair = toShip.length > 1 && unpaired.length > 0
+  // One pair at a time is the normal case; it's the one the box ships
+  const pair = pairs.length === 1 ? pairs[0] : null
+  const pairOrders = pair ? toShip.filter((o) => o.ship_group === pair) : []
+  const pairTotal = pairOrders.reduce((n, o) => n + o.total_cents, 0)
+
+  const names = [...new Set(orders.map((o) => o.username))]
+  const total = orders.reduce((n, o) => n + o.total_cents, 0)
+  const addresses = new Set(toShip.filter((o) => o.ship_line1).map(addressKey))
+  const why = (orders[0].buyer_match || []).filter((m) => m !== 'paired').map((m) => MATCH_WORDS[m])
+
+  const run = async (fn) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await fn()
+      onChanged()
+    } catch (e) {
+      setError(e.message)
+      setBusy(false)
+    }
+  }
+  const pairAll = () => run(() => adminPairOrders(toShip.map((o) => o.id)))
+  const shipPair = (tracking, carrier) => run(() => adminShipOrder(pairOrders[0].id, tracking, carrier))
+  const printPair = pairOrders.length > 1
+    ? `/admin/store/orders/${pairOrders[0].id}/print?print=1&with=${pairOrders.slice(1).map((o) => o.id).join(',')}`
+    : null
+
+  return (
+    <section
+      className="rounded-lg border border-secondary/40 bg-secondary/5 p-2 space-y-2"
+      aria-label={`Orders from ${names.join(' / ')}`}
+    >
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 pt-1">
+        <span className="text-xs font-semibold uppercase tracking-wide text-secondary">Same buyer</span>
+        <span className="text-sm font-medium">{names.join(' / ')}</span>
+        <span className="text-sm text-text-muted">
+          {orders.length} orders · {formatMoney(total, orders[0].currency)}
+          {why.length > 0 && ` · ${why.join(', ')}`}
+        </span>
+        {canPair && (
+          <button
+            onClick={pairAll}
+            disabled={busy}
+            className="ml-auto rounded border border-secondary px-3 py-1.5 text-sm font-medium text-secondary hover:bg-secondary/10 disabled:opacity-50"
+          >
+            {pairedIds.length ? 'Add to the pair' : 'Pair to ship together'}
+          </button>
+        )}
+      </div>
+      {canPair && addresses.size > 1 && (
+        <p className="px-1 text-xs text-accent-red">
+          These orders have different shipping addresses. Check with the buyer before sending them in one package.
+        </p>
+      )}
+
+      {pair && (
+        <div className="rounded border border-secondary/40 bg-bg-surface p-3 space-y-2 text-sm">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="font-medium">
+              Paired: {pairOrders.length} orders in one package · {formatMoney(pairTotal, pairOrders[0].currency)}
+            </span>
+            {printPair && (
+              <a href={printPair} target="_blank" rel="noopener" className="text-primary hover:underline">
+                Print one packing slip
+              </a>
+            )}
+          </div>
+          <ShipForm
+            totalCents={pairTotal}
+            busy={busy}
+            onShip={shipPair}
+            label={`Mark all ${pairOrders.length} shipped`}
+          />
+        </div>
+      )}
+      {error && <p className="px-1 text-sm text-accent-red">{error}</p>}
+
+      <div className="space-y-2">
+        {orders.map((o) => {
+          const others = o.status === 'paid' && pairs.includes(o.ship_group) ? pairCounts[o.ship_group] - 1 : 0
+          return (
+            <OrderRow
+              key={o.id}
+              order={o}
+              onChanged={onChanged}
+              showStorefront={showStorefront}
+              pairedWith={others}
+              printHref={others && o.ship_group === pair ? printPair : null}
+            />
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+// Split the list into single orders and same-buyer groups, keeping the
+// queue's order (a group sits where its newest order would).
+function groupByBuyer(orders) {
+  const out = []
+  const groups = {}
+  orders.forEach((o) => {
+    if (!o.buyer_group) {
+      out.push({ key: `o${o.id}`, orders: [o] })
+    } else if (groups[o.buyer_group]) {
+      groups[o.buyer_group].orders.push(o)
+    } else {
+      groups[o.buyer_group] = { key: o.buyer_group, orders: [o] }
+      out.push(groups[o.buyer_group])
+    }
+  })
+  return out
 }
 
 function OrdersPanel({ storefrontId, showStorefront }) {
@@ -915,9 +1091,16 @@ function OrdersPanel({ storefrontId, showStorefront }) {
         <p className="text-center text-text-muted py-12">No orders here.</p>
       ) : (
         <div className="space-y-2">
-          {orders.map((o) => (
-            <OrderRow key={o.id} order={o} onChanged={load} showStorefront={showStorefront} />
-          ))}
+          {groupByBuyer(orders).map((g) => (g.orders.length > 1 ? (
+            <BuyerGroup key={g.key} orders={g.orders} onChanged={load} showStorefront={showStorefront} />
+          ) : (
+            <OrderRow
+              key={g.key}
+              order={g.orders[0]}
+              onChanged={load}
+              showStorefront={showStorefront}
+            />
+          )))}
         </div>
       )}
     </div>

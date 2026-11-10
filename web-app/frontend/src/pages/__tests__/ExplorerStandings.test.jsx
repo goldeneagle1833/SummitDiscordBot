@@ -7,6 +7,8 @@ vi.mock('@/api/explorer', () => ({
   deleteEvent: vi.fn(),
   deleteSeason: vi.fn(),
   fetchEventsMap: vi.fn(),
+  leaderboardExportUrl: (id, view = 'standings') =>
+    `/api/explorer/leaderboard/${id}/export.csv?view=${view}`,
 }))
 
 vi.mock('@/components/explorer/EventsMap', () => ({
@@ -110,5 +112,37 @@ describe('ExplorerStandings events map', () => {
     renderWithRouter(<ExplorerStandings />)
     await screen.findByText('Community Series')
     expect(screen.queryByTestId('events-map')).toBeNull()
+  })
+})
+
+describe('ExplorerStandings admin export', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    fetchSeasons.mockResolvedValue([season])
+    fetchLeaderboard.mockResolvedValue(LEADERBOARD)
+    fetchEventsMap.mockResolvedValue({ enabled: false, events: [] })
+  })
+
+  it('gives Explorer admins standings and results CSV links for the selected series', async () => {
+    useAuth.mockReturnValue({
+      user: { id: '2', is_explorer_admin: true, is_admin: false },
+      loading: false,
+    })
+    renderWithRouter(<ExplorerStandings />)
+
+    const button = await screen.findByRole('button', { name: /Export/ })
+    button.click()
+    const standings = await screen.findByRole('menuitem', { name: /Standings \(CSV\)/ })
+    expect(standings).toHaveAttribute('href', '/api/explorer/leaderboard/1/export.csv?view=standings')
+    expect(screen.getByRole('menuitem', { name: /Every event result/ }))
+      .toHaveAttribute('href', '/api/explorer/leaderboard/1/export.csv?view=results')
+  })
+
+  it('hides the export from players', async () => {
+    useAuth.mockReturnValue({ user: { id: '1', is_admin: false }, loading: false })
+    renderWithRouter(<ExplorerStandings />)
+
+    await screen.findByRole('link', { name: APPLY_LABEL })
+    expect(screen.queryByRole('button', { name: /Export/ })).not.toBeInTheDocument()
   })
 })

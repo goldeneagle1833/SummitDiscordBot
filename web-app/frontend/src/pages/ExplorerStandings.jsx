@@ -9,6 +9,7 @@ import {
   deleteEvent,
   deleteSeason,
   fetchEventsMap,
+  leaderboardExportUrl,
 } from '@/api/explorer'
 
 // Leaflet is a sizeable bundle and needs a real DOM, so keep it lazy.
@@ -132,6 +133,47 @@ function Linkify({ text }) {
         )
       )}
     </>
+  )
+}
+
+// Admin-only download of the selected series. Two shapes: the leaderboard as
+// shown, and every player's result at every event.
+function ExportMenu({ seasonId }) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [open])
+
+  const linkClass = 'block px-3 py-2 text-sm text-text-primary hover:bg-white/5 transition-colors'
+  return (
+    <div className="relative">
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o) }}
+        className="px-2 py-1 text-xs text-text-primary border border-border hover:border-secondary rounded transition-colors"
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        Export ▾
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute left-0 top-full mt-1 z-20 w-60 bg-bg-surface border border-border rounded shadow-lg overflow-hidden"
+        >
+          <a role="menuitem" href={leaderboardExportUrl(seasonId, 'standings')} className={linkClass}>
+            Standings (CSV)
+            <span className="block text-xs text-text-muted">One row per player, as the leaderboard shows</span>
+          </a>
+          <a role="menuitem" href={leaderboardExportUrl(seasonId, 'results')} className={`${linkClass} border-t border-border/50`}>
+            Every event result (CSV)
+            <span className="block text-xs text-text-muted">One row per player per event, with points</span>
+          </a>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -367,7 +409,7 @@ export default function ExplorerStandings() {
         <>
           {/* Series selector */}
           <div className="mb-6">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <label className="text-sm text-text-muted">Series:</label>
               <select
                 value={selectedSeasonId ?? ''}
@@ -390,6 +432,7 @@ export default function ExplorerStandings() {
                   Delete Series
                 </button>
               )}
+              {isExplorerAdmin && selectedSeasonId && <ExportMenu seasonId={selectedSeasonId} />}
             </div>
             {selectedSeasonId && seasons.find((s) => s.id === selectedSeasonId)?.description && (
               <p className="text-sm text-text-muted mt-2">

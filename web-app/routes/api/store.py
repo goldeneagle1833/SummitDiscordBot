@@ -23,6 +23,7 @@ from repositories.store import (
     webhook_secret_env,
 )
 from utils.store_auth import is_store_admin, require_store_admin
+from services.store_shipping import shipping_rules
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,8 @@ def list_products():
             if cap is not None:
                 p["remaining_this_month"] = max(0, cap - counts.get(p["id"], 0))
 
-    return jsonify({"products": products})
+    # Card tiers, so checkout can show the shipping before payment
+    return jsonify({"products": products, "shipping_rules": shipping_rules()})
 
 
 # ----------------------------------------------------------------------
@@ -134,7 +136,8 @@ def admin_list_products():
             return jsonify({"products": []})
         ids = [wanted]
     return jsonify({
-        "products": _repo().list_products(include_inactive=True, storefront_ids=ids)
+        "products": _repo().list_products(include_inactive=True, storefront_ids=ids),
+        "shipping_rules": shipping_rules(),
     })
 
 
@@ -174,6 +177,10 @@ def admin_create_product():
         except (TypeError, ValueError):
             return jsonify({"error": "max_per_user_monthly must be a positive integer"}), 400
 
+    shipping, error = _clean_listing_shipping(data)
+    if error:
+        return jsonify({"error": error}), 400
+
     try:
         product_id = repo.create_product(
             sku=str(data["sku"]).strip(),
@@ -187,6 +194,7 @@ def admin_create_product():
             storefront_id=storefront_id,
             image_framing=data.get("image_framing"),
             product_line=_clean_product_line(data.get("product_line")),
+            **shipping,
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -206,6 +214,33 @@ def _clean_product_line(value) -> str | None:
     """Product line label for the sales dashboard; blank means automatic."""
     text = " ".join(str(value or "").split())
     return text[:PRODUCT_LINE_MAX] or None
+
+
+SHIP_CARDS_MAX = 1000
+LISTING_SHIPPING_MAX_CENTS = 100_00
+
+
+def _clean_listing_shipping(data: dict) -> tuple[dict, str | None]:
+    """ship_cards / shipping_cents from an admin body. Blank clears one."""
+    fields: dict = {}
+    for key, top, label in (
+        ("ship_cards", SHIP_CARDS_MAX, "Cards per item"),
+        ("shipping_cents", LISTING_SHIPPING_MAX_CENTS, "Shipping price"),
+    ):
+        if key not in data:
+            continue
+        value = data[key]
+        if value in (None, ""):
+            fields[key] = None
+            continue
+        try:
+            value = int(value)
+            if not 0 <= value <= top:
+                raise ValueError
+        except (TypeError, ValueError):
+            return {}, f"{label} must be a whole number from 0 to {top}"
+        fields[key] = value
+    return fields, None
 
 
 def _validate_product_patch(data: dict) -> tuple[dict, str | None]:
@@ -255,6 +290,10 @@ def _validate_product_patch(data: dict) -> tuple[dict, str | None]:
         fields["image_framing"] = data["image_framing"]
     if "product_line" in data:
         fields["product_line"] = _clean_product_line(data["product_line"])
+    shipping, error = _clean_listing_shipping(data)
+    if error:
+        return {}, error
+    fields.update(shipping)
     return fields, None
 
 

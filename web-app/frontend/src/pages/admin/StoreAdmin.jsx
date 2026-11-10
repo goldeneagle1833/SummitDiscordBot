@@ -17,6 +17,7 @@ import SalesDashboard from '@/components/store/SalesDashboard'
 import SaleAlertsToggle from '@/components/store/SaleAlertsToggle'
 import ImageFramer from '@/components/store/ImageFramer'
 import LinkifiedText from '@/components/ui/LinkifiedText'
+import { DEFAULT_SHIPPING_RULES, cartShipping } from '@/utils/storeShipping'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const inputCls =
@@ -25,7 +26,8 @@ const inputCls =
 // ---------------------------------------------------------------- Products
 
 const EMPTY_PRODUCT = {
-  sku: '', name: '', description: '', price: '', stock_quantity: '', max_per_user_monthly: '', product_line: '', images: [], framing: {},
+  sku: '', name: '', description: '', price: '', stock_quantity: '', max_per_user_monthly: '', product_line: '',
+  ship_cards: '', shipping_price: '', images: [], framing: {},
 }
 
 function productToForm(p) {
@@ -37,6 +39,8 @@ function productToForm(p) {
     stock_quantity: String(p.stock_quantity ?? ''),
     max_per_user_monthly: p.max_per_user_monthly == null ? '' : String(p.max_per_user_monthly),
     product_line: p.product_line || '',
+    ship_cards: p.ship_cards == null ? '' : String(p.ship_cards),
+    shipping_price: p.shipping_cents == null ? '' : (p.shipping_cents / 100).toFixed(2),
     images: p.images?.length ? [...p.images] : p.image_url ? [p.image_url] : [],
     framing: { ...(p.image_framing || {}) },
   }
@@ -82,7 +86,32 @@ function uploadBatches(files) {
 
 // Shared by "Add product" and the inline editor. `initial` is a product row
 // when editing, null when adding.
-function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStorefrontId = null, productLines = [] }) {
+// What one of this listing ships as, under the product editor's shipping fields
+function ListingShippingHint({ form, rules }) {
+  const cards = form.ship_cards.trim() === '' ? null : parseInt(form.ship_cards, 10)
+  const own = form.shipping_price.trim() === '' ? null : Math.round(parseFloat(form.shipping_price) * 100)
+  const max = rules.envelope_max_cards
+  const tiers = `Up to ${max} cards in the cart ship in a plain white envelope for ${formatMoney(rules.envelope_cents)}; `
+    + `more go USPS Ground Advantage for ${formatMoney(rules.ground_cents)}.`
+  let text
+  if (cards == null && own == null) {
+    text = 'Not set: carts with this listing use the store\'s usual shipping at payment.'
+  } else if (cards != null && Number.isFinite(cards)) {
+    const alone = cartShipping([{ product: { ship_cards: cards, shipping_cents: own }, quantity: 1 }], rules)
+    text = `One on its own ships for ${formatMoney(alone.cents)}`
+      + ({ envelope: ' in a plain white envelope', ground: ' by USPS Ground Advantage' }[alone.method] || '')
+      + '. Cards add up with the rest of the cart.'
+  } else if (own != null && Number.isFinite(own)) {
+    text = `Ships for ${formatMoney(own)}, or the card price if the rest of the cart costs more to ship.`
+  }
+  return (
+    <p className="text-xs text-text-muted mt-1">
+      {text} {tiers}
+    </p>
+  )
+}
+
+function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStorefrontId = null, productLines = [], shippingRules = DEFAULT_SHIPPING_RULES }) {
   const editing = Boolean(initial)
   const [storefrontId, setStorefrontId] = useState(defaultStorefrontId ?? storefronts[0]?.id ?? '')
   const [form, setForm] = useState(() => (initial ? productToForm(initial) : EMPTY_PRODUCT))
@@ -165,6 +194,18 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
       setError('Monthly limit must be a positive number, or blank for no limit')
       return
     }
+    const shipCardsText = form.ship_cards.trim()
+    const ship_cards = shipCardsText ? Number(shipCardsText) : null
+    if (ship_cards !== null && !(Number.isInteger(ship_cards) && ship_cards >= 0)) {
+      setError('Cards per item must be a whole number, or blank')
+      return
+    }
+    const shipPriceText = form.shipping_price.trim()
+    const shipping_cents = shipPriceText ? Math.round(parseFloat(shipPriceText) * 100) : null
+    if (shipping_cents !== null && !(Number.isFinite(shipping_cents) && shipping_cents >= 0)) {
+      setError('Shipping price must be a dollar amount, or blank')
+      return
+    }
     const payload = {
       sku: form.sku.trim(),
       name: form.name.trim(),
@@ -173,6 +214,8 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
       stock_quantity,
       max_per_user_monthly: maxMonthly,
       product_line: form.product_line.trim(),
+      ship_cards,
+      shipping_cents,
       images: form.images,
       image_framing: form.framing,
     }
@@ -255,6 +298,35 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
             Groups listings in the sales rundown, e.g. both Skeleton packs under &quot;Skeleton Tokens&quot;.
           </p>
         </div>
+
+        <fieldset className="sm:col-span-2 min-w-0 rounded border border-border p-3">
+          <legend className="px-1 text-xs font-semibold text-text-muted uppercase tracking-wide">Shipping</legend>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="text-xs text-text-muted">
+              Cards in one of this listing
+              <input
+                className={`${inputCls} w-full mt-1`}
+                placeholder="e.g. 6 for a playset, 2 for a pack"
+                aria-label="Cards per item"
+                inputMode="numeric"
+                value={form.ship_cards}
+                onChange={set('ship_cards')}
+              />
+            </label>
+            <label className="text-xs text-text-muted">
+              Own shipping price (optional)
+              <input
+                className={`${inputCls} w-full mt-1`}
+                placeholder="e.g. 8.99 for a playmat"
+                aria-label="Shipping price"
+                inputMode="decimal"
+                value={form.shipping_price}
+                onChange={set('shipping_price')}
+              />
+            </label>
+          </div>
+          <ListingShippingHint form={form} rules={shippingRules} />
+        </fieldset>
 
         <div className="sm:col-span-2 min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-3">
@@ -387,15 +459,31 @@ function GripIcon() {
   )
 }
 
+// Short shipping note under a listing's price in the products table
+function ListingShippingTag({ product }) {
+  const parts = []
+  if (product.ship_cards != null) parts.push(`${product.ship_cards} card${product.ship_cards === 1 ? '' : 's'}`)
+  if (product.shipping_cents != null) parts.push(`ships ${formatMoney(product.shipping_cents)}`)
+  return (
+    <span className="block text-xs text-text-muted whitespace-nowrap">
+      {parts.length ? parts.join(' · ') : 'shipping not set'}
+    </span>
+  )
+}
+
 function ProductsPanel({ storefrontId, storefronts }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(null) // product row being edited
+  const [shippingRules, setShippingRules] = useState(DEFAULT_SHIPPING_RULES)
 
   const load = useCallback(() => {
     adminGetProducts(storefrontId)
-      .then((d) => setProducts(d.products || []))
+      .then((d) => {
+        setProducts(d.products || [])
+        if (d.shipping_rules) setShippingRules(d.shipping_rules)
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
   }, [storefrontId])
@@ -496,6 +584,7 @@ function ProductsPanel({ storefrontId, storefronts }) {
           key={editing.id}
           initial={editing}
           productLines={productLines}
+          shippingRules={shippingRules}
           onCancel={() => setEditing(null)}
           onSaved={() => {
             setEditing(null)
@@ -507,6 +596,7 @@ function ProductsPanel({ storefrontId, storefronts }) {
           key={`new-${storefrontId}`}
           initial={null}
           productLines={productLines}
+          shippingRules={shippingRules}
           onSaved={load}
           storefronts={storefronts}
           defaultStorefrontId={storefrontId}
@@ -601,7 +691,10 @@ function ProductsPanel({ storefrontId, storefronts }) {
                       <span className="block text-xs text-text-muted">{storefrontName(p.storefront_id)}</span>
                     )}
                   </td>
-                  <td className="py-2 px-3 text-secondary">{formatMoney(p.price_cents, p.currency)}</td>
+                  <td className="py-2 px-3 text-secondary">
+                    {formatMoney(p.price_cents, p.currency)}
+                    <ListingShippingTag product={p} />
+                  </td>
                   <td className="py-2 px-3">
                     <input
                       type="number"

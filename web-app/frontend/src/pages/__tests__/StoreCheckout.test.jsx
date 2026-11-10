@@ -50,6 +50,28 @@ describe('StoreCheckout page', () => {
     expect(screen.getAllByText('$12.00').length).toBeGreaterThan(0)
   })
 
+  it('shows envelope shipping, then Ground Advantage past six cards', async () => {
+    sessionStorage.setItem(CART_KEY, JSON.stringify({ 1: 3 }))
+    getProducts.mockResolvedValue({ products: [{ ...TOKEN, ship_cards: 2 }, { ...RARE, ship_cards: 6 }] })
+    const first = renderCheckout()
+    expect(await screen.findByText(/Plain white envelope/)).toBeInTheDocument()
+    expect(screen.getByText('$1.99')).toBeInTheDocument()
+    expect(screen.getByText('$16.99')).toBeInTheDocument()
+    first.unmount()
+
+    sessionStorage.setItem(CART_KEY, JSON.stringify({ 1: 1, 2: 1 }))
+    renderCheckout()
+    expect(await screen.findByText('USPS Ground Advantage')).toBeInTheDocument()
+    expect(screen.getByText('$5.99')).toBeInTheDocument()
+  })
+
+  it('leaves shipping to payment when a listing has no shipping set', async () => {
+    sessionStorage.setItem(CART_KEY, JSON.stringify({ 1: 1, 2: 1 }))
+    getProducts.mockResolvedValue({ products: [{ ...TOKEN, ship_cards: 2 }, RARE] })
+    renderCheckout()
+    expect(await screen.findByText('Shipping calculated at payment')).toBeInTheDocument()
+  })
+
   it('survives a refresh because the cart comes from storage', async () => {
     sessionStorage.setItem(CART_KEY, JSON.stringify({ 2: 1 }))
     const first = renderCheckout()

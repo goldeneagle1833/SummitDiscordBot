@@ -25,7 +25,7 @@ const inputCls =
 // ---------------------------------------------------------------- Products
 
 const EMPTY_PRODUCT = {
-  sku: '', name: '', description: '', price: '', stock_quantity: '', max_per_user_monthly: '', images: [], framing: {},
+  sku: '', name: '', description: '', price: '', stock_quantity: '', max_per_user_monthly: '', product_line: '', images: [], framing: {},
 }
 
 function productToForm(p) {
@@ -36,6 +36,7 @@ function productToForm(p) {
     price: (p.price_cents / 100).toFixed(2),
     stock_quantity: String(p.stock_quantity ?? ''),
     max_per_user_monthly: p.max_per_user_monthly == null ? '' : String(p.max_per_user_monthly),
+    product_line: p.product_line || '',
     images: p.images?.length ? [...p.images] : p.image_url ? [p.image_url] : [],
     framing: { ...(p.image_framing || {}) },
   }
@@ -81,7 +82,7 @@ function uploadBatches(files) {
 
 // Shared by "Add product" and the inline editor. `initial` is a product row
 // when editing, null when adding.
-function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStorefrontId = null }) {
+function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStorefrontId = null, productLines = [] }) {
   const editing = Boolean(initial)
   const [storefrontId, setStorefrontId] = useState(defaultStorefrontId ?? storefronts[0]?.id ?? '')
   const [form, setForm] = useState(() => (initial ? productToForm(initial) : EMPTY_PRODUCT))
@@ -171,6 +172,7 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
       price_cents,
       stock_quantity,
       max_per_user_monthly: maxMonthly,
+      product_line: form.product_line.trim(),
       images: form.images,
       image_framing: form.framing,
     }
@@ -236,6 +238,23 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
           value={form.max_per_user_monthly}
           onChange={set('max_per_user_monthly')}
         />
+        <div className="min-w-0">
+          <input
+            className={`${inputCls} w-full`}
+            placeholder="Product line (blank = group by name)"
+            aria-label="Product line"
+            list={`product-lines-${fileInputId}`}
+            maxLength={60}
+            value={form.product_line}
+            onChange={set('product_line')}
+          />
+          <datalist id={`product-lines-${fileInputId}`}>
+            {productLines.map((l) => <option key={l} value={l} />)}
+          </datalist>
+          <p className="text-xs text-text-muted mt-1">
+            Groups listings in the sales rundown, e.g. both Skeleton packs under &quot;Skeleton Tokens&quot;.
+          </p>
+        </div>
 
         <div className="sm:col-span-2 min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-3">
@@ -468,12 +487,15 @@ function ProductsPanel({ storefrontId, storefronts }) {
 
   if (loading) return <Spinner className="py-12" />
 
+  const productLines = [...new Set(products.map((p) => (p.product_line || '').trim()).filter(Boolean))].sort()
+
   return (
     <div>
       {editing ? (
         <ProductForm
           key={editing.id}
           initial={editing}
+          productLines={productLines}
           onCancel={() => setEditing(null)}
           onSaved={() => {
             setEditing(null)
@@ -484,6 +506,7 @@ function ProductsPanel({ storefrontId, storefronts }) {
         <ProductForm
           key={`new-${storefrontId}`}
           initial={null}
+          productLines={productLines}
           onSaved={load}
           storefronts={storefronts}
           defaultStorefrontId={storefrontId}

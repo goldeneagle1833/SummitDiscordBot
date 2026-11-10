@@ -16,6 +16,12 @@ const DATA = {
   daily: [{ date: '2026-10-11', sales_cents: 1000, unfinished_cents: 500 }, { date: '2026-10-12', sales_cents: 2000, unfinished_cents: 0 }],
   attention: { to_ship: 3, oldest_to_ship_at: null, awaiting_payment: 1, unfinished_week: 2, unfinished_week_cents: 1600, low_stock: [{ id: 1, name: 'Playmat', stock: 0 }], flagged: 0 },
   top_products: [{ product_id: 1, name: 'Fire token set', units: 12, sales_cents: 6000 }],
+  product_lines: [
+    { line: 'Behemoth & Leviathan Tokens', auto: true, units: 55, orders: 40, sales_cents: 74400, share: 0.8,
+      products: [{ product_id: 7, name: 'Full playset', units: 46, sales_cents: 69000 }, { product_id: 8, name: 'Island Leviathan Token Pack', units: 9, sales_cents: 5400 }] },
+    { line: 'Skeleton Tokens', auto: true, units: 7, orders: 7, sales_cents: 9900, share: 0.2,
+      products: [{ product_id: 9, name: 'Foil Skeleton Token pack', units: 4, sales_cents: 6000 }] },
+  ],
   money: { products_cents: 400000, shipping_cents: 90000, tax_cents: 0, refunded_cents: 2800, refunded_orders: 1 },
   repeat_buyers: { buyers: 30, repeat: 6, best: [{ user_id: '1', username: 'beadylittleeyes', orders: 3, spent_cents: 4500 }] },
   ship_time: { shipped: 4, average_hours: 30, median_hours: 20, within_2_days: 3 },
@@ -41,6 +47,17 @@ describe('SalesDashboard', () => {
     expect(screen.getByText('4 hits')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Monthly sales CSV' })).toHaveAttribute('href', '/api/store/admin/sales-summary.csv?storefront_id=1')
     expect(adminGetDashboard).toHaveBeenCalledWith(1, 30)
+  })
+
+  it('groups sales by product line and opens a line', async () => {
+    renderWithRouter(<SalesDashboard storefrontId={1} title="Summit Store" />)
+    const line = await screen.findByRole('button', { name: /Behemoth & Leviathan Tokens/ })
+    expect(screen.getAllByText('55 sold · 40 orders · 80%').length).toBeGreaterThan(0)
+    expect(line).toHaveTextContent('$744')
+    expect(screen.queryByText('Island Leviathan Token Pack')).not.toBeInTheDocument()
+    await userEvent.click(line)
+    expect(line).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('Island Leviathan Token Pack')).toBeInTheDocument()
   })
 
   it('changes range and collapses to one line', async () => {

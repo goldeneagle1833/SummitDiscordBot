@@ -186,6 +186,7 @@ def admin_create_product():
             images=data.get("images"),
             storefront_id=storefront_id,
             image_framing=data.get("image_framing"),
+            product_line=_clean_product_line(data.get("product_line")),
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -196,6 +197,15 @@ def admin_create_product():
     repo.log_action(actor_id, actor_name, "create_product",
                     f"id={product_id} sku={data['sku']} storefront={storefront_id}")
     return jsonify({"id": product_id}), 201
+
+
+PRODUCT_LINE_MAX = 60
+
+
+def _clean_product_line(value) -> str | None:
+    """Product line label for the sales dashboard; blank means automatic."""
+    text = " ".join(str(value or "").split())
+    return text[:PRODUCT_LINE_MAX] or None
 
 
 def _validate_product_patch(data: dict) -> tuple[dict, str | None]:
@@ -243,6 +253,8 @@ def _validate_product_patch(data: dict) -> tuple[dict, str | None]:
         fields["image_url"] = (data["image_url"] or "").strip() or None
     if "image_framing" in data:
         fields["image_framing"] = data["image_framing"]
+    if "product_line" in data:
+        fields["product_line"] = _clean_product_line(data["product_line"])
     return fields, None
 
 

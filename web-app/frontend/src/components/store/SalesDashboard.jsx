@@ -165,6 +165,62 @@ function Rows({ rows, empty }) {
   )
 }
 
+function ProductLines({ lines }) {
+  const [open, setOpen] = useState({})
+  if (!lines?.length) return <p className="text-sm text-text-muted">No sales in this range.</p>
+  const top = Math.max(...lines.map((l) => l.sales_cents), 1)
+  return (
+    <>
+      <ul className="divide-y divide-bg-elevated">
+        {lines.map((l) => {
+          const isOpen = !!open[l.line]
+          const stats = `${l.units} sold · ${l.orders} ${l.orders === 1 ? 'order' : 'orders'} · ${Math.round(l.share * 100)}%`
+          return (
+            <li key={l.line} className="py-2">
+              <button
+                type="button"
+                onClick={() => setOpen((o) => ({ ...o, [l.line]: !o[l.line] }))}
+                aria-expanded={isOpen}
+                className="w-full text-left"
+              >
+                <div className="flex items-baseline gap-x-3 text-sm tabular-nums">
+                  <span className="flex items-baseline gap-1.5 min-w-0 flex-1">
+                    <span aria-hidden="true" className={`inline-block text-text-muted text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>▸</span>
+                    <span className="font-medium">{l.line}</span>
+                  </span>
+                  <span className="hidden sm:inline text-text-muted whitespace-nowrap">{stats}</span>
+                  <span className="text-secondary whitespace-nowrap text-right">{dollars(l.sales_cents)}</span>
+                </div>
+                <div className="sm:hidden text-xs text-text-muted tabular-nums pl-4 mt-0.5">{stats}</div>
+                <div className="h-1.5 rounded bg-bg-elevated overflow-hidden mt-1.5">
+                  <div className="h-full bg-secondary" style={{ width: `${(l.sales_cents / top) * 100}%` }} />
+                </div>
+              </button>
+              {isOpen && (
+                <table className="w-full text-sm tabular-nums mt-2">
+                  <tbody>
+                    {l.products.map((p) => (
+                      <tr key={p.product_id}>
+                        <td className="py-1 pl-5 pr-2 text-text-muted">{p.name}</td>
+                        <td className="py-1 pr-3 text-right text-text-muted whitespace-nowrap">{p.units} sold</td>
+                        <td className="py-1 text-right whitespace-nowrap">{dollars(p.sales_cents)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      <p className="text-xs text-text-muted mt-2">
+        Listings are grouped by the Product line set on each product. Products without one are grouped by name.
+        Tap a line to see its listings.
+      </p>
+    </>
+  )
+}
+
 export default function SalesDashboard({ storefrontId, title }) {
   const [days, setDays] = useState(30)
   const [data, setData] = useState(null)
@@ -256,6 +312,10 @@ export default function SalesDashboard({ storefrontId, title }) {
             </Card>
             <Card title="Needs attention"><Attention a={data.attention} /></Card>
           </div>
+
+          <Card title="Sales by product line">
+            <ProductLines lines={data.product_lines} />
+          </Card>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
             <Card title="Top products">

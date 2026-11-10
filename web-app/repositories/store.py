@@ -269,6 +269,14 @@ class StoreRepository:
             except sqlite3.OperationalError:
                 pass  # column already exists
 
+            # Shipping per listing (services/store_shipping.py): cards in one
+            # of it, and/or its own shipping price. NULL = not set.
+            for column in ("ship_cards INTEGER", "shipping_cents INTEGER"):
+                try:
+                    conn.execute(f"ALTER TABLE products ADD COLUMN {column}")
+                except sqlite3.OperationalError:
+                    pass  # column already exists
+
             try:
                 # Orders an admin paired to go out in one package. Every
                 # order in the pair shares the same value; NULL = on its own.
@@ -494,6 +502,8 @@ class StoreRepository:
         storefront_id: int | None = None,
         image_framing: dict | None = None,
         product_line: str | None = None,
+        ship_cards: int | None = None,
+        shipping_cents: int | None = None,
     ) -> int:
         images = self._clean_images(images)
         if not images and image_url:
@@ -510,14 +520,16 @@ class StoreRepository:
                 """INSERT INTO products
                    (sku, name, description, price_cents, image_url, images,
                     image_framing, stock_quantity, max_per_user_monthly,
-                    storefront_id, product_line, sort_order, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    storefront_id, product_line, ship_cards, shipping_cents,
+                    sort_order, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                            (SELECT COALESCE(MAX(sort_order), -1) + 1
                             FROM products WHERE storefront_id = ?), ?, ?)""",
                 (sku, name, description, price_cents,
                  images[0] if images else None, json.dumps(images),
                  json.dumps(framing), stock_quantity, max_per_user_monthly,
                  storefront_id, (product_line or "").strip() or None,
+                 ship_cards, shipping_cents,
                  storefront_id, now, now),
             )
             return cur.lastrowid
@@ -525,7 +537,8 @@ class StoreRepository:
     def update_product(self, product_id: int, **fields) -> bool:
         allowed = {"sku", "name", "description", "price_cents", "image_url",
                    "stock_quantity", "is_active", "max_per_user_monthly", "images",
-                   "storefront_id", "image_framing", "product_line"}
+                   "storefront_id", "image_framing", "product_line",
+                   "ship_cards", "shipping_cents"}
         if "storefront_id" in fields and not self.get_storefront(fields["storefront_id"]):
             raise ValueError("Unknown storefront")
         updates = {k: v for k, v in fields.items() if k in allowed}
@@ -798,6 +811,18 @@ class StoreRepository:
                     self._now(),
                     order_id,
                 ),
+            )
+            return cur.rowcount > 0
+
+    def set_order_shipping(self, order_id: int, shipping_cents: int) -> bool:
+        """Set shipping on an order still awaiting payment; total follows."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                """UPDATE orders SET shipping_cents = ?,
+                          total_cents = subtotal_cents + ? + tax_cents,
+                          updated_at = ?
+                   WHERE id = ? AND status = 'pending_payment'""",
+                (shipping_cents, shipping_cents, self._now(), order_id),
             )
             return cur.rowcount > 0
 

@@ -35,6 +35,7 @@ import os
 import stripe
 
 from repositories.store import StoreRepository, webhook_secret_env
+from services.store_shipping import listing_shipping_cents
 from webapp_config import FRONTEND_URL, FREE_SHIPPING_ROLE_IDS
 
 logger = logging.getLogger(__name__)
@@ -131,7 +132,7 @@ class StoreCheckoutService:
         if storefront and not self.repo.accepts_payments(storefront):
             raise ValueError(f"{storefront['name']} isn't taking orders yet")
         shipping_options, shipping_cents = self._shipping_plan(
-            storefront, discord_roles
+            storefront, discord_roles, items
         )
 
         order = self.repo.create_order(
@@ -203,7 +204,12 @@ class StoreCheckoutService:
             # Shipping was priced when the order was placed; charge the same
             shipping_options = None
         else:
-            shipping_options, _ = self._shipping_plan(storefront, discord_roles)
+            shipping_options, shipping_cents = self._shipping_plan(
+                storefront, discord_roles, order.get("items")
+            )
+            if shipping_cents:
+                # Placed before its listings had shipping set: charge it now
+                self.repo.set_order_shipping(order["id"], shipping_cents)
         full_order = self.repo.get_order(order["id"])
         checkout_session = self._create_session(
             full_order, storefront, shipping_options, full_order.get("email")
@@ -221,13 +227,29 @@ class StoreCheckoutService:
         )
         return checkout_session.url
 
+    def _cart_lines(self, items: list[dict] | None) -> list[tuple[dict, int]]:
+        """(product, quantity) for each cart item; unknown products skipped."""
+        lines = []
+        for item in items or []:
+            try:
+                product = self.repo.get_product(int(item["product_id"]))
+                qty = int(item["quantity"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if product:
+                lines.append((product, qty))
+        return lines
+
     def _shipping_plan(
-        self, storefront: dict | None, discord_roles: list[str] | None
+        self, storefront: dict | None, discord_roles: list[str] | None,
+        items: list[dict] | None = None,
     ) -> tuple[list[dict] | None, int]:
         """(Stripe shipping_options, shipping_cents to store on the order).
 
         With shipping_options Stripe prices shipping at checkout and the
         order stores 0; without them shipping_cents is charged as a line item.
+        Listings with a card count or their own shipping price set the price
+        (services/store_shipping.py) unless shipping is free.
         """
         # Connected storefronts and ones with their own API key take payments
         # on their own Stripe account rather than Summit's
@@ -240,6 +262,15 @@ class StoreCheckoutService:
             and discord_roles and FREE_SHIPPING_ROLE_IDS.intersection(discord_roles)
         )
 
+        if has_free_shipping and STRIPE_SHIPPING_RATE_FREE:
+            return [{"shipping_rate": STRIPE_SHIPPING_RATE_FREE}], 0
+
+        # Every listing in the cart has its shipping set: cards per item
+        # (envelope vs Ground Advantage) and/or the listing's own price
+        by_listing = listing_shipping_cents(self._cart_lines(items))
+        if by_listing is not None:
+            return None, 0 if has_free_shipping else by_listing
+
         # Shipping Rate objects live on Summit's account, so connected
         # storefronts use their own flat rate instead.
         if own_account:
@@ -248,8 +279,6 @@ class StoreCheckoutService:
                 if storefront.get("shipping_cents") is not None
                 else FLAT_SHIPPING_CENTS
             )
-        if has_free_shipping and STRIPE_SHIPPING_RATE_FREE:
-            return [{"shipping_rate": STRIPE_SHIPPING_RATE_FREE}], 0
         if STRIPE_SHIPPING_RATE_DOMESTIC:
             # US only, so the international rate is never offered.
             # Actual shipping cost determined by Stripe at checkout;

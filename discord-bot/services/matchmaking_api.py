@@ -543,6 +543,23 @@ async def start_matchmaking_api(bot):
         # 409 rather than 5xx so the web app logs it and retries on its next pass.
         return web.json_response({"posted": posted}, status=200 if posted else 409)
 
+    async def precon_refresh(request):
+        """The Admin page changed the precon ladder: drop cached settings, update the
+        LFG status (the queue button shows or hides) and post any final standings due."""
+        from services import precon_service
+
+        precon_service.clear_cache()
+        cog = bot.get_cog("PreconLadderCog")
+        refreshed = False
+        if cog:
+            try:
+                await cog._refresh_lfg_status()
+                await cog.post_final_standings()
+                refreshed = True
+            except Exception as exc:  # noqa: BLE001 - the change is saved either way
+                logger.warning("Precon refresh after admin change failed: %s", exc)
+        return web.json_response({"refreshed": refreshed})
+
     async def meta_report_dm(request):
         """DM opted-in players about a newly published Meta Report, in the background."""
         from services.meta_report_notify import dm_meta_report
@@ -641,6 +658,7 @@ async def start_matchmaking_api(bot):
     app.router.add_post("/bracket-match-notify", bracket_match_notify)
     app.router.add_post("/meta-report-notify", meta_report_notify)
     app.router.add_post("/meta-report-dm", meta_report_dm)
+    app.router.add_post("/precon-refresh", precon_refresh)
     app.router.add_post(
         "/explorer-application-notify", explorer_application_notify
     )

@@ -18,3 +18,5 @@ export const getArchivedLeaderboard = (eventId) =>
   get(String(eventId).startsWith('season_')
     ? `/api/leaderboard/archived/season/${eventId}`
     : `/api/leaderboard/archived/${eventId}`)
+// One player's LM / FM ladder standings and latest precon games
+export const getPreconPlayer = (playerId) => get(`/api/precon/players/${playerId}`)

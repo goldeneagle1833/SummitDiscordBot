@@ -2124,8 +2124,10 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="Precon Ladder (Lavamancer vs Frostmage)",
             value=(
-                "`!start_precon_season <name>` - Start a 4-week LM/FM ladder (Glicko-2) and open the precon queue\n"
-                "`!end_precon_season` - End the ladder early, close the queue & post final standings\n"
+                "Easier: Admin page > Precon Ladder does all of this\n"
+                "`!start_precon_season <name>` - Start an LM/FM ladder (Glicko-2)\n"
+                "`!precon_queue on|off` - Switch the precon queue (shows only while a ladder runs)\n"
+                "`!end_precon_season` - End the ladder early & post final standings\n"
                 "`!admin_precon_report @winner LM|FM @loser LM|FM` - Report a precon game by hand\n"
                 "`!remove_precon_match <precon match id>` - Remove a precon game & re-rate the ladder\n"
                 "`!precon [@player]` - Ladder top 10 and a player's standing (anyone can use it)"

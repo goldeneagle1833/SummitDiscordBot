@@ -16,14 +16,18 @@ function formatDay(iso) {
 /** "Runs Nov 12 – Dec 10 · 3 days left" or "Ended Dec 10". */
 export function preconSeasonText(season, now = new Date()) {
   if (!season) return ''
-  const range = `${formatDay(season.starts_at)} – ${formatDay(season.last_day || season.ends_at)}`
+  // The *_iso copies carry the server's UTC offset; the plain ones are server-local
+  const startsAt = season.starts_at_iso || season.starts_at
+  const endsAt = season.ends_at_iso || season.ends_at
+  const lastDay = season.last_day_iso || season.last_day || endsAt
+  const range = `${formatDay(startsAt)} – ${formatDay(lastDay)}`
   if (season.is_open) {
-    const ms = new Date(season.ends_at).getTime() - now.getTime()
+    const ms = new Date(endsAt).getTime() - now.getTime()
     const days = Math.max(0, Math.ceil(ms / 86400000))
     return `Runs ${range} · ${days === 1 ? '1 day' : `${days} days`} left`
   }
-  if (new Date(season.starts_at).getTime() > now.getTime()) return `Starts ${formatDay(season.starts_at)}`
-  return `Ended ${formatDay(season.last_day || season.ends_at)} · ${range}`
+  if (new Date(startsAt).getTime() > now.getTime()) return `Starts ${formatDay(startsAt)}`
+  return `Ended ${formatDay(lastDay)} · ${range}`
 }
 
 function Record({ wins, losses, muted = false }) {

@@ -15,6 +15,7 @@ PRECON_QUEUE = "precon"
 # many times a minute; one lookup a minute is plenty.
 _OPEN_CACHE_SECONDS = 60
 _open_cache = {"at": 0.0, "season": None}
+_settings_cache = {"at": 0.0, "settings": None}
 
 
 @contextlib.contextmanager
@@ -27,8 +28,39 @@ def connect():
 
 
 def clear_cache():
+    """Forget the cached season and settings (the Admin page asks for this after a change)."""
     _open_cache["at"] = 0.0
     _open_cache["season"] = None
+    _settings_cache["at"] = 0.0
+    _settings_cache["settings"] = None
+
+
+def settings(use_cache=True) -> dict:
+    """The precon rules (queue switch, games to be ranked, rematch block, season length)."""
+    now = time.monotonic()
+    if use_cache and _settings_cache["settings"] is not None and now - _settings_cache["at"] < _OPEN_CACHE_SECONDS:
+        return _settings_cache["settings"]
+    try:
+        with connect() as conn:
+            current = precon_ladder.get_settings(conn)
+    except sqlite3.Error:
+        logger.error("Could not read precon settings", exc_info=True)
+        current = {name: spec[0] for name, spec in precon_ladder.SETTINGS.items()}
+    _settings_cache["at"] = now
+    _settings_cache["settings"] = current
+    return current
+
+
+def update_settings(changes, updated_by=None) -> dict:
+    with connect() as conn:
+        current = precon_ladder.update_settings(conn, changes, updated_by=updated_by)
+    clear_cache()
+    return current
+
+
+def queue_is_open() -> bool:
+    """The precon queue shows only when an admin has switched it on AND a season is running."""
+    return bool(settings().get("queue_enabled")) and season_is_open()
 
 
 def open_season(use_cache=True):
@@ -51,7 +83,9 @@ def season_is_open() -> bool:
     return open_season() is not None
 
 
-def start_season(name, created_by=None, days=precon_ladder.SEASON_DAYS):
+def start_season(name, created_by=None, days=None):
+    if days is None:
+        days = settings(use_cache=False)["season_days"]
     with connect() as conn:
         season = precon_ladder.start_season(conn, name, created_by=created_by, days=days)
     clear_cache()
@@ -91,6 +125,8 @@ def remove_match(match_id):
 
 
 def played_last_game_together(player_a, player_b) -> bool:
+    if not settings().get("block_rematch", True):
+        return False
     try:
         with connect() as conn:
             return precon_ladder.played_last_game_together(conn, player_a, player_b)

@@ -154,16 +154,35 @@ def test_web_app_copy_is_identical():
 # --- queue ---
 
 
-def test_precon_queue_needs_its_pilot_and_an_open_season():
+def test_precon_queue_needs_its_switch_and_an_open_season():
     from cogs.lfg.queue_definitions import enabled_queue_definitions, queue_is_enabled
 
-    with patch("cogs.lfg.queue_definitions.is_pilot_active", return_value=True):
-        assert not queue_is_enabled("precon")
-        precon_service.start_season("LM vs FM")
-        assert queue_is_enabled("precon")
-        assert "precon" in [d["type"] for d in enabled_queue_definitions()]
+    # Off by default: merging never opens the queue
+    assert precon_service.settings(use_cache=False)["queue_enabled"] is False
+    precon_service.start_season("LM vs FM")
+    assert not queue_is_enabled("precon")
+    precon_service.update_settings({"queue_enabled": "on"})
+    assert queue_is_enabled("precon")
+    assert "precon" in [d["type"] for d in enabled_queue_definitions()]
+    # Pilots don't touch it
     with patch("cogs.lfg.queue_definitions.is_pilot_active", return_value=False):
-        assert not queue_is_enabled("precon")
+        assert queue_is_enabled("precon")
+    precon_service.end_season()
+    assert not queue_is_enabled("precon")
+
+
+def test_rematch_block_follows_the_setting(conn):
+    _game(conn, 1, 2, T0 + datetime.timedelta(hours=1))
+    assert precon_service.played_last_game_together(1, 2)
+    precon_service.update_settings({"block_rematch": False})
+    assert not precon_service.played_last_game_together(1, 2)
+
+
+def test_season_length_setting_is_used_when_starting():
+    precon_service.update_settings({"season_days": 7})
+    season = precon_service.start_season("Short one")
+    start = datetime.datetime.fromisoformat(season["starts_at"])
+    assert datetime.datetime.fromisoformat(season["ends_at"]) - start == datetime.timedelta(days=7)
 
 
 def test_precon_matches_only_pair_with_precon():
@@ -268,6 +287,9 @@ async def test_pso_precon_result_lands_on_the_ladder_not_match_records(mock_bot)
         bot=mock_bot, pairing_id=pairing_id, player1_id=10, player1_global="Alice",
         player2_id=20, player2_global="Bob", guild_id=1, match_type="precon",
     )
+    from repositories.elo_repo import set_pairing_replay
+
+    set_pairing_replay(pairing_id, "https://playsorceryonline.com/replay/abc123")
     with patch("cogs.lfg.pairing_messages.announce_match_id", AsyncMock()), \
             patch("cogs.lfg.persistent_confirm.edit_match_card_messages", AsyncMock()):
         result = await record_sorcery_online_result(
@@ -281,6 +303,7 @@ async def test_pso_precon_result_lands_on_the_ladder_not_match_records(mock_bot)
     assert (game["loser_id"], game["loser_precon"]) == (10, LAVAMANCER)
     assert game["winner_rating_after"] > 1500 > game["loser_rating_after"]
     assert game["source"] == "pso"
+    assert game["replay_url"] == "https://playsorceryonline.com/replay/abc123"
     assert get_pairing_by_id(1, pairing_id)["status"] == "reported"
     with sqlite3.connect("match_records.db") as c:
         assert c.execute("SELECT COUNT(*) FROM match_records").fetchone()[0] == 0

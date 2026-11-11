@@ -15,6 +15,8 @@ Tables (all in match_records.db, created on first use):
   Removed games stay with ``removed = 1`` so a removal can be checked later.
 - ``precon_ratings``: each player's current rating on each season, rebuilt
   from the season's games whenever the past changes (``rebuild_season``).
+- ``precon_settings``: the rules admins can change on the Admin page (queue
+  switch, games needed to be ranked, rematch block, default season length).
 
 Glicko-2 settings match the Season 9 plan: 1500 start, RD 200, RD floor 80,
 tau 0.5, uncertainty grows a little for each day without games.
@@ -197,9 +199,13 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             winner_rating_after INTEGER,
             loser_rating_before INTEGER,
             loser_rating_after INTEGER,
-            removed INTEGER NOT NULL DEFAULT 0
+            removed INTEGER NOT NULL DEFAULT 0,
+            replay_url TEXT
         )
     """)
+    match_columns = {row[1] for row in conn.execute("PRAGMA table_info(precon_match_records)")}
+    if "replay_url" not in match_columns:
+        conn.execute("ALTER TABLE precon_match_records ADD COLUMN replay_url TEXT")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_precon_matches_season ON precon_match_records (season_id, timestamp)"
     )
@@ -225,6 +231,14 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             PRIMARY KEY (season_id, user_id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS precon_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_by TEXT,
+            updated_at TEXT
+        )
+    """)
 
 
 def _now_iso(now=None) -> str:
@@ -233,6 +247,74 @@ def _now_iso(now=None) -> str:
 
 def _row(cursor, row):
     return {col[0]: row[i] for i, col in enumerate(cursor.description)}
+
+
+# --- Settings ---------------------------------------------------------------
+
+# name -> (default, type, min, max). The queue starts switched off, so merging
+# never opens it; an admin turns it on from the Admin page or with !precon_queue.
+SETTINGS = {
+    "queue_enabled": (False, bool, None, None),
+    "min_ranked_games": (MIN_RANKED_GAMES, int, 1, 50),
+    "block_rematch": (True, bool, None, None),
+    "season_days": (SEASON_DAYS, int, 1, 120),
+}
+
+
+def _parse_setting(name, raw):
+    default, kind, low, high = SETTINGS[name]
+    if kind is bool:
+        if isinstance(raw, bool):
+            return raw
+        text = str(raw).strip().lower()
+        if text in ("1", "true", "yes", "on"):
+            return True
+        if text in ("0", "false", "no", "off"):
+            return False
+        raise ValueError(f"{name} must be on or off")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a whole number") from None
+    if isinstance(raw, bool) or value < low or value > high:
+        raise ValueError(f"{name} must be between {low} and {high}")
+    return value
+
+
+def get_settings(conn) -> dict:
+    """Every setting, with defaults filled in for ones never changed."""
+    ensure_schema(conn)
+    stored = dict(conn.execute("SELECT key, value FROM precon_settings").fetchall())
+    out = {}
+    for name, (default, _kind, _low, _high) in SETTINGS.items():
+        try:
+            out[name] = _parse_setting(name, stored[name]) if name in stored else default
+        except ValueError:
+            out[name] = default
+    return out
+
+
+def update_settings(conn, changes: dict, updated_by=None, now=None) -> dict:
+    """Change some settings (all checked before any is saved). Returns every setting."""
+    ensure_schema(conn)
+    unknown = [name for name in changes if name not in SETTINGS]
+    if unknown:
+        raise ValueError(f"Unknown setting: {unknown[0]}")
+    parsed = {name: _parse_setting(name, value) for name, value in changes.items()}
+    for name, value in parsed.items():
+        stored = ("1" if value else "0") if isinstance(value, bool) else str(value)
+        conn.execute(
+            """INSERT INTO precon_settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, ?)
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                   updated_by = excluded.updated_by, updated_at = excluded.updated_at""",
+            (name, stored, str(updated_by) if updated_by is not None else None, _now_iso(now)),
+        )
+    conn.commit()
+    return get_settings(conn)
+
+
+def min_ranked_games(conn) -> int:
+    return get_settings(conn)["min_ranked_games"]
 
 
 # --- Seasons ----------------------------------------------------------------
@@ -318,6 +400,85 @@ def start_season(conn, name, created_by=None, days=SEASON_DAYS, starts_at=None, 
     )
     conn.commit()
     return get_season(conn, cur.lastrowid)
+
+
+def parse_when(value, field):
+    """A date and time as naive server-local time. A time with a UTC offset (what
+    the Admin page sends) is converted; a naive one is taken as server-local."""
+    if not isinstance(value, datetime.datetime):
+        try:
+            value = datetime.datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+        except ValueError:
+            raise ValueError(f"{field} must be a date and time") from None
+    if value.tzinfo is not None:
+        value = value.astimezone().replace(tzinfo=None)
+    return value.replace(microsecond=0)
+
+
+def with_offset(iso):
+    """A stored naive server-local time with its UTC offset, so browsers in any
+    time zone read it right."""
+    if not iso:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(iso).astimezone().isoformat()
+    except ValueError:
+        return None
+
+
+def update_season(conn, season_id, name=None, starts_at=None, ends_at=None, now=None) -> dict:
+    """Rename a season or move its dates. Moving the dates re-rates the season,
+    since only games inside the window count."""
+    season = get_season(conn, season_id)
+    if not season:
+        raise ValueError("No such precon season")
+    new_name = season["name"] if name is None else (name or "").strip()
+    if not new_name:
+        raise ValueError("A season name is required")
+    start = parse_when(starts_at, "Start") if starts_at else parse_when(season["starts_at"], "Start")
+    end = parse_when(ends_at, "End") if ends_at else parse_when(season["ends_at"], "End")
+    if end <= start:
+        raise ValueError("The end must be after the start")
+    if (end - start).days > 120:
+        raise ValueError("A precon season runs between 1 and 120 days")
+    start_iso, end_iso = _now_iso(start), _now_iso(end)
+    overlap = conn.execute(
+        """SELECT name FROM precon_seasons
+           WHERE season_id != ? AND starts_at < ? AND COALESCE(ended_at, ends_at) > ?""",
+        (season_id, end_iso, start_iso),
+    ).fetchone()
+    if overlap:
+        raise ValueError(f"Those dates overlap another precon season ({overlap[0]})")
+    dates_changed = (start_iso, end_iso) != (season["starts_at"], season["ends_at"])
+    conn.execute(
+        "UPDATE precon_seasons SET name = ?, starts_at = ?, ends_at = ? WHERE season_id = ?",
+        (new_name, start_iso, end_iso, season_id),
+    )
+    if dates_changed:
+        # A season pushed back into the future (or reopened) gets a fresh final post
+        if not season.get("ended_at") and end_iso > _now_iso(now):
+            conn.execute("UPDATE precon_seasons SET final_posted_at = NULL WHERE season_id = ?", (season_id,))
+        _reassign_games(conn, season_id, start_iso, end_iso, season.get("ended_at"))
+    conn.commit()
+    return _with_open(get_season(conn, season_id), now)
+
+
+def _reassign_games(conn, season_id, start_iso, end_iso, ended_at):
+    """After a date change: games outside the window leave the season, games
+    inside it with no season join it, then the season is re-rated."""
+    last = min(end_iso, ended_at) if ended_at else end_iso
+    conn.execute(
+        """UPDATE precon_match_records SET season_id = NULL, winner_rating_before = NULL,
+               winner_rating_after = NULL, loser_rating_before = NULL, loser_rating_after = NULL
+           WHERE season_id = ? AND (timestamp < ? OR timestamp >= ?)""",
+        (season_id, start_iso, last),
+    )
+    conn.execute(
+        """UPDATE precon_match_records SET season_id = ?
+           WHERE season_id IS NULL AND timestamp >= ? AND timestamp < ?""",
+        (season_id, start_iso, last),
+    )
+    rebuild_season(conn, season_id)
 
 
 def seasons_needing_final_post(conn, now=None) -> list[dict]:
@@ -409,6 +570,7 @@ def record_match(
     loser_went_first=None,
     match_time=None,
     match_comment=None,
+    replay_url=None,
     now=None,
 ) -> dict:
     """Save one precon game and rate it on the open season.
@@ -436,12 +598,14 @@ def record_match(
            (season_id, pairing_id, reporter_id, winner_id, winner_display_name,
             loser_id, loser_display_name, winner_precon, loser_precon, timestamp, source,
             first_player, winner_went_first, loser_went_first, match_time, match_comment,
-            winner_rating_before, winner_rating_after, loser_rating_before, loser_rating_after)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            winner_rating_before, winner_rating_after, loser_rating_before, loser_rating_after,
+            replay_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             season_id, pairing_id, reporter_id, winner_id, winner_name, loser_id, loser_name,
             winner_precon, loser_precon, at, source, first_player, winner_went_first,
             loser_went_first, match_time, match_comment, before_w, after_w, before_l, after_l,
+            replay_url or None,
         ),
     )
     match_id = cur.lastrowid
@@ -544,10 +708,11 @@ def standings(conn, season_id) -> list[dict]:
         (season_id,),
     )
     rows = [_row(cur, r) for r in cur.fetchall()]
+    needed = min_ranked_games(conn)
     rank = 0
     out = []
     for row in rows:
-        ranked = row["games"] >= MIN_RANKED_GAMES
+        ranked = row["games"] >= needed
         if ranked:
             rank += 1
         out.append({
@@ -605,7 +770,7 @@ def season_stats(conn, season_id) -> dict:
     return {
         "games": games,
         "players": players,
-        "min_ranked_games": MIN_RANKED_GAMES,
+        "min_ranked_games": min_ranked_games(conn),
         "lm_vs_fm": {
             "lm_wins": matchup[LAVAMANCER],
             "fm_wins": matchup[FROSTMAGE],
@@ -632,3 +797,50 @@ def recent_matches(conn, season_id, limit=10) -> list[dict]:
             row[key] = str(row[key])
         out.append(row)
     return out
+
+
+def player_summary(conn, user_id, game_limit=20) -> dict:
+    """One player's precon ladders (newest first, with their standing) and latest games."""
+    ensure_schema(conn)
+    user_id = int(user_id)
+    seasons = []
+    for season in list_seasons(conn):
+        rows = standings(conn, season["season_id"])
+        mine = next((r for r in rows if r["user_id"] == str(user_id)), None)
+        if mine:
+            seasons.append({
+                "season": season,
+                "standing": mine,
+                "ranked_players": sum(1 for r in rows if r["ranked"]),
+            })
+    cur = conn.execute(
+        """SELECT match_id, season_id, timestamp, winner_id, winner_display_name, loser_id,
+                  loser_display_name, winner_precon, loser_precon, winner_rating_before,
+                  winner_rating_after, loser_rating_before, loser_rating_after, replay_url,
+                  winner_went_first, loser_went_first
+           FROM precon_match_records
+           WHERE removed = 0 AND (winner_id = ? OR loser_id = ?)
+           ORDER BY timestamp DESC, match_id DESC LIMIT ?""",
+        (user_id, user_id, int(game_limit)),
+    )
+    games = []
+    for r in cur.fetchall():
+        row = _row(cur, r)
+        won = row["winner_id"] == user_id
+        games.append({
+            "match_id": row["match_id"],
+            "season_id": row["season_id"],
+            "timestamp": row["timestamp"],
+            "won": won,
+            "precon": row["winner_precon"] if won else row["loser_precon"],
+            "opponent_id": str(row["loser_id"] if won else row["winner_id"]),
+            "opponent_name": row["loser_display_name"] if won else row["winner_display_name"],
+            "opponent_precon": row["loser_precon"] if won else row["winner_precon"],
+            "rating_before": row["winner_rating_before"] if won else row["loser_rating_before"],
+            "rating_after": row["winner_rating_after"] if won else row["loser_rating_after"],
+            "went_first": row["winner_went_first"] if won else row["loser_went_first"],
+            "replay_url": row["replay_url"],
+            "winner_id": str(row["winner_id"]),
+            "loser_id": str(row["loser_id"]),
+        })
+    return {"seasons": seasons, "games": games, "min_ranked_games": min_ranked_games(conn)}

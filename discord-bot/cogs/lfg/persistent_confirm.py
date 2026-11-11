@@ -341,6 +341,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     elif data["match_type"] == "precon":
         # Precon ladder games have their own table and Glicko-2 ladder
         from services import precon_service
+        from repositories.elo_repo import get_pairing_replay
 
         locked = get_pairing_avatars(pairing_id) if pairing_id else {}
         locked = {int(k): v for k, v in locked.items()}
@@ -360,6 +361,8 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 loser_went_first=loser_went_first,
                 match_time=match_time,
                 match_comment=combined_comment,
+                # PSO's replay link, saved on the pairing from the table reply or the result
+                replay_url=get_pairing_replay(pairing_id) if pairing_id else None,
             )
         except Exception as e:
             logger.error(f"Failed to record precon match: {e}", exc_info=True)

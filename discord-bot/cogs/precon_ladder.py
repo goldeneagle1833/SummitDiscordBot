@@ -8,13 +8,11 @@ from discord.ext import commands, tasks
 
 import config
 from services import precon_service
-from services.pilots_service import disable_pilot, enable_pilot
-from services.precon_ladder import MIN_RANKED_GAMES, SEASON_DAYS, normalize_precon, precon_label
+from services.precon_ladder import normalize_precon, precon_label
 from utils.checks import is_bot_admin
 
 logger = logging.getLogger("discord_bot")
 
-PRECON_PILOT = "PreconQueue"
 WEB_APP_URL = str(getattr(config, "WEB_APP_URL", "") or "https://sorcererssummit.com").rstrip("/")
 STANDINGS_URL = f"{WEB_APP_URL}/?ladder=precon#leaderboard"
 
@@ -73,19 +71,19 @@ class PreconLadderCog(commands.Cog):
     @commands.command()
     @is_bot_admin()
     async def start_precon_season(self, ctx, *, season_name: str = None):
-        """Start a 4-week Lavamancer vs Frostmage ladder and open the precon queue.
+        """Start a Lavamancer vs Frostmage ladder (length from the precon settings).
 
+        The queue has its own switch: !precon_queue on (or Admin > Precon Ladder).
         Usage: !start_precon_season <name>
         """
         if not season_name:
             await ctx.send("Please give the ladder a name: `!start_precon_season <name>`")
             return
         try:
-            season = precon_service.start_season(season_name, created_by=ctx.author.id, days=SEASON_DAYS)
+            season = precon_service.start_season(season_name, created_by=ctx.author.id)
         except ValueError as e:
             await ctx.send(f"Couldn't start the precon ladder: {e}")
             return
-        enable_pilot(PRECON_PILOT)
         await self._refresh_lfg_status()
         embed = discord.Embed(
             title=f"🧙 {season['name']} has started!",
@@ -100,6 +98,11 @@ class PreconLadderCog(commands.Cog):
         embed.add_field(name="Rating", value="Glicko-2, everyone starts at 1500", inline=True)
         embed.add_field(name="Standings", value=STANDINGS_URL, inline=False)
         await ctx.send(embed=embed)
+        if not precon_service.settings(use_cache=False)["queue_enabled"]:
+            await ctx.send(
+                "ℹ️ The precon queue is switched **off**, so players can't queue yet. "
+                "Turn it on with `!precon_queue on` or on the Admin page (Precon Ladder)."
+            )
 
     @start_precon_season.error
     async def start_precon_season_error(self, ctx, error):
@@ -112,9 +115,8 @@ class PreconLadderCog(commands.Cog):
     @commands.command()
     @is_bot_admin()
     async def end_precon_season(self, ctx):
-        """End the running precon ladder now and close the precon queue."""
+        """End the running precon ladder now (the queue closes with it)."""
         season = precon_service.end_season()
-        disable_pilot(PRECON_PILOT)
         await self._refresh_lfg_status()
         if not season:
             await ctx.send("No precon ladder is running. The precon queue is closed.")
@@ -128,6 +130,38 @@ class PreconLadderCog(commands.Cog):
             await ctx.send("You don't have permission to use this command.")
         else:
             logger.error("end_precon_season error: %s", error, exc_info=True)
+            await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def precon_queue(self, ctx, state: str = None):
+        """Switch the precon queue on or off (it also needs a ladder running).
+
+        Usage: !precon_queue on|off
+        """
+        current = precon_service.settings(use_cache=False)
+        if state is None:
+            running = precon_service.season_is_open()
+            await ctx.send(
+                f"Precon queue switch is **{'on' if current['queue_enabled'] else 'off'}**"
+                f"{'' if running else ' (no precon ladder is running, so the queue is hidden either way)'}. "
+                "Usage: `!precon_queue on|off`"
+            )
+            return
+        try:
+            current = precon_service.update_settings({"queue_enabled": state}, updated_by=ctx.author.id)
+        except ValueError:
+            await ctx.send("Usage: `!precon_queue on|off`")
+            return
+        await self._refresh_lfg_status()
+        await ctx.send(f"🧙 Precon queue switched **{'on' if current['queue_enabled'] else 'off'}**.")
+
+    @precon_queue.error
+    async def precon_queue_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You don't have permission to use this command.")
+        else:
+            logger.error("precon_queue error: %s", error, exc_info=True)
             await ctx.send(f"An error occurred: {error}")
 
     @commands.command(aliases=["precon_rank", "lmfm"])
@@ -153,15 +187,16 @@ class PreconLadderCog(commands.Cog):
             color=discord.Color.purple(),
         )
         lines = standings_lines(rows)
+        needed = precon_service.settings()["min_ranked_games"]
         embed.add_field(
             name="Top 10",
-            value="\n".join(lines) if lines else f"Nobody has {MIN_RANKED_GAMES} games yet.",
+            value="\n".join(lines) if lines else f"Nobody has {needed} games yet.",
             inline=False,
         )
         if mine:
             where = (
                 f"#{mine['rank']}" if mine["ranked"]
-                else f"not ranked yet ({mine['games']}/{MIN_RANKED_GAMES} games)"
+                else f"not ranked yet ({mine['games']}/{needed} games)"
             )
             extra = _precon_records(mine)
             embed.add_field(
@@ -249,7 +284,7 @@ class PreconLadderCog(commands.Cog):
 
     @tasks.loop(minutes=10)
     async def post_final_standings(self):
-        """When a ladder's four weeks are up, close the queue and post the final top 10."""
+        """When a ladder's time is up, refresh the LFG status (the queue closes) and post the final top 10."""
         try:
             finished = precon_service.seasons_needing_final_post()
         except Exception:
@@ -258,7 +293,6 @@ class PreconLadderCog(commands.Cog):
         if not finished:
             return
         if not precon_service.open_season(use_cache=False):
-            disable_pilot(PRECON_PILOT)
             precon_service.clear_cache()
             await self._refresh_lfg_status()
         channel = self.bot.get_channel(config.LFG_CHANNEL_ID)

@@ -28,7 +28,7 @@ QUEUE_DEFINITIONS = (
         "type": "precon",
         "label": "Precon (LM/FM)",
         "emoji": "🧙",
-        "pilot": "PreconQueue",
+        "pilot": None,  # switched by precon_settings.queue_enabled, not a pilot
         # Players pick Lavamancer or Frostmage instead of giving a deck link
         "deck_mode": "precon",
         "status_note": "Lavamancer or Frostmage precon only",
@@ -37,14 +37,13 @@ QUEUE_DEFINITIONS = (
 
 
 def _definition_enabled(definition):
-    if not is_pilot_active(definition["pilot"]):
-        return False
     if definition["type"] == "precon":
-        # The precon queue is only open while a precon ladder season is running
-        from services.precon_service import season_is_open
+        # Its own switch (Admin > Precon Ladder or !precon_queue), and only
+        # while a precon ladder season is running
+        from services.precon_service import queue_is_open
 
-        return season_is_open()
-    return True
+        return queue_is_open()
+    return is_pilot_active(definition["pilot"])
 
 
 def enabled_queue_definitions():

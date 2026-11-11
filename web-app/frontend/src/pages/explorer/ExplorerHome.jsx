@@ -55,7 +55,7 @@ function PointsGuide({ config }) {
   const ordinal = (n) => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : (n % 10 < 4 ? n % 10 : 0)]}`
 
   return (
-    <div className="grid sm:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 [&>*]:min-w-0 sm:grid-cols-2 gap-4">
       <div className="rounded-lg border border-[color:var(--es-rule-soft)] bg-[color:var(--es-card-2)] p-4">
         <h3 className="es-heading text-lg font-bold">Pathfinder track</h3>
         <p className="text-xs es-muted mb-2">Rewards showing up and travelling to play.</p>
@@ -118,7 +118,7 @@ export default function ExplorerHome() {
         </div>
       )}
       {/* Hero */}
-      <section className="grid md:grid-cols-[1.15fr_1fr] gap-6 items-center pt-2">
+      <section className="grid grid-cols-1 [&>*]:min-w-0 md:grid-cols-[1.15fr_1fr] gap-6 items-center pt-2">
         <div>
           <p className="es-kicker">{content.kicker || season?.name || 'The Sorcery Explorer Series'}</p>
           <h1 className="es-heading text-4xl sm:text-5xl font-bold mt-2 mb-3">{content.title || 'The Explorer Series'}</h1>
@@ -146,7 +146,7 @@ export default function ExplorerHome() {
       {error && <p className="text-sm text-red-400">{error}</p>}
       {loading ? <Spinner className="py-12" /> : (
         <>
-          <div className="grid lg:grid-cols-[1.35fr_1fr] gap-5">
+          <div className="grid grid-cols-1 [&>*]:min-w-0 lg:grid-cols-[1.35fr_1fr] gap-5">
             <section className="es-card p-4 sm:p-5">
               <SectionHead title="Season standings" to={ES_PATHS.standings} linkLabel="Full standings" />
               {top.length === 0 ? (
@@ -226,7 +226,7 @@ export default function ExplorerHome() {
             <section key={i} className="es-card p-4 sm:p-6">
               {sec.title && <h2 className="es-heading text-2xl font-bold mb-3">{sec.title}</h2>}
               {sec.images?.length === 1 && sec.body ? (
-                <div className="grid md:grid-cols-[1.4fr_1fr] gap-5 items-start">
+                <div className="grid grid-cols-1 [&>*]:min-w-0 md:grid-cols-[1.4fr_1fr] gap-5 items-start">
                   <SiteText text={sec.body} />
                   <SectionPicture src={sec.images[0]} />
                 </div>

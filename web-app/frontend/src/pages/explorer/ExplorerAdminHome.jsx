@@ -60,7 +60,7 @@ export default function ExplorerAdminHome() {
         <p className="es-muted text-sm mt-1">Everything you need to run the Series site.</p>
       </div>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 [&>*]:min-w-0 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Tile to={ES_PATHS.content} title="Edit site content" text="Home page text, announcement, Discord and member links, extra sections." />
         <Tile to={ES_PATHS.applications} title="Review Explorer Series Applications" text="Review, vote on and publish applications to host." />
         <Tile to={ES_PATHS.calendar} title="Events calendar" text="Proposed dates and clashes between applications." />

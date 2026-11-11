@@ -142,7 +142,7 @@ export default function ExplorerContentEditor() {
             <PictureList single images={form.hero_image ? [form.hero_image] : []} onChange={(urls) => set('hero_image', urls[0] || '')} />
           </div>
         </div>
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 [&>*]:min-w-0 sm:grid-cols-2 gap-4">
           <Field label="Discord invite link" hint="Shows a Join our Discord button.">
             <input className={inputCls} placeholder="https://discord.gg/…" value={form.discord_url} onChange={(e) => set('discord_url', e.target.value)} />
           </Field>

@@ -156,7 +156,7 @@ export default function ExplorerCalendar() {
     <div className="max-w-content mx-auto px-4 py-8 space-y-6">
       <div className="space-y-1">
         <Link to={ES_PATHS.applications} className="text-xs text-text-muted hover:text-secondary">
-          ← Explorer Applications
+          ← Review Explorer Series Applications
         </Link>
         <h1 className="text-2xl font-display text-secondary">Explorer Events Calendar</h1>
         <p className="text-sm text-text-muted">

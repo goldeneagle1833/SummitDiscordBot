@@ -6,6 +6,7 @@ import { ES_PATHS, ES_LOGO } from '@/utils/explorerSite'
 import useExplorerSeason, { formatEventDate } from './useExplorerSeason'
 import useSiteContent from './useSiteContent'
 import SiteText from '@/components/explorer/SiteText'
+import { SectionGallery, SectionPicture } from '@/components/explorer/SectionImages'
 import { useAuth } from '@/context/AuthContext'
 
 const EventsMap = lazy(() => import('@/components/explorer/EventsMap'))
@@ -134,11 +135,11 @@ export default function ExplorerHome() {
           </div>
         </div>
         <img
-          src={ES_LOGO}
-          alt="Explorer Series compass rose logo"
+          src={content.hero_image || ES_LOGO}
+          alt={content.hero_image ? '' : 'Explorer Series compass rose logo'}
           width="1000"
           height="733"
-          className="w-full max-w-md mx-auto md:ml-auto drop-shadow-[0_6px_14px_rgba(59,38,20,0.25)]"
+          className="rounded-xl w-full max-w-md mx-auto md:ml-auto drop-shadow-[0_6px_14px_rgba(59,38,20,0.25)]"
         />
       </section>
 
@@ -224,7 +225,17 @@ export default function ExplorerHome() {
           {sections.map((sec, i) => (
             <section key={i} className="es-card p-4 sm:p-6">
               {sec.title && <h2 className="es-heading text-2xl font-bold mb-3">{sec.title}</h2>}
-              <SiteText text={sec.body} />
+              {sec.images?.length === 1 && sec.body ? (
+                <div className="grid md:grid-cols-[1.4fr_1fr] gap-5 items-start">
+                  <SiteText text={sec.body} />
+                  <SectionPicture src={sec.images[0]} />
+                </div>
+              ) : (
+                <>
+                  <SiteText text={sec.body} />
+                  <SectionGallery images={sec.images} />
+                </>
+              )}
             </section>
           ))}
 

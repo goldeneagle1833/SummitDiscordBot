@@ -14,6 +14,7 @@ export const DEFAULT_SITE_CONTENT = {
   show_points_guide: true,
   host_title: 'Bring the Series to your store',
   host_text: 'Each Explorer Series event is run by a local tournament organizer with their community of Sorcery players.',
+  hero_image: '',
   sections: [],
 }
 

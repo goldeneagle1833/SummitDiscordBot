@@ -43,7 +43,7 @@ function navClass({ isActive }) {
 const ADMIN_LINKS = [
   { to: ES_PATHS.admin, label: 'Admin home' },
   { to: ES_PATHS.content, label: 'Edit site content' },
-  { to: ES_PATHS.applications, label: 'Host applications' },
+  { to: ES_PATHS.applications, label: 'Review Explorer Series Applications' },
   { to: ES_PATHS.calendar, label: 'Events calendar' },
 ]
 

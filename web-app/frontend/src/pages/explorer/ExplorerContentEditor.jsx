@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 import Spinner from '@/components/ui/Spinner'
-import { saveSiteContent } from '@/api/explorer'
-import { ES_PATHS } from '@/utils/explorerSite'
+import { saveSiteContent, uploadSiteImages } from '@/api/explorer'
+import { ES_PATHS, ES_LOGO } from '@/utils/explorerSite'
 import SiteText from '@/components/explorer/SiteText'
 import useSiteContent from './useSiteContent'
 
@@ -16,6 +16,59 @@ function Field({ label, hint, children }) {
       {hint && <span className="block text-xs es-muted mb-1.5">{hint}</span>}
       {children}
     </label>
+  )
+}
+
+/** Upload button plus thumbnails you can reorder and remove. */
+function PictureList({ images, onChange, max = 12, single = false }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const pick = async (e) => {
+    const files = [...(e.target.files || [])]
+    e.target.value = ''
+    if (!files.length) return
+    setBusy(true)
+    setError(null)
+    try {
+      const { urls } = await uploadSiteImages(files.slice(0, single ? 1 : max - images.length))
+      onChange(single ? urls.slice(0, 1) : [...images, ...urls].slice(0, max))
+    } catch (err) {
+      setError(err.message || 'Upload failed')
+    }
+    setBusy(false)
+  }
+  const move = (i, by) => {
+    const next = [...images]
+    const [item] = next.splice(i, 1)
+    next.splice(i + by, 0, item)
+    onChange(next)
+  }
+  const full = !single && images.length >= max
+  return (
+    <div>
+      {images.length > 0 && (
+        <ul className="flex flex-wrap gap-2 mb-2">
+          {images.map((src, i) => (
+            <li key={src} className="relative w-28 rounded-md overflow-hidden border border-[color:var(--es-rule)] bg-[color:var(--es-card)]">
+              <img src={src} alt="" className="w-full aspect-[4/3] object-cover" />
+              <div className="flex justify-between text-xs">
+                {!single && <button type="button" className="px-2 py-1 disabled:opacity-30" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move picture left">←</button>}
+                <button type="button" className="px-2 py-1 text-red-400" onClick={() => onChange(images.filter((_, j) => j !== i))}>Remove</button>
+                {!single && <button type="button" className="px-2 py-1 disabled:opacity-30" disabled={i === images.length - 1} onClick={() => move(i, 1)} aria-label="Move picture right">→</button>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!full && (
+        <label className={`es-btn-ghost text-sm cursor-pointer ${busy ? 'opacity-60 pointer-events-none' : ''}`}>
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple={!single} className="sr-only" onChange={pick} />
+          {busy ? 'Uploading…' : single ? (images.length ? 'Replace picture' : 'Upload picture') : '+ Add pictures'}
+        </label>
+      )}
+      <p className="text-xs es-muted mt-1">JPG, PNG, WEBP or GIF, up to 10 MB each{single ? '' : `, ${max} per section`}.</p>
+      {error && <p className="text-sm text-red-400 mt-1" role="alert">{error}</p>}
+    </div>
   )
 }
 
@@ -81,6 +134,14 @@ export default function ExplorerContentEditor() {
         <Field label="Introduction" hint={FORMAT_HELP}>
           <textarea rows={4} className={inputCls} value={form.intro} onChange={(e) => set('intro', e.target.value)} />
         </Field>
+        <div>
+          <span className="block text-sm font-semibold mb-1">Picture beside the title</span>
+          <span className="block text-xs es-muted mb-1.5">Leave empty to show the Explorer Series logo.</span>
+          <div className="flex items-start gap-3">
+            {!form.hero_image && <img src={ES_LOGO} alt="" className="w-28 rounded-md border border-[color:var(--es-rule)]" />}
+            <PictureList single images={form.hero_image ? [form.hero_image] : []} onChange={(urls) => set('hero_image', urls[0] || '')} />
+          </div>
+        </div>
         <div className="grid sm:grid-cols-2 gap-4">
           <Field label="Discord invite link" hint="Shows a Join our Discord button.">
             <input className={inputCls} placeholder="https://discord.gg/…" value={form.discord_url} onChange={(e) => set('discord_url', e.target.value)} />
@@ -101,7 +162,7 @@ export default function ExplorerContentEditor() {
             type="button"
             className="es-btn-ghost text-sm shrink-0"
             disabled={form.sections.length >= 20}
-            onClick={() => set('sections', [...form.sections, { title: '', body: '', hidden: false }])}
+            onClick={() => set('sections', [...form.sections, { title: '', body: '', images: [], hidden: false }])}
           >
             + Add section
           </button>
@@ -132,6 +193,11 @@ export default function ExplorerContentEditor() {
               <div className="es-card p-4">
                 {sec.title && <h3 className="es-heading text-2xl font-bold mb-3">{sec.title}</h3>}
                 <SiteText text={sec.body} />
+                {sec.images?.length > 0 && (
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {sec.images.map((src) => <img key={src} src={src} alt="" className="w-full aspect-[4/3] object-cover rounded" />)}
+                  </div>
+                )}
               </div>
             ) : (
               <>
@@ -141,6 +207,11 @@ export default function ExplorerContentEditor() {
                 <Field label="Text" hint={FORMAT_HELP}>
                   <textarea rows={6} className={inputCls} value={sec.body} onChange={(e) => setSection(i, { body: e.target.value })} />
                 </Field>
+                <div>
+                  <span className="block text-sm font-semibold mb-1">Pictures</span>
+                  <span className="block text-xs es-muted mb-1.5">One picture sits beside the text; more make a gallery.</span>
+                  <PictureList images={sec.images || []} onChange={(urls) => setSection(i, { images: urls })} />
+                </div>
               </>
             )}
           </div>

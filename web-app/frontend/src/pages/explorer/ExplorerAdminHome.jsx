@@ -62,7 +62,7 @@ export default function ExplorerAdminHome() {
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Tile to={ES_PATHS.content} title="Edit site content" text="Home page text, announcement, Discord and member links, extra sections." />
-        <Tile to={ES_PATHS.applications} title="Host applications" text="Review, vote on and publish applications to host." />
+        <Tile to={ES_PATHS.applications} title="Review Explorer Series Applications" text="Review, vote on and publish applications to host." />
         <Tile to={ES_PATHS.calendar} title="Events calendar" text="Proposed dates and clashes between applications." />
         <Tile to={ES_PATHS.standings} title="Standings" text="The public leaderboard, with export and per-player results." />
       </div>

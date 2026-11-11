@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { getEventsWithAdmin, getEvent, reorderEvents, updateEventMetadata, createEvent, importEventFromUrl, pollEventJob, setFeaturedEvent, getTop8DeckIndex, searchTop8Card } from '@/api/events'
 import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
+import { SubmitEventModal, ReviewSubmissionsModal } from '@/components/events/EventSubmissions'
 import ShareLinkButton from '@/components/ui/ShareLinkButton'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useIsDesktop, usePrefersReducedMotion } from '@/hooks/useMediaQuery'
@@ -229,6 +230,14 @@ export default function Events() {
   const [createResult, setCreateResult] = useState(null)
   const [createProgress, setCreateProgress] = useState(null)
 
+  // Player submissions (anyone logged in can send in an event; admins approve)
+  const [loggedIn, setLoggedIn] = useState(false)
+  const [pendingSubmissions, setPendingSubmissions] = useState(0)
+  const [localThreshold, setLocalThreshold] = useState(16)
+  const [submitModal, setSubmitModal] = useState(() =>
+    searchParams.get('submit') === '1' ? 'submit' : searchParams.get('submissions') === 'mine' ? 'mine' : null)
+  const [reviewModal, setReviewModal] = useState(() => searchParams.get('review') === '1')
+
   // Compare mode
   const [compareMode, setCompareMode] = useState(false)
   const [compareSelection, setCompareSelection] = useState(new Set())
@@ -260,6 +269,9 @@ export default function Events() {
       .then((data) => {
         setEvents(data.events || [])
         setIsAdmin(data.is_admin || false)
+        setLoggedIn(!!data.logged_in)
+        setPendingSubmissions(data.pending_submissions || 0)
+        if (data.local_player_threshold) setLocalThreshold(data.local_player_threshold)
         setFeaturedFolder(data.featured_event || null)
         if (Array.isArray(data.event_tags) && data.event_tags.length) setEventTags(data.event_tags)
       })
@@ -667,11 +679,11 @@ export default function Events() {
         <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
         <p className="text-text-muted text-sm">Browse winning decks from competitive Sorcery events</p>
         <p className="text-text-muted/50 text-xs mt-1">
-          Want to see your event here? Send me a list of Curiosa deck URLs on the{' '}
-          <a href="https://discord.gg/ZDqHSK9VGx" target="_blank" rel="noopener noreferrer" className="text-[#5865f2] hover:underline">
-            Summit Discord
-          </a>{' '}
-          and I&apos;ll be happy to add them!
+          Want to see your event here?{' '}
+          <button type="button" className="text-secondary hover:underline" onClick={() => setSubmitModal('submit')}>
+            Send in your sorcerytcg.com event
+          </button>{' '}
+          and we&apos;ll add it once it&apos;s checked.
         </p>
       </section>
 
@@ -974,12 +986,22 @@ export default function Events() {
             </button>
             {isAdmin && (
               <button
-                className="text-xs bg-primary text-black px-3 py-1.5 rounded font-semibold"
-                onClick={openCreateModal}
+                className={`text-xs px-3 py-1.5 rounded font-semibold transition-colors ${
+                  pendingSubmissions > 0
+                    ? 'bg-yellow-500/20 border border-yellow-500/50 text-yellow-200 hover:bg-yellow-500/30'
+                    : 'bg-bg-raised border border-border text-text-muted hover:text-text'
+                }`}
+                onClick={() => setReviewModal(true)}
               >
-                + Add Event
+                Submissions{pendingSubmissions > 0 ? ` (${pendingSubmissions})` : ''}
               </button>
             )}
+            <button
+              className="text-xs bg-primary text-black px-3 py-1.5 rounded font-semibold"
+              onClick={isAdmin ? openCreateModal : () => setSubmitModal('submit')}
+            >
+              + Add Event
+            </button>
             </div>
           </div>
 
@@ -1212,6 +1234,29 @@ export default function Events() {
           </div>
         </div>
       </div>
+
+      {submitModal && (
+        <SubmitEventModal
+          loggedIn={loggedIn}
+          startOnMine={submitModal === 'mine'}
+          threshold={localThreshold}
+          onClose={() => setSubmitModal(null)}
+        />
+      )}
+
+      {reviewModal && isAdmin && (
+        <ReviewSubmissionsModal
+          onClose={() => setReviewModal(false)}
+          onChanged={() => {
+            getEventsWithAdmin()
+              .then((data) => {
+                setEvents(data.events || [])
+                setPendingSubmissions(data.pending_submissions || 0)
+              })
+              .catch(() => {})
+          }}
+        />
+      )}
 
       {/* Create Event Modal */}
       {createModal && (

@@ -45,3 +45,12 @@ export const getTop8DeckIndex = () => get('/api/top-8-events/deck-index')
 // Which Top 8 page decks run a card: { matches: { folder: [deck index positions] } }
 export const searchTop8Card = (card) =>
   get(`/api/top-8-events/card-search?${new URLSearchParams({ card })}`)
+
+// Player-submitted events (held until an admin approves them)
+export const submitEvent = ({ event_url, title, note }) =>
+  post('/api/events/submissions', { event_url, title, note })
+export const getMySubmissions = () => get('/api/events/submissions/mine')
+export const getEventSubmissions = (status) =>
+  get(`/api/events/submissions${status ? `?${new URLSearchParams({ status })}` : ''}`)
+export const approveSubmission = (id, note) => post(`/api/events/submissions/${id}/approve`, { note })
+export const rejectSubmission = (id, note) => post(`/api/events/submissions/${id}/reject`, { note })

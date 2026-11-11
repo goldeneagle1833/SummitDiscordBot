@@ -338,6 +338,45 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             )
             return
         elo_msg = " *(🎲 Limited match - Limited ELO updated)*"
+    elif data["match_type"] == "precon":
+        # Precon ladder games have their own table and Glicko-2 ladder
+        from services import precon_service
+        from repositories.elo_repo import get_pairing_replay
+
+        locked = get_pairing_avatars(pairing_id) if pairing_id else {}
+        locked = {int(k): v for k, v in locked.items()}
+        try:
+            precon_result = precon_service.record_match(
+                winner_id=data["winner_id"],
+                loser_id=data["loser_id"],
+                winner_name=data["winner_global"],
+                loser_name=data["loser_global"],
+                winner_precon=data.get("winner_precon") or locked.get(int(data["winner_id"])),
+                loser_precon=data.get("loser_precon") or locked.get(int(data["loser_id"])),
+                pairing_id=pairing_id,
+                reporter_id=data["reporter_id"],
+                source="pso" if str(data.get("match_comment", "")).startswith("Automatically reported by") else "discord",
+                first_player=first_player or "unknown",
+                winner_went_first=winner_went_first,
+                loser_went_first=loser_went_first,
+                match_time=match_time,
+                match_comment=combined_comment,
+                # PSO's replay link, saved on the pairing from the table reply or the result
+                replay_url=get_pairing_replay(pairing_id) if pairing_id else None,
+            )
+        except Exception as e:
+            logger.error(f"Failed to record precon match: {e}", exc_info=True)
+            processed_matches.pop(match_key, None)
+            if interaction_valid:
+                await interaction.followup.send(
+                    "An error occurred while recording the match. Please try again or contact an admin.",
+                    ephemeral=True,
+                )
+            return None
+        match_id = precon_result["match_id"]
+        elo_msg = precon_service.rating_change_text(
+            precon_result, data["winner_global"], data["loser_global"]
+        )
     else:
         # Determine ELO multipliers upfront for ladder matches
         elo_multiplier_winner = 1.0
@@ -456,7 +495,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 logger.warning(f"Could not edit match card messages for pairing {pairing_id}: {e}")
 
     # ── notify reporter ──
-    correct_match_tip = f"\n\n{correction_tip(match_id)}"
+    correct_match_tip = f"\n\n{correction_tip(match_id, data.get('match_type'))}"
     if data.get("notify_reporter", True):
         try:
             reporter = await bot.fetch_user(data["reporter_id"])
@@ -993,7 +1032,7 @@ class PersistentConfirmButton(
 
             # If confirmer still needs a deck URL, show the deck+comment modal
             confirmer_deck_url = data["winner_deck_url"] if data["is_winner"] else data["loser_deck_url"]
-            if not confirmer_deck_url and data.get("match_type") not in ("testing", "rumble", "limited"):
+            if not confirmer_deck_url and data.get("match_type") not in ("testing", "rumble", "limited", "precon"):
                 modal = PersistentConfirmDeckModal(self.confirmation_id, data["is_winner"])
                 try:
                     await interaction.response.send_modal(modal)
@@ -1002,7 +1041,7 @@ class PersistentConfirmButton(
                 return
 
             # Confirmer already has a deck URL — show comment-only modal
-            if data.get("match_type") not in ("testing", "rumble", "limited"):
+            if data.get("match_type") not in ("testing", "rumble", "limited", "precon"):
                 modal = PersistentConfirmCommentModal(self.confirmation_id)
                 try:
                     await interaction.response.send_modal(modal)
@@ -1668,7 +1707,7 @@ class PersistentMatchCardReportButton(
             )
 
             msg = "**Report Match Result:**\nSelect who went first, then who won, then click **Submit Report**."
-            if not reporter_deck_url and data["match_type"] not in ("testing", "rumble"):
+            if not reporter_deck_url and data["match_type"] not in ("testing", "rumble", "precon"):
                 msg += "\nYou'll be asked for your deck URL after selecting."
 
             await interaction.followup.send(msg, view=view, ephemeral=True)

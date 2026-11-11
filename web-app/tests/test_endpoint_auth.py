@@ -64,6 +64,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.leaderboard.get_archived_event_leaderboard",
     "api.leaderboard.get_season_leaderboard",
     "api.leaderboard.get_limited_leaderboard",
+    "api.precon.get_precon_standings",
+    "api.precon.get_precon_player",  # a player's precon ladder results (public, like the ladder)  # precon ladder standings (public, like the other ladders)
     "api.leaderboard.get_archived_limited_events",
     "api.leaderboard.get_archived_limited_leaderboard",
 

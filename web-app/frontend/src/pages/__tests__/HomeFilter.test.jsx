@@ -10,6 +10,22 @@ vi.mock('@/api/cards', () => ({
 }))
 vi.mock('@/api/leaderboard', () => ({
   getLimitedLeaderboard: vi.fn(() => Promise.resolve({ leaderboard: [] })),
+  getPreconStandings: vi.fn(() => Promise.resolve({
+    season: {
+      season_id: 1, name: 'LM vs FM 1', starts_at: '2026-11-12T18:00:00',
+      ends_at: '2099-12-10T18:00:00', last_day: '2099-12-10T18:00:00', is_open: true,
+    },
+    seasons: [],
+    min_ranked_games: 5,
+    standings: [
+      { user_id: '1', name: 'Alice', rating: 1612, games: 9, wins: 7, losses: 2,
+        lm_wins: 5, lm_losses: 1, fm_wins: 2, fm_losses: 1, ranked: true, rank: 1 },
+      { user_id: '2', name: 'Bob', rating: 1530, games: 2, wins: 1, losses: 1,
+        lm_wins: 0, lm_losses: 0, fm_wins: 1, fm_losses: 1, ranked: false, rank: null },
+    ],
+    stats: { players: 2, games: 11, lm_vs_fm: { lm_wins: 6, fm_wins: 3 } },
+    recent: [],
+  })),
   getEventLeaderboard: vi.fn(() => Promise.resolve({
     event: { event_name: 'Gothic Season 8', elo_mode: 'avatar' },
     leaderboard: [
@@ -57,5 +73,18 @@ describe('Home leaderboard Filtered toggle', () => {
     // The avatar place still counts every Pathfinder entry
     expect(rows[2].textContent).toMatch(/#2 of 2/)
     expect(localStorage.getItem('home_leaderboard_best_only')).toBe('1')
+  })
+})
+
+describe('Home LM / FM tab', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('shows the precon ladder with ranked and not-yet-ranked players', async () => {
+    renderWithRouter(<Home />)
+    fireEvent.click(await screen.findByRole('button', { name: 'LM / FM' }))
+    expect(await screen.findByRole('heading', { level: 2, name: 'LM vs FM 1' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Not yet ranked' })).toBeInTheDocument()
+    expect(screen.getByText('Lavamancer 67%')).toBeInTheDocument()
+    expect(localStorage.getItem('home_elo_source_preference')).toBe('precon')
   })
 })

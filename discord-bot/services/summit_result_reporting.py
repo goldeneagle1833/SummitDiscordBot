@@ -221,11 +221,12 @@ async def _notify_sorcery_online_match_recorded(
         "rumble": "Rumble",
         "points": "Rumble (Omens)",
         "testing": "Casual",
+        "precon": "Precon (LM/FM)",
     }
     label = labels.get(match_type, str(match_type).capitalize())
     # Nobody clicked a button to produce this result, so both tips matter here:
     # the id to correct it with, and where to find buttons for another match.
-    tips = f"\n\n{outstanding_match_tip()}\n{correction_tip(match_id)}"
+    tips = f"\n\n{outstanding_match_tip()}\n{correction_tip(match_id, match_type)}"
     messages = (
         (
             winner_id,
@@ -377,7 +378,15 @@ async def record_sorcery_online_result(
         winner_global = names.get(winner_id) or await _display_name(bot, winner_id)
         loser_global = names.get(loser_id) or await _display_name(bot, loser_id)
         pso_deck_urls = {}
+        pso_precons = {}
         if players:
+            for p in players:
+                pid = str(
+                    p.get("player_id") or p.get("discord_id") or p.get("discordId")
+                    or p.get("discordUserId") or ""
+                )
+                if pid.isdigit() and p.get("precon"):
+                    pso_precons[int(pid)] = p.get("precon")
             for p in players:
                 pid = str(
                     p.get("player_id") or p.get("discord_id") or ""
@@ -422,6 +431,10 @@ async def record_sorcery_online_result(
             "pairing_id": int(pairing_id),
             "notify_reporter": False,
         }
+        if stored_type == "precon":
+            # The pairing knows who picked which precon; PSO may say so too
+            data["winner_precon"] = pso_precons.get(winner_id)
+            data["loser_precon"] = pso_precons.get(loser_id)
         match_key = f"pairing:{stored_type}:{pairing_id}"
         try:
             match_id = await _execute_match_confirmation(

@@ -110,6 +110,7 @@ const ExplorerApplications = lazyPage(() => import('@/pages/admin/ExplorerApplic
 const ExplorerCalendar = lazyPage(() => import('@/pages/admin/ExplorerCalendar'))
 const MetaReportsAdmin = lazyPage(() => import('@/pages/admin/MetaReports'))
 const PaperBadgesAdmin = lazyPage(() => import('@/pages/admin/PaperBadges'))
+const EventsAdmin = lazyPage(() => import('@/pages/admin/EventsAdmin'))
 const MetaReport = lazyPage(() => import('@/pages/MetaReport'))
 const MetaReportEmail = lazyPage(() => import('@/pages/MetaReportEmail'))
 const ExplorerApply = lazyPage(() => import('@/pages/ExplorerApply'))
@@ -289,6 +290,7 @@ const router = createBrowserRouter([
       { path: '/admin/omens-matches', element: <AdminGuard><OmensMatchesAdmin /></AdminGuard> },
       { path: '/admin/chart/:chartType', element: <AdminGuard><ChartDetail /></AdminGuard> },
       { path: '/admin/monitoring', element: <AdminGuard><Monitoring /></AdminGuard> },
+      { path: '/admin/events', element: <AdminGuard><EventsAdmin /></AdminGuard> },
       { path: '/admin/brackets', element: <AdminGuard><BracketsAdmin /></AdminGuard> },
       { path: '/admin/users', element: <AdminGuard><UserProfiles /></AdminGuard> },
       { path: '/admin/meta-reports', element: <AdminGuard><MetaReportsAdmin /></AdminGuard> },

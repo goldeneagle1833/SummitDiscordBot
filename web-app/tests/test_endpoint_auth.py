@@ -255,6 +255,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.explorer.get_leaderboard",
     "api.explorer.get_settings",
     "api.explorer.events_map",
+    "api.explorer.get_site_content",
 
     # -- Rumble (public read-only) --
     "api.rumble.get_rumble",

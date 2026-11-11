@@ -15,7 +15,7 @@ export const NEW_CONTENT_PAGES = {
   'card-stats': ['/card-stats'],
   articles: ['/articles'],
   brackets: ['/brackets'],
-  explorer: ['/explorer'],
+  explorer: ['/explorer-series'],
   store: ['/store'],
 }
 

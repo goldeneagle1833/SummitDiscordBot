@@ -63,6 +63,7 @@ const Elements = lazyPage(() => import('@/pages/Elements'))
 // Phase 6: Content & Interactive
 import Home from '@/pages/Home'
 const About = lazyPage(() => import('@/pages/About'))
+const SummitFormat = lazyPage(() => import('@/pages/SummitFormat'))
 const Help = lazyPage(() => import('@/pages/Help'))
 const Privacy = lazyPage(() => import('@/pages/Privacy'))
 const Terms = lazyPage(() => import('@/pages/Terms'))
@@ -238,6 +239,7 @@ const router = createBrowserRouter([
       { path: '/elements', element: <Elements /> },
       // Phase 6: Content & Interactive
       { path: '/about', element: <About /> },
+      { path: '/summit-format', element: <SummitFormat /> },
       { path: '/help', element: <Help /> },
       { path: '/privacy', element: <Privacy /> },
       { path: '/terms', element: <Terms /> },

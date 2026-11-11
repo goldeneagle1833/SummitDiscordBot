@@ -86,6 +86,8 @@ const Login = lazyPage(() => import('@/pages/Login'))
 const Store = lazyPage(() => import('@/pages/Store'))
 const StoreCheckout = lazyPage(() => import('@/pages/StoreCheckout'))
 const StorePrivateProduct = lazyPage(() => import('@/pages/StorePrivateProduct'))
+const FindPlayer = lazyPage(() => import('@/pages/FindPlayer'))
+const FindPerson = lazyPage(() => import('@/pages/FindPerson'))
 const StoreSuccess = lazyPage(() => import('@/pages/StoreSuccess'))
 const StoreCancelled = lazyPage(() => import('@/pages/StoreCancelled'))
 const MyOrders = lazyPage(() => import('@/pages/MyOrders'))
@@ -309,6 +311,9 @@ const router = createBrowserRouter([
       { path: '/store/checkout', element: <StoreCheckout /> },
       // Private (link only) listing, opened from its link or QR code
       { path: '/store/p/:token', element: <StorePrivateProduct /> },
+      // Find a player at an in-person event (opened from a link or QR code)
+      { path: '/find', element: <FindPlayer /> },
+      { path: '/find/:token', element: <FindPerson /> },
       { path: '/store/success', element: <StoreSuccess /> },
       { path: '/store/cancelled', element: <StoreCancelled /> },
       { path: '/store/orders', element: <LoginGuard><MyOrders /></LoginGuard> },

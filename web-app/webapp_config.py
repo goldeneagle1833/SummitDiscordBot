@@ -45,6 +45,9 @@ BANNER_UPLOADS_DIR = STATIC_DIR / "uploads" / "banners"
 BANNER_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 STORE_UPLOADS_DIR = STATIC_DIR / "uploads" / "store"
 STORE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+# Pictures for the Explorer Series site
+EXPLORER_UPLOADS_DIR = STATIC_DIR / "uploads" / "explorer"
+EXPLORER_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 # Hall maps for the in-person "find a player" page
 EVENT_MAP_UPLOADS_DIR = STATIC_DIR / "uploads" / "event-maps"
 EVENT_MAP_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)

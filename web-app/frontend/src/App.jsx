@@ -237,6 +237,9 @@ const router = createBrowserRouter([
       { path: '/elo/global', element: <Leaderboard /> },
       { path: '/elo/server/:serverId', element: <Leaderboard /> },
       { path: '/season/:seasonId', element: <Navigate to="/elo" replace /> },
+      // Short links to the Lavamancer vs Frostmage ladder (home page LM / FM tab)
+      { path: '/precon', element: <Navigate to="/?ladder=precon#leaderboard" replace /> },
+      { path: '/lmfm', element: <Navigate to="/?ladder=precon#leaderboard" replace /> },
       { path: '/player/:playerId', element: <Player /> },
       { path: '/match-history', element: <Matches /> },
       { path: '/deck-stats/:playerId', element: <DeckStats /> },

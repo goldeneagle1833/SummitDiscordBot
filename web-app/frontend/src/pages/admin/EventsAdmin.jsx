@@ -105,6 +105,25 @@ function QueueCard({ state, busy, save }) {
   )
 }
 
+function TestModeCard({ state, busy, save }) {
+  const on = state.settings.pso_test_mode
+  const live = state.settings.queue_enabled && state.open_season_id != null
+  return (
+    <Card
+      title="Play Sorcery Online test mode"
+      aside={<Switch on={on} disabled={busy} label="PSO test mode on or off" onChange={(v) => save(() => updatePreconSettings({ pso_test_mode: v }), v ? 'Test mode on.' : 'Test mode off.')} />}
+    >
+      <p className="text-sm text-text-muted">
+        {on && live
+          ? 'On, but the real queue is open, so PSO gets real answers. Test mode only answers while the queue is closed.'
+          : on
+            ? 'On: PSO can call the precon status, join and result endpoints and get 200 answers with sample data. Nobody is queued, nothing is recorded, and no ladder starts.'
+            : 'Off. Turn it on so PSO can test the precon endpoints before a ladder starts.'}
+      </p>
+    </Card>
+  )
+}
+
 function StartSeasonForm({ state, busy, save }) {
   const [name, setName] = useState('')
   const [days, setDays] = useState(state.settings.season_days)
@@ -436,7 +455,10 @@ export default function EventsAdmin() {
           !error && <p className="text-sm text-text-muted">Loading…</p>
         ) : (
           <>
-            <QueueCard state={state} busy={busy} save={save} />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+              <QueueCard state={state} busy={busy} save={save} />
+              <TestModeCard state={state} busy={busy} save={save} />
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
               {showCurrent
                 ? <CurrentSeasonCard season={current} isOpen={current.is_open} busy={busy} save={save} />

@@ -144,6 +144,7 @@ def test_admin_starts_a_season_and_opens_the_queue(client, admin_session, monkey
     state = client.get("/api/precon/admin").get_json()
     assert state["settings"] == {
         "queue_enabled": False, "min_ranked_games": 5, "block_rematch": True, "season_days": 28,
+        "pso_test_mode": False,
     }
     resp = client.post("/api/precon/admin/seasons", json={"name": "LM vs FM 1", "days": 14, "open_queue": True})
     assert resp.status_code == 200, resp.get_json()

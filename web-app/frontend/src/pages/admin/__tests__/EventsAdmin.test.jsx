@@ -72,3 +72,16 @@ describe('EventsAdmin', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('No precon ladder is running')
   })
 })
+
+describe('EventsAdmin PSO test mode', () => {
+  it('switches test mode on', async () => {
+    api.getPreconAdmin.mockResolvedValue({ ...empty, settings: { ...SETTINGS, pso_test_mode: false } })
+    api.updatePreconSettings.mockImplementation((changes) => Promise.resolve({
+      ...empty, settings: { ...SETTINGS, pso_test_mode: false, ...changes },
+    }))
+    renderWithRouter(<EventsAdmin />)
+    fireEvent.click(await screen.findByRole('switch', { name: 'PSO test mode on or off' }))
+    await waitFor(() => expect(api.updatePreconSettings).toHaveBeenCalledWith({ pso_test_mode: true }))
+    expect(await screen.findByText(/get 200 answers with sample data/)).toBeInTheDocument()
+  })
+})

@@ -14,7 +14,7 @@ from utils.checks import is_bot_admin
 logger = logging.getLogger("discord_bot")
 
 WEB_APP_URL = str(getattr(config, "WEB_APP_URL", "") or "https://sorcererssummit.com").rstrip("/")
-STANDINGS_URL = f"{WEB_APP_URL}/?ladder=precon#leaderboard"
+STANDINGS_URL = f"{WEB_APP_URL}/precon"  # short link to the home page LM / FM tab
 
 
 def _when(iso) -> str:

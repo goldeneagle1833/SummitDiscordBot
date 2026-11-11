@@ -78,7 +78,7 @@ class TestPayload:
         assert payload["location"] == "Mechanicsville, Virginia"
         assert payload["lgs_name"] == "Waterloo Games"
         assert payload["admin_discord_ids"] == ["111111111111111111"]
-        assert payload["review_url"].endswith("/admin/explorer-applications")
+        assert payload["review_url"].endswith("/explorer-series/admin/applications")
 
     def test_falls_back_to_the_discord_handle_when_unnamed(self, app):
         payload = explorer_notifications.build_payload(

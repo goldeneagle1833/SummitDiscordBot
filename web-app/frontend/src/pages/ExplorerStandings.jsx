@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ES_PATHS } from '@/utils/explorerSite'
 import { Link } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import { useAuth } from '@/context/AuthContext'
@@ -319,8 +320,8 @@ export default function ExplorerStandings() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-display text-text-primary">Community Series</h1>
-          <p className="text-sm text-text-muted mt-0.5">Series leaderboard for The Community Series</p>
+          <h1 className="text-3xl sm:text-4xl font-display font-bold text-text-primary">Standings</h1>
+          <p className="text-sm text-text-muted mt-0.5">Season leaderboard for the Explorer Series</p>
         </div>
 
         {isExplorerAdmin && (
@@ -340,7 +341,7 @@ export default function ExplorerStandings() {
               </button>
             )}
             <Link
-              to="/admin/explorer-applications"
+              to={ES_PATHS.applications}
               className="px-3 py-1.5 text-sm bg-bg-elevated border border-border rounded hover:border-secondary text-text-primary transition-colors"
             >
               Applications
@@ -444,7 +445,7 @@ export default function ExplorerStandings() {
                 page itself asks signed-out visitors to log in. */}
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <Link
-                to="/explorer/apply"
+                to={ES_PATHS.host}
                 className="px-4 py-2 text-sm bg-secondary text-black font-medium rounded hover:bg-secondary/80 transition-colors"
               >
                 Apply to Host Your Own Explorer Event

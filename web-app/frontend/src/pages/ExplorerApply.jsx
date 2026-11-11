@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ES_PATHS } from '@/utils/explorerSite'
 import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
@@ -270,7 +271,7 @@ export default function ExplorerApply() {
           Series council can reach you about your application.
         </p>
         <Link
-          to={`/login?next=${encodeURIComponent('/explorer/apply')}`}
+          to={`/login?next=${encodeURIComponent(ES_PATHS.host)}`}
           className="inline-block px-4 py-2 text-sm bg-secondary text-black font-medium rounded hover:bg-secondary/80 transition-colors"
         >
           Log in with Discord
@@ -321,8 +322,8 @@ export default function ExplorerApply() {
                 View all your applications
               </button>
             )}
-            <Link to="/explorer" className="text-sm text-primary hover:underline">
-              Back to the Community Series
+            <Link to={ES_PATHS.home} className="text-sm text-primary hover:underline">
+              Back to the Explorer Series
             </Link>
           </div>
         </div>
@@ -411,8 +412,8 @@ export default function ExplorerApply() {
           </a>{' '}
           and ask for help in our #questions channel.
         </p>
-        <Link to="/explorer" className="inline-block text-sm text-primary hover:underline">
-          Back to the Community Series
+        <Link to={ES_PATHS.home} className="inline-block text-sm text-primary hover:underline">
+          Back to the Explorer Series
         </Link>
       </div>
     )

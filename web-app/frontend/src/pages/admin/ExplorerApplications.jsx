@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { ES_PATHS } from '@/utils/explorerSite'
 import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
@@ -757,7 +758,7 @@ export default function ExplorerApplications() {
             ))}
           </select>
           <Link
-            to="/admin/explorer-calendar"
+            to={ES_PATHS.calendar}
             className="px-3 py-1.5 text-sm bg-bg-elevated border border-border rounded hover:border-secondary text-text-primary transition-colors"
           >
             Events calendar

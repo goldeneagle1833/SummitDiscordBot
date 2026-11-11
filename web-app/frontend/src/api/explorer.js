@@ -70,3 +70,7 @@ export const geocodeEvent = (eventId) =>
 // Plain links so the browser downloads the file with the session cookie.
 export const leaderboardExportUrl = (seasonId, view = 'standings') =>
   `/api/explorer/leaderboard/${seasonId}/export.csv?view=${view}`
+
+// The Explorer Series site's editable text (hero, links, sections)
+export const fetchSiteContent = () => get('/api/explorer/site-content')
+export const saveSiteContent = (content) => post('/api/explorer/site-content', content)

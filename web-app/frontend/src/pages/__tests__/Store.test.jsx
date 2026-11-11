@@ -287,3 +287,37 @@ describe('Store storefront tabs', () => {
     expect(screen.getByText(/checkout page/)).toBeInTheDocument()
   })
 })
+
+describe('Explorer Series storefront', () => {
+  const SUMMIT = { id: 1, slug: 'summit', name: 'Summit Store', accepts_payments: true }
+  const EXPLORER = { id: 2, slug: 'explorer-series', name: 'Explorer Series Art Prints', accepts_payments: true }
+  const PRINT = { ...TOKEN, id: 9, name: 'Compass Print', storefront_id: 2 }
+  const SUMMIT_TOKEN = { ...TOKEN, storefront_id: 1 }
+
+  beforeEach(() => {
+    sessionStorage.clear()
+    useAuth.mockReturnValue({ user: false, loading: false })
+    getStorefronts.mockResolvedValue({ storefronts: [SUMMIT, EXPLORER] })
+    getProducts.mockResolvedValue({ products: [SUMMIT_TOKEN, PRINT] })
+  })
+
+  it('is not a tab on /store any more', async () => {
+    renderStore()
+    await screen.findByText('Fire Token')
+    expect(screen.queryByRole('tab', { name: /Explorer Series/ })).toBeNull()
+    expect(screen.queryByText('Compass Print')).toBeNull()
+  })
+
+  it('shows on its own, with no tabs, in the Explorer Series shop', async () => {
+    renderWithRouter(
+      <Routes>
+        <Route path="/explorer-series/shop" element={<Store storefrontSlug="explorer-series" />} />
+      </Routes>,
+      { route: '/explorer-series/shop' },
+    )
+    await screen.findByText('Compass Print')
+    expect(screen.getByRole('heading', { name: 'Explorer Series Art Prints' })).toBeInTheDocument()
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByText('Fire Token')).toBeNull()
+  })
+})

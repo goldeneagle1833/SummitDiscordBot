@@ -6,6 +6,7 @@ import { DECK_URL_PLACEHOLDER } from '@/utils/deckLinks'
 import { STORE_LIVE } from '@/utils/store'
 import SocialLinks from '@/components/layout/SocialLinks'
 import useNewContent from '@/hooks/useNewContent'
+import { ES_BASE, ES_PATHS } from '@/utils/explorerSite'
 import { dismissArrival, pageKeyForPath } from '@/utils/newContent'
 import WhatsNewBar from '@/components/layout/WhatsNewBar'
 
@@ -34,13 +35,14 @@ const ALL_NAV_OPTIONS = [
   { to: '/elements', label: 'Element Winrates' },
   { to: '/card-stats', label: 'Card Stats' },
   { to: '/articles', label: 'Player Articles' },
+  { to: '/standings', label: 'Event Standings' },
   { to: '/elo', label: 'ELO Leaderboards' },
   { to: '/brackets', label: 'Season Top Cut' },
   { to: '/match-history', label: 'Match History' },
   { to: '/rumble', label: 'Rumble' },
   { to: '/fun-stats', label: 'Fun Stats' },
   { to: '/card-points', label: 'Omens' },
-  { to: '/explorer', label: 'Community Series' },
+  { to: ES_BASE, label: 'Explorer Series' },
   { to: '/life-counter', label: 'Life Counter' },
   { to: '/help', label: 'Help' },
   { to: '/feedback', label: 'Feedback' },
@@ -53,6 +55,8 @@ const RENAMED_LABELS = {
   Brackets: 'Season Top Cut', 'Avatar Winrates': 'Avatars',
   // Merged into one Card Stats page (2026-11-03)
   'Card Win Rates': 'Card Stats', 'Popular Cards': 'Card Stats',
+  // The Explorer Series moved to its own mini-site (2026-11-11)
+  'Community Series': 'Explorer Series',
 }
 
 function normalizeLabels(labels) {
@@ -315,7 +319,7 @@ function NotificationBell({ user }) {
                         <p className="text-xs text-text-muted mt-0.5">{n.body}</p>
                         {n.type === 'explorer_application' && (
                           <Link
-                            to="/explorer/apply"
+                            to={ES_PATHS.host}
                             onClick={() => setOpen(false)}
                             className="inline-block text-xs text-primary hover:underline mt-1"
                           >
@@ -803,18 +807,11 @@ export default function Nav() {
                 Admin
               </Link>
             )}
+            {/* Explorer admin pages live on the Explorer Series site now */}
             {(user?.is_explorer_admin || user?.is_admin) && (
               <SidebarLink
-                to="/admin/explorer-applications"
-                label="Explorer Applications"
-                location={location}
-                onClick={close}
-              />
-            )}
-            {(user?.is_explorer_admin || user?.is_admin) && (
-              <SidebarLink
-                to="/admin/explorer-calendar"
-                label="Explorer Calendar"
+                to={ES_PATHS.admin}
+                label="Explorer Series admin ↗"
                 location={location}
                 onClick={close}
               />
@@ -844,6 +841,7 @@ export default function Nav() {
           <SidebarLink to="/articles" dot={isNew('/articles')} label="Player Articles" location={location} onClick={close} match={['/articles', '/articles/mine', '/articles/new']} />
 
           <SidebarHeading label="Summit Ranked" />
+          <SidebarLink to="/standings" dot={isNew('/standings')} label="Event Standings" location={location} onClick={close} />
           <SidebarLink to="/elo" dot={isNew('/elo')} label="ELO Leaderboards" location={location} onClick={close} />
           <SidebarLink to="/brackets" dot={isNew('/brackets')} label="Season Top Cut" location={location} onClick={close} />
           <SidebarLink to="/match-history" dot={isNew('/match-history')} label="Match History" location={location} onClick={close} />
@@ -852,7 +850,8 @@ export default function Nav() {
 
           <SidebarHeading label="Events" />
           <SidebarLink to="/card-points" dot={isNew('/card-points')} label="Omens" location={location} onClick={close} />
-          <SidebarLink to="/explorer" dot={isNew('/explorer')} label="Community Series" location={location} onClick={close} match={['/explorer', '/explorer/apply']} />
+          {/* Its own mini-site with its own menu; this is just the way in */}
+          <SidebarLink to={ES_BASE} dot={isNew(ES_BASE)} label="Explorer Series ↗" location={location} onClick={close} />
 
           <SidebarHeading label="Tools" />
           <SidebarLink to="/life-counter" dot={isNew('/life-counter')} label="Life Counter" location={location} onClick={close} />

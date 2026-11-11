@@ -12,6 +12,7 @@ import usePageTitle from '@/hooks/usePageTitle'
 import ImageLightbox from '@/components/store/ImageLightbox'
 import NewTag from '@/components/common/NewTag'
 import { useIsNew } from '@/hooks/useNewContent'
+import { ES_STOREFRONT_SLUG } from '@/utils/explorerSite'
 
 export function LoginPromptModal({ onClose }) {
   const returnUrl = encodeURIComponent(window.location.href)
@@ -174,20 +175,32 @@ function ShirtsCard() {
 // Used when the storefront list can't load: everything shows in one tab
 const FALLBACK_STOREFRONTS = [{ id: null, slug: DEFAULT_STOREFRONT, name: 'Summit Store' }]
 
-export default function Store() {
-  usePageTitle('Store')
+// The Explorer Series storefront lives on the Explorer Series site's Shop
+// instead of as a tab here.
+const MINI_SITE_STOREFRONTS = [ES_STOREFRONT_SLUG]
+
+/**
+ * storefrontSlug: show just that storefront, with no tabs (the Explorer Series
+ * site's Shop). Without it, /store shows every other storefront as tabs.
+ */
+export default function Store({ storefrontSlug = null }) {
+  usePageTitle(storefrontSlug ? 'Shop' : 'Store')
   const { user } = useAuth()
   const isNewProduct = useIsNew('store')
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [allProducts, setAllProducts] = useState([])
-  const [storefronts, setStorefronts] = useState(FALLBACK_STOREFRONTS)
+  const [allStorefronts, setStorefronts] = useState(FALLBACK_STOREFRONTS)
+  const storefronts = storefrontSlug
+    ? allStorefronts.filter((s) => s.slug === storefrontSlug)
+    : allStorefronts.filter((s) => !MINI_SITE_STOREFRONTS.includes(s.slug))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
 
   const active =
-    storefronts.find((s) => s.slug === params.get('storefront')) || storefronts[0]
+    storefronts.find((s) => s.slug === params.get('storefront')) || storefronts[0] ||
+    { id: -1, slug: storefrontSlug || DEFAULT_STOREFRONT, name: 'Shop', accepts_payments: false }
   // Each storefront has its own cart, because each one checks out separately
   const [cart, setCart] = useStoreCart(active.slug) // { [productId]: quantity }
   const products = allProducts.filter((p) =>
@@ -229,7 +242,7 @@ export default function Store() {
   const totalQty = cartItems.reduce((n, p) => n + cart[p.id], 0)
 
   // The shirts link lives on the Summit Store tab only
-  const showShirts = active === storefronts[0]
+  const showShirts = !storefrontSlug && active === storefronts[0]
 
   // Storefronts other than Summit can't check out until their Stripe is set up
   const notTakingOrders = active.accepts_payments === false
@@ -242,7 +255,7 @@ export default function Store() {
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-        <h1 className="text-2xl font-display text-secondary">Sorcery Community Store</h1>
+        <h1 className="text-2xl font-display text-secondary">{storefrontSlug ? active.name : 'Sorcery Community Store'}</h1>
         <div className="flex flex-col items-end gap-2">
           {user && (
             <Link to="/store/orders" className="text-sm text-primary hover:underline">
@@ -252,6 +265,7 @@ export default function Store() {
         </div>
       </div>
 
+      {storefrontSlug ? <div className="border-b border-border mb-6" /> : (
       <div role="tablist" aria-label="Storefronts" className="flex gap-6 border-b border-border mb-6 overflow-x-auto no-scrollbar">
         {storefronts.map((sf) => {
           const selected = sf.slug === active.slug
@@ -279,6 +293,7 @@ export default function Store() {
           )
         })}
       </div>
+      )}
 
       {active.description && (
         <p className="text-sm text-text-muted mb-2 max-w-3xl whitespace-pre-line">

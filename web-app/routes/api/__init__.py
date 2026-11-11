@@ -51,6 +51,8 @@ from routes.api.paper_finishes import paper_finishes_bp
 from routes.api.articles import articles_bp
 from routes.api.nav import nav_bp
 from routes.api.event_finder import event_finder_bp
+from routes.api.precon import precon_bp
+from routes.api.standings_hub import standings_hub_bp
 
 api_bp.register_blueprint(leaderboard_bp)
 api_bp.register_blueprint(matches_bp)
@@ -94,3 +96,5 @@ api_bp.register_blueprint(paper_finishes_bp)
 api_bp.register_blueprint(articles_bp, url_prefix="/articles")
 api_bp.register_blueprint(nav_bp)
 api_bp.register_blueprint(event_finder_bp)
+api_bp.register_blueprint(precon_bp)
+api_bp.register_blueprint(standings_hub_bp)

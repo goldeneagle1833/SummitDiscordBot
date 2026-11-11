@@ -585,3 +585,123 @@ def geocode_event(event_id):
 
     repo.set_event_coordinates(event_id, *coords)
     return jsonify({"success": True, "latitude": coords[0], "longitude": coords[1]})
+
+
+# ── Site content (the Explorer Series mini-site's editable text) ─────────────
+
+SITE_CONTENT_SETTING = "site_content"
+
+# Shown until an Explorer admin saves their own wording.
+DEFAULT_SITE_CONTENT = {
+    "announcement": "",
+    "kicker": "",
+    "title": "The Explorer Series",
+    "intro": (
+        "A player-run annual circuit for Sorcery TCG. The Series promotes a diverse "
+        "range of local events, rewards players who travel to play the game, and "
+        "builds relationships across our communities."
+    ),
+    "discord_url": "",
+    "member_url": "",
+    "show_points_guide": True,
+    "host_title": "Bring the Series to your store",
+    "host_text": (
+        "Each Explorer Series event is run by a local tournament organizer with "
+        "their community of Sorcery players."
+    ),
+    "sections": [],
+}
+
+_TEXT_LIMITS = {
+    "announcement": 500, "kicker": 80, "title": 120, "intro": 1500,
+    "host_title": 120, "host_text": 1000,
+}
+_URL_FIELDS = ("discord_url", "member_url")
+MAX_SECTIONS = 20
+MAX_SECTION_TITLE = 120
+MAX_SECTION_BODY = 10000
+
+
+def _clean_url(value) -> str:
+    url = str(value or "").strip()
+    if not url:
+        return ""
+    if not re.match(r"^https?://[^\s<>\"']+$", url, re.IGNORECASE) or len(url) > 500:
+        raise ValueError("Links must start with http:// or https://")
+    return url
+
+
+def _clean_site_content(data: dict) -> dict:
+    """Validate an admin's edit. Unknown keys are dropped."""
+    out = dict(DEFAULT_SITE_CONTENT)
+    for key, limit in _TEXT_LIMITS.items():
+        if key in data:
+            text = str(data.get(key) or "").strip()
+            if len(text) > limit:
+                raise ValueError(f"{key} is too long (max {limit} characters)")
+            out[key] = text
+    for key in _URL_FIELDS:
+        if key in data:
+            out[key] = _clean_url(data.get(key))
+    if "show_points_guide" in data:
+        out["show_points_guide"] = bool(data.get("show_points_guide"))
+    if "sections" in data:
+        sections = data.get("sections") or []
+        if not isinstance(sections, list):
+            raise ValueError("sections must be a list")
+        if len(sections) > MAX_SECTIONS:
+            raise ValueError(f"At most {MAX_SECTIONS} sections")
+        cleaned = []
+        for s in sections:
+            if not isinstance(s, dict):
+                raise ValueError("Each section needs a title and text")
+            title = str(s.get("title") or "").strip()
+            body = str(s.get("body") or "").strip()
+            if not title and not body:
+                continue
+            if len(title) > MAX_SECTION_TITLE:
+                raise ValueError(f"Section titles max {MAX_SECTION_TITLE} characters")
+            if len(body) > MAX_SECTION_BODY:
+                raise ValueError(f"Section text max {MAX_SECTION_BODY} characters")
+            cleaned.append({"title": title, "body": body, "hidden": bool(s.get("hidden"))})
+        out["sections"] = cleaned
+    return out
+
+
+def _load_site_content(repo) -> dict:
+    raw = repo.get_setting(SITE_CONTENT_SETTING)
+    content = dict(DEFAULT_SITE_CONTENT)
+    if raw:
+        try:
+            saved = json.loads(raw)
+            if isinstance(saved, dict):
+                content.update({k: v for k, v in saved.items() if k in DEFAULT_SITE_CONTENT})
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("Explorer site content is not valid JSON; using defaults")
+    return content
+
+
+@explorer_bp.route("/site-content")
+def get_site_content():
+    """The Explorer Series site's editable text. Public."""
+    try:
+        return jsonify(_load_site_content(ExplorerRepository()))
+    except Exception as e:
+        logger.error(f"Error reading explorer site content: {e}", exc_info=True)
+        return jsonify(DEFAULT_SITE_CONTENT)
+
+
+@explorer_bp.route("/site-content", methods=["POST"])
+@require_explorer_admin
+def update_site_content():
+    """Save the Explorer Series site's text. Explorer admin only."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Send the content as JSON"}), 400
+    try:
+        content = _clean_site_content(data)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    repo = ExplorerRepository()
+    repo.set_setting(SITE_CONTENT_SETTING, json.dumps(content))
+    return jsonify(_load_site_content(repo))

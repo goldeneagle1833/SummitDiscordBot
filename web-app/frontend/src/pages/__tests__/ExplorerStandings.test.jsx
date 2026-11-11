@@ -50,7 +50,7 @@ describe('ExplorerStandings apply call-to-action', () => {
     renderWithRouter(<ExplorerStandings />)
 
     const link = await screen.findByRole('link', { name: APPLY_LABEL })
-    expect(link).toHaveAttribute('href', '/explorer/apply')
+    expect(link).toHaveAttribute('href', '/explorer-series/host')
   })
 
   it('shows the apply button to ordinary logged-in players', async () => {
@@ -58,7 +58,7 @@ describe('ExplorerStandings apply call-to-action', () => {
     renderWithRouter(<ExplorerStandings />)
 
     const link = await screen.findByRole('link', { name: APPLY_LABEL })
-    expect(link).toHaveAttribute('href', '/explorer/apply')
+    expect(link).toHaveAttribute('href', '/explorer-series/host')
   })
 
   it('shows the apply button to Explorer admins', async () => {
@@ -69,7 +69,7 @@ describe('ExplorerStandings apply call-to-action', () => {
     renderWithRouter(<ExplorerStandings />)
 
     const link = await screen.findByRole('link', { name: APPLY_LABEL })
-    expect(link).toHaveAttribute('href', '/explorer/apply')
+    expect(link).toHaveAttribute('href', '/explorer-series/host')
   })
 
   it('shows the apply button to global admins', async () => {
@@ -93,7 +93,7 @@ describe('ExplorerStandings events map', () => {
   it('hides the map while admins have the toggle off', async () => {
     fetchEventsMap.mockResolvedValue({ enabled: false, events: [] })
     renderWithRouter(<ExplorerStandings />)
-    await screen.findByText('Community Series')
+    await screen.findByText('Standings')
     expect(screen.queryByTestId('events-map')).toBeNull()
   })
 
@@ -110,7 +110,7 @@ describe('ExplorerStandings events map', () => {
   it('stays quiet when the map request fails', async () => {
     fetchEventsMap.mockRejectedValue(new Error('down'))
     renderWithRouter(<ExplorerStandings />)
-    await screen.findByText('Community Series')
+    await screen.findByText('Standings')
     expect(screen.queryByTestId('events-map')).toBeNull()
   })
 })

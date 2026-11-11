@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 PUBLIC_SITE_URL = os.environ.get("PUBLIC_SITE_URL", "http://localhost:5173")
 
-REVIEW_PATH = "/admin/explorer-applications"
+REVIEW_PATH = "/explorer-series/admin/applications"
 
 # The bot call is a couple of Discord round trips per admin, so give it more
 # room than a normal relay but still bound it.

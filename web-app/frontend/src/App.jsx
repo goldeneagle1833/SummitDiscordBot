@@ -9,6 +9,7 @@ import LoginGuard from '@/components/layout/LoginGuard'
 import ExplorerAdminGuard from '@/components/layout/ExplorerAdminGuard'
 import ArticleReviewerGuard from '@/components/layout/ArticleReviewerGuard'
 import Spinner from '@/components/ui/Spinner'
+import { ES_BASE, ES_PATHS, ES_STOREFRONT_SLUG } from '@/utils/explorerSite'
 
 /**
  * A page loaded on demand. After a deploy, a tab opened earlier still asks for
@@ -44,6 +45,7 @@ const Events = lazyPage(() => import('@/pages/Events'))
 const Brackets = lazyPage(() => import('@/pages/Brackets'))
 const Bracket = lazyPage(() => import('@/pages/Bracket'))
 const MyBrackets = lazyPage(() => import('@/pages/MyBrackets'))
+const Standings = lazyPage(() => import('@/pages/Standings'))
 const EventDetail = lazyPage(() => import('@/pages/EventDetail'))
 const EventCompare = lazyPage(() => import('@/pages/EventCompare'))
 const Stats = lazyPage(() => import('@/pages/Stats'))
@@ -111,9 +113,16 @@ const ExplorerApplications = lazyPage(() => import('@/pages/admin/ExplorerApplic
 const ExplorerCalendar = lazyPage(() => import('@/pages/admin/ExplorerCalendar'))
 const MetaReportsAdmin = lazyPage(() => import('@/pages/admin/MetaReports'))
 const PaperBadgesAdmin = lazyPage(() => import('@/pages/admin/PaperBadges'))
+const EventsAdmin = lazyPage(() => import('@/pages/admin/EventsAdmin'))
 const MetaReport = lazyPage(() => import('@/pages/MetaReport'))
 const MetaReportEmail = lazyPage(() => import('@/pages/MetaReportEmail'))
 const ExplorerApply = lazyPage(() => import('@/pages/ExplorerApply'))
+// Explorer Series mini-site (its own header, menu and look under /explorer-series)
+const ExplorerSiteLayout = lazyPage(() => import('@/components/explorer/ExplorerSiteLayout'))
+const ExplorerHome = lazyPage(() => import('@/pages/explorer/ExplorerHome'))
+const ExplorerEvents = lazyPage(() => import('@/pages/explorer/ExplorerEvents'))
+const ExplorerAdminHome = lazyPage(() => import('@/pages/explorer/ExplorerAdminHome'))
+const ExplorerContentEditor = lazyPage(() => import('@/pages/explorer/ExplorerContentEditor'))
 const SeasonFeedback = lazyPage(() => import('@/pages/SeasonFeedback'))
 
 // Error pages
@@ -177,6 +186,29 @@ function TrackingProvider({ children }) {
   return children
 }
 
+// Old links keep working: send them to the same page's new address, keeping
+// any ?query (application ids, filters) and #hash.
+function RedirectKeepQuery({ to }) {
+  const { search, hash } = useLocation()
+  return <Navigate to={`${to}${search}${hash}`} replace />
+}
+
+function ExplorerSite() {
+  return (
+    <AuthProvider>
+      <TrackingProvider>
+        <Suspense fallback={<Spinner className="py-20" />}>
+          <ExplorerSiteLayout>
+            <Suspense fallback={<Spinner className="py-20" />}>
+              <Outlet />
+            </Suspense>
+          </ExplorerSiteLayout>
+        </Suspense>
+      </TrackingProvider>
+    </AuthProvider>
+  )
+}
+
 function Layout() {
   return (
     <AuthProvider>
@@ -207,12 +239,16 @@ const router = createBrowserRouter([
       { path: '/elo/global', element: <Leaderboard /> },
       { path: '/elo/server/:serverId', element: <Leaderboard /> },
       { path: '/season/:seasonId', element: <Navigate to="/elo" replace /> },
+      // Short links to the Lavamancer vs Frostmage ladder (home page LM / FM tab)
+      { path: '/precon', element: <Navigate to="/?ladder=precon#leaderboard" replace /> },
+      { path: '/lmfm', element: <Navigate to="/?ladder=precon#leaderboard" replace /> },
       { path: '/player/:playerId', element: <Player /> },
       { path: '/match-history', element: <Matches /> },
       { path: '/deck-stats/:playerId', element: <DeckStats /> },
       { path: '/player/:playerId/avatar/:avatarName', element: <PlayerAvatar /> },
       { path: '/deck-snapshot/:matchId/:playerId', element: <DeckSnapshot /> },
       // Phase 4: Events & Decks
+      { path: '/standings', element: <Standings /> },
       { path: '/brackets', element: <Brackets /> },
       { path: '/brackets/manage', element: <MyBrackets /> },
       { path: '/brackets/:slug', element: <Bracket /> },
@@ -255,8 +291,9 @@ const router = createBrowserRouter([
       { path: '/articles/:slug', element: <ArticleDetail /> },
       { path: '/admin/articles', element: <ArticleReviewerGuard><ArticlesReview /></ArticleReviewerGuard> },
       { path: '/life-counter', element: <LifeCounter /> },
-      { path: '/explorer', element: <LazyPage><ExplorerStandings /></LazyPage> },
-      { path: '/explorer/apply', element: <ExplorerApply /> },
+      // The Explorer Series moved to its own mini-site (2026-11-11)
+      { path: '/explorer', element: <RedirectKeepQuery to={ES_PATHS.standings} /> },
+      { path: '/explorer/apply', element: <RedirectKeepQuery to={ES_PATHS.host} /> },
       { path: '/fun-stats', element: <FunStats /> },
       { path: '/rumble', element: <Rumble /> },
       { path: '/card-points', element: <CardPoints /> },
@@ -292,15 +329,33 @@ const router = createBrowserRouter([
       { path: '/admin/omens-matches', element: <AdminGuard><OmensMatchesAdmin /></AdminGuard> },
       { path: '/admin/chart/:chartType', element: <AdminGuard><ChartDetail /></AdminGuard> },
       { path: '/admin/monitoring', element: <AdminGuard><Monitoring /></AdminGuard> },
+      { path: '/admin/events', element: <AdminGuard><EventsAdmin /></AdminGuard> },
       { path: '/admin/brackets', element: <AdminGuard><BracketsAdmin /></AdminGuard> },
       { path: '/admin/users', element: <AdminGuard><UserProfiles /></AdminGuard> },
       { path: '/admin/meta-reports', element: <AdminGuard><MetaReportsAdmin /></AdminGuard> },
       { path: '/admin/paper-badges', element: <AdminGuard><PaperBadgesAdmin /></AdminGuard> },
-      { path: '/admin/explorer-applications', element: <ExplorerAdminGuard><LazyPage><ExplorerApplications /></LazyPage></ExplorerAdminGuard> },
-      { path: '/admin/explorer-calendar', element: <ExplorerAdminGuard><LazyPage><ExplorerCalendar /></LazyPage></ExplorerAdminGuard> },
+      { path: '/admin/explorer-applications', element: <RedirectKeepQuery to={ES_PATHS.applications} /> },
+      { path: '/admin/explorer-calendar', element: <RedirectKeepQuery to={ES_PATHS.calendar} /> },
       // Error & 404
       { path: '/error', element: <ErrorPage /> },
       { path: '*', element: <NotFound /> },
+    ],
+  },
+  // The Explorer Series mini-site: same app and login, its own chrome
+  {
+    path: ES_BASE,
+    element: <ExplorerSite />,
+    children: [
+      { index: true, element: <ExplorerHome /> },
+      { path: 'standings', element: <ExplorerStandings /> },
+      { path: 'events', element: <ExplorerEvents /> },
+      { path: 'host', element: <ExplorerApply /> },
+      { path: 'shop', element: <Store storefrontSlug={ES_STOREFRONT_SLUG} /> },
+      { path: 'admin', element: <ExplorerAdminGuard><ExplorerAdminHome /></ExplorerAdminGuard> },
+      { path: 'admin/content', element: <ExplorerAdminGuard><ExplorerContentEditor /></ExplorerAdminGuard> },
+      { path: 'admin/applications', element: <ExplorerAdminGuard><ExplorerApplications /></ExplorerAdminGuard> },
+      { path: 'admin/calendar', element: <ExplorerAdminGuard><ExplorerCalendar /></ExplorerAdminGuard> },
+      { path: '*', element: <Navigate to={ES_BASE} replace /> },
     ],
   },
   // Print views live outside the site chrome so only the form is printed

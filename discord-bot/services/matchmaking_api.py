@@ -36,7 +36,10 @@ from services.avatar_mode import (
 )
 from services.card_points_service import validate_deck_points
 from services.ranked_eligibility import ranked_block_message
+from services.precon_ladder import normalize_precon, precon_choices
 from services.summit_result_reporting import record_sorcery_online_result
+from services import precon_service, precon_test_mode
+from repositories.elo_repo import get_pairing_by_id
 from cogs.lfg.voice import SUMMIT_VOICE_URL
 from services.voice_presence import parse_user_ids, voice_session
 
@@ -169,6 +172,10 @@ async def _status(bot, user_id):
                 waiting_by_voice[normalize_voice_preference(entry.get("voice")) or DEFAULT_VOICE] += 1
                 for choice in willing_voice_choices(entry.get("voice"), entry_voice_flexible(entry)):
                     waiting_willing[choice] += 1
+            if queue_type == "precon":
+                # Join with "precon": one of these keys (no deck link)
+                queue["precon_choices"] = precon_choices()
+                queue["precon"] = joined.get(queue_type, {}).get("precon") if queue_type in joined else None
             queue["waiting_by_voice"] = waiting_by_voice
             queue["waiting_willing"] = waiting_willing
             queue["voice"] = None
@@ -177,6 +184,9 @@ async def _status(bot, user_id):
                 queue["voice"] = normalize_voice_preference(joined[queue_type].get("voice")) or DEFAULT_VOICE
                 queue["voice_flexible"] = entry_voice_flexible(joined[queue_type])
             queues.append(queue)
+    # PSO test mode: show a sample precon queue while the real one is closed
+    if not any(q["type"] == "precon" for q in queues) and precon_service.test_mode_active():
+        queues.append(precon_test_mode.test_queue_entry(VOICE_PREFERENCES, DEFAULT_VOICE))
     result = pending_web_matches.get(user_id)
     if result:
         result = {key: value for key, value in result.items() if key != "expires_at"}
@@ -253,6 +263,21 @@ async def start_matchmaking_api(bot):
         payload = await request.json()
         queue_type = str(payload.get("queue_type", ""))
         definition = queue_definition(queue_type)
+        if queue_type == "precon" and not queue_is_enabled("precon") and precon_service.test_mode_active():
+            # Checked like a real join, but nobody is queued
+            voice = normalize_voice_preference(payload.get("voice")) if payload.get("voice") else DEFAULT_VOICE
+            try:
+                duration = int(payload.get("duration_minutes", 30))
+                if voice is None:
+                    raise ValueError("voice must be one of: voice, no_voice")
+                if duration < 5 or duration > 240:
+                    raise ValueError("Queue duration must be between 5 and 240 minutes")
+                test = precon_test_mode.test_join(
+                    payload, user_id, member.global_name or member.display_name, voice,
+                )
+            except (TypeError, ValueError) as exc:
+                raise web.HTTPBadRequest(text=str(exc) or "Invalid queue request")
+            return web.json_response({**(await _status(bot, user_id)), **test})
         if not definition or not queue_is_enabled(queue_type):
             raise web.HTTPBadRequest(text="That queue is not available")
         try:
@@ -275,6 +300,12 @@ async def start_matchmaking_api(bot):
         )
         deck_url = str(payload.get("deck_url") or "").strip() or None
         run_id = None
+        precon = None
+        if queue_type == "precon":
+            precon = normalize_precon(payload.get("precon"))
+            if not precon:
+                raise web.HTTPBadRequest(text="precon must be one of: lavamancer, frostmage")
+            deck_url = None
         if definition["deck_mode"] == "required" and not deck_url:
             raise web.HTTPBadRequest(text="A deck is required for this queue")
         if queue_type == "ranked":
@@ -303,6 +334,7 @@ async def start_matchmaking_api(bot):
         await _process_queue_join(
             bot, interaction, queue_type, duration, deck_url,
             run_id=run_id, origin="sorcery_online", voice=voice, voice_flexible=voice_flexible,
+            precon=precon,
         )
         if avatar_required and DECK_UNREADABLE_MESSAGE in interaction.followup.messages:
             raise web.HTTPBadRequest(text=DECK_UNREADABLE_MESSAGE)
@@ -345,6 +377,23 @@ async def start_matchmaking_api(bot):
         )
         fields = _result_fields(payload)
         logger.info("SO report_result normalized fields: %s", fields)
+        if fields["queue_type"] == "precon" and precon_service.test_mode_active():
+            try:
+                guild_id = int(request.match_info["guild_id"])
+                pairing_id = int(request.match_info["pairing_id"])
+            except ValueError:
+                guild_id = pairing_id = None
+            if pairing_id is None or not get_pairing_by_id(guild_id, pairing_id):
+                # A test game: checked and echoed back, never recorded
+                try:
+                    body = precon_test_mode.test_result(
+                        fields, guild_id, pairing_id,
+                        replay_url=_pick(payload, "replay_url", "replayUrl"),
+                        players=fields.get("players"),
+                    )
+                except ValueError as exc:
+                    return web.json_response({"error": str(exc), "code": "VALIDATION_ERROR"}, status=400)
+                return web.json_response(body)
         # Not sent today, but take a replay link if Play Sorcery Online includes one
         replay_url = _pick(payload, "replay_url", "replayUrl")
         if replay_url and fields["queue_type"] != "limited":
@@ -531,6 +580,23 @@ async def start_matchmaking_api(bot):
         # 409 rather than 5xx so the web app logs it and retries on its next pass.
         return web.json_response({"posted": posted}, status=200 if posted else 409)
 
+    async def precon_refresh(request):
+        """The Admin page changed the precon ladder: drop cached settings, update the
+        LFG status (the queue button shows or hides) and post any final standings due."""
+        from services import precon_service
+
+        precon_service.clear_cache()
+        cog = bot.get_cog("PreconLadderCog")
+        refreshed = False
+        if cog:
+            try:
+                await cog._refresh_lfg_status()
+                await cog.post_final_standings()
+                refreshed = True
+            except Exception as exc:  # noqa: BLE001 - the change is saved either way
+                logger.warning("Precon refresh after admin change failed: %s", exc)
+        return web.json_response({"refreshed": refreshed})
+
     async def meta_report_dm(request):
         """DM opted-in players about a newly published Meta Report, in the background."""
         from services.meta_report_notify import dm_meta_report
@@ -629,6 +695,7 @@ async def start_matchmaking_api(bot):
     app.router.add_post("/bracket-match-notify", bracket_match_notify)
     app.router.add_post("/meta-report-notify", meta_report_notify)
     app.router.add_post("/meta-report-dm", meta_report_dm)
+    app.router.add_post("/precon-refresh", precon_refresh)
     app.router.add_post(
         "/explorer-application-notify", explorer_application_notify
     )

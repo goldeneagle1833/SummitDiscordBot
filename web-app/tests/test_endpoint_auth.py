@@ -146,6 +146,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
 
     # -- Brackets (public read-only; reporting/confirming require auth) --
     "api.brackets.list_brackets",
+    "api.standings_hub.get_standings_hub",  # own place shown only to that player
     "api.brackets.get_bracket",
     "api.brackets.get_bracket_marks",
     "api.brackets.get_player_postseason",

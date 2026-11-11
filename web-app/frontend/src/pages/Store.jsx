@@ -128,50 +128,6 @@ export function ProductGallery({ product }) {
   )
 }
 
-// Summit shirts are printed and sold by Crit Apparel, so this card links out
-// to their store in a new tab instead of going in the cart.
-export const SUMMIT_SHIRTS = {
-  url: 'https://critapparel.com/collections/sorcerersummit',
-  image: '/static/images/store/summit-shirts.png',
-}
-
-function ShirtsCard() {
-  return (
-    <a
-      href={SUMMIT_SHIRTS.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="group bg-bg-surface border border-border rounded-lg overflow-hidden flex flex-col transition-all duration-200 hover:border-secondary/40 hover:-translate-y-0.5 hover:shadow-harsh"
-    >
-      <img
-        src={SUMMIT_SHIRTS.image}
-        alt="Sorcerers Summit T-shirt"
-        className="w-full aspect-[3/2] object-contain bg-gradient-to-br from-bg-elevated to-bg-surface"
-      />
-      <div className="p-4 flex flex-col flex-1">
-        <h2 className="font-semibold text-text-primary">Summit T-Shirts</h2>
-        <p className="text-sm text-text-muted mt-1">
-          Sorcerers Summit shirts, printed by Crit Apparel. Back only $28, front &amp; back $33.
-          Lightweight: back only $23, front &amp; back $25.
-        </p>
-        <p className="text-xs text-text-muted mt-2 flex-1">
-          Ordered and shipped through Crit Apparel's store, not your cart here.
-        </p>
-        <div className="flex items-center justify-between mt-3">
-          <span className="text-secondary font-semibold text-lg">From $23</span>
-          <span className="bg-primary group-hover:bg-primary-dark text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5">
-            Shop shirts
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
-            </svg>
-            <span className="sr-only">(opens in a new tab)</span>
-          </span>
-        </div>
-      </div>
-    </a>
-  )
-}
-
 // Used when the storefront list can't load: everything shows in one tab
 const FALLBACK_STOREFRONTS = [{ id: null, slug: DEFAULT_STOREFRONT, name: 'Summit Store' }]
 
@@ -240,9 +196,6 @@ export default function Store({ storefrontSlug = null }) {
   const cartItems = products.filter((p) => cart[p.id])
   const subtotal = cartItems.reduce((sum, p) => sum + p.price_cents * cart[p.id], 0)
   const totalQty = cartItems.reduce((n, p) => n + cart[p.id], 0)
-
-  // The shirts link lives on the Summit Store tab only
-  const showShirts = !storefrontSlug && active === storefronts[0]
 
   // Storefronts other than Summit can't check out until their Stripe is set up
   const notTakingOrders = active.accepts_payments === false
@@ -321,7 +274,7 @@ export default function Store({ storefrontSlug = null }) {
         </p>
       )}
 
-      {products.length === 0 && !showShirts ? (
+      {products.length === 0 ? (
         <p className="text-center text-text-muted py-12">
           Nothing for sale right now. Check back soon!
         </p>
@@ -404,7 +357,6 @@ export default function Store({ storefrontSlug = null }) {
               </div>
             )
           })}
-          {showShirts && <ShirtsCard />}
         </div>
       )}
 

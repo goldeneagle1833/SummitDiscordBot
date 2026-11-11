@@ -57,6 +57,7 @@ function SubmissionMeta({ s }) {
   const bits = []
   if (s.event_date) bits.push(s.event_date)
   if (s.player_count != null) bits.push(`${s.player_count} players`)
+  if (s.deck_links) bits.push(`${s.deck_links} deck link${s.deck_links !== 1 ? 's' : ''}`)
   return bits.length ? <span className="text-xs text-text-muted">{bits.join(' · ')}</span> : null
 }
 
@@ -66,6 +67,7 @@ export function SubmitEventModal({ loggedIn, onClose, startOnMine = false, thres
   const [url, setUrl] = useState('')
   const [title, setTitle] = useState('')
   const [note, setNote] = useState('')
+  const [deckLinks, setDeckLinks] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
   const [sent, setSent] = useState(null)
@@ -82,9 +84,10 @@ export function SubmitEventModal({ loggedIn, onClose, startOnMine = false, thres
     setSending(true)
     setError(null)
     try {
-      const res = await submitEvent({ event_url: url.trim(), title: title.trim(), note: note.trim() })
+      const deck_urls = deckLinks.split('\n').map((u) => u.trim()).filter(Boolean)
+      const res = await submitEvent({ event_url: url.trim(), title: title.trim(), note: note.trim(), deck_urls })
       setSent(res.submission)
-      setUrl(''); setTitle(''); setNote('')
+      setUrl(''); setTitle(''); setNote(''); setDeckLinks('')
       loadMine()
     } catch (e) {
       setError(e.message || 'Could not send that event')
@@ -163,6 +166,19 @@ export function SubmitEventModal({ loggedIn, onClose, startOnMine = false, thres
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
+            <label htmlFor="submit-event-decks" className="text-xs text-text-muted block mb-1">
+              Top deck links (optional, one per line, 1st place first)
+            </label>
+            <textarea
+              id="submit-event-decks"
+              className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-1 min-h-[72px]"
+              placeholder={'https://curiosa.io/decks/...\nhttps://curiosa.io/decks/...'}
+              value={deckLinks}
+              onChange={(e) => setDeckLinks(e.target.value)}
+            />
+            <p className="text-[11px] text-text-muted/70 mb-3">
+              Only collected the top 4 lists? Paste them here. The player count still comes from the event page.
+            </p>
             <label htmlFor="submit-event-note" className="text-xs text-text-muted block mb-1">Note for the Summit team (optional)</label>
             <textarea
               id="submit-event-note"

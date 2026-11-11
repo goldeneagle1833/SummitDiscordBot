@@ -232,3 +232,82 @@ def test_google_submitter_gets_no_dm(client, env):
     client.post("/api/events/submissions/1/reject", json={})
     dms = _dms(env["articles_db"]) if env["articles_db"].exists() else []
     assert all(d["recipient"] != "998877" for d in dms)
+
+
+# -- Deck links + event page (events that only collect the top lists) -------
+
+class _LinkCuriosa(_Curiosa):
+    batches = []
+
+    def fetch_decks_batch(self, urls):
+        _LinkCuriosa.batches.append(list(urls))
+        return [_snapshot_deck(i) for i in range(1, len(urls) + 1)], []
+
+
+@pytest.mark.parametrize("count,local", [(30, False), (12, True)])
+def test_submission_with_deck_links_uses_event_page_for_size(app, env, monkeypatch, count, local):
+    from repositories.event_submissions import EventSubmissionRepository
+
+    _EventRepo.created, _EventRepo.tagged = [], []
+    sizes = []
+    orig = _EventRepo.update_event_metadata
+
+    def update(self, folder, **kw):
+        if "attendance" in kw:
+            sizes.append(kw["attendance"])
+        return orig(self, folder, **kw)
+
+    monkeypatch.setattr(_EventRepo, "update_event_metadata", update)
+    monkeypatch.setattr(events_routes, "EventRepository", _EventRepo)
+    links = [f"https://curiosa.io/decks/top{i}" for i in range(1, 5)]
+    repo = EventSubmissionRepository()
+    sub = repo.create(EVENT_URL, "evt123", "", "", "555000111", "Ruben", "discord", deck_urls=links)
+    assert repo.get(sub["id"])["deck_urls"] == links
+    repo.claim_for_import(sub["id"], "Bruce", "")
+    _LinkCuriosa.batches = []
+
+    # The event page has players but no deck lists; the links carry the decks
+    result = events_routes.approve_submission(sub["id"], curiosa=_LinkCuriosa([], count))
+
+    assert result["success"] and not result.get("badges_only")
+    assert _LinkCuriosa.batches == [links]
+    assert _EventRepo.created == ["Columbus Weekly"]
+    assert sizes == [count]
+    assert bool(_EventRepo.tagged) is local
+    assert repo.get(sub["id"])["player_count"] == count
+
+
+def test_submit_accepts_deck_links_and_rejects_other_sites(client, env):
+    _login(client)
+    bad = client.post("/api/events/submissions", json={"event_url": EVENT_URL, "deck_urls": ["https://evil.example/x"]})
+    assert bad.status_code == 400
+    ok = client.post("/api/events/submissions", json={
+        "event_url": EVENT_URL, "deck_urls": "https://curiosa.io/decks/a\n\nhttps://curiosa.io/decks/b"})
+    assert ok.status_code == 201
+    assert ok.get_json()["submission"]["deck_links"] == 2
+
+
+def test_manual_event_reads_size_from_event_page(app, env, monkeypatch, tmp_path):
+    from repositories.events import EventRepository
+    import services.curiosa as curiosa_module
+
+    events_dir = tmp_path / "events"
+    events_dir.mkdir()
+    monkeypatch.setattr(events_routes, "EventRepository", lambda: EventRepository(events_dir))
+
+    class Fake(_LinkCuriosa):
+        def __init__(self):
+            super().__init__([], 30, [{"registration_id": "r1", "display_name": "P1", "standing": 1}])
+
+        def _rate_limit(self):
+            pass
+
+    monkeypatch.setattr(curiosa_module, "CuriosaService", Fake)
+    links = [f"https://curiosa.io/decks/top{i}" for i in range(1, 5)]
+    events_routes._run_event_creation("job-m", "Dayton Open", links, [], EVENT_URL)
+
+    event = next(e for e in EventRepository(events_dir).get_all_events() if e["folder"] == "Dayton Open")
+    assert event["player_count"] == 4      # decks on the page
+    assert event["attendance"] == 30       # people who played
+    assert event["tag"] is None            # 16+ is not Local
+    assert event["event_date"] == "2026-11-08"

@@ -19,7 +19,7 @@ STATUSES = ("pending", "importing", "approved", "rejected", "failed")
 _COLUMNS = (
     "id", "event_url", "event_id", "title", "note", "submitter_id", "submitter_name", "submitter_provider",
     "status", "event_name", "event_date", "player_count", "review_note", "reviewed_by",
-    "reviewed_at", "result", "created_at", "updated_at",
+    "reviewed_at", "result", "created_at", "updated_at", "deck_urls",
 )
 
 
@@ -61,6 +61,11 @@ class EventSubmissionRepository:
                 updated_at TEXT NOT NULL
             )
         """)
+        # Added after the table first shipped: deck links in finishing order,
+        # for events that only collected their top lists.
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(top8_event_submissions)")}
+        if "deck_urls" not in cols:
+            conn.execute("ALTER TABLE top8_event_submissions ADD COLUMN deck_urls TEXT")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_top8_submissions_status ON top8_event_submissions(status)"
         )
@@ -74,6 +79,10 @@ class EventSubmissionRepository:
             row["result"] = json.loads(row["result"]) if row["result"] else None
         except ValueError:
             row["result"] = None
+        try:
+            row["deck_urls"] = json.loads(row["deck_urls"]) if row["deck_urls"] else []
+        except ValueError:
+            row["deck_urls"] = []
         return row
 
     def _select(self, where: str = "", params: tuple = ()) -> list[dict]:
@@ -86,16 +95,17 @@ class EventSubmissionRepository:
         return [self._row(r) for r in rows]
 
     def create(self, event_url: str, event_id: str, title: str, note: str,
-               submitter_id: str, submitter_name: str, submitter_provider: str | None = None) -> dict:
+               submitter_id: str, submitter_name: str, submitter_provider: str | None = None, deck_urls: list[str] | None = None) -> dict:
         now = _now()
         conn = self._connect()
         cur = conn.execute(
             """INSERT INTO top8_event_submissions
                (event_url, event_id, title, note, submitter_id, submitter_name, submitter_provider,
-                status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+                status, created_at, updated_at, deck_urls)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
             (event_url, event_id, title or None, note or None, str(submitter_id),
-             submitter_name, submitter_provider, now, now),
+             submitter_name, submitter_provider, now, now,
+             json.dumps(deck_urls) if deck_urls else None),
         )
         conn.commit()
         new_id = cur.lastrowid

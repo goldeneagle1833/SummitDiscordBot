@@ -184,8 +184,8 @@ export default function SummitFormat() {
           <dd>Tickets stay on sale for the whole season, until it ends at 11:59 PM Eastern on its last day.</dd>
           <dt className="font-medium">Buying mid-season</dt>
           <dd>
-            Your games still count. The top cut looks at who holds a ticket when the season ends, so the
-            games you played before buying are part of your ladder spot.
+            You can buy one any time, but any avatar rated above 1500 is reset to 1500 when you do. Anything
+            at or below 1500 stays where it is.
           </dd>
         </dl>
       </Section>

@@ -6,7 +6,9 @@ web-app/articles.db:
 - reviewers (ARTICLE_REVIEWER_IDS in the web app's env, else the admins) when
   an article is submitted, edited, or the author replies;
 - the author (Discord logins only) when a reviewer comments, requests
-  changes, approves or rejects.
+  changes, approves or rejects;
+- Top 8 event submissions (article_id NULL): the admins when a player sends
+  in an event, and the player when it is approved or rejected.
 
 This cog polls for pending rows every 30 seconds, sends each as an embed with
 a link button back to the site, and marks it sent (or failed after a few
@@ -96,7 +98,10 @@ def build_message(n: dict) -> tuple[discord.Embed, discord.ui.View | None]:
         color=ARTICLE_COLOR,
         url=url,
     )
-    embed.set_footer(text="Sorcerers Summit · Player Articles")
+    # Rows with no article are other site notices sharing this queue
+    # (Top 8 event submissions).
+    footer = "Player Articles" if n.get("article_id") else "Top 8 Events"
+    embed.set_footer(text=f"Sorcerers Summit · {footer}")
     view = None
     if url:
         view = discord.ui.View()

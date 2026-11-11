@@ -233,18 +233,19 @@ class StandingsHubService:
     def _precon(self):
         """The precon ladder's card.
 
-        The ladder itself is built separately. Until it exists this is a
-        "coming soon" card; once ``services.precon_ladder`` offers
-        ``hub_summary() -> {"system": {...}, "players": [{user_id,
-        display_name, rating, rank, games, provisional}]}`` the card fills in.
+        The ladder is built in its own branch. Until it is in, or before its
+        first season starts, this is a "coming soon" card;
+        ``services.precon_hub.hub_summary()`` returns ``{"system": {...},
+        "players": [{user_id, display_name, rating, rank, games,
+        provisional}]}`` (best first) once there is a ladder to show.
         """
         try:
-            from services import precon_ladder  # noqa: F401  (built in another branch)
+            from services import precon_hub
         except ImportError:
-            precon_ladder = None
+            precon_hub = None
         summary = None
-        if precon_ladder and hasattr(precon_ladder, "hub_summary"):
-            summary = precon_ladder.hub_summary()
+        if precon_hub and hasattr(precon_hub, "hub_summary"):
+            summary = precon_hub.hub_summary()
         if not summary:
             return {
                 "title": "Precon Ladder: Lavamancer vs Frostmage",

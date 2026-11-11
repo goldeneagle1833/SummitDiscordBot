@@ -136,3 +136,28 @@ def test_endpoint_is_public(client):
         res = client.get("/api/standings")
     assert res.status_code == 200
     assert res.get_json()["success"] is True
+
+
+def test_precon_card_fills_in_from_the_precon_hub(repo, monkeypatch):
+    import sys
+    import types
+
+    fake = types.ModuleType("services.precon_hub")
+    fake.hub_summary = lambda: {
+        "system": {"title": "Precon Ladder", "status": "live", "blurb": "LM vs FM",
+                   "link": "/?ladder=precon#leaderboard", "ends_at": "2026-12-09"},
+        "players": [
+            {"user_id": "u1", "display_name": "P1", "rating": 1612.4, "rank": 1, "games": 9, "provisional": False},
+            {"user_id": "u2", "display_name": "P2", "rating": 1540, "rank": 2, "games": 3, "provisional": True},
+        ],
+    }
+    monkeypatch.setitem(sys.modules, "services.precon_hub", fake)
+    import services
+    monkeypatch.setattr(services, "precon_hub", fake, raising=False)
+
+    result = hub(repo, [], "u2")
+    precon = next(s for s in result["systems"] if s["key"] == "precon")
+    assert precon["status"] == "live"
+    assert precon["top"][0] == {"rank": 1, "name": "P1", "value": 1612, "unit": "rating"}
+    assert precon["you"]["headline"] == "Rank #2"
+    assert "provisional" in precon["you"]["detail"]

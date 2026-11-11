@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { getProducts, formatMoney } from '@/api/store'
 import usePageTitle from '@/hooks/usePageTitle'
 import PageTabs from '@/components/ui/PageTabs'
 import { HELP_TABS } from '@/utils/pageTabs'
@@ -27,6 +29,56 @@ function Section({ id, title, children }) {
   )
 }
 
+// The season ticket is a Summit Store listing named like "Season 9 Ticket".
+// The page shows the newest one (highest season number) that's on sale.
+const TICKET_NAME = /season\s*(\d+)\s*ticket/i
+
+export function findSeasonTicket(products) {
+  let best = null
+  for (const p of products || []) {
+    const m = TICKET_NAME.exec(p?.name || '')
+    if (!m) continue
+    const season = Number(m[1])
+    if (!best || season > best.season) best = { season, product: p }
+  }
+  return best
+}
+
+function useSeasonTicket() {
+  const [ticket, setTicket] = useState(null)
+  useEffect(() => {
+    let alive = true
+    getProducts()
+      .then((data) => { if (alive) setTicket(findSeasonTicket(data?.products)) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+  return ticket
+}
+
+function TicketCard({ ticket }) {
+  const p = ticket.product
+  const soldOut = p.stock_quantity != null && p.stock_quantity <= 0
+  return (
+    <div className="rounded-soft border border-primary/40 bg-primary/5 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold">{p.name}</p>
+        <p className="text-secondary font-semibold">{formatMoney(p.price_cents, p.currency)}</p>
+      </div>
+      {soldOut ? (
+        <span className="text-text-muted text-sm">Sold out</span>
+      ) : (
+        <Link
+          to="/store"
+          className="inline-flex justify-center rounded-soft bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+        >
+          Get a ticket
+        </Link>
+      )}
+    </div>
+  )
+}
+
 const STEPS = [
   { n: 1, title: 'Get a ticket', text: 'Ticket holders play for a top cut spot. Everyone else can still play ranked as Free Play.' },
   { n: 2, title: 'Climb the ladder', text: 'Play ranked games all season. Every game moves your season ELO.' },
@@ -51,6 +103,8 @@ const JUMP_LINKS = [
 
 export default function SummitFormat() {
   usePageTitle('Summit Format')
+  const ticket = useSeasonTicket()
+  const ticketProduct = ticket?.product
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -94,11 +148,23 @@ export default function SummitFormat() {
           A season ticket is what puts you in the running for the top cut. Without one you can still play every
           ranked game, and you'll show up in the Free Play section of the leaderboard.
         </p>
+        {ticket && <TicketCard ticket={ticket} />}
+        {ticketProduct?.description && (
+          <p className="whitespace-pre-line text-text-muted">{ticketProduct.description}</p>
+        )}
         <dl className="grid grid-cols-1 sm:grid-cols-[10rem_1fr] gap-x-4 gap-y-2">
           <dt className="font-medium">Price</dt>
-          <dd><Tbc /></dd>
+          <dd>
+            {ticketProduct ? formatMoney(ticketProduct.price_cents, ticketProduct.currency) : <Tbc />}
+          </dd>
           <dt className="font-medium">Where to buy</dt>
-          <dd><Tbc /></dd>
+          <dd>
+            {ticketProduct ? (
+              <Link to="/store" className="text-primary hover:underline">The Summit Store</Link>
+            ) : (
+              <Tbc />
+            )}
+          </dd>
           <dt className="font-medium">When sales close</dt>
           <dd><Tbc /></dd>
           <dt className="font-medium">Buying mid-season</dt>

@@ -258,6 +258,10 @@ SETTINGS = {
     "min_ranked_games": (MIN_RANKED_GAMES, int, 1, 50),
     "block_rematch": (True, bool, None, None),
     "season_days": (SEASON_DAYS, int, 1, 120),
+    # Play Sorcery Online test mode: while the real queue is closed, the precon
+    # endpoints answer 200 with sample data so PSO can build against them.
+    # Nobody is queued and nothing is rated.
+    "pso_test_mode": (False, bool, None, None),
 }
 
 

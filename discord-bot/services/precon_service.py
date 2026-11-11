@@ -58,6 +58,11 @@ def update_settings(changes, updated_by=None) -> dict:
     return current
 
 
+def test_mode_active() -> bool:
+    """PSO test mode is on and the real queue is closed (a running queue always wins)."""
+    return bool(settings().get("pso_test_mode")) and not queue_is_open()
+
+
 def queue_is_open() -> bool:
     """The precon queue shows only when an admin has switched it on AND a season is running."""
     return bool(settings().get("queue_enabled")) and season_is_open()

@@ -38,6 +38,8 @@ from services.card_points_service import validate_deck_points
 from services.ranked_eligibility import ranked_block_message
 from services.precon_ladder import normalize_precon, precon_choices
 from services.summit_result_reporting import record_sorcery_online_result
+from services import precon_service, precon_test_mode
+from repositories.elo_repo import get_pairing_by_id
 from cogs.lfg.voice import SUMMIT_VOICE_URL
 from services.voice_presence import parse_user_ids, voice_session
 
@@ -182,6 +184,9 @@ async def _status(bot, user_id):
                 queue["voice"] = normalize_voice_preference(joined[queue_type].get("voice")) or DEFAULT_VOICE
                 queue["voice_flexible"] = entry_voice_flexible(joined[queue_type])
             queues.append(queue)
+    # PSO test mode: show a sample precon queue while the real one is closed
+    if not any(q["type"] == "precon" for q in queues) and precon_service.test_mode_active():
+        queues.append(precon_test_mode.test_queue_entry(VOICE_PREFERENCES, DEFAULT_VOICE))
     result = pending_web_matches.get(user_id)
     if result:
         result = {key: value for key, value in result.items() if key != "expires_at"}
@@ -258,6 +263,21 @@ async def start_matchmaking_api(bot):
         payload = await request.json()
         queue_type = str(payload.get("queue_type", ""))
         definition = queue_definition(queue_type)
+        if queue_type == "precon" and not queue_is_enabled("precon") and precon_service.test_mode_active():
+            # Checked like a real join, but nobody is queued
+            voice = normalize_voice_preference(payload.get("voice")) if payload.get("voice") else DEFAULT_VOICE
+            try:
+                duration = int(payload.get("duration_minutes", 30))
+                if voice is None:
+                    raise ValueError("voice must be one of: voice, no_voice")
+                if duration < 5 or duration > 240:
+                    raise ValueError("Queue duration must be between 5 and 240 minutes")
+                test = precon_test_mode.test_join(
+                    payload, user_id, member.global_name or member.display_name, voice,
+                )
+            except (TypeError, ValueError) as exc:
+                raise web.HTTPBadRequest(text=str(exc) or "Invalid queue request")
+            return web.json_response({**(await _status(bot, user_id)), **test})
         if not definition or not queue_is_enabled(queue_type):
             raise web.HTTPBadRequest(text="That queue is not available")
         try:
@@ -357,6 +377,23 @@ async def start_matchmaking_api(bot):
         )
         fields = _result_fields(payload)
         logger.info("SO report_result normalized fields: %s", fields)
+        if fields["queue_type"] == "precon" and precon_service.test_mode_active():
+            try:
+                guild_id = int(request.match_info["guild_id"])
+                pairing_id = int(request.match_info["pairing_id"])
+            except ValueError:
+                guild_id = pairing_id = None
+            if pairing_id is None or not get_pairing_by_id(guild_id, pairing_id):
+                # A test game: checked and echoed back, never recorded
+                try:
+                    body = precon_test_mode.test_result(
+                        fields, guild_id, pairing_id,
+                        replay_url=_pick(payload, "replay_url", "replayUrl"),
+                        players=fields.get("players"),
+                    )
+                except ValueError as exc:
+                    return web.json_response({"error": str(exc), "code": "VALIDATION_ERROR"}, status=400)
+                return web.json_response(body)
         # Not sent today, but take a replay link if Play Sorcery Online includes one
         replay_url = _pick(payload, "replay_url", "replayUrl")
         if replay_url and fields["queue_type"] != "limited":

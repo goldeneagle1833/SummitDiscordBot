@@ -856,7 +856,7 @@ export default function Nav() {
 
           <SidebarHeading label="Tools" />
           <SidebarLink to="/life-counter" dot={isNew('/life-counter')} label="Life Counter" location={location} onClick={close} />
-          <SidebarLink to="/help" dot={isNew('/help')} label="Help" location={location} onClick={close} match={['/help', '/about', '/feedback']} />
+          <SidebarLink to="/help" dot={isNew('/help')} label="Help" location={location} onClick={close} match={['/help', '/about', '/summit-format', '/feedback']} />
 
           <SidebarHeading label="Community" />
           <SidebarLink to="/community" dot={isNew('/community')} label="Community Links" location={location} onClick={close} />

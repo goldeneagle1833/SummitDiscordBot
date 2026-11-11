@@ -464,7 +464,7 @@ export default function Events() {
     if (createMode === 'import') {
       if (!importUrl.trim()) return
     } else {
-      if (!createForm.title.trim()) return
+      if (!createForm.title.trim() || !createForm.eventUrl.trim()) return
     }
     setCreating(true)
     setCreateError(null)
@@ -1317,7 +1317,7 @@ export default function Events() {
                   onChange={(e) => setCreateForm((f) => ({ ...f, title: e.target.value }))}
                 />
 
-                <label htmlFor="manual-event-url" className="text-xs text-text-muted block mb-1">sorcerytcg.com Event URL (optional)</label>
+                <label htmlFor="manual-event-url" className="text-xs text-text-muted block mb-1">sorcerytcg.com Event URL</label>
                 <input
                   id="manual-event-url"
                   type="text"
@@ -1327,7 +1327,7 @@ export default function Events() {
                   onChange={(e) => setCreateForm((f) => ({ ...f, eventUrl: e.target.value }))}
                 />
                 <p className="text-xs text-text-muted/60 mb-4">
-                  Gets the real player count, date and standings from the event page, even when only the top lists were collected. Under 16 players is tagged Local.
+                  Required. Use this tab when the event page has no deck lists (for example only the top 4 were collected): the decks come from the links below, and the player count, date and standings come from the event page. Under 16 players is tagged Local.
                 </p>
 
                 <p className="text-xs text-text-muted mb-2">Curiosa Deck URLs by Placement (all optional)</p>
@@ -1392,7 +1392,7 @@ export default function Events() {
                 <button
                   className="text-xs bg-secondary text-black px-3 py-1.5 rounded font-semibold disabled:opacity-50"
                   onClick={handleCreate}
-                  disabled={creating || (createMode === 'import' ? !importUrl.trim() : !createForm.title.trim())}
+                  disabled={creating || (createMode === 'import' ? !importUrl.trim() : !createForm.title.trim() || !createForm.eventUrl.trim())}
                 >
                   {creating ? (createProgress || 'Creating...') : 'Create Event'}
                 </button>

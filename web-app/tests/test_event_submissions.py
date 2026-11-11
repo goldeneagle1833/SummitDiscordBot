@@ -311,3 +311,10 @@ def test_manual_event_reads_size_from_event_page(app, env, monkeypatch, tmp_path
     assert event["attendance"] == 30       # people who played
     assert event["tag"] is None            # 16+ is not Local
     assert event["event_date"] == "2026-11-08"
+
+
+def test_manual_add_needs_the_event_link(admin_session, env):
+    resp = admin_session.post("/api/events/create", json={
+        "title": "Dayton Open", "ranked_urls": ["https://curiosa.io/decks/a"]})
+    assert resp.status_code == 400
+    assert "event link" in resp.get_json()["error"]

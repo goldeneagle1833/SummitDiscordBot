@@ -767,11 +767,12 @@ def create_event():
     if not valid_ranked and not valid_bulk:
         return jsonify({"success": False, "error": "At least one deck URL is required"}), 400
 
+    # Manual adds are for events whose page has no deck lists, so the
+    # event page is still needed for the real player count and standings.
     event_url = (data.get("event_url") or "").strip()
-    if event_url:
-        from services.curiosa import CuriosaService
-        if not CuriosaService.get_event_id_from_url(event_url):
-            return jsonify({"success": False, "error": "The event link must be a sorcerytcg.com event (sorcerytcg.com/events/...)"}), 400
+    from services.curiosa import CuriosaService
+    if not event_url or not CuriosaService.get_event_id_from_url(event_url):
+        return jsonify({"success": False, "error": "Add the sorcerytcg.com event link (sorcerytcg.com/events/...) so we get the player count."}), 400
 
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting..."})

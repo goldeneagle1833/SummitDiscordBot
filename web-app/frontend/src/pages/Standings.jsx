@@ -8,10 +8,10 @@ import usePageTitle from '@/hooks/usePageTitle'
 /**
  * `/standings`: one page for every automatically run ladder, bracket and
  * series (season ladder + top cut, Underdog, Limited, precon ladder, site
- * brackets, Community Series), and, logged in, where you stand in each.
+ * brackets), and, logged in, where you stand in each.
  */
 
-const GROUPS = ['Ladders', 'Brackets & Series']
+const GROUPS = ['Ladders', 'Brackets']
 
 const STATUS = {
   live: { label: 'Live', cls: 'bg-accent-green/15 text-accent-green border-accent-green/40' },
@@ -211,7 +211,6 @@ const MORE = [
   { to: '/elo', label: 'ELO Leaderboards' },
   { to: '/brackets', label: 'Season Top Cut' },
   { to: '/top-8', label: 'Top 8 Decks' },
-  { to: '/explorer', label: 'Community Series' },
   { to: '/summit-format', label: 'Summit Format' },
 ]
 
@@ -238,7 +237,7 @@ export default function Standings() {
       <div>
         <h1 className="text-2xl font-display text-text-primary">Event Standings</h1>
         <p className="text-text-muted text-sm mt-1">
-          Every ladder, bracket and series the Summit runs, in one place
+          Every ladder and bracket the Summit runs, in one place
           {loggedIn ? ', and where you stand in each.' : '.'}
         </p>
       </div>

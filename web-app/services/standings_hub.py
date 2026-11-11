@@ -1,11 +1,11 @@
-"""Every automatically run ladder, bracket and series on one page.
+"""Every automatically run ladder and bracket on one page.
 
 The site has grown a lot of separate places to check: the season ladder and
 its ticket-holder top cut, the underdog avatar bracket, the Limited ladder,
-site brackets (official and community), the Community Series, and soon the
-precon ladder. `/standings` brings them together: one card per system with
-what it is, where it is at and a link, and, for a logged-in player, where
-they stand in each one.
+site brackets (official and community), and the precon ladder. `/standings`
+brings them together: one card per system with what it is, where it is at
+and a link, and, for a logged-in player, where they stand in each one. The
+Community Series stays on its own page (Bruce, 2026-11-11).
 
 Everything here is read from our own databases. Nothing calls Play Sorcery
 Online or any other outside service per visitor.
@@ -91,7 +91,6 @@ class StandingsHubService:
             ("limited", self._limited),
             ("precon", self._precon),
             ("brackets", self._bracket_list),
-            ("explorer", self._explorer),
         ):
             try:
                 system, private = builder()
@@ -294,7 +293,7 @@ class StandingsHubService:
 
         system = {
             "title": "Brackets",
-            "group": "Brackets & Series",
+            "group": "Brackets",
             "kind": "brackets",
             "status": "live" if live else ("finished" if finished else "none"),
             "blurb": "Season top cuts, Limited and Underdog brackets, and community brackets run on the site.",
@@ -310,43 +309,6 @@ class StandingsHubService:
             "recent": [row(b) for b in finished[:3]],
         }
         return system, {"live": live}
-
-    # -- Community Series (Explorer) -------------------------------
-
-    def _explorer(self):
-        from repositories.explorer import ExplorerRepository
-        from services.explorer import ExplorerService
-
-        seasons = ExplorerRepository().get_all_seasons()
-        if not seasons:
-            return None, None
-        season = seasons[0]
-        board = ExplorerService().compute_leaderboard(season["id"]) or {}
-        players = board.get("players") or []
-        qualified = len([p for p in players if p.get("qualified")])
-        system = {
-            "title": board.get("season_name") or season.get("name") or "Community Series",
-            "group": "Brackets & Series",
-            "kind": "series",
-            "status": "live",
-            "blurb": "In-store Explorer events across the country. Points from each event add up to a season ranking.",
-            "link": "/explorer",
-            "links": [],
-            "ends_at": None,
-            "facts": [
-                {"label": "Events", "value": season.get("event_count") or 0},
-                {"label": "Players", "value": len(players)},
-            ]
-            + ([{"label": "Qualified", "value": qualified}] if qualified else []),
-            "top": [
-                {"rank": p.get("rank"), "name": p.get("display_name"), "value": p.get("grand_explorer"), "unit": "pts"}
-                for p in players[:TOP_SHOWN]
-            ],
-        }
-        by_name = {}
-        for p in players:
-            by_name.setdefault((p.get("display_name") or "").strip().lower(), []).append(p)
-        return system, {"by_name": by_name, "total": len(players)}
 
     # -- The viewer's own place in each ----------------------------
 
@@ -373,8 +335,6 @@ class StandingsHubService:
             return {"state": "ranked", "headline": f"Rank #{p['rank']}", "detail": detail}
         if key == "brackets":
             return self._you_brackets(private, viewer_id)
-        if key == "explorer":
-            return self._you_explorer(private, viewer_id)
         return None
 
     def _you_season(self, private, viewer_id):
@@ -438,32 +398,6 @@ class StandingsHubService:
             "detail": None,
             "brackets": mine,
             "todo": todo,
-        }
-
-    def _you_explorer(self, private, viewer_id):
-        names = set()
-        try:
-            names.update(n.lower() for n in self._leaderboard._elo_repo.get_display_names([viewer_id]).values() if n)
-        except Exception:
-            pass
-        try:
-            names.update(
-                n.lower() for n in self._leaderboard._profile_repo.get_custom_display_names([viewer_id]).values() if n
-            )
-        except Exception:
-            pass
-        hits = []
-        for name in names:
-            hits += private.get("by_name", {}).get(name.strip(), [])
-        if len(hits) != 1:
-            return {"state": "unknown", "headline": "Find yourself on the standings",
-                    "detail": "Community Series results come from sorcerytcg.com, so we can't match them to your Discord account yet."}
-        p = hits[0]
-        return {
-            "state": "ranked",
-            "headline": f"Rank #{p.get('rank')} of {private['total']}",
-            "detail": f"{p.get('grand_explorer') or 0} pts · {p.get('events_played') or 0} events",
-            "notes": ["Matched by your name"],
         }
 
 

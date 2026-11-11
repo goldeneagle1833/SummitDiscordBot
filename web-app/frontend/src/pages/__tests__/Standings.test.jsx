@@ -22,7 +22,7 @@ const PRECON = {
   blurb: '4 weeks', link: null, links: [], facts: [], top: [],
 }
 const BRACKETS = {
-  key: 'brackets', title: 'Brackets', group: 'Brackets & Series', status: 'live', blurb: 'All brackets', link: '/brackets',
+  key: 'brackets', title: 'Brackets', group: 'Brackets', status: 'live', blurb: 'All brackets', link: '/brackets',
   links: [], facts: [], top: [],
   live: [{ slug: 'cup', name: 'Friday Cup', format: 'constructed', community: true, entrants: 8, open_matches: 2 }],
   recent: [],

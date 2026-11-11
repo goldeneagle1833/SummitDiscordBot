@@ -68,8 +68,7 @@ def hub(repo, players, viewer=None):
     service = StandingsHubService(FakeLeaderboard(players), repo, FakeBrackets())
     # Only the season card is under test here; the rest read other databases.
     with patch.object(service, "_underdog", return_value=(None, None)), \
-         patch.object(service, "_limited", return_value=(None, None)), \
-         patch.object(service, "_explorer", return_value=(None, None)):
+         patch.object(service, "_limited", return_value=(None, None)):
         return service.get_hub(viewer)
 
 
@@ -124,8 +123,7 @@ def test_precon_card_is_coming_soon_until_the_ladder_exists(repo):
 def test_one_broken_system_does_not_take_the_page_down(repo):
     service = StandingsHubService(FakeLeaderboard([entry(1, 1600)]), repo, FakeBrackets())
     with patch.object(service, "_underdog", side_effect=RuntimeError("boom")), \
-         patch.object(service, "_limited", return_value=(None, None)), \
-         patch.object(service, "_explorer", return_value=(None, None)):
+         patch.object(service, "_limited", return_value=(None, None)):
         keys = [s["key"] for s in service.get_hub()["systems"]]
     assert "season" in keys and "underdog" not in keys
 

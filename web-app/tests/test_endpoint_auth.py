@@ -103,6 +103,11 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.get_nav_prefs",
     "api.nav.get_new_content",
     "api.nav.mark_seen",
+    # Find a player at an event: a person's page by private link, and the
+    # opt-in list of people at an event (spots hidden outside event hours)
+    "api.event_finder.list_maps",
+    "api.event_finder.map_people",
+    "api.event_finder.person",
     "api.players.set_nav_prefs",
     "api.players.player_avatar_stats",
     "api.players.player_card_stats",  # owner/admin, or public when the player opts in

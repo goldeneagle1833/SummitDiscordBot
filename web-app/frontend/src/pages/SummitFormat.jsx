@@ -95,6 +95,7 @@ const PRIZE_ROWS = [
 ]
 
 const JUMP_LINKS = [
+  { href: '#schedule', label: 'Schedule' },
   { href: '#tickets', label: 'Tickets' },
   { href: '#top-cut', label: 'Top cut' },
   { href: '#prizes', label: 'Prizes' },
@@ -143,6 +144,20 @@ export default function SummitFormat() {
         ))}
       </ol>
 
+      <Section id="schedule" title="Season schedule">
+        <ul className="list-disc pl-5 space-y-1">
+          <li>Seasons run about 43 days and start on the 1st or the 16th of a month.</li>
+          <li>Each season ends at 11:59 PM Eastern on its last day.</li>
+          <li>
+            There's a 3-day break between seasons for the top cut bracket. No ELO moves during the break, but
+            Casual and Limited stay open.
+          </li>
+        </ul>
+        <p className="text-text-muted">
+          The exact dates for upcoming seasons are posted in the leaderboard channel on Discord.
+        </p>
+      </Section>
+
       <Section id="tickets" title="Tickets">
         <p>
           A season ticket is what puts you in the running for the top cut. Without one you can still play every
@@ -166,9 +181,12 @@ export default function SummitFormat() {
             )}
           </dd>
           <dt className="font-medium">When sales close</dt>
-          <dd><Tbc /></dd>
+          <dd>Tickets stay on sale for the whole season, until it ends at 11:59 PM Eastern on its last day.</dd>
           <dt className="font-medium">Buying mid-season</dt>
-          <dd><Tbc /></dd>
+          <dd>
+            Your games still count. The top cut looks at who holds a ticket when the season ends, so the
+            games you played before buying are part of your ladder spot.
+          </dd>
         </dl>
       </Section>
 
@@ -188,8 +206,8 @@ export default function SummitFormat() {
           <dd><Tbc /></dd>
           <dt className="font-medium">Where it's played</dt>
           <dd><Tbc /></dd>
-          <dt className="font-medium">Round deadlines</dt>
-          <dd><Tbc /></dd>
+          <dt className="font-medium">When it's played</dt>
+          <dd>During the 3-day break before the next season starts.</dd>
         </dl>
         <p>
           The bracket goes up on the <Link to="/brackets" className="text-primary hover:underline">Season Top Cut</Link> page

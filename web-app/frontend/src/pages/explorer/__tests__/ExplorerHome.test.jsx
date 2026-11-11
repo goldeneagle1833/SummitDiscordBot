@@ -6,12 +6,15 @@ vi.mock('@/api/explorer', () => ({
   fetchLeaderboard: vi.fn(),
   fetchSeasonEvents: vi.fn(),
   fetchEventsMap: vi.fn(),
+  fetchSiteContent: vi.fn(),
 }))
+vi.mock('@/context/AuthContext', () => ({ useAuth: vi.fn() }))
 vi.mock('@/components/explorer/EventsMap', () => ({
   default: ({ events }) => <div data-testid="events-map">{events.length} events</div>,
 }))
 
-import { fetchSeasons, fetchLeaderboard, fetchSeasonEvents, fetchEventsMap } from '@/api/explorer'
+import { fetchSeasons, fetchLeaderboard, fetchSeasonEvents, fetchEventsMap, fetchSiteContent } from '@/api/explorer'
+import { useAuth } from '@/context/AuthContext'
 import ExplorerHome from '../ExplorerHome'
 import ExplorerEvents from '../ExplorerEvents'
 
@@ -39,6 +42,8 @@ beforeEach(() => {
   fetchLeaderboard.mockResolvedValue(LEADERBOARD)
   fetchSeasonEvents.mockResolvedValue(EVENTS)
   fetchEventsMap.mockResolvedValue({ enabled: false, events: [] })
+  fetchSiteContent.mockResolvedValue({})
+  useAuth.mockReturnValue({ user: false, loading: false })
 })
 
 describe('Explorer Series home', () => {
@@ -58,6 +63,44 @@ describe('Explorer Series home', () => {
     fetchEventsMap.mockResolvedValue({ enabled: true, events: [{ id: 1, latitude: 40, longitude: -83 }] })
     renderWithRouter(<ExplorerHome />)
     expect(await screen.findByTestId('events-map')).toHaveTextContent('1 events')
+  })
+})
+
+describe('Explorer Series home: admin-written content', () => {
+  it('shows the saved title, links, sections and hides the points guide when switched off', async () => {
+    fetchSiteContent.mockResolvedValue({
+      title: 'Explorer Series 2027',
+      announcement: 'Finale on **Nov 20**',
+      discord_url: 'https://discord.gg/example',
+      show_points_guide: false,
+      sections: [
+        { title: "Who's behind the Series", body: 'Our Council:\n- Kiel\n- [James](https://example.com/james)' },
+        { title: 'Secret', body: 'Hidden one', hidden: true },
+      ],
+    })
+    renderWithRouter(<ExplorerHome />)
+    expect(await screen.findByRole('heading', { name: 'Explorer Series 2027' })).toBeInTheDocument()
+    expect(await screen.findByText("Who's behind the Series")).toBeInTheDocument()
+    expect(screen.getByText('Nov 20').tagName).toBe('STRONG')
+    expect(screen.getByRole('link', { name: 'James' })).toHaveAttribute('href', 'https://example.com/james')
+    expect(screen.getByRole('link', { name: /Join our Discord/ })).toHaveAttribute('href', 'https://discord.gg/example')
+    expect(screen.queryByText('Hidden one')).toBeNull()
+    expect(screen.queryByText('How Series points work')).toBeNull()
+    expect(screen.queryByText(/Edit this page/)).toBeNull()
+  })
+
+  it('offers Explorer admins an edit button', async () => {
+    useAuth.mockReturnValue({ user: { user_id: '1', is_explorer_admin: true }, loading: false })
+    renderWithRouter(<ExplorerHome />)
+    expect(await screen.findByRole('link', { name: /Edit this page/ })).toHaveAttribute('href', '/explorer-series/admin/content')
+  })
+
+  it('never renders admin text as HTML', async () => {
+    fetchSiteContent.mockResolvedValue({ intro: '<img src=x onerror=alert(1)> [bad](javascript:alert(1))' })
+    const { container } = renderWithRouter(<ExplorerHome />)
+    await screen.findByText(/onerror/)
+    expect(container.querySelector('img[src="x"]')).toBeNull()
+    expect(container.querySelector('a[href^="javascript"]')).toBeNull()
   })
 })
 

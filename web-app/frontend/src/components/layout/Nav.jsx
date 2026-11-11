@@ -810,7 +810,7 @@ export default function Nav() {
             {/* Explorer admin pages live on the Explorer Series site now */}
             {(user?.is_explorer_admin || user?.is_admin) && (
               <SidebarLink
-                to={ES_PATHS.applications}
+                to={ES_PATHS.admin}
                 label="Explorer Series admin ↗"
                 location={location}
                 onClick={close}

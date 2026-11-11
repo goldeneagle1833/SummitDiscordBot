@@ -8,6 +8,8 @@ export const ES_PATHS = {
   events: `${ES_BASE}/events`,
   host: `${ES_BASE}/host`,
   shop: `${ES_BASE}/shop`,
+  admin: `${ES_BASE}/admin`,
+  content: `${ES_BASE}/admin/content`,
   applications: `${ES_BASE}/admin/applications`,
   calendar: `${ES_BASE}/admin/calendar`,
 }

@@ -4,6 +4,9 @@ import usePageTitle from '@/hooks/usePageTitle'
 import Spinner from '@/components/ui/Spinner'
 import { ES_PATHS, ES_LOGO } from '@/utils/explorerSite'
 import useExplorerSeason, { formatEventDate } from './useExplorerSeason'
+import useSiteContent from './useSiteContent'
+import SiteText from '@/components/explorer/SiteText'
+import { useAuth } from '@/context/AuthContext'
 
 const EventsMap = lazy(() => import('@/components/explorer/EventsMap'))
 
@@ -92,6 +95,10 @@ function PointsGuide({ config }) {
 export default function ExplorerHome() {
   usePageTitle('Explorer Series')
   const { season, leaderboard, events, mapEvents, loading, error } = useExplorerSeason()
+  const { content } = useSiteContent()
+  const { user } = useAuth()
+  const isAdmin = !!(user && (user.is_explorer_admin || user.is_admin))
+  const sections = (content.sections || []).filter((s) => !s.hidden)
 
   const top = (leaderboard?.players || []).slice(0, 8)
   const recent = [...events].sort((a, b) => String(b.event_date || '').localeCompare(String(a.event_date || ''))).slice(0, 4)
@@ -99,18 +106,31 @@ export default function ExplorerHome() {
 
   return (
     <div className="space-y-6">
+      {isAdmin && (
+        <div className="flex justify-end -mb-2">
+          <Link to={ES_PATHS.content} className="es-btn-ghost !py-1.5 !px-3 text-sm">✎ Edit this page</Link>
+        </div>
+      )}
+      {content.announcement && (
+        <div className="es-card px-4 py-3 border-l-4 !border-l-[color:var(--es-rust)]" role="status">
+          <SiteText text={content.announcement} className="text-sm" />
+        </div>
+      )}
       {/* Hero */}
       <section className="grid md:grid-cols-[1.15fr_1fr] gap-6 items-center pt-2">
         <div>
-          <p className="es-kicker">{season?.name || 'The Sorcery Explorer Series'}</p>
-          <h1 className="es-heading text-4xl sm:text-5xl font-bold mt-2 mb-3">The Explorer Series</h1>
-          <p className="text-base sm:text-lg es-muted leading-relaxed max-w-xl">
-            A player-run annual circuit for Sorcery TCG. The Series promotes a diverse range of local events,
-            rewards players who travel to play the game, and builds relationships across our communities.
-          </p>
+          <p className="es-kicker">{content.kicker || season?.name || 'The Sorcery Explorer Series'}</p>
+          <h1 className="es-heading text-4xl sm:text-5xl font-bold mt-2 mb-3">{content.title || 'The Explorer Series'}</h1>
+          <SiteText text={content.intro} className="text-base sm:text-lg es-muted max-w-xl" />
           <div className="flex flex-wrap gap-3 mt-5">
             <Link to={ES_PATHS.standings} className="es-btn">See the standings</Link>
             <Link to={ES_PATHS.host} className="es-btn-ghost">Host an event at your store</Link>
+            {content.discord_url && (
+              <a href={content.discord_url} target="_blank" rel="noopener noreferrer" className="es-btn-ghost">Join our Discord ↗</a>
+            )}
+            {content.member_url && (
+              <a href={content.member_url} target="_blank" rel="noopener noreferrer" className="es-btn-ghost">Become a member ↗</a>
+            )}
           </div>
         </div>
         <img
@@ -201,7 +221,14 @@ export default function ExplorerHome() {
             </section>
           )}
 
-          {leaderboard?.points_config && (
+          {sections.map((sec, i) => (
+            <section key={i} className="es-card p-4 sm:p-6">
+              {sec.title && <h2 className="es-heading text-2xl font-bold mb-3">{sec.title}</h2>}
+              <SiteText text={sec.body} />
+            </section>
+          ))}
+
+          {content.show_points_guide !== false && leaderboard?.points_config && (
             <section className="es-card p-4 sm:p-5">
               <SectionHead title="How Series points work" />
               <PointsGuide config={leaderboard.points_config} />
@@ -209,10 +236,8 @@ export default function ExplorerHome() {
           )}
 
           <section className="es-card p-5 sm:p-6 text-center">
-            <h2 className="es-heading text-2xl font-bold">Bring the Series to your store</h2>
-            <p className="es-muted mt-1 mb-4 max-w-xl mx-auto">
-              Each Explorer Series event is run by a local tournament organizer with their community of Sorcery players.
-            </p>
+            <h2 className="es-heading text-2xl font-bold">{content.host_title || 'Bring the Series to your store'}</h2>
+            <SiteText text={content.host_text} className="es-muted mt-1 mb-4 max-w-xl mx-auto" />
             <Link to={ES_PATHS.host} className="es-btn">Apply to host an event</Link>
           </section>
         </>

@@ -118,6 +118,8 @@ const ExplorerApply = lazyPage(() => import('@/pages/ExplorerApply'))
 const ExplorerSiteLayout = lazyPage(() => import('@/components/explorer/ExplorerSiteLayout'))
 const ExplorerHome = lazyPage(() => import('@/pages/explorer/ExplorerHome'))
 const ExplorerEvents = lazyPage(() => import('@/pages/explorer/ExplorerEvents'))
+const ExplorerAdminHome = lazyPage(() => import('@/pages/explorer/ExplorerAdminHome'))
+const ExplorerContentEditor = lazyPage(() => import('@/pages/explorer/ExplorerContentEditor'))
 const SeasonFeedback = lazyPage(() => import('@/pages/SeasonFeedback'))
 
 // Error pages
@@ -339,6 +341,8 @@ const router = createBrowserRouter([
       { path: 'events', element: <ExplorerEvents /> },
       { path: 'host', element: <ExplorerApply /> },
       { path: 'shop', element: <Store storefrontSlug={ES_STOREFRONT_SLUG} /> },
+      { path: 'admin', element: <ExplorerAdminGuard><ExplorerAdminHome /></ExplorerAdminGuard> },
+      { path: 'admin/content', element: <ExplorerAdminGuard><ExplorerContentEditor /></ExplorerAdminGuard> },
       { path: 'admin/applications', element: <ExplorerAdminGuard><ExplorerApplications /></ExplorerAdminGuard> },
       { path: 'admin/calendar', element: <ExplorerAdminGuard><ExplorerCalendar /></ExplorerAdminGuard> },
       { path: '*', element: <Navigate to={ES_BASE} replace /> },

@@ -40,6 +40,13 @@ function navClass({ isActive }) {
   }`
 }
 
+const ADMIN_LINKS = [
+  { to: ES_PATHS.admin, label: 'Admin home' },
+  { to: ES_PATHS.content, label: 'Edit site content' },
+  { to: ES_PATHS.applications, label: 'Host applications' },
+  { to: ES_PATHS.calendar, label: 'Events calendar' },
+]
+
 function AdminMenu({ onNavigate }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -56,9 +63,9 @@ function AdminMenu({ onNavigate }) {
       </button>
       {open && (
         <div className="absolute right-0 mt-2 w-56 es-card py-1 z-50 text-sm">
-          <Link to={ES_PATHS.applications} onClick={() => { setOpen(false); onNavigate?.() }} className="block px-4 py-2 hover:bg-white/5">Host applications</Link>
-          <Link to={ES_PATHS.calendar} onClick={() => { setOpen(false); onNavigate?.() }} className="block px-4 py-2 hover:bg-white/5">Events calendar</Link>
-          <Link to={ES_PATHS.standings} onClick={() => { setOpen(false); onNavigate?.() }} className="block px-4 py-2 hover:bg-white/5">Import events and players</Link>
+          {ADMIN_LINKS.map((l) => (
+            <Link key={l.to} to={l.to} onClick={() => { setOpen(false); onNavigate?.() }} className="block px-4 py-2 hover:bg-white/5">{l.label}</Link>
+          ))}
         </div>
       )}
     </div>
@@ -158,9 +165,10 @@ export default function ExplorerSiteLayout({ children }) {
             {isAdmin && (
               <>
                 <p className="px-4 pt-3 pb-1 es-kicker">Admin</p>
-                <Link to={ES_PATHS.applications} className="block px-4 py-2.5">Host applications</Link>
-                <Link to={ES_PATHS.calendar} className="block px-4 py-2.5">Events calendar</Link>
-                <Link to={ES_PATHS.standings} className="block px-4 py-2.5 border-b es-rule">Import events and players</Link>
+                {ADMIN_LINKS.map((l) => (
+                  <Link key={l.to} to={l.to} className="block px-4 py-2.5">{l.label}</Link>
+                ))}
+                <div className="border-b es-rule" />
               </>
             )}
             <div className="px-4 py-3">

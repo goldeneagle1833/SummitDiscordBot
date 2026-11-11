@@ -44,6 +44,7 @@ const Events = lazyPage(() => import('@/pages/Events'))
 const Brackets = lazyPage(() => import('@/pages/Brackets'))
 const Bracket = lazyPage(() => import('@/pages/Bracket'))
 const MyBrackets = lazyPage(() => import('@/pages/MyBrackets'))
+const Standings = lazyPage(() => import('@/pages/Standings'))
 const EventDetail = lazyPage(() => import('@/pages/EventDetail'))
 const EventCompare = lazyPage(() => import('@/pages/EventCompare'))
 const Stats = lazyPage(() => import('@/pages/Stats'))
@@ -211,6 +212,7 @@ const router = createBrowserRouter([
       { path: '/player/:playerId/avatar/:avatarName', element: <PlayerAvatar /> },
       { path: '/deck-snapshot/:matchId/:playerId', element: <DeckSnapshot /> },
       // Phase 4: Events & Decks
+      { path: '/standings', element: <Standings /> },
       { path: '/brackets', element: <Brackets /> },
       { path: '/brackets/manage', element: <MyBrackets /> },
       { path: '/brackets/:slug', element: <Bracket /> },

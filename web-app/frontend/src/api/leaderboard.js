@@ -9,6 +9,8 @@ export const getLimitedLeaderboard = (view = 'lifetime') => get(`/api/leaderboar
 export const getArchivedLimitedEvents = () => get('/api/leaderboard/limited/archived')
 export const getArchivedLimitedLeaderboard = (eventId) => get(`/api/leaderboard/limited/archived/${eventId}`)
 export const getRunMatchups = (runId) => get(`/api/limited/run/${runId}/matchups`)
+// Lavamancer vs Frostmage precon ladder (current or latest season unless one is named)
+export const getPreconStandings = (seasonId) => get(seasonId ? `/api/precon/standings?season_id=${seasonId}` : '/api/precon/standings')
 export const getCombinedLeaderboard = () => get('/api/leaderboard/combined')
 export const getEloDistribution = () => get('/api/elo-distribution')
 export const getEvents = () => get('/api/events')

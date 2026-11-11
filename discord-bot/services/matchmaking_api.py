@@ -36,6 +36,7 @@ from services.avatar_mode import (
 )
 from services.card_points_service import validate_deck_points
 from services.ranked_eligibility import ranked_block_message
+from services.precon_ladder import normalize_precon, precon_choices
 from services.summit_result_reporting import record_sorcery_online_result
 from cogs.lfg.voice import SUMMIT_VOICE_URL
 from services.voice_presence import parse_user_ids, voice_session
@@ -169,6 +170,10 @@ async def _status(bot, user_id):
                 waiting_by_voice[normalize_voice_preference(entry.get("voice")) or DEFAULT_VOICE] += 1
                 for choice in willing_voice_choices(entry.get("voice"), entry_voice_flexible(entry)):
                     waiting_willing[choice] += 1
+            if queue_type == "precon":
+                # Join with "precon": one of these keys (no deck link)
+                queue["precon_choices"] = precon_choices()
+                queue["precon"] = joined.get(queue_type, {}).get("precon") if queue_type in joined else None
             queue["waiting_by_voice"] = waiting_by_voice
             queue["waiting_willing"] = waiting_willing
             queue["voice"] = None
@@ -275,6 +280,12 @@ async def start_matchmaking_api(bot):
         )
         deck_url = str(payload.get("deck_url") or "").strip() or None
         run_id = None
+        precon = None
+        if queue_type == "precon":
+            precon = normalize_precon(payload.get("precon"))
+            if not precon:
+                raise web.HTTPBadRequest(text="precon must be one of: lavamancer, frostmage")
+            deck_url = None
         if definition["deck_mode"] == "required" and not deck_url:
             raise web.HTTPBadRequest(text="A deck is required for this queue")
         if queue_type == "ranked":
@@ -303,6 +314,7 @@ async def start_matchmaking_api(bot):
         await _process_queue_join(
             bot, interaction, queue_type, duration, deck_url,
             run_id=run_id, origin="sorcery_online", voice=voice, voice_flexible=voice_flexible,
+            precon=precon,
         )
         if avatar_required and DECK_UNREADABLE_MESSAGE in interaction.followup.messages:
             raise web.HTTPBadRequest(text=DECK_UNREADABLE_MESSAGE)

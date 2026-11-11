@@ -24,11 +24,31 @@ QUEUE_DEFINITIONS = (
     },
     {"type": "limited", "label": "Limited", "emoji": "🎲", "pilot": "GrewWolves", "deck_mode": "active_run"},
     {"type": "rumble", "label": "Rumble", "emoji": "💥", "pilot": "RumbleQueue", "deck_mode": "required"},
+    {
+        "type": "precon",
+        "label": "Precon (LM/FM)",
+        "emoji": "🧙",
+        "pilot": "PreconQueue",
+        # Players pick Lavamancer or Frostmage instead of giving a deck link
+        "deck_mode": "precon",
+        "status_note": "Lavamancer or Frostmage precon only",
+    },
 )
 
 
+def _definition_enabled(definition):
+    if not is_pilot_active(definition["pilot"]):
+        return False
+    if definition["type"] == "precon":
+        # The precon queue is only open while a precon ladder season is running
+        from services.precon_service import season_is_open
+
+        return season_is_open()
+    return True
+
+
 def enabled_queue_definitions():
-    return [definition for definition in QUEUE_DEFINITIONS if is_pilot_active(definition["pilot"])]
+    return [definition for definition in QUEUE_DEFINITIONS if _definition_enabled(definition)]
 
 
 def queue_definition(queue_type):
@@ -37,7 +57,7 @@ def queue_definition(queue_type):
 
 def queue_is_enabled(queue_type):
     definition = queue_definition(queue_type)
-    return bool(definition and is_pilot_active(definition["pilot"]))
+    return bool(definition and _definition_enabled(definition))
 
 
 def queue_notes_text():

@@ -57,6 +57,7 @@ function SubmissionMeta({ s }) {
   const bits = []
   if (s.event_date) bits.push(s.event_date)
   if (s.player_count != null) bits.push(`${s.player_count} players`)
+  if (s.deck_links) bits.push(`${s.deck_links} deck link${s.deck_links !== 1 ? 's' : ''}`)
   return bits.length ? <span className="text-xs text-text-muted">{bits.join(' · ')}</span> : null
 }
 
@@ -66,6 +67,8 @@ export function SubmitEventModal({ loggedIn, onClose, startOnMine = false, thres
   const [url, setUrl] = useState('')
   const [title, setTitle] = useState('')
   const [note, setNote] = useState('')
+  const [deckLinks, setDeckLinks] = useState('')
+  const [mode, setMode] = useState('import') // 'import' (decks from the event page) or 'manual' (deck links)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
   const [sent, setSent] = useState(null)
@@ -82,9 +85,10 @@ export function SubmitEventModal({ loggedIn, onClose, startOnMine = false, thres
     setSending(true)
     setError(null)
     try {
-      const res = await submitEvent({ event_url: url.trim(), title: title.trim(), note: note.trim() })
+      const deck_urls = mode === 'manual' ? deckLinks.split('\n').map((u) => u.trim()).filter(Boolean) : []
+      const res = await submitEvent({ event_url: url.trim(), title: title.trim(), note: note.trim(), deck_urls })
       setSent(res.submission)
-      setUrl(''); setTitle(''); setNote('')
+      setUrl(''); setTitle(''); setNote(''); setDeckLinks('')
       loadMine()
     } catch (e) {
       setError(e.message || 'Could not send that event')
@@ -144,6 +148,24 @@ export function SubmitEventModal({ loggedIn, onClose, startOnMine = false, thres
           </div>
         ) : (
           <>
+            <div className="flex gap-1 mb-3 border border-border rounded p-0.5">
+              {[['import', 'Import from event link'], ['manual', 'Manual deck links']].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={mode === key}
+                  className={`flex-1 text-xs py-1.5 rounded font-semibold transition-colors ${mode === key ? 'bg-secondary text-black' : 'text-text-muted hover:text-text'}`}
+                  onClick={() => setMode(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-text-muted/80 mb-3">
+              {mode === 'import'
+                ? 'The decks, standings and player count all come from the event page.'
+                : "Use this when the event page has no deck lists (for example only the top 4 were collected). The player count and standings still come from the event page."}
+            </p>
             <label htmlFor="submit-event-url" className="text-xs text-text-muted block mb-1">sorcerytcg.com event link</label>
             <input
               id="submit-event-url"
@@ -163,6 +185,20 @@ export function SubmitEventModal({ loggedIn, onClose, startOnMine = false, thres
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
+            {mode === 'manual' && (
+              <>
+                <label htmlFor="submit-event-decks" className="text-xs text-text-muted block mb-1">
+                  Deck links (one per line, 1st place first)
+                </label>
+                <textarea
+                  id="submit-event-decks"
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-3 min-h-[96px]"
+                  placeholder={'https://curiosa.io/decks/...\nhttps://curiosa.io/decks/...'}
+                  value={deckLinks}
+                  onChange={(e) => setDeckLinks(e.target.value)}
+                />
+              </>
+            )}
             <label htmlFor="submit-event-note" className="text-xs text-text-muted block mb-1">Note for the Summit team (optional)</label>
             <textarea
               id="submit-event-note"
@@ -184,7 +220,7 @@ export function SubmitEventModal({ loggedIn, onClose, startOnMine = false, thres
               <button
                 className="text-xs bg-secondary text-black px-3 py-1.5 rounded font-semibold disabled:opacity-50"
                 onClick={send}
-                disabled={sending || !url.trim()}
+                disabled={sending || !url.trim() || (mode === 'manual' && !deckLinks.trim())}
               >
                 {sending ? 'Sending...' : 'Send for approval'}
               </button>

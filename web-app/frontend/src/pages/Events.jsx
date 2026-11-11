@@ -222,7 +222,7 @@ export default function Events() {
   const [editSaving, setEditSaving] = useState(false)
   const [createModal, setCreateModal] = useState(false)
   const [createMode, setCreateMode] = useState('import') // 'import' or 'manual'
-  const [createForm, setCreateForm] = useState({ title: '', ranked: Array(8).fill(''), bulk: '' })
+  const [createForm, setCreateForm] = useState({ title: '', ranked: Array(8).fill(''), bulk: '', eventUrl: '' })
   const [importUrl, setImportUrl] = useState('')
   const [importTitle, setImportTitle] = useState('')
   const [creating, setCreating] = useState(false)
@@ -434,12 +434,13 @@ export default function Events() {
         rating: editModal.rating,
         event_date: editModal.event_date || null,
         tag: editModal.tag || '',
+        attendance: editModal.attendance === '' ? 0 : Number(editModal.attendance),
       })
       if (result.success) {
         setEvents((prev) =>
           prev.map((e) =>
             e.folder === editModal.folder
-              ? { ...e, name: editModal.name, rating: editModal.rating, event_date: editModal.event_date || null, tag: editModal.tag || null }
+              ? { ...e, name: editModal.name, rating: editModal.rating, event_date: editModal.event_date || null, tag: editModal.tag || null, attendance: editModal.attendance === '' ? null : Number(editModal.attendance) || null }
               : e
           )
         )
@@ -450,7 +451,7 @@ export default function Events() {
   }, [editModal])
 
   const openCreateModal = () => {
-    setCreateForm({ title: '', ranked: Array(8).fill(''), bulk: '' })
+    setCreateForm({ title: '', ranked: Array(8).fill(''), bulk: '', eventUrl: '' })
     setImportUrl('')
     setImportTitle('')
     setCreateMode('import')
@@ -463,7 +464,7 @@ export default function Events() {
     if (createMode === 'import') {
       if (!importUrl.trim()) return
     } else {
-      if (!createForm.title.trim()) return
+      if (!createForm.title.trim() || !createForm.eventUrl.trim()) return
     }
     setCreating(true)
     setCreateError(null)
@@ -484,6 +485,7 @@ export default function Events() {
         submitResult = await createEvent({
           title: createForm.title.trim(),
           ranked_urls: createForm.ranked,
+          event_url: createForm.eventUrl.trim(),
           bulk_urls,
         })
       }
@@ -614,6 +616,7 @@ export default function Events() {
                 {event.winner_avatar && <span className="text-text-muted"> ({event.winner_avatar})</span>}
               </span>
             )}
+            {event.attendance > 0 && <span>{event.attendance} players</span>}
             <span>{event.player_count || 0} decks</span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -652,7 +655,7 @@ export default function Events() {
                 </button>
               )}
               <button
-                onClick={() => setEditModal({ folder: event.folder, name: event.name || event.folder, rating: event.rating || 1, event_date: event.event_date || '', tag: event.tag || '' })}
+                onClick={() => setEditModal({ folder: event.folder, name: event.name || event.folder, rating: event.rating || 1, event_date: event.event_date || '', tag: event.tag || '', attendance: event.attendance ?? '' })}
                 className="p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-secondary transition-colors"
                 title="Edit event"
               >
@@ -1094,6 +1097,7 @@ export default function Events() {
                               <div className="flex items-center gap-3 text-xs text-text-muted">
                                 {event.event_date_display && <span>{event.event_date_display}</span>}
                                 {event.winner_username && <span className="truncate">Winner: {event.winner_username}</span>}
+                                {event.attendance > 0 && <span className="shrink-0">{event.attendance} players</span>}
                                 <span className="shrink-0">{event.player_count || 0} decks</span>
                               </div>
                             </div>
@@ -1313,6 +1317,19 @@ export default function Events() {
                   onChange={(e) => setCreateForm((f) => ({ ...f, title: e.target.value }))}
                 />
 
+                <label htmlFor="manual-event-url" className="text-xs text-text-muted block mb-1">sorcerytcg.com Event URL</label>
+                <input
+                  id="manual-event-url"
+                  type="text"
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-1"
+                  placeholder="https://sorcerytcg.com/events/..."
+                  value={createForm.eventUrl}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, eventUrl: e.target.value }))}
+                />
+                <p className="text-xs text-text-muted/60 mb-4">
+                  Required. Use this tab when the event page has no deck lists (for example only the top 4 were collected): the decks come from the links below, and the player count, date and standings come from the event page. Under 16 players is tagged Local.
+                </p>
+
                 <p className="text-xs text-text-muted mb-2">Curiosa Deck URLs by Placement (all optional)</p>
                 <div className="space-y-2 mb-4">
                   {createForm.ranked.map((url, i) => (
@@ -1351,6 +1368,7 @@ export default function Events() {
               <div className="mb-3 p-3 bg-bg-raised rounded border border-border">
                 <p className="text-xs text-green-400 mb-1">
                   Event created: {createResult.top8_added} top 8 deck{createResult.top8_added !== 1 ? 's' : ''}, {createResult.bulk_added} other deck{createResult.bulk_added !== 1 ? 's' : ''} added.
+                  {createResult.attendance > 0 && ` ${createResult.attendance} players${createResult.local ? ', tagged Local' : ''}.`}
                 </p>
                 {createResult.warnings?.length > 0 && (
                   <div className="mt-1">
@@ -1374,7 +1392,7 @@ export default function Events() {
                 <button
                   className="text-xs bg-secondary text-black px-3 py-1.5 rounded font-semibold disabled:opacity-50"
                   onClick={handleCreate}
-                  disabled={creating || (createMode === 'import' ? !importUrl.trim() : !createForm.title.trim())}
+                  disabled={creating || (createMode === 'import' ? !importUrl.trim() : !createForm.title.trim() || !createForm.eventUrl.trim())}
                 >
                   {creating ? (createProgress || 'Creating...') : 'Create Event'}
                 </button>
@@ -1402,6 +1420,17 @@ export default function Events() {
               className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4"
               value={editModal.event_date || ''}
               onChange={(e) => setEditModal((m) => ({ ...m, event_date: e.target.value }))}
+            />
+            <label htmlFor="edit-event-players" className="text-xs text-text-muted block mb-1">Players at the event (optional)</label>
+            <input
+              id="edit-event-players"
+              type="number"
+              min="0"
+              inputMode="numeric"
+              className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4"
+              placeholder="e.g. 30"
+              value={editModal.attendance ?? ''}
+              onChange={(e) => setEditModal((m) => ({ ...m, attendance: e.target.value.replace(/[^0-9]/g, '') }))}
             />
             <label className="text-xs text-text-muted block mb-1">Tier</label>
             <div className="flex gap-1 mb-4">

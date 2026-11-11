@@ -4,10 +4,10 @@ export const getEvents = () => get('/api/top-8-events').then((data) => data.even
 export const getEventsWithAdmin = () => get('/api/top-8-events')
 export const getEvent = (folder) => get(`/api/events/${folder}`)
 export const reorderEvents = (order) => post('/api/events/reorder', { order })
-export const updateEventMetadata = (folder, { name, rating, description, event_date, tag }) =>
-  put(`/api/events/${folder}/metadata`, { name, rating, description, event_date, tag })
-export const createEvent = ({ title, ranked_urls, bulk_urls }) =>
-  post('/api/events/create', { title, ranked_urls, bulk_urls })
+export const updateEventMetadata = (folder, { name, rating, description, event_date, tag, attendance }) =>
+  put(`/api/events/${folder}/metadata`, { name, rating, description, event_date, tag, attendance })
+export const createEvent = ({ title, ranked_urls, bulk_urls, event_url }) =>
+  post('/api/events/create', { title, ranked_urls, bulk_urls, event_url })
 export const updateEventDecks = (folder, { table, mode, urls }) =>
   post(`/api/events/${folder}/decks`, { table, mode, urls })
 export const importEventFromUrl = ({ title, event_url }) =>
@@ -47,8 +47,8 @@ export const searchTop8Card = (card) =>
   get(`/api/top-8-events/card-search?${new URLSearchParams({ card })}`)
 
 // Player-submitted events (held until an admin approves them)
-export const submitEvent = ({ event_url, title, note }) =>
-  post('/api/events/submissions', { event_url, title, note })
+export const submitEvent = ({ event_url, title, note, deck_urls }) =>
+  post('/api/events/submissions', { event_url, title, note, deck_urls })
 export const getMySubmissions = () => get('/api/events/submissions/mine')
 export const getEventSubmissions = (status) =>
   get(`/api/events/submissions${status ? `?${new URLSearchParams({ status })}` : ''}`)

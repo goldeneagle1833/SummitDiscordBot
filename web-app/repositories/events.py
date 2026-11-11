@@ -253,7 +253,7 @@ class EventRepository:
         overrides = self._load_metadata_overrides()
         return overrides.get(folder, {}).get("description", "")
 
-    def update_event_metadata(self, folder: str, name: str | None = None, rating: int | None = None, description: str | None = None, event_date: str | None = None, tag: str | None = None) -> dict:
+    def update_event_metadata(self, folder: str, name: str | None = None, rating: int | None = None, description: str | None = None, event_date: str | None = None, tag: str | None = None, attendance: int | None = None) -> dict:
         """Update display name, rating, description, date, and/or tag for an event.
 
         Args:
@@ -263,6 +263,7 @@ class EventRepository:
             description: Event description text (or None to keep current).
             event_date: ISO date string override (or None to keep current).
             tag: Event type from EVENT_TAGS, "" to clear, or None to keep current.
+            attendance: How many players the event had (0 clears it), or None to keep.
 
         Returns:
             dict with "success" bool and optional "error" string.
@@ -287,6 +288,14 @@ class EventRepository:
                 entry["tag"] = tag
             else:
                 return {"success": False, "error": "Tag must be one of: " + ", ".join(EVENT_TAGS)}
+
+        if attendance is not None:
+            if not isinstance(attendance, int) or isinstance(attendance, bool) or attendance < 0 or attendance > 100000:
+                return {"success": False, "error": "Players must be a whole number"}
+            if attendance:
+                entry["attendance"] = attendance
+            else:
+                entry.pop("attendance", None)
 
         overrides[folder] = entry
 
@@ -459,6 +468,9 @@ class EventRepository:
                                 "folder": folder.name,
                                 "name": display_name,
                                 "player_count": len(data),
+                                # Players at the event (from its sorcerytcg.com
+                                # page or set by an admin); decks can be fewer
+                                "attendance": overrides.get("attendance"),
                                 "has_top8": top8_json is not None,
                                 "has_full": full_json is not None,
                                 "rating": overrides.get("rating", EVENT_RATINGS.get(folder.name, 1)),

@@ -33,3 +33,22 @@ def test_a_computed_value_is_ignored_rather_than_run(tmp_path):
 def test_lists_and_single_ids_work(tmp_path):
     assert webapp_config._bot_config_set("TICKET_HOLDER_ROLE_IDS", write(tmp_path, "TICKET_HOLDER_ROLE_IDS = [11, '22']\n")) == {"11", "22"}
     assert webapp_config._bot_config_set("TICKET_HOLDER_ROLE_IDS", write(tmp_path, "TICKET_HOLDER_ROLE_IDS = 33\n")) == {"33"}
+
+
+def test_named_role_constants_are_followed(tmp_path):
+    path = write(tmp_path, (
+        "PATREON_ROLE_ID = 1455669646370799667\n"
+        "SEASON_TICKET_ROLE_ID = int('1497681939753209937')\n"
+        "TICKET_HOLDER_ROLE_IDS = {SEASON_TICKET_ROLE_ID, PATREON_ROLE_ID}\n"
+    ))
+    assert webapp_config._bot_config_set("TICKET_HOLDER_ROLE_IDS", path) == {
+        "1455669646370799667", "1497681939753209937",
+    }
+
+
+def test_unions_and_annotations(tmp_path):
+    path = write(tmp_path, (
+        "TICKETS: set[int] = {1, 2}\n"
+        "TICKET_HOLDER_ROLE_IDS = TICKETS | {3}\n"
+    ))
+    assert webapp_config._bot_config_set("TICKET_HOLDER_ROLE_IDS", path) == {"1", "2", "3"}

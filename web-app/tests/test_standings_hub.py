@@ -90,6 +90,7 @@ def test_ticket_holder_inside_the_cut(repo):
     you = season(hub(repo, players, "u3"))["you"]
     assert you["state"] == "in"
     assert f"#3 of {TOP_CUT_SIZE}" in you["headline"]
+    assert you["headline"].startswith("Qualified for the Post Season Bracket")
 
 
 def test_ticket_holder_outside_the_cut_sees_the_gap(repo):
@@ -106,6 +107,7 @@ def test_player_without_a_ticket_is_told_so(repo):
     repo.replace_ticket_holders([{"user_id": "u1"}])
     you = season(hub(repo, players, "u2"))["you"]
     assert you["state"] == "no_ticket"
+    assert you["headline"] == "Not qualified for the Post Season Bracket"
     assert you["action"]["to"] == "/store"
 
 

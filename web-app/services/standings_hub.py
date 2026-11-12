@@ -135,7 +135,7 @@ class StandingsHubService:
             "status": "live" if event else "between_seasons",
             "blurb": (
                 f"Ranked online games. The top {TOP_CUT_SIZE} ticket holders on the ladder "
-                "play the Season Top Cut."
+                "(Patreon supporters count) qualify for the Post Season Bracket."
             ),
             "link": "/elo",
             "links": [{"to": "/brackets", "label": "Season Top Cut"}],
@@ -348,18 +348,18 @@ class StandingsHubService:
         if voice.get("enforced") and p["voice_games"] < voice["min_games"]:
             notes.append(f"{p['voice_games']} of {voice['min_games']} voice games for the top cut")
         if private["has_roster"] and not p["is_ticket_holder"]:
-            return {"state": "no_ticket", "headline": "No season ticket",
-                    "detail": rank + ". The top cut is for ticket holders.", "notes": notes,
+            return {"state": "no_ticket", "headline": "Not qualified for the Post Season Bracket",
+                    "detail": rank + ". It takes a season ticket or Patreon.", "notes": notes,
                     "action": {"to": "/store", "label": "Get a ticket"}}
         ticket_rank = p.get("ticket_rank")
         if ticket_rank and ticket_rank <= TOP_CUT_SIZE:
-            return {"state": "in", "headline": f"In the top cut · #{ticket_rank} of {TOP_CUT_SIZE}",
+            return {"state": "in", "headline": f"Qualified for the Post Season Bracket · #{ticket_rank} of {TOP_CUT_SIZE}",
                     "detail": rank, "notes": notes}
         gap = None
         if private["cut_line"] is not None and p["elo"] is not None:
             gap = round(private["cut_line"] - p["elo"])
         headline = (
-            f"Outside the cut · #{ticket_rank} of the ticket holders" if ticket_rank else "On the ladder"
+            f"Not qualified yet · #{ticket_rank} of the ticket holders" if ticket_rank else "On the ladder"
         )
         if gap is not None and gap > 0:
             notes.insert(0, f"{gap} ELO behind #{TOP_CUT_SIZE}")

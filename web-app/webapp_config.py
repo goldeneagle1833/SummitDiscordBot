@@ -114,10 +114,13 @@ GOOGLE_REDIRECT_URI = os.environ.get(
 DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", os.environ.get("TOKEN", ""))
 
 def _bot_config_set(name: str, path: Path | None = None) -> set[str]:
-    """A set of ids written literally in the bot's config.py, as strings.
+    """A set of ids written in the bot's config.py, as strings.
 
     Read with ast, never imported, so nothing in the bot's config runs here.
-    Empty when the file is missing or the value isn't a plain literal.
+    Handles literals ({1, 2}, [1, 2], 3), names of other literal settings in
+    the same file ({TICKET_ROLE_ID, PATREON_ROLE_ID}), int("...") and
+    set()/frozenset() around those. Empty when the file is missing or the
+    value is anything else.
     """
     import ast
 
@@ -126,21 +129,46 @@ def _bot_config_set(name: str, path: Path | None = None) -> set[str]:
         tree = ast.parse(path.read_text(encoding="utf-8"))
     except (OSError, SyntaxError, ValueError):
         return set()
+
+    assigned = {}
     for node in tree.body:
-        if isinstance(node, ast.Assign) and any(
-            isinstance(t, ast.Name) and t.id == name for t in node.targets
+        targets, value = [], None
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = [node.target], node.value
+        for t in targets:
+            if isinstance(t, ast.Name):
+                assigned[t.id] = value  # the last assignment wins, as in Python
+
+    def evaluate(node, depth=0):
+        if depth > 5:
+            raise ValueError("too deep")
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, str)):
+            return [node.value]
+        if isinstance(node, (ast.Set, ast.List, ast.Tuple)):
+            return [v for elt in node.elts for v in evaluate(elt, depth + 1)]
+        if isinstance(node, ast.Name) and node.id in assigned:
+            return evaluate(assigned[node.id], depth + 1)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in ("int", "str", "set", "frozenset", "list", "tuple")
+            and not node.keywords
+            and len(node.args) <= 1
         ):
-            try:
-                value = ast.literal_eval(node.value)
-            except ValueError:
-                return set()
-            if isinstance(value, (int, str)):
-                value = {value}
-            try:
-                return {str(v).strip() for v in value if str(v).strip() not in ("", "0")}
-            except TypeError:
-                return set()
-    return set()
+            return [v for arg in node.args for v in evaluate(arg, depth + 1)]
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.BitOr, ast.Add)):
+            return evaluate(node.left, depth + 1) + evaluate(node.right, depth + 1)
+        raise ValueError("not a plain value")
+
+    if name not in assigned:
+        return set()
+    try:
+        values = evaluate(assigned[name])
+    except ValueError:
+        return set()
+    return {str(v).strip() for v in values if str(v).strip() not in ("", "0")}
 
 
 # Roles that mark a player as a Summit ticket holder. The bot's Discord

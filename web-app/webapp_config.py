@@ -113,12 +113,46 @@ GOOGLE_REDIRECT_URI = os.environ.get(
 # roster so the bracket seed pool matches the bot's leaderboard message.
 DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", os.environ.get("TOKEN", ""))
 
-# Roles that mark a player as a Summit ticket holder (same roles the bot uses)
+def _bot_config_set(name: str, path: Path | None = None) -> set[str]:
+    """A set of ids written literally in the bot's config.py, as strings.
+
+    Read with ast, never imported, so nothing in the bot's config runs here.
+    Empty when the file is missing or the value isn't a plain literal.
+    """
+    import ast
+
+    path = path or (Path(__file__).parent.parent / "discord-bot" / "config.py")
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, ValueError):
+        return set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == name for t in node.targets
+        ):
+            try:
+                value = ast.literal_eval(node.value)
+            except ValueError:
+                return set()
+            if isinstance(value, (int, str)):
+                value = {value}
+            try:
+                return {str(v).strip() for v in value if str(v).strip() not in ("", "0")}
+            except TypeError:
+                return set()
+    return set()
+
+
+# Roles that mark a player as a Summit ticket holder. The bot's Discord
+# leaderboard message decides with config.TICKET_HOLDER_ROLE_IDS (which takes
+# in Patreon supporters too), so the site reads the same list and adds any set
+# in the environment. Everything ranking ticket holders on the site (bracket
+# seeding, /standings, the partner leaderboard) then matches the bot.
 TICKET_HOLDER_ROLE_IDS = {
     r.strip()
     for r in os.environ.get("TICKET_HOLDER_ROLE_IDS", "").split(",")
     if r.strip() and r.strip() != "0"
-}
+} | _bot_config_set("TICKET_HOLDER_ROLE_IDS")
 
 # Who may create community brackets: these Discord roles, or when none are
 # set, the server role with this name (looked up with the bot token).

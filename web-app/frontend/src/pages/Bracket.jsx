@@ -216,7 +216,9 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
   // hidden from players until every entrant has a decklist in. Whoever runs
   // the bracket still sees it, so they can chase the stragglers.
   const decksMissing = data.decks_missing ?? 0
-  const bracketHidden = decksMissing > 0 && bracket.status !== 'complete' && !canManage
+  // The server decides (an admin can switch the hold off per bracket).
+  const pairingsHidden = data.pairings_hidden ?? (decksMissing > 0 && bracket.status !== 'complete')
+  const bracketHidden = pairingsHidden && !canManage
   const needsYou = rounds
     .flatMap((r) => r.matches)
     .filter((m) => m.viewer_can_report || m.viewer_can_confirm)
@@ -363,7 +365,7 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
         </div>
       )}
 
-      {canManage && decksMissing > 0 && bracket.status !== 'complete' && (
+      {canManage && pairingsHidden && (
         <div className="bg-amber-400/10 border-l-2 border-amber-400 px-4 py-3 text-sm">
           Players can’t see the bracket yet — {decksMissing} decklist
           {decksMissing > 1 ? 's are' : ' is'} still to come. Only{' '}

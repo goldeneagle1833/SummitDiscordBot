@@ -112,12 +112,17 @@ def list_brackets():
 
 @brackets_bp.route("/brackets/<slug>", methods=["GET"])
 def get_bracket(slug):
-    detail = service.get_bracket_detail(
-        slug, viewer_id=_current_user_id(), is_admin=is_admin()
-    )
+    admin = is_admin()
+    detail = service.get_bracket_detail(slug, viewer_id=_current_user_id(), is_admin=admin)
     if not detail:
         return jsonify({"success": False, "error": "Bracket not found"}), 404
-    detail["viewer_can_manage"] = can_manage(detail["bracket"])
+    manager = can_manage(detail["bracket"])
+    if manager and not admin and detail.get("pairings_hidden"):
+        # An organizer runs their own bracket, hidden pairings included.
+        detail = service.get_bracket_detail(
+            slug, viewer_id=_current_user_id(), is_admin=False, can_see_hidden=True
+        )
+    detail["viewer_can_manage"] = manager
     return jsonify({"success": True, **detail}), 200
 
 

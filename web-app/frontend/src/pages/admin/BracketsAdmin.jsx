@@ -698,6 +698,50 @@ function SetField({ bracket, sets, onSaved }) {
   )
 }
 
+/**
+ * Keep who-plays-whom secret until every entrant has a decklist in. On by
+ * default; switching it off on a live bracket reveals and sends the pairings.
+ */
+function HidePairingsField({ bracket, onSaved }) {
+  const on = bracket.hide_pairings === undefined || bracket.hide_pairings === null
+    ? true
+    : Boolean(bracket.hide_pairings)
+  const [state, setState] = useState(null)
+
+  async function toggle(e) {
+    const next = e.target.checked
+    if (
+      !next &&
+      bracket.status === 'published' &&
+      !window.confirm('Show the pairings now? Players are messaged their match straight away.')
+    ) {
+      return
+    }
+    setState('saving')
+    try {
+      await adminUpdateBracket(bracket.slug, { hide_pairings: next })
+      setState(null)
+      await onSaved()
+    } catch {
+      setState('error')
+    }
+  }
+
+  return (
+    <label className="inline-flex items-center gap-1.5 text-xs text-text-muted">
+      <input
+        type="checkbox"
+        checked={on}
+        onChange={toggle}
+        disabled={state === 'saving' || bracket.status === 'complete'}
+        aria-label={`Hide pairings until all decks are in for ${bracket.name}`}
+      />
+      Hide pairings until all decks are in
+      {state === 'error' && <span className="text-accent-red">Could not save</span>}
+    </label>
+  )
+}
+
 function BracketRow({ bracket, onChanged, onGraphic, sets = [], organizer = false }) {
   const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState(null)
@@ -769,11 +813,10 @@ function BracketRow({ bracket, onChanged, onGraphic, sets = [], organizer = fals
             {bracket.champion ? ` · won by ${bracket.champion.display_name}` : ''}
             {decks ? ` · ${decks.submitted}/${decks.players.length} decks in` : ''}
           </p>
-          {!organizer && (
-            <div className="mt-1">
-              <SetField bracket={bracket} sets={sets} onSaved={onChanged} />
-            </div>
-          )}
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+            {!organizer && <SetField bracket={bracket} sets={sets} onSaved={onChanged} />}
+            <HidePairingsField bracket={bracket} onSaved={onChanged} />
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {isDraft ? (

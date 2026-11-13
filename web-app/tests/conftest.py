@@ -344,3 +344,25 @@ def seed_matches(db_path, matches):
         ))
     conn.commit()
     conn.close()
+
+
+# -- Bracket pairing hold ---------------------------------------------
+# Brackets hide their pairings until every decklist is in. Most bracket
+# tests are about reporting, tables and results, not that hold, so it is
+# lifted for them; tests marked ``pairing_hold`` keep the real behaviour.
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "pairing_hold: keep the hide-pairings-until-decks-are-in hold active"
+    )
+
+
+@pytest.fixture(autouse=True)
+def _lift_bracket_pairing_hold(request, monkeypatch):
+    if request.node.get_closest_marker("pairing_hold"):
+        return
+    try:
+        from services.brackets import BracketService
+    except Exception:
+        return
+    monkeypatch.setattr(BracketService, "pairings_hidden", lambda self, bracket: False)

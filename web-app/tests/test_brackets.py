@@ -2753,3 +2753,65 @@ class TestSetNameApi:
         assert resp.status_code == 200
         detail = admin_session.get(f"/api/admin/brackets/{slug}").get_json()
         assert detail["bracket"]["set_name"] == "Beta"
+
+
+# -- Hide pairings until every decklist is in -----------------------
+
+
+@pytest.mark.pairing_hold
+class TestPairingHold:
+    def _deck_in(self, service, slug, *seeds):
+        for seed in seeds:
+            service.submit_deck(slug, f"https://curiosa.io/decks/{seed}", actor_id=f"u{seed}")
+
+    def test_new_brackets_hold_their_pairings(self, service, repo):
+        slug, bracket_id = published(service, repo, count=4)
+        assert repo.get_bracket(bracket_id=bracket_id)["hide_pairings"] == 1
+
+        detail = service.get_bracket_detail(slug, viewer_id="u1")
+        assert detail["pairings_hidden"] is True
+        assert detail["rounds"] == []  # never sent, not just hidden on the page
+        assert len(detail["entrants"]) == 4
+
+    def test_admins_still_see_the_tree(self, service, repo):
+        slug, _ = published(service, repo, count=4)
+        detail = service.get_bracket_detail(slug, is_admin=True)
+        assert detail["pairings_hidden"] is True
+        assert detail["rounds"]
+
+    def test_nobody_is_messaged_until_the_last_deck_is_in(self, service, repo, announcements):
+        slug, _ = published(service, repo, count=4)
+        assert announcements == []
+
+        self._deck_in(service, slug, 1, 2, 3)
+        assert announcements == []
+        assert service.get_player_open_matches("u1") == []
+
+        self._deck_in(service, slug, 4)
+        assert len(announcements) == 2
+        detail = service.get_bracket_detail(slug, viewer_id="u1")
+        assert detail["pairings_hidden"] is False
+        assert detail["rounds"]
+        assert service.get_player_open_matches("u1")
+
+    def test_the_profile_run_waits_too(self, service, repo):
+        slug, _ = published(service, repo, count=4)
+        entry = service.get_player_postseason("u1")[0]
+        assert entry["run"] == []
+        self._deck_in(service, slug, 1, 2, 3, 4)
+        assert service.get_player_postseason("u1")[0]["run"]
+
+    def test_switching_the_hold_off_reveals_and_announces(self, service, repo, announcements):
+        slug, bracket_id = published(service, repo, count=4)
+        assert service.update_bracket(bracket_id, {"hide_pairings": False})
+        assert len(announcements) == 2
+        detail = service.get_bracket_detail(slug, viewer_id="u1")
+        assert detail["pairings_hidden"] is False
+        assert detail["bracket"]["hide_pairings"] is False
+        assert detail["rounds"]
+
+    def test_with_the_hold_off_publishing_pairs_straight_away(self, service, repo, announcements):
+        created = service.create_bracket(name="Open Cup", size=4, source="overall")
+        service.update_bracket(created["bracket_id"], {"hide_pairings": False})
+        service.publish(created["bracket_id"])
+        assert len(announcements) == 2

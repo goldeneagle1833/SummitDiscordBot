@@ -435,8 +435,11 @@ class BracketService:
         self._repo.replace_matches(bracket_id, matches)
         self._repo.set_counts(bracket_id, len(entrants), bracket_size_for(len(entrants)))
         self._repo.set_status(bracket_id, "published")
-        # Round one is paired the moment the bracket goes live.
-        self._announce_open_matches(bracket_id)
+        # Round one is paired the moment the bracket goes live - unless the
+        # pairings stay hidden until every decklist is in, in which case the
+        # last deck to arrive sends them.
+        if not self.pairings_hidden(self._repo.get_bracket(bracket_id=bracket_id)):
+            self._announce_open_matches(bracket_id)
 
         return {
             "slug": bracket["slug"],
@@ -554,7 +557,36 @@ class BracketService:
         fields = dict(fields)
         if "set_name" in fields:
             fields["set_name"] = clean_set_name(fields["set_name"])
-        return self._repo.update_bracket(bracket_id, fields)
+        if "hide_pairings" in fields:
+            fields["hide_pairings"] = 1 if fields["hide_pairings"] else 0
+        changed = self._repo.update_bracket(bracket_id, fields)
+        if changed and "hide_pairings" in fields:
+            # Switching the hold off on a live bracket pairs round one now.
+            self._reveal_if_ready(bracket_id)
+        return changed
+
+    def pairings_hidden(self, bracket: dict | None) -> bool:
+        """True while a live bracket keeps its pairings secret.
+
+        A bracket with "hide pairings" on (the default) shows nobody but its
+        admins who plays whom until every entrant has a decklist in.
+        """
+        if not bracket or bracket.get("status") != "published":
+            return False
+        if bracket.get("hide_pairings") is not None and not bracket.get("hide_pairings"):
+            return False
+        return self._decks_missing(bracket["bracket_id"]) > 0
+
+    def _decks_missing(self, bracket_id: int) -> int:
+        seeds_with_decks = {d["seed"] for d in self._repo.get_decks(bracket_id)}
+        entrants = self._repo.get_entrants(bracket_id)
+        return len([e for e in entrants if e["seed"] not in seeds_with_decks])
+
+    def _reveal_if_ready(self, bracket_id: int):
+        """Announce the open pairings once nothing is holding them back."""
+        bracket = self._repo.get_bracket(bracket_id=bracket_id)
+        if bracket and bracket.get("status") == "published" and not self.pairings_hidden(bracket):
+            self._announce_open_matches(bracket_id)
 
     def delete_bracket(self, bracket_id: int) -> bool:
         bracket = self._repo.get_bracket(bracket_id=bracket_id)
@@ -656,7 +688,10 @@ class BracketService:
         include_drafts: bool = False,
         viewer_id=None,
         is_admin: bool = False,
+        can_see_hidden: bool | None = None,
     ) -> dict | None:
+        """The bracket page's data. ``can_see_hidden`` (default: ``is_admin``)
+        lets whoever runs the bracket see pairings that are still hidden."""
         bracket = self._repo.get_bracket(slug=slug)
         if not bracket:
             return None
@@ -698,6 +733,14 @@ class BracketService:
         # travels with the detail so the page can hold the bracket back
         # without a second request.
         decks_missing = len([e for e in entrants if e["seed"] not in seeds_with_decks])
+        hide_on = bracket.get("hide_pairings") is None or bool(bracket.get("hide_pairings"))
+        bracket["hide_pairings"] = hide_on
+        pairings_hidden = self.pairings_hidden(bracket)
+        if can_see_hidden is None:
+            can_see_hidden = is_admin
+        if pairings_hidden and not can_see_hidden:
+            # Not just hidden on the page: the pairings never leave the server.
+            rounds = []
 
         return {
             "bracket": bracket,
@@ -705,6 +748,7 @@ class BracketService:
             "rounds": rounds,
             "champion": champion_row,
             "decks_missing": decks_missing,
+            "pairings_hidden": pairings_hidden,
         }
 
     def _annotate_for_viewer(self, match, *, viewer_id, is_admin, seeds_with_decks, finished):
@@ -783,8 +827,14 @@ class BracketService:
         """Matches where this player still owes a report or a confirmation."""
         rows = self._repo.get_player_matches(str(user_id))
         open_matches = []
+        hidden = {}
         for row in rows:
             if not _is_playable(row):
+                continue
+            bracket_id = row["bracket_id"]
+            if bracket_id not in hidden:
+                hidden[bracket_id] = self.pairings_hidden(self._repo.get_bracket(bracket_id=bracket_id))
+            if hidden[bracket_id]:
                 continue
             needs = None
             if row["state"] == "pending":
@@ -1030,6 +1080,11 @@ class BracketService:
                 "submitted_by": str(actor_id),
             },
         )
+        # The last decklist in reveals the pairings and sends them out.
+        try:
+            self._reveal_if_ready(bracket["bracket_id"])
+        except Exception as e:
+            logger.error("Bracket %s: could not reveal pairings: %s", slug, e)
 
         return {
             "seed": entrant["seed"],
@@ -1303,7 +1358,7 @@ class BracketService:
                     "losses": losses,
                     "played_at": bracket["published_at"] or bracket["created_at"],
                     "avatar": own_deck.get("avatar_name"),
-                    "run": self._player_run(matches, entrant["seed"], decks),
+                    "run": [] if self.pairings_hidden(bracket) else self._player_run(matches, entrant["seed"], decks),
                 }
             )
 
@@ -1696,6 +1751,8 @@ class BracketService:
 
     def _announce_pairing(self, bracket: dict, match: dict):
         """Announce one newly filled match."""
+        if self.pairings_hidden(self._repo.get_bracket(bracket_id=bracket["bracket_id"])):
+            return  # Sent with the rest once the last decklist is in
         self._send_pairings(bracket, [self._claim_pairing(bracket, match)])
 
     def _announce_open_matches(self, bracket_id: int, match_nos=None):

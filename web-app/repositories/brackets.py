@@ -66,7 +66,7 @@ class BracketRepository:
         conn.close()
         return bracket_id
 
-    EDITABLE_FIELDS = ("name", "description", "confirm_hours", "set_name")
+    EDITABLE_FIELDS = ("name", "description", "confirm_hours", "set_name", "hide_pairings")
 
     def update_bracket(self, bracket_id: int, fields: dict) -> bool:
         updates = {k: v for k, v in fields.items() if k in self.EDITABLE_FIELDS}

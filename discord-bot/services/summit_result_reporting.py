@@ -432,7 +432,7 @@ async def record_sorcery_online_result(
             "notify_reporter": False,
         }
         if stored_type == "precon":
-            # The pairing knows who picked which precon; PSO may say so too
+            # The pairing knows which precon each player was given; PSO may say so too
             data["winner_precon"] = pso_precons.get(winner_id)
             data["loser_precon"] = pso_precons.get(loser_id)
         match_key = f"pairing:{stored_type}:{pairing_id}"

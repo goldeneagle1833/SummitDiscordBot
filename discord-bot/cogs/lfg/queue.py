@@ -55,7 +55,7 @@ from services.avatar_mode import (
     set_avatar_ladder_stakes,
 )
 from services.ranked_eligibility import ranked_block_message
-from services.precon_ladder import normalize_precon, precon_choices, precon_label
+from services.precon_ladder import precon_label
 from utils.deck_checker import clean_deck_url
 
 logger = logging.getLogger("discord_bot")
@@ -610,24 +610,12 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
         )
 
 
-PRECON_REQUIRED_MESSAGE = "Pick Lavamancer or Frostmage to join the precon queue."
-
-
-def build_precon_select():
-    """Lavamancer / Frostmage dropdown for the precon join modal."""
-    return discord.ui.Select(
-        placeholder="Which precon are you playing?",
-        min_values=1,
-        max_values=1,
-        options=[
-            discord.SelectOption(label=f'{choice["label"]} ({choice["short"]})', value=choice["key"])
-            for choice in precon_choices()
-        ],
-    )
+PRECON_RANDOM_NOTE = "Your precon (Lavamancer or Frostmage) is picked at random when you're paired."
 
 
 class PreconQueueModal(discord.ui.Modal, title="Join Precon (LM/FM) Queue"):
-    """Modal for the precon ladder queue: pick Lavamancer or Frostmage, no deck link."""
+    """Modal for the precon ladder queue: no deck link and no pick; the precon is
+    assigned at random when the pair is made."""
 
     timeframe = discord.ui.TextInput(
         label="Queue Duration (minutes)",
@@ -640,18 +628,10 @@ class PreconQueueModal(discord.ui.Modal, title="Join Precon (LM/FM) Queue"):
     def __init__(self, bot, voice_answers=None):
         super().__init__()
         self.bot = bot
-        self.remove_item(self.timeframe)
-        self.precon_select = build_precon_select()
-        self.add_item(discord.ui.Label(text="Precon", component=self.precon_select))
-        self.add_item(self.timeframe)
         self.voice_select = add_voice_select(self, voice_answers)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        precon = normalize_precon((self.precon_select.values or [None])[0])
-        if not precon:
-            await interaction.followup.send(PRECON_REQUIRED_MESSAGE, ephemeral=True)
-            return
         voice, voice_flexible = selected_voice(self.voice_select)
         remember_voice_answers(interaction.user.id, voice, voice_flexible)
         await _process_queue_join(
@@ -662,7 +642,6 @@ class PreconQueueModal(discord.ui.Modal, title="Join Precon (LM/FM) Queue"):
             None,
             voice=voice,
             voice_flexible=voice_flexible,
-            precon=precon,
         )
 
 
@@ -680,10 +659,8 @@ async def _process_queue_join(
     """
     # Limited decks come from a draft run and precons are fixed, so neither has an avatar alert
     alert_avatar = bool(alert_avatar) and queue_type not in ("limited", "precon")
-    precon = normalize_precon(precon) if queue_type == "precon" else None
-    if queue_type == "precon" and not precon:
-        await interaction.followup.send(PRECON_REQUIRED_MESSAGE, ephemeral=True)
-        return
+    # Precons are assigned at random when the pair is made; any pick sent is ignored
+    precon = None
     # An old "either" answer means both boxes ticked: voice first, no voice OK
     voice_flexible = bool(voice_flexible) or is_legacy_either(voice)
     voice = normalize_voice_preference(voice) or DEFAULT_VOICE
@@ -896,8 +873,12 @@ async def _process_queue_join(
         if match_type == "ranked" and is_avatar_mode():
             joiner_avatar, matched_avatar = join_avatar, matched_join_avatar
         elif match_type == "precon":
-            # The precon each player picked rides on the pairing's avatar columns,
-            # so the match messages show it and the result knows who played what.
+            # Coin flip: one player gets Lavamancer, the other Frostmage. The
+            # precons ride on the pairing's avatar columns, so the match messages
+            # show them and the result knows who played what.
+            from services.precon_service import random_precons
+
+            precon, matched_precon = random_precons()
             joiner_avatar, matched_avatar = precon_label(precon), precon_label(matched_precon)
 
         try:
@@ -1114,8 +1095,8 @@ async def _process_queue_join(
     else:
         queue_label = match_type_presentation(queue_type)[1] if queue_type in ("points", "precon") else queue_type.capitalize()
         deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
-        if precon:
-            deck_msg += f"\n**Precon:** {precon_label(precon)}"
+        if queue_type == "precon":
+            deck_msg += f"\n**Precon:** {PRECON_RANDOM_NOTE}"
         if join_avatar:
             deck_msg += f"\n**Avatar:** {join_avatar} (locked when your match is made)"
         if queue_has_voice_choice(queue_type):

@@ -57,14 +57,12 @@ def test_test_mode_is_off_by_default_and_never_beats_a_live_queue():
     assert precon_service.test_mode_active() is False  # the real queue answers instead
 
 
-def test_join_checks_the_pick_and_returns_a_sample_table_request():
-    body = precon_test_mode.test_join({"precon": "FM"}, 111, "Alice", "voice")
-    assert body["test_mode"] is True and body["accepted"]["precon"] == "frostmage"
+def test_join_needs_no_pick_and_returns_a_random_sample_table_request():
+    body = precon_test_mode.test_join({}, 111, "Alice", "voice")
+    assert body["test_mode"] is True and body["accepted"]["precon_assignment"] == "random"
     players = body["sample_table_request"]["players"]
-    assert players[0] == {"discordUserId": "111", "displayName": "Alice", "deckUrl": None, "precon": "frostmage"}
-    assert players[1]["precon"] == "lavamancer"
-    with pytest.raises(ValueError):
-        precon_test_mode.test_join({"precon": "elf"}, 111, "Alice", "voice")
+    assert players[0]["discordUserId"] == "111" and players[0]["deckUrl"] is None
+    assert sorted(p["precon"] for p in players) == ["frostmage", "lavamancer"]
 
 
 def test_status_entry_is_marked_as_test():

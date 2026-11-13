@@ -89,7 +89,7 @@ class PreconLadderCog(commands.Cog):
             title=f"🧙 {season['name']} has started!",
             description=(
                 "The **Lavamancer vs Frostmage** precon ladder is open. Click **🧙 Join Precon (LM/FM)** "
-                f"in <#{config.LFG_CHANNEL_ID}> (or queue on Play Sorcery Online), pick your precon, "
+                f"in <#{config.LFG_CHANNEL_ID}> (or queue on Play Sorcery Online). Summit hands one player Lavamancer and the other Frostmage at random, "
                 "and every game moves your ladder rating."
             ),
             color=discord.Color.purple(),

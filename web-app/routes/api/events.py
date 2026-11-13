@@ -11,10 +11,10 @@ import threading
 import time
 import uuid
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
 from repositories.events import EventRepository
-from utils.auth import is_admin, require_admin
+from utils.auth import is_admin, require_admin, require_auth
 from utils.formatting import format_event_name
 from webapp_config import EVENT_TAGS
 
@@ -216,6 +216,56 @@ logger = logging.getLogger(__name__)
 
 events_bp = Blueprint("events", __name__)
 
+# Player-submitted events with fewer players than this are tagged "Local".
+LOCAL_PLAYER_THRESHOLD = 16
+
+
+def _record_event_size(folder, attendance):
+    """Save how many played and tag the event Local when under the threshold.
+
+    The title's own tag (Grand Contest, Cornerstone...) wins. Returns True
+    when it was tagged Local.
+    """
+    if not attendance:
+        return False
+    from repositories.events import guess_event_tag
+    repo = EventRepository()
+    repo.update_event_metadata(folder, attendance=int(attendance))
+    if attendance < LOCAL_PLAYER_THRESHOLD and not guess_event_tag(folder):
+        repo.update_event_metadata(folder, tag="Local")
+        return True
+    return False
+
+
+def _attendance(discovery):
+    count = discovery.get("player_count")
+    if count is None:
+        count = len(discovery.get("match_history") or [])
+    return count
+
+
+def _apply_event_page(folder, event_url, discovery):
+    """Use a sorcerytcg.com event's page for an event whose decks came from links.
+
+    Many events only collect their top 4 lists while 30 people played, so
+    the number of decks is not the event's size: the page gives the real
+    player count, the date, and the standings (for profile placings).
+    """
+    repo = EventRepository()
+    if discovery.get("match_history"):
+        repo.save_match_history(folder, {
+            "event_id": discovery.get("event_id", ""),
+            "event_url": event_url,
+            "event_title": discovery.get("event_name") or "",
+            "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "players": discovery["match_history"],
+        })
+    if discovery.get("event_date"):
+        repo.update_event_metadata(folder, event_date=discovery["event_date"])
+    attendance = _attendance(discovery)
+    local = _record_event_size(folder, attendance)
+    return {"attendance": attendance, "local": local, "event_date": discovery.get("event_date")}
+
 
 @events_bp.route("/top-8-events")
 def list_top8_events():
@@ -224,7 +274,19 @@ def list_top8_events():
         repo = EventRepository()
         events = repo.get_all_events()
         featured = repo.get_featured_event()
-        return jsonify({"events": events, "is_admin": is_admin(), "featured_event": featured, "event_tags": EVENT_TAGS})
+        admin = is_admin()
+        payload = {
+            "events": events, "is_admin": admin, "featured_event": featured, "event_tags": EVENT_TAGS,
+            "logged_in": bool(session.get("user_id")),
+            "local_player_threshold": LOCAL_PLAYER_THRESHOLD,
+        }
+        if admin:
+            try:
+                from repositories.event_submissions import EventSubmissionRepository
+                payload["pending_submissions"] = EventSubmissionRepository().count_pending()
+            except Exception:
+                logger.exception("Could not count Top 8 submissions")
+        return jsonify(payload)
     except Exception as e:
         logger.exception("Error listing events: %s", e)
         return jsonify({"error": "Failed to load events"}), 500
@@ -538,6 +600,9 @@ def update_event_metadata(event_folder):
     description = data.get("description")
     event_date = data.get("event_date")
     tag = data.get("tag")
+    attendance = data.get("attendance")
+    if attendance == "":
+        attendance = 0
 
     if name is not None and (not isinstance(name, str) or not name.strip()):
         return jsonify({"success": False, "error": "Name must be a non-empty string"}), 400
@@ -552,9 +617,13 @@ def update_event_metadata(event_folder):
     if tag is not None and (not isinstance(tag, str) or (tag and tag not in EVENT_TAGS)):
         return jsonify({"success": False, "error": "Tag must be one of: " + ", ".join(EVENT_TAGS)}), 400
 
+    if attendance is not None and (not isinstance(attendance, int) or isinstance(attendance, bool) or attendance < 0):
+        return jsonify({"success": False, "error": "Players must be a whole number"}), 400
+
     repo = EventRepository()
     result = repo.update_event_metadata(
         event_folder,
+        attendance=attendance,
         name=name.strip() if name else None,
         rating=rating,
         description=description.strip() if description else description,
@@ -590,7 +659,7 @@ def reorder_event_decks(event_folder):
 
 
 @_job_worker
-def _run_event_creation(job_id, title, valid_ranked, valid_bulk):
+def _run_event_creation(job_id, title, valid_ranked, valid_bulk, event_url=""):
     """Background worker for event creation — fetches from Curiosa and saves."""
     try:
         from services.curiosa import CuriosaService
@@ -641,6 +710,14 @@ def _run_event_creation(job_id, title, valid_ranked, valid_bulk):
         if result.get("success"):
             result["top8_added"] = len(top8_decks)
             result["bulk_added"] = len(bulk_decks)
+            if event_url:
+                _write_job(job_id, {"status": "processing", "progress": "Reading player count from the event page..."})
+                try:
+                    page = curiosa.fetch_event_deck_ids(event_url, with_decks=False)
+                    result.update(_apply_event_page(title, event_url, page))
+                except Exception as e:
+                    logger.warning("Event page %s for %s could not be read: %s", event_url, title, e)
+                    errors.append(f"Could not read the player count from the event page: {e}")
             if errors:
                 result["warnings"] = errors
 
@@ -690,10 +767,17 @@ def create_event():
     if not valid_ranked and not valid_bulk:
         return jsonify({"success": False, "error": "At least one deck URL is required"}), 400
 
+    # Manual adds are for events whose page has no deck lists, so the
+    # event page is still needed for the real player count and standings.
+    event_url = (data.get("event_url") or "").strip()
+    from services.curiosa import CuriosaService
+    if not event_url or not CuriosaService.get_event_id_from_url(event_url):
+        return jsonify({"success": False, "error": "Add the sorcerytcg.com event link (sorcerytcg.com/events/...) so we get the player count."}), 400
+
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting..."})
 
-    _start_job(_run_event_creation, (job_id, title, valid_ranked, valid_bulk))
+    _start_job(_run_event_creation, (job_id, title, valid_ranked, valid_bulk, event_url))
 
     return jsonify({"success": True, "job_id": job_id}), 202
 
@@ -845,124 +929,126 @@ def refresh_event(event_folder):
     return jsonify({"success": True, "job_id": job_id}), 202
 
 
+def _import_event(title, event_url, on_progress, curiosa=None, discovery=None):
+    """Import a sorcerytcg.com event onto the Top 8 page; returns the result dict.
+
+    Shared by the admin "Import from Event URL" job and the approval of a
+    player's submission. A discovery already fetched can be passed in.
+    """
+    if curiosa is None:
+        from services.curiosa import CuriosaService
+        curiosa = CuriosaService()
+
+    # Step 1: Discover deck IDs from event snapshots
+    if discovery is None:
+        discovery = curiosa.fetch_event_deck_ids(event_url, on_progress=on_progress)
+    errors = list(discovery.get("errors", []))
+
+    if not discovery["players"]:
+        return {
+            "success": False,
+            "error": "No decks could be discovered from this event.",
+            "fetch_errors": errors,
+        }
+
+    # Use event name as title if not provided, and make sure it's a usable
+    # folder name before spending time fetching every deck
+    if not title:
+        title = discovery["event_name"] or "Imported Event"
+    title, name_error = EventRepository().check_new_folder_name(title)
+    if name_error:
+        return {"success": False, "error": name_error}
+
+    players = discovery["players"]  # already sorted by standing
+    deck_ids = [p["deck_id"] for p in players]
+    top_cut = discovery.get("top_cut_size", 8)
+    on_progress(f"Found {len(deck_ids)} decks, fetching deck data...")
+
+    # Step 2: Fetch full deck data using discovered IDs, one at a time.
+    # A deck that fails is skipped and reported, never retried forever,
+    # and every fetched deck is cached so a rerun resumes from here.
+    event_id = discovery.get("event_id") or curiosa.get_event_id_from_url(event_url)
+    cache = _load_import_cache(event_id)
+    total = len(deck_ids)
+    decks = []
+    for n, player in enumerate(players, 1):
+        deck_id = player["deck_id"]
+        if player.get("deck"):
+            # Built from the event snapshot already; nothing to fetch
+            decks.append(player["deck"])
+            continue
+        if deck_id in cache:
+            decks.append(cache[deck_id])
+            continue
+        on_progress(f"Fetching deck {n}/{total}...")
+        deck = curiosa.fetch_deck_by_id(deck_id)
+        if deck:
+            decks.append(deck)
+            cache[deck_id] = deck
+            _save_import_cache(event_id, cache)
+        else:
+            errors.append(
+                f"Could not fetch deck {n} ({player.get('name') or deck_id}); "
+                "it may be private or sorcerytcg.com did not answer"
+            )
+
+    if not decks:
+        return {
+            "success": False,
+            "error": "No decks could be fetched. They may be private.",
+            "fetch_errors": errors,
+        }
+
+    # Step 3: Re-sort fetched decks by standing order
+    # Build deck_id -> standing index from the discovery order
+    deck_id_order = {p["deck_id"]: idx for idx, p in enumerate(players)}
+    decks.sort(key=lambda d: deck_id_order.get(d.get("id", ""), 9999))
+
+    # Split into top cut and bulk
+    top8_decks = decks[:top_cut]
+    bulk_decks = decks[top_cut:] if len(decks) > top_cut else None
+
+    on_progress("Creating event...")
+    repo = EventRepository()
+    result = repo.create_event(title, top8_decks, bulk_decks)
+
+    if result.get("success"):
+        _clear_import_cache(event_id)
+        result["folder"] = title
+        result["top8_added"] = len(top8_decks)
+        result["bulk_added"] = len(bulk_decks) if bulk_decks else 0
+        result["event_name"] = discovery["event_name"]
+        # Pairings came back with the discovery call, so store them too
+        if discovery.get("match_history"):
+            repo.save_match_history(title, {
+                "event_id": discovery.get("event_id", ""),
+                "event_url": event_url,
+                "event_title": discovery["event_name"],
+                "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "players": discovery["match_history"],
+            })
+            result["match_history_players"] = len(discovery["match_history"])
+        if discovery["event_date"]:
+            # Auto-set the event date from sorcerytcg.com
+            repo.update_event_metadata(
+                title, event_date=discovery["event_date"]
+            )
+            result["event_date"] = discovery["event_date"]
+        result["attendance"] = _attendance(discovery)
+        result["local"] = _record_event_size(title, result["attendance"])
+        if errors:
+            result["warnings"] = errors
+    return result
+
+
 @_job_worker
 def _run_event_import(job_id, title, event_url):
     """Background worker for importing an event from a sorcerytcg.com URL."""
     try:
-        from services.curiosa import CuriosaService
-        curiosa = CuriosaService()
-
         def on_progress(msg):
             _write_job(job_id, {"status": "processing", "progress": msg})
 
-        # Step 1: Discover deck IDs from event snapshots
-        discovery = curiosa.fetch_event_deck_ids(event_url, on_progress=on_progress)
-        errors = list(discovery.get("errors", []))
-
-        if not discovery["players"]:
-            _write_job(job_id, {
-                "status": "failed",
-                "result": {
-                    "success": False,
-                    "error": "No decks could be discovered from this event.",
-                    "fetch_errors": errors,
-                },
-            })
-            return
-
-        # Use event name as title if not provided, and make sure it's a usable
-        # folder name before spending time fetching every deck
-        if not title:
-            title = discovery["event_name"] or "Imported Event"
-        title, name_error = EventRepository().check_new_folder_name(title)
-        if name_error:
-            _write_job(job_id, {
-                "status": "failed",
-                "result": {"success": False, "error": name_error},
-            })
-            return
-
-        players = discovery["players"]  # already sorted by standing
-        deck_ids = [p["deck_id"] for p in players]
-        top_cut = discovery.get("top_cut_size", 8)
-        on_progress(f"Found {len(deck_ids)} decks, fetching deck data...")
-
-        # Step 2: Fetch full deck data using discovered IDs, one at a time.
-        # A deck that fails is skipped and reported, never retried forever,
-        # and every fetched deck is cached so a rerun resumes from here.
-        event_id = discovery.get("event_id") or curiosa.get_event_id_from_url(event_url)
-        cache = _load_import_cache(event_id)
-        total = len(deck_ids)
-        decks = []
-        for n, player in enumerate(players, 1):
-            deck_id = player["deck_id"]
-            if player.get("deck"):
-                # Built from the event snapshot already; nothing to fetch
-                decks.append(player["deck"])
-                continue
-            if deck_id in cache:
-                decks.append(cache[deck_id])
-                continue
-            on_progress(f"Fetching deck {n}/{total}...")
-            deck = curiosa.fetch_deck_by_id(deck_id)
-            if deck:
-                decks.append(deck)
-                cache[deck_id] = deck
-                _save_import_cache(event_id, cache)
-            else:
-                errors.append(
-                    f"Could not fetch deck {n} ({player.get('name') or deck_id}); "
-                    "it may be private or sorcerytcg.com did not answer"
-                )
-
-        if not decks:
-            _write_job(job_id, {
-                "status": "failed",
-                "result": {
-                    "success": False,
-                    "error": "No decks could be fetched. They may be private.",
-                    "fetch_errors": errors,
-                },
-            })
-            return
-
-        # Step 3: Re-sort fetched decks by standing order
-        # Build deck_id -> standing index from the discovery order
-        deck_id_order = {p["deck_id"]: idx for idx, p in enumerate(players)}
-        decks.sort(key=lambda d: deck_id_order.get(d.get("id", ""), 9999))
-
-        # Split into top cut and bulk
-        top8_decks = decks[:top_cut]
-        bulk_decks = decks[top_cut:] if len(decks) > top_cut else None
-
-        on_progress("Creating event...")
-        repo = EventRepository()
-        result = repo.create_event(title, top8_decks, bulk_decks)
-
-        if result.get("success"):
-            _clear_import_cache(event_id)
-            result["top8_added"] = len(top8_decks)
-            result["bulk_added"] = len(bulk_decks) if bulk_decks else 0
-            result["event_name"] = discovery["event_name"]
-            # Pairings came back with the discovery call, so store them too
-            if discovery.get("match_history"):
-                repo.save_match_history(title, {
-                    "event_id": discovery.get("event_id", ""),
-                    "event_url": event_url,
-                    "event_title": discovery["event_name"],
-                    "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "players": discovery["match_history"],
-                })
-                result["match_history_players"] = len(discovery["match_history"])
-            if discovery["event_date"]:
-                # Auto-set the event date from sorcerytcg.com
-                repo.update_event_metadata(
-                    title, event_date=discovery["event_date"]
-                )
-                result["event_date"] = discovery["event_date"]
-            if errors:
-                result["warnings"] = errors
-
+        result = _import_event(title, event_url, on_progress)
         _write_job(job_id, {
             "status": "completed" if result.get("success") else "failed",
             "result": result,
@@ -1142,6 +1228,288 @@ def reorder_events_list():
 
 
 # Job functions scripts/run_event_job.py may run, by name
+# -- Player submissions -----------------------------------------------------
+#
+# Any logged-in player can send in a sorcerytcg.com event. It waits, unseen,
+# until an admin approves it; the admins get a Discord DM (same queue as the
+# player article DMs). Approving imports it: with deck lists it goes on the
+# Top 8 page (tagged Local under LOCAL_PLAYER_THRESHOLD players); with none,
+# its placings go on players' profiles only, as a badges-only event.
+
+SUBMISSIONS_WAITING_PER_PLAYER = 3
+SUBMISSION_NOTE_MAX = 500
+SUBMISSION_DECK_LINKS_MAX = 32
+
+
+def _submission_repo():
+    from repositories.event_submissions import EventSubmissionRepository
+    return EventSubmissionRepository()
+
+
+def _public_submission(sub, *, admin=False):
+    from services.event_submission_notifications import outcome_text
+    out = {k: sub.get(k) for k in (
+        "id", "event_url", "title", "note", "status", "event_name", "event_date",
+        "player_count", "review_note", "created_at", "reviewed_at",
+    )}
+    result = sub.get("result") or {}
+    out["folder"] = result.get("folder")
+    out["badges_only"] = bool(result.get("badges_only"))
+    out["local"] = bool(result.get("local"))
+    out["deck_links"] = len(sub.get("deck_urls") or [])
+    out["outcome"] = outcome_text(sub)
+    if admin:
+        out["submitter_name"] = sub.get("submitter_name")
+        out["submitter_id"] = sub.get("submitter_id")
+        out["reviewed_by"] = sub.get("reviewed_by")
+        out["error"] = result.get("error") if sub.get("status") == "failed" else None
+    return out
+
+
+def _save_badges_only(event_url, discovery, set_by):
+    """Keep a deck-less event's standings so its placings go on profiles."""
+    from repositories.paper_links import PaperLinkRepository
+
+    standings = [
+        {k: p.get(k) for k in ("registration_id", "display_name", "username", "standing", "wins", "losses", "draws")}
+        for p in discovery.get("match_history") or []
+    ]
+    if not standings:
+        return {"success": False, "error": "No deck lists and no standings were found for this event (has it been played?)."}
+    repo = PaperLinkRepository()
+    event_id = discovery.get("event_id")
+    existing = next((e for e in repo.get_badge_only_events() if e["event_id"] == event_id), None)
+    name = (existing or {}).get("name") or discovery.get("event_name") or "Imported event"
+    top_cut = (existing or {}).get("top_cut") or discovery.get("top_cut_size") or 8
+    event_date = (existing or {}).get("event_date") or discovery.get("event_date")
+    repo.save_badge_only_event(event_id, event_url, name, event_date, top_cut, standings, set_by=set_by)
+    return {"success": True, "badges_only": True, "event_name": name, "players": len(standings)}
+
+
+def _import_linked_submission(sub, deck_urls, on_progress, curiosa):
+    """Create a Top 8 event from a submission's deck links plus its event page."""
+    on_progress("Reading the event page...")
+    page = curiosa.fetch_event_deck_ids(sub["event_url"], with_decks=False)
+    title = sub.get("title") or page.get("event_name") or "Submitted Event"
+    title, name_error = EventRepository().check_new_folder_name(title)
+    if name_error:
+        return {"success": False, "error": name_error, "folder_error": True,
+                "attendance": _attendance(page)}
+    on_progress(f"Fetching {len(deck_urls)} deck list{'s' if len(deck_urls) != 1 else ''}...")
+    decks, errors = curiosa.fetch_decks_batch(deck_urls)
+    if not decks:
+        return {"success": False, "error": "None of the deck links could be read.",
+                "fetch_errors": errors, "attendance": _attendance(page)}
+    result = EventRepository().create_event(title, decks, None)
+    if not result.get("success"):
+        result["folder_error"] = True
+        result["attendance"] = _attendance(page)
+        return result
+    result["folder"] = title
+    result["top8_added"] = len(decks)
+    result["event_name"] = page.get("event_name")
+    result.update(_apply_event_page(title, sub["event_url"], page))
+    if errors:
+        result["warnings"] = errors
+    return result
+
+
+def approve_submission(submission_id, on_progress=lambda msg: None, curiosa=None):
+    """Import an approved submission. Returns the result saved on the row."""
+    from services import event_submission_notifications as notices
+
+    repo = _submission_repo()
+    sub = repo.get(submission_id)
+    if not sub:
+        return {"success": False, "error": "Submission not found"}
+
+    if curiosa is None:
+        from services.curiosa import CuriosaService
+        curiosa = CuriosaService()
+
+    try:
+        result = None
+        player_count = None
+        deck_urls = sub.get("deck_urls") or []
+        if deck_urls:
+            # The player gave the top decks as links (events that only collect
+            # the top lists): decks from the links, size from the event page.
+            result = _import_linked_submission(sub, deck_urls, on_progress, curiosa)
+            player_count = result.get("attendance")
+            if not result.get("success") and not result.get("folder_error"):
+                result = None  # no link worked: import from the event page instead
+        if result is None:
+            discovery = curiosa.fetch_event_deck_ids(sub["event_url"], on_progress=on_progress)
+            player_count = _attendance(discovery)
+            if discovery.get("players"):
+                result = _import_event(sub.get("title") or "", sub["event_url"], on_progress,
+                                       curiosa=curiosa, discovery=discovery)
+                if not result.get("success") and str(result.get("error", "")).startswith("No decks"):
+                    result = None  # every deck private: fall through to badges only
+            if result is None:
+                on_progress("No deck lists, adding placings to profiles...")
+                result = _save_badges_only(sub["event_url"], discovery, sub.get("reviewed_by"))
+        result["player_count"] = player_count
+    except Exception as e:
+        logger.exception("Approving Top 8 submission %s failed: %s", submission_id, e)
+        result = {"success": False, "error": f"Could not import the event: {e}"}
+        player_count = None
+
+    status = "approved" if result.get("success") else "failed"
+    repo.finish(submission_id, status, result, player_count=player_count)
+    if status == "approved":
+        notices.notify_submitter(repo.get(submission_id))
+    return result
+
+
+@_job_worker
+def _run_submission_approval(job_id, submission_id):
+    def on_progress(msg):
+        _write_job(job_id, {"status": "processing", "progress": msg})
+
+    result = approve_submission(submission_id, on_progress)
+    _write_job(job_id, {
+        "status": "completed" if result.get("success") else "failed",
+        "result": result,
+    })
+
+
+@_job_worker
+def _run_submission_preview(job_id, submission_id):
+    """Read the event's name, date and size, then DM the admins about it."""
+    from services import event_submission_notifications as notices
+
+    repo = _submission_repo()
+    try:
+        sub = repo.get(submission_id)
+        if sub:
+            try:
+                from services.curiosa import CuriosaService
+                discovery = CuriosaService().fetch_event_deck_ids(sub["event_url"], with_decks=False)
+                repo.set_preview(
+                    submission_id, discovery.get("event_name") or None,
+                    discovery.get("event_date"), discovery.get("player_count"),
+                )
+                sub = repo.get(submission_id)
+            except Exception as e:
+                logger.warning("Preview of Top 8 submission %s failed: %s", submission_id, e)
+            notices.notify_admins(sub)
+    finally:
+        _delete_job(job_id)
+
+
+@events_bp.route("/events/submissions", methods=["POST"])
+@require_auth
+def submit_event():
+    """A logged-in player sends in a sorcerytcg.com event for the Top 8 page."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"success": False, "error": "Log in with Discord or Google first."}), 401
+
+    data = request.get_json(silent=True) or {}
+    event_url = (data.get("event_url") or "").strip()
+    title = (data.get("title") or "").strip()
+    note = (data.get("note") or "").strip()
+    raw_links = data.get("deck_urls") or []
+    if isinstance(raw_links, str):
+        raw_links = raw_links.splitlines()
+    if not isinstance(raw_links, list):
+        return jsonify({"success": False, "error": "deck_urls must be a list"}), 400
+    deck_urls = [u.strip() for u in raw_links if isinstance(u, str) and u.strip()]
+    if len(deck_urls) > SUBMISSION_DECK_LINKS_MAX:
+        return jsonify({"success": False, "error": f"Up to {SUBMISSION_DECK_LINKS_MAX} deck links, please."}), 400
+    if any(len(u) > 300 or not u.startswith(("https://curiosa.io/", "https://sorcerytcg.com/", "https://www.sorcerytcg.com/")) for u in deck_urls):
+        return jsonify({"success": False, "error": "Deck links must be curiosa.io or sorcerytcg.com deck links."}), 400
+
+    from services.curiosa import CuriosaService
+    event_id = CuriosaService.get_event_id_from_url(event_url) if event_url else None
+    if not event_id:
+        return jsonify({"success": False, "error": "Paste a sorcerytcg.com event link (sorcerytcg.com/events/...)."}), 400
+    if len(title) > 120:
+        return jsonify({"success": False, "error": "The title is too long (120 characters max)."}), 400
+    if len(note) > SUBMISSION_NOTE_MAX:
+        return jsonify({"success": False, "error": f"The note is too long ({SUBMISSION_NOTE_MAX} characters max)."}), 400
+
+    from services import paper_finishes
+    if paper_finishes.top8_event_ids().get(event_id):
+        return jsonify({"success": False, "error": "This event is already on the Top 8 page."}), 409
+    from repositories.paper_links import PaperLinkRepository
+    if any(e["event_id"] == event_id for e in PaperLinkRepository().get_badge_only_events()):
+        return jsonify({"success": False, "error": "This event has already been added to player profiles."}), 409
+
+    repo = _submission_repo()
+    if repo.open_for_event(event_id):
+        return jsonify({"success": False, "error": "Someone already sent in this event. It is waiting for approval."}), 409
+    if not is_admin() and repo.count_open_for_submitter(user_id) >= SUBMISSIONS_WAITING_PER_PLAYER:
+        return jsonify({"success": False, "error": f"You have {SUBMISSIONS_WAITING_PER_PLAYER} events waiting already. Please wait for those to be checked."}), 429
+
+    sub = repo.create(
+        event_url, event_id, title, note, str(user_id),
+        session.get("global_name") or session.get("username") or "A player",
+        session.get("auth_provider"),
+        deck_urls=deck_urls,
+    )
+    job_id = str(uuid.uuid4())
+    _write_job(job_id, {"status": "processing", "progress": "Reading event..."})
+    _start_job(_run_submission_preview, (job_id, sub["id"]))
+    return jsonify({"success": True, "submission": _public_submission(sub)}), 201
+
+
+@events_bp.route("/events/submissions/mine")
+@require_auth
+def my_submissions():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"submissions": []})
+    subs = _submission_repo().list_for_submitter(str(user_id))
+    return jsonify({"submissions": [_public_submission(s) for s in subs]})
+
+
+@events_bp.route("/events/submissions")
+@require_admin
+def list_submissions():
+    status = request.args.get("status") or None
+    subs = _submission_repo().list_all(status)
+    return jsonify({"submissions": [_public_submission(s, admin=True) for s in subs]})
+
+
+def _reviewer_name():
+    return session.get("username") or "admin"
+
+
+@events_bp.route("/events/submissions/<int:submission_id>/approve", methods=["POST"])
+@require_admin
+def approve_submission_route(submission_id):
+    note = ((request.get_json(silent=True) or {}).get("note") or "").strip()[:SUBMISSION_NOTE_MAX]
+    repo = _submission_repo()
+    if not repo.get(submission_id):
+        return jsonify({"success": False, "error": "Submission not found"}), 404
+    if not repo.claim_for_import(submission_id, _reviewer_name(), note):
+        return jsonify({"success": False, "error": "This one has already been handled."}), 409
+
+    job_id = str(uuid.uuid4())
+    _write_job(job_id, {"status": "processing", "progress": "Importing event..."})
+    _start_job(_run_submission_approval, (job_id, submission_id))
+    return jsonify({"success": True, "job_id": job_id}), 202
+
+
+@events_bp.route("/events/submissions/<int:submission_id>/reject", methods=["POST"])
+@require_admin
+def reject_submission_route(submission_id):
+    from services import event_submission_notifications as notices
+
+    note = ((request.get_json(silent=True) or {}).get("note") or "").strip()[:SUBMISSION_NOTE_MAX]
+    repo = _submission_repo()
+    if not repo.get(submission_id):
+        return jsonify({"success": False, "error": "Submission not found"}), 404
+    if not repo.reject(submission_id, _reviewer_name(), note):
+        return jsonify({"success": False, "error": "This one has already been handled."}), 409
+    sub = repo.get(submission_id)
+    notices.notify_submitter(sub)
+    return jsonify({"success": True, "submission": _public_submission(sub, admin=True)})
+
+
+
 JOB_TARGETS = {
     fn.__name__: fn
     for fn in (
@@ -1150,5 +1518,7 @@ JOB_TARGETS = {
         _run_event_refresh,
         _run_event_import,
         _run_match_history_import,
+        _run_submission_approval,
+        _run_submission_preview,
     )
 }

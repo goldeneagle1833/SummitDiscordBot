@@ -202,23 +202,17 @@ describe('Store storefront tabs', () => {
     expect(screen.queryByRole('link', { name: 'Apply to have a storefront' })).not.toBeInTheDocument()
   })
 
-  it('links to the Summit shirts in a new tab on the Summit Store tab only', async () => {
+  it('no longer shows the Crit Apparel shirts card', async () => {
     renderStore()
-    const link = await screen.findByRole('link', { name: /Summit T-Shirts/ })
-    expect(link).toHaveAttribute('href', 'https://critapparel.com/collections/sorcerersummit')
-    expect(link).toHaveAttribute('target', '_blank')
-    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
-    expect(screen.getByText('Fire Token')).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('tab', { name: /Explorer Store/ }))
+    expect(await screen.findByText('Fire Token')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Summit T-Shirts/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Crit Apparel/)).not.toBeInTheDocument()
   })
 
-  it('still shows the shirts link when the Summit Store has nothing else for sale', async () => {
+  it('says nothing is for sale when the Summit Store is empty', async () => {
     getProducts.mockResolvedValue({ products: [MAT] })
     renderStore()
-    expect(await screen.findByRole('link', { name: /Summit T-Shirts/ })).toBeInTheDocument()
-    expect(screen.queryByText(/Nothing for sale/)).not.toBeInTheDocument()
+    expect(await screen.findByText(/Nothing for sale/)).toBeInTheDocument()
   })
 
   it('shows one storefront at a time', async () => {
@@ -285,5 +279,39 @@ describe('Store storefront tabs', () => {
     await userEvent.click(await screen.findByLabelText('Add one Explorer Mat'))
     await userEvent.click(screen.getByRole('button', { name: /Checkout/ }))
     expect(screen.getByText(/checkout page/)).toBeInTheDocument()
+  })
+})
+
+describe('Explorer Series storefront', () => {
+  const SUMMIT = { id: 1, slug: 'summit', name: 'Summit Store', accepts_payments: true }
+  const EXPLORER = { id: 2, slug: 'explorer-series', name: 'Explorer Series Art Prints', accepts_payments: true }
+  const PRINT = { ...TOKEN, id: 9, name: 'Compass Print', storefront_id: 2 }
+  const SUMMIT_TOKEN = { ...TOKEN, storefront_id: 1 }
+
+  beforeEach(() => {
+    sessionStorage.clear()
+    useAuth.mockReturnValue({ user: false, loading: false })
+    getStorefronts.mockResolvedValue({ storefronts: [SUMMIT, EXPLORER] })
+    getProducts.mockResolvedValue({ products: [SUMMIT_TOKEN, PRINT] })
+  })
+
+  it('is not a tab on /store any more', async () => {
+    renderStore()
+    await screen.findByText('Fire Token')
+    expect(screen.queryByRole('tab', { name: /Explorer Series/ })).toBeNull()
+    expect(screen.queryByText('Compass Print')).toBeNull()
+  })
+
+  it('shows on its own, with no tabs, in the Explorer Series shop', async () => {
+    renderWithRouter(
+      <Routes>
+        <Route path="/explorer-series/shop" element={<Store storefrontSlug="explorer-series" />} />
+      </Routes>,
+      { route: '/explorer-series/shop' },
+    )
+    await screen.findByText('Compass Print')
+    expect(screen.getByRole('heading', { name: 'Explorer Series Art Prints' })).toBeInTheDocument()
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByText('Fire Token')).toBeNull()
   })
 })

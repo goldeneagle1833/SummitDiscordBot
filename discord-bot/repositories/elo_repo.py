@@ -17,7 +17,9 @@ logger = logging.getLogger("discord_bot")
 # Match types that skip ELO updates. Do NOT reuse this for Curiosa deck-URL
 # gates in match_reporting.py / persistent_confirm.py — those stay as
 # ("testing", "rumble") because Omens ("points") still requires a deck.
-NON_ELO_MATCH_TYPES = ("testing", "rumble", "points")
+# "precon" games never reach match_records (they have their own Glicko-2 ladder);
+# listing it here keeps ranked ELO safe if one ever does.
+NON_ELO_MATCH_TYPES = ("testing", "rumble", "points", "precon")
 NON_ELO_MATCH_TYPES_SQL = ", ".join(f"'{t}'" for t in NON_ELO_MATCH_TYPES)
 
 # Sources that are rated but are not season games. Postseason bracket matches

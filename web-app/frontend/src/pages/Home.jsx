@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { get } from '@/api/client'
-import { getEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
+import { getEventLeaderboard, getLimitedLeaderboard, getPreconStandings } from '@/api/leaderboard'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
+import { PreconLadder, preconSeasonText } from '@/components/leaderboard/PreconLadderContent'
 import PostseasonName, { PostseasonLegend } from '@/components/player/BracketMarks'
 import AvatarBadges, { AvatarCell } from '@/components/leaderboard/AvatarBadges'
 import { getAvatarImageFiles, getSeasonAvatarBadges } from '@/api/cards'
@@ -531,16 +532,18 @@ function YouTubeVideos() {
 const STORAGE_KEY = 'home_elo_source_preference'
 
 // Paper is hidden: nobody plays on the paper ladder
-const SOURCE_LABELS = { online: 'Online', limited: 'Limited' }
+const SOURCE_LABELS = { online: 'Online', limited: 'Limited', precon: 'LM / FM' }
+const SOURCES = Object.keys(SOURCE_LABELS)
 
 function EloToggle({ source, onChange }) {
   return (
     <div className="inline-flex bg-bg-surface border border-border rounded-soft overflow-hidden">
-      {['online', 'limited'].map((s) => (
+      {SOURCES.map((s) => (
         <button
           key={s}
           onClick={() => onChange(s)}
-          className={`px-4 py-1.5 text-sm font-medium transition-colors capitalize ${
+          title={s === 'precon' ? 'Lavamancer vs Frostmage precon ladder' : undefined}
+          className={`px-4 py-1.5 text-sm font-medium transition-colors ${
             source === s
               ? 'bg-brand-blue text-white'
               : 'text-text-muted hover:bg-bg-elevated hover:text-primary'
@@ -800,8 +803,16 @@ export default function Home() {
   usePageTitle('Sorcerers Summit')
   const { user } = useAuth()
   const [source, setSource] = useState(() => {
+    // Discord links to the precon ladder with ?ladder=precon
     try {
-      return localStorage.getItem(STORAGE_KEY) === 'limited' ? 'limited' : 'online'
+      const fromLink = new URLSearchParams(window.location.search).get('ladder')
+      if (SOURCES.includes(fromLink)) return fromLink
+    } catch {
+      // fall through to the saved choice
+    }
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      return SOURCES.includes(saved) ? saved : 'online'
     } catch {
       return 'online'
     }
@@ -823,7 +834,10 @@ export default function Home() {
   const fetchLeaderboard = useCallback(async (src) => {
     setLoading(true)
     try {
-      if (src === 'limited') {
+      if (src === 'precon') {
+        const data = await getPreconStandings()
+        setEventData({ precon: true, ...data })
+      } else if (src === 'limited') {
         const data = await getLimitedLeaderboard()
         const lb = data.leaderboard || data
         const stats = data.stats || {}
@@ -896,12 +910,13 @@ export default function Home() {
   }
 
   const isLimited = eventData?.limited === true
-  const hasEvent = isLimited || eventData?.event != null
+  const isPrecon = eventData?.precon === true
+  const hasEvent = isLimited || isPrecon || eventData?.event != null
   const leaderboard = eventData?.leaderboard || []
   const avatarMode = eventData?.event?.elo_mode === 'avatar'
   const endsText = eventEndsText(eventData?.event?.scheduled_end_at)
   // Limited already lists each player once, so Filtered only applies to avatar seasons
-  const canFilter = !isLimited && avatarMode
+  const canFilter = !isLimited && !isPrecon && avatarMode
   const filtered = canFilter && bestOnly
 
   return (
@@ -960,7 +975,21 @@ export default function Home() {
       ) : hasEvent ? (
         <section id={LEADERBOARD_ANCHOR} className="scroll-mt-20">
           <div className="flex flex-wrap justify-between items-end gap-4 mb-5">
-            {isLimited ? (
+            {isPrecon ? (
+              <div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h2 className="text-3xl font-display text-white">
+                    {eventData.season?.name || 'Lavamancer vs Frostmage Ladder'}
+                  </h2>
+                  <span className="text-[11px] font-bold tracking-[0.12em] uppercase px-2.5 py-1 rounded-full bg-brand-panel border border-brand-line">
+                    <span className="text-orange-300">LM</span> <span className="text-text-muted">vs</span> <span className="text-sky-300">FM</span>
+                  </span>
+                </div>
+                <p className="text-sm text-text-muted mt-1">
+                  Lavamancer vs Frostmage precon ladder{eventData.season ? ` · ${preconSeasonText(eventData.season)}` : ''}
+                </p>
+              </div>
+            ) : isLimited ? (
               <div>
                 <h2 className="text-3xl font-display text-white">Limited Format Leaderboard</h2>
                 <p className="text-sm text-text-muted mt-1">Rankings for limited format matches</p>
@@ -980,7 +1009,9 @@ export default function Home() {
               {canFilter && <FilterToggle active={bestOnly} onChange={handleBestOnlyChange} />}
             </div>
           </div>
-          {isLimited ? (
+          {isPrecon ? (
+            <PreconLadder data={eventData} />
+          ) : isLimited ? (
             <>
               {eventData.stats?.unique_players > 0 && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">

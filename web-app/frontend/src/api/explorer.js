@@ -66,3 +66,24 @@ export const fetchUnmappedEvents = () => get('/api/explorer/events/unmapped')
 
 export const geocodeEvent = (eventId) =>
   post(`/api/explorer/events/${eventId}/geocode`)
+
+// Plain links so the browser downloads the file with the session cookie.
+export const leaderboardExportUrl = (seasonId, view = 'standings') =>
+  `/api/explorer/leaderboard/${seasonId}/export.csv?view=${view}`
+
+// The Explorer Series site's editable text (hero, links, sections)
+export const fetchSiteContent = () => get('/api/explorer/site-content')
+export const saveSiteContent = (content) => post('/api/explorer/site-content', content)
+
+// Uploads pictures for the Explorer Series site; resolves to { urls }.
+export const uploadSiteImages = (files) => {
+  const fd = new FormData()
+  for (const file of files) fd.append('image', file)
+  return fetch('/api/explorer/upload-image', { method: 'POST', body: fd, credentials: 'include' })
+    .then(async (res) => {
+      const d = await res.json().catch(() => ({}))
+      if (res.status === 413) throw new Error('Those pictures are too big to send together. Try fewer at a time.')
+      if (!res.ok || !d.success) throw new Error(d.error || res.statusText)
+      return d
+    })
+}

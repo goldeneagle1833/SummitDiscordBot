@@ -134,4 +134,16 @@ describe('StoreOrderPrint', () => {
     renderPrint('/admin/store/orders/999/print')
     expect(await screen.findByText('Order not found')).toBeInTheDocument()
   })
+
+  it('prints paired orders on one slip', async () => {
+    const second = { ...ORDER, id: 43, order_number: 'SUM-20260930-DEF456', subtotal_cents: 500, shipping_cents: 0,
+      total_cents: 500, items: [{ id: 9, sku: 'TOK-AIR', product_name: 'Air Token', unit_price_cents: 500, quantity: 1 }] }
+    adminGetOrder.mockImplementation((id) => Promise.resolve({ order: String(id) === '43' ? second : ORDER }))
+    renderPrint('/admin/store/orders/42/print?with=43')
+    expect(await screen.findByText('Order Numbers: SUM-20260930-ABC123, SUM-20260930-DEF456', { selector: '.slip-order-number' }))
+      .toBeInTheDocument()
+    expect(screen.getByText('Air Token')).toBeInTheDocument()
+    expect(screen.getByText('Fire Token')).toBeInTheDocument()
+    expect(screen.getByText('$25.99')).toBeInTheDocument()
+  })
 })

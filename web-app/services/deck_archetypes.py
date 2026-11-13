@@ -291,17 +291,18 @@ def summarize(cluster_: Cluster, views: list[DeckView]) -> dict:
 def detail(views: list[DeckView]) -> dict:
     """Cards, picks and decks for one archetype's panel.
 
-    Card stats use every deck in the group. Recommended lists only come from
-    decks on the Top 8 page and are picked on tournament results alone; the
-    deck list only shows tournament decks."""
-    top8_page = [v for v in views if v.deck.on_top8_page and v.entries]
-    picks = [(top8_page[0], "Representative deck")] if top8_page else []
-    placed = [v for v in top8_page if v.best_placement is not None]
+    Card stats use every deck in the group. Recommendations come from
+    eligible tournament decklists, including historical seed data, and are
+    selected by tournament results, never ranked-only performance.
+    The member list shows all eligible tournament decklists."""
+    tournament_decks = [v for v in views if v.entries]
+    picks = [(tournament_decks[0], "Representative deck")] if tournament_decks else []
+    placed = [v for v in tournament_decks if v.best_placement is not None]
     if placed:
         # min() keeps the first of equals, and views are central-first.
         finisher = min(placed, key=lambda v: v.best_placement)
         picks.append((finisher, f"Best finish: #{finisher.best_placement}"))
-    repeat = [v for v in top8_page if len({e.event for e in v.entries}) > 1]
+    repeat = [v for v in tournament_decks if len({e.event for e in v.entries}) > 1]
     if repeat:
         most = max(repeat, key=lambda v: len({e.event for e in v.entries}))
         picks.append((most, f"Most tournaments: {len({e.event for e in most.entries})}"))

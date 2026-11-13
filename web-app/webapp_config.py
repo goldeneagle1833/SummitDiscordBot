@@ -45,6 +45,12 @@ BANNER_UPLOADS_DIR = STATIC_DIR / "uploads" / "banners"
 BANNER_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 STORE_UPLOADS_DIR = STATIC_DIR / "uploads" / "store"
 STORE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+# Pictures for the Explorer Series site
+EXPLORER_UPLOADS_DIR = STATIC_DIR / "uploads" / "explorer"
+EXPLORER_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+# Hall maps for the in-person "find a player" page
+EVENT_MAP_UPLOADS_DIR = STATIC_DIR / "uploads" / "event-maps"
+EVENT_MAP_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 # Player article PDFs live OUTSIDE static/ so nothing is served directly:
 # every download goes through /api/articles/<id>/pdf, which checks status.
 ARTICLE_UPLOADS_DIR = Path(
@@ -107,12 +113,74 @@ GOOGLE_REDIRECT_URI = os.environ.get(
 # roster so the bracket seed pool matches the bot's leaderboard message.
 DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", os.environ.get("TOKEN", ""))
 
-# Roles that mark a player as a Summit ticket holder (same roles the bot uses)
+def _bot_config_set(name: str, path: Path | None = None) -> set[str]:
+    """A set of ids written in the bot's config.py, as strings.
+
+    Read with ast, never imported, so nothing in the bot's config runs here.
+    Handles literals ({1, 2}, [1, 2], 3), names of other literal settings in
+    the same file ({TICKET_ROLE_ID, PATREON_ROLE_ID}), int("...") and
+    set()/frozenset() around those. Empty when the file is missing or the
+    value is anything else.
+    """
+    import ast
+
+    path = path or (Path(__file__).parent.parent / "discord-bot" / "config.py")
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, ValueError):
+        return set()
+
+    assigned = {}
+    for node in tree.body:
+        targets, value = [], None
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = [node.target], node.value
+        for t in targets:
+            if isinstance(t, ast.Name):
+                assigned[t.id] = value  # the last assignment wins, as in Python
+
+    def evaluate(node, depth=0):
+        if depth > 5:
+            raise ValueError("too deep")
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, str)):
+            return [node.value]
+        if isinstance(node, (ast.Set, ast.List, ast.Tuple)):
+            return [v for elt in node.elts for v in evaluate(elt, depth + 1)]
+        if isinstance(node, ast.Name) and node.id in assigned:
+            return evaluate(assigned[node.id], depth + 1)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in ("int", "str", "set", "frozenset", "list", "tuple")
+            and not node.keywords
+            and len(node.args) <= 1
+        ):
+            return [v for arg in node.args for v in evaluate(arg, depth + 1)]
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.BitOr, ast.Add)):
+            return evaluate(node.left, depth + 1) + evaluate(node.right, depth + 1)
+        raise ValueError("not a plain value")
+
+    if name not in assigned:
+        return set()
+    try:
+        values = evaluate(assigned[name])
+    except ValueError:
+        return set()
+    return {str(v).strip() for v in values if str(v).strip() not in ("", "0")}
+
+
+# Roles that mark a player as a Summit ticket holder. The bot's Discord
+# leaderboard message decides with config.TICKET_HOLDER_ROLE_IDS (which takes
+# in Patreon supporters too), so the site reads the same list and adds any set
+# in the environment. Everything ranking ticket holders on the site (bracket
+# seeding, /standings, the partner leaderboard) then matches the bot.
 TICKET_HOLDER_ROLE_IDS = {
     r.strip()
     for r in os.environ.get("TICKET_HOLDER_ROLE_IDS", "").split(",")
     if r.strip() and r.strip() != "0"
-}
+} | _bot_config_set("TICKET_HOLDER_ROLE_IDS")
 
 # Who may create community brackets: these Discord roles, or when none are
 # set, the server role with this name (looked up with the bot token).

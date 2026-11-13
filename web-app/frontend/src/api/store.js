@@ -2,6 +2,9 @@ import { get, post, put, patch, del } from './client'
 
 // Buyer
 export const getProducts = () => get('/api/store/products')
+// Private (link only) listing, by the token in its link
+export const getPrivateProduct = (token) =>
+  get(`/api/store/private/${encodeURIComponent(token)}`)
 export const getStorefronts = () => get('/api/store/storefronts')
 export const searchMembers = (q) => get(`/api/store/user-search?q=${encodeURIComponent(q)}`)
 export const getCheckoutPrefill = () => get('/api/store/checkout/prefill')
@@ -37,6 +40,16 @@ export const adminUpdateProduct = (id, data) =>
     }
     return res.json()
   })
+// product_ids: every product of that storefront, first shown first
+export const adminReorderProducts = (storefrontId, productIds) =>
+  post('/api/store/admin/products/reorder', { storefront_id: storefrontId, product_ids: productIds })
+// Private = off /store, sold by its own link. newLink swaps the link (old QR stops working).
+export const adminSetProductPrivate = (id, isPrivate, newLink = false) =>
+  post(`/api/store/admin/products/${id}/private`, { private: isPrivate, new_link: newLink })
+export const adminProductQrUrl = (id, { download = false, bust = '' } = {}) =>
+  `/api/store/admin/products/${id}/qr.png?${download ? 'download=1&' : ''}v=${encodeURIComponent(bust)}`
+export const adminProductSignUrl = (id, bust = '') =>
+  `/api/store/admin/products/${id}/qr-sign.pdf?v=${encodeURIComponent(bust)}`
 export const adminDeactivateProduct = (id) =>
   post(`/api/store/admin/products/${id}/deactivate`)
 // Uploads one or more image files; resolves to { url, urls } in upload order.
@@ -72,6 +85,9 @@ export const adminShipOrder = (id, tracking_number, tracking_carrier) =>
   post(`/api/store/admin/orders/${id}/ship`, { tracking_number, tracking_carrier })
 export const adminSetOrderStatus = (id, status) =>
   post(`/api/store/admin/orders/${id}/status`, { status })
+// Pair paid orders from one buyer so they ship in one package
+export const adminPairOrders = (order_ids) => post('/api/store/admin/orders/pair', { order_ids })
+export const adminUnpairOrder = (id) => post(`/api/store/admin/orders/${id}/unpair`, {})
 
 // Storefronts, their admins, and applications (full store admins)
 export const adminCreateStorefront = (data) => post('/api/store/admin/storefronts', data)

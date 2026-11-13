@@ -1244,7 +1244,10 @@ def _timeline_event_filter():
 
 
 def _timeline_decks(event_filter):
-    """Yield (day, deck, is_win) for each Discord deck under an event filter.
+    """Yield (day, deck, is_win, match_no) for each Discord deck under an event filter.
+
+    Both decks of one match share a match_no (winner first); rows that only hold
+    one deck get a number of their own.
 
     Rows are read from the database one at a time and each deck's JSON is
     parsed once, so a build never holds the whole match archive in memory.
@@ -1269,7 +1272,7 @@ def _timeline_decks(event_filter):
             except (TypeError, ValueError):
                 return None
 
-        for row in rows:
+        for match_no, row in enumerate(rows):
             day = str(row[-1] or "")[:10]
             try:
                 date.fromisoformat(day)
@@ -1279,11 +1282,11 @@ def _timeline_decks(event_filter):
                 for deck_json, is_win in ((row[0], True), (row[1], False)):
                     deck = parsed(deck_json)
                     if deck:
-                        yield day, deck, is_win
+                        yield day, deck, is_win, match_no
             else:
                 deck = parsed(row[1])
                 if deck:
-                    yield day, deck, bool(row[0])
+                    yield day, deck, bool(row[0]), match_no
     except sqlite3.OperationalError as e:
         logger.warning(f"Could not read element timeline: {e}")
     finally:
@@ -1316,13 +1319,24 @@ def _build_timeline(event_filter):
         pair = group.setdefault(key, [0, 0])
         pair[0 if is_win else 1] += 1
 
-    for day, deck, is_win in _timeline_decks(event_filter):
+    matchups = {}
+    winner = None  # (match_no, "Avatar|Air / Fire") of the last winning deck
+
+    for day, deck, is_win, match_no in _timeline_decks(event_filter):
         name = _deck_avatar_name(deck)
         elements, counts, dominant, splash, combo = _deck_element_profile(deck, card_elements)
+        pair = _element_pair(counts)
         if name:
             avatar_totals[day] += 1
             avatars.setdefault(name, Counter())[day] += 1
-            pairs.setdefault(f"{name}|{_element_pair(counts)}", Counter())[day] += 1
+            pairs.setdefault(f"{name}|{pair}", Counter())[day] += 1
+        # Deck type matchups: winner "Avatar|pair" > loser "Avatar|pair", per day.
+        side = f"{name}|{pair}" if name and pair else None
+        if is_win:
+            winner = (match_no, side)
+        elif side and winner and winner[0] == match_no and winner[1]:
+            key = f"{winner[1]}>{side}"
+            matchups.setdefault(day, Counter())[key] += 1
 
         if not elements and not combo:
             continue
@@ -1343,6 +1357,8 @@ def _build_timeline(event_filter):
             "avatars": {name: dict(counts) for name, counts in avatars.items()},
             "pairs": {key: dict(counts) for key, counts in pairs.items()},
             "daily_totals": dict(avatar_totals),
+            # {day: {"Winner Avatar|pair>Loser Avatar|pair": games}}; totals only
+            "matchups": {day: dict(c) for day, c in matchups.items()},
         },
         "elements": {"dates": _date_range(element_days), "days": element_days},
     }
@@ -1364,8 +1380,13 @@ _timeline_lock = threading.Lock()
 _EVENT_FILTER_RE = re.compile(r"^(all|current|\d{1,9}|season_[A-Za-z0-9_-]{1,40})$")
 
 
+# Bump when the build's output changes, so a deploy never serves an older
+# shape from the shared cache files (v2: avatar-meta "matchups").
+_TIMELINE_VERSION = 2
+
+
 def _timeline_file(event_filter):
-    return _TIMELINE_CACHE_DIR / f"elements-timeline-{event_filter}.json"
+    return _TIMELINE_CACHE_DIR / f"elements-timeline-v{_TIMELINE_VERSION}-{event_filter}.json"
 
 
 def _fresh_timeline_file(path):

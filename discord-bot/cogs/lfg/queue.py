@@ -55,6 +55,7 @@ from services.avatar_mode import (
     set_avatar_ladder_stakes,
 )
 from services.ranked_eligibility import ranked_block_message
+from services.precon_ladder import normalize_precon, precon_choices, precon_label
 from utils.deck_checker import clean_deck_url
 
 logger = logging.getLogger("discord_bot")
@@ -609,9 +610,66 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
         )
 
 
+PRECON_REQUIRED_MESSAGE = "Pick Lavamancer or Frostmage to join the precon queue."
+
+
+def build_precon_select():
+    """Lavamancer / Frostmage dropdown for the precon join modal."""
+    return discord.ui.Select(
+        placeholder="Which precon are you playing?",
+        min_values=1,
+        max_values=1,
+        options=[
+            discord.SelectOption(label=f'{choice["label"]} ({choice["short"]})', value=choice["key"])
+            for choice in precon_choices()
+        ],
+    )
+
+
+class PreconQueueModal(discord.ui.Modal, title="Join Precon (LM/FM) Queue"):
+    """Modal for the precon ladder queue: pick Lavamancer or Frostmage, no deck link."""
+
+    timeframe = discord.ui.TextInput(
+        label="Queue Duration (minutes)",
+        placeholder="30",
+        required=False,
+        default="30",
+        max_length=3,
+    )
+
+    def __init__(self, bot, voice_answers=None):
+        super().__init__()
+        self.bot = bot
+        self.remove_item(self.timeframe)
+        self.precon_select = build_precon_select()
+        self.add_item(discord.ui.Label(text="Precon", component=self.precon_select))
+        self.add_item(self.timeframe)
+        self.voice_select = add_voice_select(self, voice_answers)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        precon = normalize_precon((self.precon_select.values or [None])[0])
+        if not precon:
+            await interaction.followup.send(PRECON_REQUIRED_MESSAGE, ephemeral=True)
+            return
+        voice, voice_flexible = selected_voice(self.voice_select)
+        remember_voice_answers(interaction.user.id, voice, voice_flexible)
+        await _process_queue_join(
+            self.bot,
+            interaction,
+            "precon",
+            parse_queue_timeframe(self.timeframe.value),
+            None,
+            voice=voice,
+            voice_flexible=voice_flexible,
+            precon=precon,
+        )
+
+
 async def _process_queue_join(
     bot, interaction, queue_type, timeframe_value, deck_url, run_id=None, origin="discord",
     voice=DEFAULT_VOICE, alert_avatar=False, deck_avatar=None, voice_flexible=False, voice_hold=True,
+    precon=None,
 ):
     """Handle queue join flow after modal validation.
 
@@ -620,8 +678,12 @@ async def _process_queue_join(
     the avatar already known for the deck (a recent-deck pick), so it needn't
     be read again.
     """
-    # Limited decks come from a draft run, so Limited has no avatar alert
-    alert_avatar = bool(alert_avatar) and queue_type != "limited"
+    # Limited decks come from a draft run and precons are fixed, so neither has an avatar alert
+    alert_avatar = bool(alert_avatar) and queue_type not in ("limited", "precon")
+    precon = normalize_precon(precon) if queue_type == "precon" else None
+    if queue_type == "precon" and not precon:
+        await interaction.followup.send(PRECON_REQUIRED_MESSAGE, ephemeral=True)
+        return
     # An old "either" answer means both boxes ticked: voice first, no voice OK
     voice_flexible = bool(voice_flexible) or is_legacy_either(voice)
     voice = normalize_voice_preference(voice) or DEFAULT_VOICE
@@ -694,6 +756,7 @@ async def _process_queue_join(
             matched_join_avatar = matched_entry.get("avatar")
             matched_alert_avatar = bool(matched_entry.get("alert_avatar"))
             matched_deck_avatar = matched_entry.get("deck_avatar")
+            matched_precon = matched_entry.get("precon")
             match_type = lfg_cog.resolve_match_type(queue_type, matched_queue_type)
             # Limited has no voice choice, so its match-found DM says neither voice nor no voice.
             match_voice = (
@@ -759,6 +822,7 @@ async def _process_queue_join(
             matched_join_avatar = None
             matched_alert_avatar = False
             matched_deck_avatar = None
+            matched_precon = None
             match_type = None
             match_voice = False
             lfg_cog.add_to_lfg_queue(
@@ -773,6 +837,7 @@ async def _process_queue_join(
                 alert_avatar=alert_avatar,
                 deck_avatar=deck_avatar,
                 voice_flexible=voice_flexible,
+                precon=precon,
             )
             # Who's waiting with which voice answer, so a "we didn't pair" report can be checked
             logger.info(
@@ -830,6 +895,10 @@ async def _process_queue_join(
         joiner_avatar = matched_avatar = None
         if match_type == "ranked" and is_avatar_mode():
             joiner_avatar, matched_avatar = join_avatar, matched_join_avatar
+        elif match_type == "precon":
+            # The precon each player picked rides on the pairing's avatar columns,
+            # so the match messages show it and the result knows who played what.
+            joiner_avatar, matched_avatar = precon_label(precon), precon_label(matched_precon)
 
         try:
             if match_type == "limited":
@@ -889,6 +958,7 @@ async def _process_queue_join(
                         "deck_url": deck_url,
                         "origin": origin,
                         "opponent_name": matched_global,
+                        "precon": precon,
                     },
                     {
                         "discord_user_id": matched_user_id,
@@ -896,6 +966,7 @@ async def _process_queue_join(
                         "deck_url": matched_user_deck_url,
                         "origin": matched_user_origin,
                         "opponent_name": joiner_global,
+                        "precon": matched_precon,
                     },
                 ],
                 voice=bool(match_voice),
@@ -1041,8 +1112,10 @@ async def _process_queue_join(
                 logger.error(f"Failed to assign active player role: {e}")
         run_in_background(finish_pairing(), f"finish pairing {pairing_id}")
     else:
-        queue_label = "Rumble (Omens)" if queue_type == "points" else queue_type.capitalize()
+        queue_label = match_type_presentation(queue_type)[1] if queue_type in ("points", "precon") else queue_type.capitalize()
         deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
+        if precon:
+            deck_msg += f"\n**Precon:** {precon_label(precon)}"
         if join_avatar:
             deck_msg += f"\n**Avatar:** {join_avatar} (locked when your match is made)"
         if queue_has_voice_choice(queue_type):
@@ -1114,6 +1187,7 @@ class JoinQueueButtons(discord.ui.View):
             "testing": self.join_testing_button,
             "limited": self.join_limited_button,
             "rumble": self.join_rumble_button,
+            "precon": self.join_precon_button,
         }
         for queue_type, button in buttons.items():
             definition = queue_definition(queue_type)
@@ -1143,6 +1217,8 @@ class JoinQueueButtons(discord.ui.View):
                 return
         if queue_type == "limited":
             modal = LimitedQueueModal(self.bot)
+        elif queue_type == "precon":
+            modal = PreconQueueModal(self.bot, voice_answers=load_voice_answers(interaction.user.id))
         elif queue_type == "points":
             modal = PointsQueueModal(
                 self.bot, recent_decks=load_recent_decks(interaction.user.id),
@@ -1230,6 +1306,22 @@ class JoinQueueButtons(discord.ui.View):
             )
             return
         await self._handle_join(interaction, "rumble")
+
+    @discord.ui.button(
+        label="🧙 Join Precon (LM/FM)",
+        style=discord.ButtonStyle.primary,
+        custom_id="join_lfg_precon",
+    )
+    async def join_precon_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        if not queue_is_enabled("precon"):
+            await interaction.response.send_message(
+                "The precon queue is only open while a Lavamancer vs Frostmage ladder is running.",
+                ephemeral=True,
+            )
+            return
+        await self._handle_join(interaction, "precon")
 
     @discord.ui.button(
         label="📋 Report Last Match",

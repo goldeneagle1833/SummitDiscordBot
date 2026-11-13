@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
-import { getProducts, getCheckoutPrefill, createCheckout, formatMoney } from '@/api/store'
-import { DEFAULT_STOREFRONT, loadCart, saveCart, reconcileCart } from '@/hooks/useStoreCart'
+import { getProducts, getPrivateProduct, getCheckoutPrefill, createCheckout, formatMoney } from '@/api/store'
+import { DEFAULT_STOREFRONT, loadCart, saveCart, reconcileCart, maxQuantity } from '@/hooks/useStoreCart'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
+import { DEFAULT_SHIPPING_RULES, cartShipping, shippingLabel } from '@/utils/storeShipping'
 
 function CheckoutProgress({ step }) {
   const steps = ['Review', 'Payment', 'Confirmation']
@@ -52,13 +53,19 @@ export default function StoreCheckout() {
   const [params] = useSearchParams()
   // Each storefront checks out on its own, from its own cart
   const storefront = params.get('storefront') || DEFAULT_STOREFRONT
-  const storeUrl = storefront === DEFAULT_STOREFRONT
-    ? '/store'
-    : `/store?storefront=${encodeURIComponent(storefront)}`
+  // A private (link only) listing checks out on its own, outside the cart
+  const privateToken = params.get('private')
+  const privateQty = parseInt(params.get('qty') || '1', 10)
+  const storeUrl = privateToken
+    ? `/store/p/${encodeURIComponent(privateToken)}`
+    : storefront === DEFAULT_STOREFRONT
+      ? '/store'
+      : `/store?storefront=${encodeURIComponent(storefront)}`
 
   const [items, setItems] = useState([])
   const [email, setEmail] = useState('')
   const [freeShipping, setFreeShipping] = useState(false)
+  const [shippingRules, setShippingRules] = useState(DEFAULT_SHIPPING_RULES)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
@@ -69,9 +76,24 @@ export default function StoreCheckout() {
     if (!user) return
     // Build the order from the saved cart and current product data, so a
     // refresh keeps the cart and prices/stock/limits are never stale.
-    Promise.all([
-      getProducts().then((data) => {
+    const loadItems = privateToken
+      ? getPrivateProduct(privateToken).then((data) => {
+        const p = data.product
+        if (data.shipping_rules) setShippingRules(data.shipping_rules)
+        const quantity = Math.min(Number.isFinite(privateQty) && privateQty > 0 ? privateQty : 1, maxQuantity(p))
+        setItems(quantity > 0 ? [{
+          product_id: p.id,
+          quantity,
+          private_token: privateToken,
+          name: p.name,
+          price_cents: p.price_cents,
+          ship_cards: p.ship_cards,
+          shipping_cents: p.shipping_cents,
+        }] : [])
+      })
+      : getProducts().then((data) => {
         const products = data.products || []
+        if (data.shipping_rules) setShippingRules(data.shipping_rules)
         const cart = reconcileCart(loadCart(storefront), products)
         saveCart(cart, storefront)
         setItems(
@@ -82,9 +104,13 @@ export default function StoreCheckout() {
               quantity: cart[p.id],
               name: p.name,
               price_cents: p.price_cents,
+              ship_cards: p.ship_cards,
+              shipping_cents: p.shipping_cents,
             })),
         )
-      }),
+      })
+    Promise.all([
+      loadItems,
       getCheckoutPrefill()
         .then((pre) => {
           if (pre.email) setEmail(pre.email)
@@ -94,7 +120,7 @@ export default function StoreCheckout() {
     ])
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [user, storefront])
+  }, [user, storefront, privateToken, privateQty])
 
   if (authLoading) return <Spinner className="py-20" />
   if (!user) return <Navigate to={`/login?next=${encodeURIComponent(storeUrl)}`} replace />
@@ -105,6 +131,10 @@ export default function StoreCheckout() {
   if (items.length === 0) return <Navigate to={storeUrl} replace />
 
   const subtotal = items.reduce((s, i) => s + i.price_cents * i.quantity, 0)
+  // Known before payment when every listing has its shipping set
+  const shipping = freeShipping
+    ? null
+    : cartShipping(items.map((i) => ({ product: i, quantity: i.quantity })), shippingRules)
 
   const isValidEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
 
@@ -122,7 +152,8 @@ export default function StoreCheckout() {
     setSubmitting(true)
     try {
       const { checkout_url } = await createCheckout({
-        items: items.map(({ product_id, quantity }) => ({ product_id, quantity })),
+        items: items.map(({ product_id, quantity, private_token }) => (
+          private_token ? { product_id, quantity, private_token } : { product_id, quantity })),
         email: trimmed || undefined,
       })
       window.location.assign(checkout_url)
@@ -162,11 +193,33 @@ export default function StoreCheckout() {
             <span className="text-sm text-text-muted">Subtotal</span>
             <span className="text-secondary font-semibold">{formatMoney(subtotal)}</span>
           </div>
-          <p className="text-xs text-text-muted mt-2">
-            {freeShipping
-              ? 'Free shipping \u2014 thank you for your support!'
-              : 'Shipping calculated at payment'}
-          </p>
+          {shipping ? (
+            <>
+              <div className="flex justify-between items-center pt-2">
+                <span className="text-sm text-text-muted">
+                  Shipping
+                  <span className="block text-xs">{shippingLabel(shipping, shippingRules)}</span>
+                </span>
+                <span className="text-sm font-medium">{formatMoney(shipping.cents)}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 mt-2 border-t border-border">
+                <span className="text-sm font-semibold">Total</span>
+                <span className="text-secondary font-semibold">{formatMoney(subtotal + shipping.cents)}</span>
+              </div>
+              {shipping.method === 'envelope' && (
+                <p className="text-xs text-text-muted mt-2">
+                  Add more than {shippingRules.envelope_max_cards} cards and it ships USPS Ground Advantage
+                  for {formatMoney(shippingRules.ground_cents)}.
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-text-muted mt-2">
+              {freeShipping
+                ? 'Free shipping \u2014 thank you for your support!'
+                : 'Shipping calculated at payment'}
+            </p>
+          )}
         </div>
       </div>
 
@@ -224,7 +277,7 @@ export default function StoreCheckout() {
 
       <div className="text-center mt-3">
         <Link to={storeUrl} className="text-sm text-text-muted hover:text-text transition-colors">
-          &larr; Back to store
+          &larr; {privateToken ? 'Back to the listing' : 'Back to store'}
         </Link>
       </div>
     </div>

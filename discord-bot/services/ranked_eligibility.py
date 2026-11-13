@@ -18,6 +18,7 @@ _GAME_TABLES = (
     ("match_records_archive", "winner_id", "losser_id"),
     ("season_match_records", "winner_id", "losser_id"),  # Season 9 onward
     ("rumble_match_records", "winner_id", "losser_id"),
+    ("precon_match_records", "winner_id", "loser_id"),
     ("limited_match_records", "winner_id", "loser_id"),
     ("limited_match_records_archive", "winner_id", "loser_id"),
     ("match_reports_web", "winner_id", "losser_id"),

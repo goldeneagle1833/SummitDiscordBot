@@ -1,9 +1,12 @@
 """Explorer Standings API routes."""
 
+import csv
+import io
 import json
 import logging
+import re
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 from repositories.explorer import ExplorerRepository
 from utils.auth import require_admin, require_explorer_admin
@@ -219,6 +222,94 @@ def get_leaderboard(season_id):
     except Exception as e:
         logger.error(f"Error computing explorer leaderboard: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+STANDINGS_CSV_COLUMNS = [
+    ("rank", "Rank"),
+    ("display_name", "Player"),
+    ("team_name", "Team"),
+    ("grand_explorer", "Grand Explorer"),
+    ("pathfinder_total", "Pathfinder"),
+    ("persecutor_total", "Persecutor"),
+    ("events_played", "Events"),
+    ("qualified", "Qualified"),
+    ("cardeio_user_id", "Player ID"),
+]
+
+RESULTS_CSV_COLUMNS = [
+    ("event_name", "Event"),
+    ("event_date", "Date"),
+    ("venue_name", "Venue"),
+    ("event_total_players", "Event Players"),
+    ("display_name", "Player"),
+    ("team_name", "Team"),
+    ("final_standing", "Place"),
+    ("wins", "Wins"),
+    ("pathfinder", "Pathfinder"),
+    ("persecutor", "Persecutor"),
+    ("grand_explorer", "Grand Explorer"),
+    ("rank", "Series Rank"),
+    ("cardeio_user_id", "Player ID"),
+    ("source_url", "Event Link"),
+]
+
+
+def _csv_safe(value):
+    """Stop spreadsheet apps treating imported names as formulas."""
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if value is None:
+        return ""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
+
+
+def _csv_response(columns, rows, filename):
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([label for _, label in columns])
+    for row in rows:
+        writer.writerow([_csv_safe(row.get(key)) for key, _ in columns])
+    # A BOM lets Excel open names with accents correctly.
+    return Response(
+        "\ufeff" + buffer.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@explorer_bp.route("/leaderboard/<int:season_id>/export.csv")
+@require_explorer_admin
+def export_leaderboard_csv(season_id):
+    """Download a series as CSV. Explorer admins only.
+
+    ``?view=standings`` (default) gives one row per player as the leaderboard
+    shows it; ``?view=results`` gives one row per player per event.
+    """
+    view = request.args.get("view", "standings")
+    if view not in ("standings", "results"):
+        return jsonify({"error": "view must be standings or results"}), 400
+
+    from services.explorer import ExplorerService
+    board = ExplorerService().compute_leaderboard(season_id)
+    if board is None:
+        return jsonify({"error": "Season not found"}), 404
+
+    slug = re.sub(r"[^a-z0-9]+", "-", (board.get("season_name") or "series").lower()).strip("-")
+    slug = slug or f"series-{season_id}"
+    players = board["players"]
+
+    if view == "standings":
+        return _csv_response(STANDINGS_CSV_COLUMNS, players, f"{slug}-standings.csv")
+
+    rows = []
+    for player in players:
+        for result in player["event_results"]:
+            rows.append({**player, **result})
+    rows.sort(key=lambda r: (r.get("event_date") or "", str(r.get("event_id") or ""),
+                             r.get("final_standing") or 10**6))
+    return _csv_response(RESULTS_CSV_COLUMNS, rows, f"{slug}-results.csv")
 
 
 # ── Venue Attendance ──────────────────────────────────────────────────────
@@ -494,3 +585,202 @@ def geocode_event(event_id):
 
     repo.set_event_coordinates(event_id, *coords)
     return jsonify({"success": True, "latitude": coords[0], "longitude": coords[1]})
+
+
+# ── Site content (the Explorer Series mini-site's editable text) ─────────────
+
+SITE_CONTENT_SETTING = "site_content"
+
+# Shown until an Explorer admin saves their own wording.
+DEFAULT_SITE_CONTENT = {
+    "announcement": "",
+    "kicker": "",
+    "title": "The Explorer Series",
+    "intro": (
+        "A player-run annual circuit for Sorcery TCG. The Series promotes a diverse "
+        "range of local events, rewards players who travel to play the game, and "
+        "builds relationships across our communities."
+    ),
+    "discord_url": "",
+    "member_url": "",
+    "show_points_guide": True,
+    "host_title": "Bring the Series to your store",
+    "host_text": (
+        "Each Explorer Series event is run by a local tournament organizer with "
+        "their community of Sorcery players."
+    ),
+    "hero_image": "",
+    "sections": [],
+}
+
+_TEXT_LIMITS = {
+    "announcement": 500, "kicker": 80, "title": 120, "intro": 1500,
+    "host_title": 120, "host_text": 1000,
+}
+_URL_FIELDS = ("discord_url", "member_url")
+MAX_SECTIONS = 20
+MAX_SECTION_TITLE = 120
+MAX_SECTION_BODY = 10000
+MAX_SECTION_IMAGES = 12
+
+# Pictures on the site must be ones uploaded here (or the bundled logo), so
+# the page never pulls images from somewhere else.
+EXPLORER_UPLOAD_URL = "/static/uploads/explorer/"
+_IMAGE_URL_RE = re.compile(
+    r"^/static/(uploads/explorer|images/explorer-series)/[A-Za-z0-9._-]+\.(jpe?g|png|webp|gif)$",
+    re.IGNORECASE,
+)
+
+
+def _clean_image(value) -> str:
+    url = str(value or "").strip()
+    if not url:
+        return ""
+    if not _IMAGE_URL_RE.match(url):
+        raise ValueError("Pictures must be uploaded through the editor")
+    return url
+
+
+def _clean_url(value) -> str:
+    url = str(value or "").strip()
+    if not url:
+        return ""
+    if not re.match(r"^https?://[^\s<>\"']+$", url, re.IGNORECASE) or len(url) > 500:
+        raise ValueError("Links must start with http:// or https://")
+    return url
+
+
+def _clean_site_content(data: dict) -> dict:
+    """Validate an admin's edit. Unknown keys are dropped."""
+    out = dict(DEFAULT_SITE_CONTENT)
+    for key, limit in _TEXT_LIMITS.items():
+        if key in data:
+            text = str(data.get(key) or "").strip()
+            if len(text) > limit:
+                raise ValueError(f"{key} is too long (max {limit} characters)")
+            out[key] = text
+    for key in _URL_FIELDS:
+        if key in data:
+            out[key] = _clean_url(data.get(key))
+    if "show_points_guide" in data:
+        out["show_points_guide"] = bool(data.get("show_points_guide"))
+    if "hero_image" in data:
+        out["hero_image"] = _clean_image(data.get("hero_image"))
+    if "sections" in data:
+        sections = data.get("sections") or []
+        if not isinstance(sections, list):
+            raise ValueError("sections must be a list")
+        if len(sections) > MAX_SECTIONS:
+            raise ValueError(f"At most {MAX_SECTIONS} sections")
+        cleaned = []
+        for s in sections:
+            if not isinstance(s, dict):
+                raise ValueError("Each section needs a title and text")
+            title = str(s.get("title") or "").strip()
+            body = str(s.get("body") or "").strip()
+            images = s.get("images") or []
+            if not isinstance(images, list):
+                raise ValueError("Section pictures must be a list")
+            if len(images) > MAX_SECTION_IMAGES:
+                raise ValueError(f"At most {MAX_SECTION_IMAGES} pictures per section")
+            images = [u for u in (_clean_image(i) for i in images) if u]
+            if not title and not body and not images:
+                continue
+            if len(title) > MAX_SECTION_TITLE:
+                raise ValueError(f"Section titles max {MAX_SECTION_TITLE} characters")
+            if len(body) > MAX_SECTION_BODY:
+                raise ValueError(f"Section text max {MAX_SECTION_BODY} characters")
+            cleaned.append({
+                "title": title, "body": body, "images": images,
+                "hidden": bool(s.get("hidden")),
+            })
+        out["sections"] = cleaned
+    return out
+
+
+def _load_site_content(repo) -> dict:
+    raw = repo.get_setting(SITE_CONTENT_SETTING)
+    content = dict(DEFAULT_SITE_CONTENT)
+    if raw:
+        try:
+            saved = json.loads(raw)
+            if isinstance(saved, dict):
+                content.update({k: v for k, v in saved.items() if k in DEFAULT_SITE_CONTENT})
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("Explorer site content is not valid JSON; using defaults")
+    return content
+
+
+@explorer_bp.route("/site-content")
+def get_site_content():
+    """The Explorer Series site's editable text. Public."""
+    try:
+        return jsonify(_load_site_content(ExplorerRepository()))
+    except Exception as e:
+        logger.error(f"Error reading explorer site content: {e}", exc_info=True)
+        return jsonify(DEFAULT_SITE_CONTENT)
+
+
+@explorer_bp.route("/site-content", methods=["POST"])
+@require_explorer_admin
+def update_site_content():
+    """Save the Explorer Series site's text. Explorer admin only."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Send the content as JSON"}), 400
+    try:
+        content = _clean_site_content(data)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    repo = ExplorerRepository()
+    repo.set_setting(SITE_CONTENT_SETTING, json.dumps(content))
+    return jsonify(_load_site_content(repo))
+
+
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_IMAGES_PER_UPLOAD = 10
+
+
+@explorer_bp.route("/upload-image", methods=["POST"])
+@require_explorer_admin
+def upload_site_image():
+    """Upload pictures for the Explorer Series site (field ``image``).
+
+    Every file is checked before any is saved. Returns ``urls`` in order.
+    """
+    import os
+    import uuid
+
+    from webapp_config import EXPLORER_UPLOADS_DIR
+
+    files = [f for f in request.files.getlist("image") if f and f.filename]
+    if not files:
+        return jsonify({"success": False, "error": "Choose a picture to upload."}), 400
+    if len(files) > MAX_IMAGES_PER_UPLOAD:
+        return jsonify({"success": False, "error": f"Upload up to {MAX_IMAGES_PER_UPLOAD} pictures at a time."}), 400
+
+    staged = []
+    for file in files:
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in ALLOWED_IMAGE_EXTENSIONS:
+            return jsonify({
+                "success": False,
+                "error": f'"{file.filename}" isn\'t a supported picture. Use JPG, PNG, WEBP or GIF.',
+            }), 400
+        file.seek(0, os.SEEK_END)
+        size = file.tell()
+        file.seek(0)
+        if size > MAX_IMAGE_SIZE:
+            return jsonify({
+                "success": False,
+                "error": f'"{file.filename}" is {size / (1024 * 1024):.1f} MB. Pictures must be 10 MB or smaller.',
+            }), 400
+        staged.append((file, f"{uuid.uuid4().hex}{ext}"))
+
+    urls = []
+    for file, filename in staged:
+        file.save(str(EXPLORER_UPLOADS_DIR / filename))
+        urls.append(f"{EXPLORER_UPLOAD_URL}{filename}")
+    logger.info("Explorer site pictures uploaded: %s", ", ".join(urls))
+    return jsonify({"success": True, "urls": urls})

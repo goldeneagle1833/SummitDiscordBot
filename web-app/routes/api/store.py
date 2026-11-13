@@ -23,6 +23,7 @@ from repositories.store import (
     webhook_secret_env,
 )
 from utils.store_auth import is_store_admin, require_store_admin
+from services.store_shipping import shipping_rules
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,9 @@ def _not_found(what: str):
 def list_products():
     repo = _repo()
     products = repo.list_products(include_inactive=False)
+    for p in products:
+        # A listing that was private keeps its link; don't hand it out
+        p.pop("private_token", None)
 
     # Logged-in buyers also get what's left of each monthly limit, so the
     # storefront can cap quantities instead of failing at checkout.
@@ -116,12 +120,46 @@ def list_products():
             if cap is not None:
                 p["remaining_this_month"] = max(0, cap - counts.get(p["id"], 0))
 
-    return jsonify({"products": products})
+    # Card tiers, so checkout can show the shipping before payment
+    return jsonify({"products": products, "shipping_rules": shipping_rules()})
+
+
+@store_bp.route("/store/private/<token>", methods=["GET"])
+def get_private_product(token: str):
+    """A private (link only) listing, for the page its QR code opens."""
+    repo = _repo()
+    product = repo.get_private_product(token)
+    storefront = repo.get_storefront(product["storefront_id"]) if product else None
+    if not product or not storefront:
+        return _not_found("Listing")
+    user_id = session.get("user_id")
+    cap = product["max_per_user_monthly"]
+    if user_id and cap is not None:
+        counts = repo.user_monthly_product_counts(str(user_id))
+        product["remaining_this_month"] = max(0, cap - counts.get(product["id"], 0))
+    return jsonify({
+        "product": product,
+        "storefront": {
+            "id": storefront["id"],
+            "slug": storefront["slug"],
+            "name": storefront["name"],
+            "shipping_note": storefront.get("shipping_note"),
+            "accepts_payments": repo.accepts_payments(storefront),
+        },
+        "shipping_rules": shipping_rules(),
+    })
 
 
 # ----------------------------------------------------------------------
 # Store admin: product management
 # ----------------------------------------------------------------------
+
+
+def _with_private_url(product: dict) -> dict:
+    from services.store_private_link import private_url
+    token = product.get("private_token")
+    product["private_url"] = private_url(token) if token else None
+    return product
 
 @store_bp.route("/store/admin/products", methods=["GET"])
 @require_store_staff
@@ -134,7 +172,9 @@ def admin_list_products():
             return jsonify({"products": []})
         ids = [wanted]
     return jsonify({
-        "products": _repo().list_products(include_inactive=True, storefront_ids=ids)
+        "products": [_with_private_url(p) for p in
+                     _repo().list_products(include_inactive=True, storefront_ids=ids)],
+        "shipping_rules": shipping_rules(),
     })
 
 
@@ -174,6 +214,10 @@ def admin_create_product():
         except (TypeError, ValueError):
             return jsonify({"error": "max_per_user_monthly must be a positive integer"}), 400
 
+    shipping, error = _clean_listing_shipping(data)
+    if error:
+        return jsonify({"error": error}), 400
+
     try:
         product_id = repo.create_product(
             sku=str(data["sku"]).strip(),
@@ -186,16 +230,57 @@ def admin_create_product():
             images=data.get("images"),
             storefront_id=storefront_id,
             image_framing=data.get("image_framing"),
+            product_line=_clean_product_line(data.get("product_line")),
+            **shipping,
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except sqlite3.IntegrityError:
         return jsonify({"error": "A product with that SKU already exists"}), 409
 
+    if data.get("is_private") in (1, True, "1", "true"):
+        repo.set_private(product_id, True)
+
     actor_id, actor_name = _actor()
     repo.log_action(actor_id, actor_name, "create_product",
                     f"id={product_id} sku={data['sku']} storefront={storefront_id}")
     return jsonify({"id": product_id}), 201
+
+
+PRODUCT_LINE_MAX = 60
+
+
+def _clean_product_line(value) -> str | None:
+    """Product line label for the sales dashboard; blank means automatic."""
+    text = " ".join(str(value or "").split())
+    return text[:PRODUCT_LINE_MAX] or None
+
+
+SHIP_CARDS_MAX = 1000
+LISTING_SHIPPING_MAX_CENTS = 100_00
+
+
+def _clean_listing_shipping(data: dict) -> tuple[dict, str | None]:
+    """ship_cards / shipping_cents from an admin body. Blank clears one."""
+    fields: dict = {}
+    for key, top, label in (
+        ("ship_cards", SHIP_CARDS_MAX, "Cards per item"),
+        ("shipping_cents", LISTING_SHIPPING_MAX_CENTS, "Shipping price"),
+    ):
+        if key not in data:
+            continue
+        value = data[key]
+        if value in (None, ""):
+            fields[key] = None
+            continue
+        try:
+            value = int(value)
+            if not 0 <= value <= top:
+                raise ValueError
+        except (TypeError, ValueError):
+            return {}, f"{label} must be a whole number from 0 to {top}"
+        fields[key] = value
+    return fields, None
 
 
 def _validate_product_patch(data: dict) -> tuple[dict, str | None]:
@@ -243,6 +328,12 @@ def _validate_product_patch(data: dict) -> tuple[dict, str | None]:
         fields["image_url"] = (data["image_url"] or "").strip() or None
     if "image_framing" in data:
         fields["image_framing"] = data["image_framing"]
+    if "product_line" in data:
+        fields["product_line"] = _clean_product_line(data["product_line"])
+    shipping, error = _clean_listing_shipping(data)
+    if error:
+        return {}, error
+    fields.update(shipping)
     return fields, None
 
 
@@ -262,12 +353,20 @@ def admin_update_product(product_id: int):
     if ("storefront_id" in fields and fields["storefront_id"] != product["storefront_id"]
             and not is_store_admin()):
         return jsonify({"error": "Only full store admins can move products"}), 403
+    private = None
+    if "is_private" in data:
+        private = data["is_private"] in (1, True, "1", "true")
     try:
-        updated = repo.update_product(product_id, **fields)
+        updated = repo.update_product(product_id, **fields) if fields else False
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except sqlite3.IntegrityError:
         return jsonify({"error": "A product with that SKU already exists"}), 409
+    if private is not None and bool(product.get("is_private")) != private:
+        repo.set_private(product_id, private)
+        updated = True
+    elif private is not None:
+        updated = True
     if not updated:
         return jsonify({"error": "No valid fields to update"}), 400
 
@@ -275,6 +374,101 @@ def admin_update_product(product_id: int):
     repo.log_action(actor_id, actor_name, "update_product",
                     f"id={product_id} fields={sorted(data.keys())}")
     return jsonify({"success": True})
+
+
+@store_bp.route("/store/admin/products/reorder", methods=["POST"])
+@require_store_staff
+def admin_reorder_products():
+    """Set the order a storefront's products show in on /store."""
+    data = request.get_json(silent=True) or {}
+    try:
+        storefront_id = int(data.get("storefront_id"))
+        product_ids = [int(x) for x in data.get("product_ids") or []]
+    except (TypeError, ValueError):
+        return jsonify({"error": "storefront_id and product_ids must be integers"}), 400
+    repo = _repo()
+    if not repo.get_storefront(storefront_id) or not _can(storefront_id, "orders"):
+        return _not_found("Storefront")
+    if not _can(storefront_id, "products"):
+        return jsonify({"error": "Only storefront managers can reorder products"}), 403
+    try:
+        repo.reorder_products(storefront_id, product_ids)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "reorder_products",
+                    f"storefront={storefront_id} order={product_ids}")
+    return jsonify({"success": True})
+
+
+@store_bp.route("/store/admin/products/<int:product_id>/private", methods=["POST"])
+@require_store_staff
+def admin_set_product_private(product_id: int):
+    """Body {private: bool, new_link?: bool}. Private = off /store, own link."""
+    data = request.get_json(silent=True) or {}
+    repo = _repo()
+    product = repo.get_product(product_id)
+    if not product or not _can(product["storefront_id"], "orders"):
+        return _not_found("Product")
+    if not _can(product["storefront_id"], "products"):
+        return jsonify({"error": "Only storefront managers can edit products"}), 403
+    private = data.get("private") in (1, True, "1", "true")
+    new_link = bool(data.get("new_link")) and private
+    updated = repo.set_private(product_id, private, new_link=new_link)
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "set_product_private",
+                    f"id={product_id} private={private} new_link={new_link}")
+    return jsonify({"product": _with_private_url(updated)})
+
+
+def _private_product_for_staff(product_id: int):
+    """(product, error response) for the QR code downloads."""
+    product = _repo().get_product(product_id)
+    if not product or not _can(product["storefront_id"], "orders"):
+        return None, _not_found("Product")
+    if not product.get("is_private") or not product.get("private_token"):
+        return None, (jsonify({"error": "Make the listing private to get its link"}), 409)
+    return product, None
+
+
+def _qr_filename(product: dict, ext: str) -> str:
+    return f"{slugify(product.get('sku') or product.get('name') or 'listing')}-qr.{ext}"
+
+
+@store_bp.route("/store/admin/products/<int:product_id>/qr.png", methods=["GET"])
+@require_store_staff
+def admin_private_product_qr(product_id: int):
+    """QR code image of a private listing's link. ?download=1 saves it."""
+    from io import BytesIO
+    from services.store_private_link import private_url, qr_png
+
+    product, error = _private_product_for_staff(product_id)
+    if error:
+        return error
+    png = qr_png(private_url(product["private_token"]))
+    return send_file(
+        BytesIO(png), mimetype="image/png",
+        as_attachment=request.args.get("download") == "1",
+        download_name=_qr_filename(product, "png"), max_age=0,
+    )
+
+
+@store_bp.route("/store/admin/products/<int:product_id>/qr-sign.pdf", methods=["GET"])
+@require_store_staff
+def admin_private_product_sign(product_id: int):
+    """Printable Letter page: listing name, price, big QR code, link."""
+    from io import BytesIO
+    from services.store_private_link import private_url, sign_pdf
+
+    product, error = _private_product_for_staff(product_id)
+    if error:
+        return error
+    storefront = _repo().get_storefront(product["storefront_id"]) or {}
+    pdf = sign_pdf(product, private_url(product["private_token"]), storefront.get("name", ""))
+    return send_file(
+        BytesIO(pdf), mimetype="application/pdf", as_attachment=False,
+        download_name=_qr_filename(product, "pdf"), max_age=0,
+    )
 
 
 @store_bp.route("/store/admin/products/<int:product_id>/deactivate", methods=["POST"])
@@ -325,6 +519,7 @@ def admin_list_orders():
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    StoreRepository.group_orders_by_buyer(orders)
     return jsonify({"orders": orders, "statuses": ORDER_STATUSES})
 
 
@@ -347,6 +542,8 @@ def admin_get_order(order_id: int):
 @store_bp.route("/store/admin/orders/<int:order_id>/ship", methods=["POST"])
 @require_store_staff
 def admin_ship_order(order_id: int):
+    """Mark an order shipped. A paired order ships with the rest of its
+    pair: every paid order in the group gets the same tracking number."""
     data = request.get_json(silent=True) or {}
     tracking = (data.get("tracking_number") or "").strip() or None
     carrier = (data.get("tracking_carrier") or "").strip() or None
@@ -355,25 +552,81 @@ def admin_ship_order(order_id: int):
     order = _scoped_order(repo, order_id)
     if not order:
         return _not_found("Order")
-    if not tracking and order["total_cents"] > TRACKING_REQUIRED_OVER_CENTS:
+    if order["status"] != "paid":
+        return jsonify({"error": "Order not found or not in 'paid' status"}), 409
+
+    batch = [order]
+    if order.get("ship_group"):
+        batch = [o for o in repo.orders_in_ship_group(order["ship_group"])
+                 if o["status"] == "paid" and _can(o["storefront_id"], "orders")]
+    package_cents = sum(o["total_cents"] for o in batch)
+    if not tracking and package_cents > TRACKING_REQUIRED_OVER_CENTS:
         return jsonify({
             "error": f"Tracking is required for orders over "
                      f"${TRACKING_REQUIRED_OVER_CENTS / 100:.0f}"
+                     + (" (paired orders count together)" if len(batch) > 1 else "")
         }), 400
     if not tracking:
         carrier = None
 
-    if not repo.mark_shipped(order_id, tracking, carrier):
+    shipped = []
+    for o in batch:
+        if repo.mark_shipped(o["id"], tracking, carrier):
+            shipped.append(o["id"])
+    if order_id not in shipped:
         return jsonify({"error": "Order not found or not in 'paid' status"}), 409
 
     actor_id, actor_name = _actor()
-    repo.log_action(actor_id, actor_name, "ship_order",
-                    f"id={order_id} tracking={tracking or 'none'}")
+    for oid in shipped:
+        repo.log_action(actor_id, actor_name, "ship_order",
+                        f"id={oid} tracking={tracking or 'none'}"
+                        + (f" group={order['ship_group']}" if len(batch) > 1 else ""))
     try:
         from services.store_notifications import StoreNotificationService
-        StoreNotificationService(repo).notify_order_shipped(repo.get_order(order_id))
+        notifier = StoreNotificationService(repo)
+        for oid in shipped:
+            notifier.notify_order_shipped(repo.get_order(oid))
     except Exception:
         logger.exception(f"Shipped notification failed for order {order_id}")
+    return jsonify({"success": True, "shipped_ids": shipped})
+
+
+@store_bp.route("/store/admin/orders/pair", methods=["POST"])
+@require_store_staff
+def admin_pair_orders():
+    """Pair paid orders from one buyer so they ship in one package."""
+    data = request.get_json(silent=True) or {}
+    try:
+        ids = [int(i) for i in (data.get("order_ids") or [])]
+    except (TypeError, ValueError):
+        return jsonify({"error": "order_ids must be a list of order ids"}), 400
+    repo = _repo()
+    for oid in ids:
+        if not _scoped_order(repo, oid):
+            return _not_found("Order")
+    try:
+        group = repo.pair_orders(ids)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "pair_orders",
+                    f"group={group} ids={','.join(str(i) for i in sorted(ids))}")
+    return jsonify({"success": True, "ship_group": group})
+
+
+@store_bp.route("/store/admin/orders/<int:order_id>/unpair", methods=["POST"])
+@require_store_staff
+def admin_unpair_order(order_id: int):
+    """Take an order out of its pair so it ships on its own."""
+    repo = _repo()
+    order = _scoped_order(repo, order_id)
+    if not order:
+        return _not_found("Order")
+    if not repo.unpair_order(order_id):
+        return jsonify({"error": "That order isn't paired"}), 409
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "unpair_order",
+                    f"id={order_id} group={order['ship_group']}")
     return jsonify({"success": True})
 
 
@@ -400,6 +653,9 @@ def admin_set_order_status(order_id: int):
             return jsonify({
                 "error": "Only paid orders that aren't already refunded can be marked refunded"
             }), 409
+        if order.get("ship_group") and order["status"] == "paid":
+            # A refunded order no longer goes out with the rest of its pair
+            repo.unpair_order(order_id)
         try:
             from services.store_notifications import StoreNotificationService
             StoreNotificationService(repo).notify_order_refunded(repo.get_order(order_id))

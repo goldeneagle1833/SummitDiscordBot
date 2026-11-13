@@ -13,6 +13,7 @@ import RecentDecks from '@/components/player/RecentDecks'
 import FeaturedDeck from '@/components/player/FeaturedDeck'
 import FeaturedDeckModal from '@/components/player/FeaturedDeckModal'
 import LimitedArena from '@/components/player/LimitedArena'
+import { PreconMatchHistory, PreconStandings, usePreconPlayer } from '@/components/player/PlayerPrecon'
 import MatchHistoryTable from '@/components/player/MatchHistoryTable'
 import MatchFilters from '@/components/player/MatchFilters'
 import RecordedGames from '@/components/player/RecordedGames'
@@ -91,6 +92,7 @@ export default function Player() {
   const navigate = useNavigate()
   const avatarHonours = useAvatarHonours(playerId)
   const paperFinishes = usePaperFinishes(playerId)
+  const precon = usePreconPlayer(playerId)
   const hasPostseason =
     Boolean(useBracketMarks(playerId)?.entries?.length) || avatarHonours.length > 0 || paperFinishes.length > 0
 
@@ -199,6 +201,7 @@ export default function Player() {
       || (sectionVisible('elo_brackets') && data.elo_vs_brackets?.length > 0)) && { id: 'matchups', label: 'Matchups' },
     sectionVisible('card_stats') && { id: 'cards', label: 'Card Stats' },
     data.limited?.has_data && { id: 'limited', label: 'Limited' },
+    precon?.seasons?.length > 0 && { id: 'precon', label: 'LM / FM' },
     { id: 'matches', label: 'Matches' },
     hasPostseason && { id: 'postseason', label: 'Postseason' },
   ].filter(Boolean)
@@ -371,6 +374,8 @@ export default function Player() {
         <LimitedArena limited={data.limited} playerId={playerId} open />
       )}
 
+      {activeTab === 'precon' && <PreconStandings data={precon} />}
+
       {activeTab === 'matches' && (
         <div className="space-y-6">
           <MatchFilters filters={matchFilters} data={data.match_filters} onChange={changeMatchFilters} />
@@ -390,6 +395,8 @@ export default function Player() {
             onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
             onMatchUpdate={refreshCurrentPage}
           />
+
+          <PreconMatchHistory data={precon} />
 
           {data.casual_matches?.length > 0 && (
             <MatchHistoryTable

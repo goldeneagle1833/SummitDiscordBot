@@ -25,13 +25,20 @@ def scrub_urls(text: str) -> str:
     return _URL_PATTERN.sub("[link removed]", text)
 
 
-def correction_tip(match_id=None) -> str:
+def correction_tip(match_id=None, match_type=None) -> str:
     """The one place that tells players how to fix a wrongly reported result.
 
     Pass ``match_id`` wherever the match is already recorded so the command
     can be copied as-is; before that there is no id yet to name.
+    Precon games have their own ids, so they get their own (admin) command.
     """
     match_ref = match_id if match_id else "<match id>"
+    if match_type == "precon":
+        return (
+            f"🛠️ **Wrong result reported?** Ask an admin in <#{MATCH_CORRECTION_CHANNEL_ID}> to run "
+            f"`!remove_precon_match {match_ref}` — the game comes off the LM/FM ladder and "
+            f"everyone's ratings are recalculated."
+        )
     return (
         f"🛠️ **Wrong result reported?** Run `!correct_match {match_ref}` in "
         f"<#{MATCH_CORRECTION_CHANNEL_ID}> — the other player confirms the fix "
@@ -59,6 +66,7 @@ _MATCH_TYPE_PRESENTATION = {
     "ranked": ("⚔️", "Ranked"),
     "rumble": ("💥", "Rumble"),
     "points": ("📊", "Rumble (Omens)"),
+    "precon": ("🧙", "Precon (LM/FM)"),
 }
 _CASUAL_PRESENTATION = ("⭐", "Casual")
 

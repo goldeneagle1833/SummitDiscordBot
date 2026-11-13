@@ -1306,6 +1306,8 @@ class LFGCog(commands.Cog):
             return "points"
         if type_a == "rumble" or type_b == "rumble":
             return "rumble"
+        if type_a == "precon" or type_b == "precon":
+            return "precon"
         if type_a == "testing" or type_b == "testing":
             return "testing"
         return "ranked"
@@ -1329,7 +1331,7 @@ class LFGCog(commands.Cog):
         joiner_holding = voice_hold and holding_for_voice(voice, voice_flexible, now, now)
 
         # Casual (testing), rumble, limited, and omens (points) have no pairing restrictions
-        is_casual = queue_type in ("testing", "rumble", "limited", "points")
+        is_casual = queue_type in ("testing", "rumble", "limited", "points", "precon")
 
         for user_id, user_data in lfg_queue.items():
             if user_id == ctx.author.id:
@@ -1376,8 +1378,17 @@ class LFGCog(commands.Cog):
                 ):
                     continue
 
+            # Precon ladder: same anti-rematch rule as ranked, on precon games
+            if queue_type == "precon":
+                from services.precon_service import played_last_game_together
+
+                if played_last_game_together(ctx.author.id, user_id):
+                    logger.info(
+                        f"Skipping {user_id} - played {ctx.author.id} in their last precon game"
+                    )
+                    continue
             # Ranked/Limited: skip if they played each other in their last match
-            if not is_casual and self.check_last_match_opponent(ctx.author.id, user_id):
+            elif not is_casual and self.check_last_match_opponent(ctx.author.id, user_id):
                 logger.info(
                     f"Skipping {user_id} - played against {ctx.author.id} in last match"
                 )
@@ -1401,7 +1412,7 @@ class LFGCog(commands.Cog):
     def add_to_lfg_queue(
         self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None, run_id=None,
         origin="discord", voice=DEFAULT_VOICE, avatar=None, alert_avatar=False, deck_avatar=None,
-        voice_flexible=False,
+        voice_flexible=False, precon=None,
     ):
         queue_entry = {
             "timestamp": datetime.datetime.now(),
@@ -1424,6 +1435,9 @@ class LFGCog(commands.Cog):
             queue_entry["ladder_info"] = ladder_info
         if run_id is not None:
             queue_entry["run_id"] = run_id
+        if precon:
+            # Precon queue: "lavamancer" or "frostmage"
+            queue_entry["precon"] = precon
 
         if ctx.author.id not in lfg_queue:
             lfg_queue[ctx.author.id] = {"queues": {}}
@@ -2163,6 +2177,20 @@ class LFGCog(commands.Cog):
                 "`!start_limited_season <name>` - Archive limited data, reset limited ELO & start a new limited season\n"
                 "`!end_limited_season` - End & archive the active limited season without starting a new one\n"
                 "`!reset_limited_elo` - **DANGER:** Reset ALL limited data"
+            ),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="Precon Ladder (Lavamancer vs Frostmage)",
+            value=(
+                "Easier: Admin page > Precon Ladder does all of this\n"
+                "`!start_precon_season <name>` - Start an LM/FM ladder (Glicko-2)\n"
+                "`!precon_queue on|off` - Switch the precon queue (shows only while a ladder runs)\n"
+                "`!end_precon_season` - End the ladder early & post final standings\n"
+                "`!admin_precon_report @winner LM|FM @loser LM|FM` - Report a precon game by hand\n"
+                "`!remove_precon_match <precon match id>` - Remove a precon game & re-rate the ladder\n"
+                "`!precon [@player]` - Ladder top 10 and a player's standing (anyone can use it)"
             ),
             inline=False,
         )

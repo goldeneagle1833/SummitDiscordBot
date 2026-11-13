@@ -7,6 +7,7 @@ vi.mock('@/api/leaderboard', () => ({
   getLimitedLeaderboard: vi.fn(),
   getEvents: vi.fn(),
   getArchivedLeaderboard: vi.fn(),
+  getPreconStandings: vi.fn(),
 }))
 
 vi.mock('@/api/brackets', () => ({
@@ -18,6 +19,7 @@ import {
   getLimitedLeaderboard,
   getEvents,
   getArchivedLeaderboard,
+  getPreconStandings,
 } from '@/api/leaderboard'
 import Leaderboard from '../Leaderboard'
 
@@ -84,6 +86,7 @@ describe('Leaderboard page', () => {
     getLimitedLeaderboard.mockRejectedValue(new Error('no limited season'))
     getEvents.mockResolvedValue({ events: [SEASON_8, SEASON_7, GOTHIC], active_event: SEASON_8 })
     getArchivedLeaderboard.mockResolvedValue(ARCHIVED)
+    getPreconStandings.mockResolvedValue({ season: null, seasons: [], standings: [] })
   })
 
   it('opens on the live event with every board in the sidebar', async () => {
@@ -189,5 +192,27 @@ describe('Leaderboard page', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Limited Format Leaderboard' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Full limited page' })).toHaveAttribute('href', '/elo/limited')
     expect(sidebar().getByRole('button', { name: /Limited format/ })).toHaveTextContent('12 players')
+  })
+
+  it('lists each LM / FM precon ladder and shows its standings', async () => {
+    const season = {
+      season_id: 3, name: 'LM vs FM 1', starts_at: '2026-11-12T18:00:00',
+      ends_at: '2026-12-10T18:00:00', last_day: '2026-12-10T18:00:00', is_open: false,
+    }
+    getPreconStandings.mockImplementation((id) => Promise.resolve({
+      season, seasons: [season], min_ranked_games: 5,
+      standings: id ? [{
+        user_id: '1', name: 'Alice', rating: 1612, rd: 90, games: 9, wins: 7, losses: 2,
+        lm_wins: 5, lm_losses: 1, fm_wins: 2, fm_losses: 1, ranked: true, rank: 1,
+      }] : [],
+      stats: { players: 1, games: 9, lm_vs_fm: { lm_wins: 4, fm_wins: 2 } },
+      recent: [],
+    }))
+    await renderPage('/elo?board=precon:3')
+
+    expect(sidebar().getByRole('button', { name: /LM vs FM 1/ })).toHaveAttribute('aria-current', 'true')
+    expect(await screen.findByRole('link', { name: 'Alice' })).toBeInTheDocument()
+    expect(screen.getByText('1612')).toBeInTheDocument()
+    expect(getPreconStandings).toHaveBeenCalledWith(3)
   })
 })

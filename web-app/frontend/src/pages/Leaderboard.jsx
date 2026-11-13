@@ -2,12 +2,14 @@ import { useState, useEffect, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import LeaderboardTable from '@/components/leaderboard/LeaderboardTable'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
+import { PreconLadder, preconSeasonText } from '@/components/leaderboard/PreconLadderContent'
 import Spinner from '@/components/ui/Spinner'
 import {
   getCombinedLeaderboard,
   getLimitedLeaderboard,
   getEvents,
   getArchivedLeaderboard,
+  getPreconStandings,
 } from '@/api/leaderboard'
 import usePageTitle from '@/hooks/usePageTitle'
 import { isNum } from '@/utils/provisional'
@@ -18,6 +20,7 @@ const CURRENT = 'current'
 const LIFETIME = 'lifetime'
 const LIMITED = 'limited'
 const eventKey = (eventId) => `event:${eventId}`
+const preconKey = (seasonId) => `precon:${seasonId}`
 
 function formatDate(value) {
   return value ? new Date(value).toLocaleDateString() : 'N/A'
@@ -260,6 +263,31 @@ function LimitedBoard({ limitedData }) {
   )
 }
 
+function PreconSeasonBoard({ season }) {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState(false)
+  const seasonId = season.season_id
+
+  useEffect(() => {
+    let active = true
+    setData(null)
+    setError(false)
+    getPreconStandings(seasonId)
+      .then((d) => { if (active) setData(d) })
+      .catch(() => { if (active) setError(true) })
+    return () => { active = false }
+  }, [seasonId])
+
+  return (
+    <section>
+      <BoardHeader title={season.name} meta={`Lavamancer vs Frostmage · ${preconSeasonText(season)}`} />
+      {!data && !error && <Spinner className="py-8" />}
+      {error && <p className="text-text-muted text-center py-8">Couldn't load this precon ladder.</p>}
+      {data && <PreconLadder data={data} />}
+    </section>
+  )
+}
+
 function ArchivedEventBoard({ event }) {
   const [archivedData, setArchivedData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -323,15 +351,18 @@ export default function Leaderboard() {
   const [eventData, setEventData] = useState(null)
   const [limitedData, setLimitedData] = useState(null)
   const [pastEvents, setPastEvents] = useState([])
+  const [preconSeasons, setPreconSeasons] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchAll = async () => {
-      const [combined, limited, events] = await Promise.allSettled([
+      const [combined, limited, events, precon] = await Promise.allSettled([
         getCombinedLeaderboard(),
         getLimitedLeaderboard(),
         getEvents(),
+        getPreconStandings(),
       ])
+      if (precon.status === 'fulfilled') setPreconSeasons(precon.value.seasons || [])
       if (combined.status === 'fulfilled') {
         const data = combined.value
         setLifetimeData(data.lifetime || [])
@@ -383,6 +414,17 @@ export default function Leaderboard() {
       })
     }
     result.push({ label: 'All time', items: allTime })
+    if (preconSeasons.length > 0) {
+      result.push({
+        label: 'LM / FM precon ladder',
+        items: preconSeasons.map((season) => ({
+          key: preconKey(season.season_id),
+          title: season.name,
+          badge: season.is_open ? 'Live' : undefined,
+          meta: preconSeasonText(season),
+        })),
+      })
+    }
     if (pastEvents.length > 0) {
       result.push({
         label: 'Past events',
@@ -396,7 +438,7 @@ export default function Leaderboard() {
       })
     }
     return result
-  }, [eventInfo, eventLeaderboard, lifetimeData, limitedData, pastEvents])
+  }, [eventInfo, eventLeaderboard, lifetimeData, limitedData, pastEvents, preconSeasons])
 
   const keys = useMemo(() => groups.flatMap((g) => g.items.map((i) => i.key)), [groups])
   const requested = searchParams.get('board') || CURRENT
@@ -411,6 +453,9 @@ export default function Leaderboard() {
 
   if (loading) return <Spinner className="py-20" />
 
+  const selectedPrecon = selected.startsWith('precon:')
+    ? preconSeasons.find((season) => preconKey(season.season_id) === selected)
+    : null
   const selectedEvent = selected.startsWith('event:')
     ? pastEvents.find((ev) => eventKey(ev.event_id) === selected)
     : null
@@ -429,6 +474,7 @@ export default function Leaderboard() {
           {selected === LIFETIME && <LifetimeBoard lifetimeData={lifetimeData} elos={elos} />}
           {selected === LIMITED && limitedData && <LimitedBoard limitedData={limitedData} />}
           {selectedEvent && <ArchivedEventBoard key={selectedEvent.event_id} event={selectedEvent} />}
+          {selectedPrecon && <PreconSeasonBoard key={selectedPrecon.season_id} season={selectedPrecon} />}
         </div>
       </div>
     </div>

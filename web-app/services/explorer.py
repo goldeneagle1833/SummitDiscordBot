@@ -667,6 +667,9 @@ class ExplorerService:
                 "pathfinder": pathfinder,
                 "persecutor": persecutor,
                 "grand_explorer": grand,
+                "venue_name": row.get("event_venue_name") or "",
+                "event_total_players": row.get("event_total_players"),
+                "source_url": row.get("event_source_url") or "",
             })
 
         # Sort: grand_explorer desc, persecutor_total desc, pathfinder_total desc

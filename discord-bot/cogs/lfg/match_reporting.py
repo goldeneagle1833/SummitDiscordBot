@@ -967,7 +967,7 @@ class LFGReportButtons(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         # Check if reporter needs to provide a deck URL (skip for testing matches)
-        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble"):
+        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble", "precon"):
             # Show modal to collect deck URL before proceeding
             modal = ReporterDeckURLModal(self, interaction, is_win=True)
             await interaction.response.send_modal(modal)
@@ -1139,7 +1139,7 @@ class LFGReportButtons(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         # Check if reporter needs to provide a deck URL (skip for testing matches)
-        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble"):
+        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble", "precon"):
             # Show modal to collect deck URL before proceeding
             modal = ReporterDeckURLModal(self, interaction, is_win=False)
             await interaction.response.send_modal(modal)
@@ -1462,7 +1462,7 @@ class ReportResultSelectView(discord.ui.View):
             return
 
         self._submit_interaction = interaction
-        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble"):
+        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble", "precon"):
             modal = MatchReportDeckModal(self)
             await interaction.response.send_modal(modal)
         else:

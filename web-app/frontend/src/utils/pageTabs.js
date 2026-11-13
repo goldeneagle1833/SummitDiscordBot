@@ -7,5 +7,6 @@ export const AVATAR_TABS = [
 export const HELP_TABS = [
   { to: '/help', label: 'Help' },
   { to: '/about', label: 'About' },
+  { to: '/summit-format', label: 'Format' },
   { to: '/feedback', label: 'Feedback' },
 ]

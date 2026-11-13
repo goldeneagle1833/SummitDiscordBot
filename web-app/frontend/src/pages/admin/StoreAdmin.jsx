@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminDeactivateProduct,
+  adminReorderProducts, adminSetProductPrivate, adminProductQrUrl, adminProductSignUrl,
   adminUploadProductImages,
   adminGetOrders, adminGetOrder, adminShipOrder, adminSetOrderStatus, formatMoney,
+  adminPairOrders, adminUnpairOrder,
   adminCreateStorefront, adminUpdateStorefront, adminDeleteStorefront,
   adminGetStorefrontAdmins, adminAddStorefrontAdmin, adminSetStorefrontDescription, adminRemoveStorefrontAdmin, adminSearchUsers,
   adminGetStorefrontApplications, adminApproveStorefrontApplication,
@@ -15,6 +17,7 @@ import SalesDashboard from '@/components/store/SalesDashboard'
 import SaleAlertsToggle from '@/components/store/SaleAlertsToggle'
 import ImageFramer from '@/components/store/ImageFramer'
 import LinkifiedText from '@/components/ui/LinkifiedText'
+import { DEFAULT_SHIPPING_RULES, cartShipping } from '@/utils/storeShipping'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const inputCls =
@@ -23,7 +26,8 @@ const inputCls =
 // ---------------------------------------------------------------- Products
 
 const EMPTY_PRODUCT = {
-  sku: '', name: '', description: '', price: '', stock_quantity: '', max_per_user_monthly: '', images: [], framing: {},
+  sku: '', name: '', description: '', price: '', stock_quantity: '', max_per_user_monthly: '', product_line: '',
+  ship_cards: '', shipping_price: '', images: [], framing: {}, is_private: false,
 }
 
 function productToForm(p) {
@@ -34,8 +38,12 @@ function productToForm(p) {
     price: (p.price_cents / 100).toFixed(2),
     stock_quantity: String(p.stock_quantity ?? ''),
     max_per_user_monthly: p.max_per_user_monthly == null ? '' : String(p.max_per_user_monthly),
+    product_line: p.product_line || '',
+    ship_cards: p.ship_cards == null ? '' : String(p.ship_cards),
+    shipping_price: p.shipping_cents == null ? '' : (p.shipping_cents / 100).toFixed(2),
     images: p.images?.length ? [...p.images] : p.image_url ? [p.image_url] : [],
     framing: { ...(p.image_framing || {}) },
+    is_private: Boolean(p.is_private),
   }
 }
 
@@ -79,7 +87,32 @@ function uploadBatches(files) {
 
 // Shared by "Add product" and the inline editor. `initial` is a product row
 // when editing, null when adding.
-function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStorefrontId = null }) {
+// What one of this listing ships as, under the product editor's shipping fields
+function ListingShippingHint({ form, rules }) {
+  const cards = form.ship_cards.trim() === '' ? null : parseInt(form.ship_cards, 10)
+  const own = form.shipping_price.trim() === '' ? null : Math.round(parseFloat(form.shipping_price) * 100)
+  const max = rules.envelope_max_cards
+  const tiers = `Up to ${max} cards in the cart ship in a plain white envelope for ${formatMoney(rules.envelope_cents)}; `
+    + `more go USPS Ground Advantage for ${formatMoney(rules.ground_cents)}.`
+  let text
+  if (cards == null && own == null) {
+    text = 'Not set: carts with this listing use the store\'s usual shipping at payment.'
+  } else if (cards != null && Number.isFinite(cards)) {
+    const alone = cartShipping([{ product: { ship_cards: cards, shipping_cents: own }, quantity: 1 }], rules)
+    text = `One on its own ships for ${formatMoney(alone.cents)}`
+      + ({ envelope: ' in a plain white envelope', ground: ' by USPS Ground Advantage' }[alone.method] || '')
+      + '. Cards add up with the rest of the cart.'
+  } else if (own != null && Number.isFinite(own)) {
+    text = `Ships for ${formatMoney(own)}, or the card price if the rest of the cart costs more to ship.`
+  }
+  return (
+    <p className="text-xs text-text-muted mt-1">
+      {text} {tiers}
+    </p>
+  )
+}
+
+function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStorefrontId = null, productLines = [], shippingRules = DEFAULT_SHIPPING_RULES }) {
   const editing = Boolean(initial)
   const [storefrontId, setStorefrontId] = useState(defaultStorefrontId ?? storefronts[0]?.id ?? '')
   const [form, setForm] = useState(() => (initial ? productToForm(initial) : EMPTY_PRODUCT))
@@ -162,6 +195,18 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
       setError('Monthly limit must be a positive number, or blank for no limit')
       return
     }
+    const shipCardsText = form.ship_cards.trim()
+    const ship_cards = shipCardsText ? Number(shipCardsText) : null
+    if (ship_cards !== null && !(Number.isInteger(ship_cards) && ship_cards >= 0)) {
+      setError('Cards per item must be a whole number, or blank')
+      return
+    }
+    const shipPriceText = form.shipping_price.trim()
+    const shipping_cents = shipPriceText ? Math.round(parseFloat(shipPriceText) * 100) : null
+    if (shipping_cents !== null && !(Number.isFinite(shipping_cents) && shipping_cents >= 0)) {
+      setError('Shipping price must be a dollar amount, or blank')
+      return
+    }
     const payload = {
       sku: form.sku.trim(),
       name: form.name.trim(),
@@ -169,8 +214,12 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
       price_cents,
       stock_quantity,
       max_per_user_monthly: maxMonthly,
+      product_line: form.product_line.trim(),
+      ship_cards,
+      shipping_cents,
       images: form.images,
       image_framing: form.framing,
+      is_private: form.is_private,
     }
     setSaving(true)
     try {
@@ -234,6 +283,68 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
           value={form.max_per_user_monthly}
           onChange={set('max_per_user_monthly')}
         />
+        <div className="min-w-0">
+          <input
+            className={`${inputCls} w-full`}
+            placeholder="Product line (blank = group by name)"
+            aria-label="Product line"
+            list={`product-lines-${fileInputId}`}
+            maxLength={60}
+            value={form.product_line}
+            onChange={set('product_line')}
+          />
+          <datalist id={`product-lines-${fileInputId}`}>
+            {productLines.map((l) => <option key={l} value={l} />)}
+          </datalist>
+          <p className="text-xs text-text-muted mt-1">
+            Groups listings in the sales rundown, e.g. both Skeleton packs under &quot;Skeleton Tokens&quot;.
+          </p>
+        </div>
+
+        <label className="sm:col-span-2 flex items-start gap-3 rounded border border-border p-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-secondary"
+            checked={form.is_private}
+            onChange={(e) => setForm((x) => ({ ...x, is_private: e.target.checked }))}
+          />
+          <span className="text-sm">
+            <span className="font-medium">Private (link only)</span>
+            <span className="block text-xs text-text-muted mt-0.5">
+              Not shown on the store. Only people with its link or QR code can see and buy it.
+              After saving, use &quot;Link &amp; QR&quot; in the list below to copy the link or print the QR code.
+            </span>
+          </span>
+        </label>
+
+        <fieldset className="sm:col-span-2 min-w-0 rounded border border-border p-3">
+          <legend className="px-1 text-xs font-semibold text-text-muted uppercase tracking-wide">Shipping</legend>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="text-xs text-text-muted">
+              Cards in one of this listing
+              <input
+                className={`${inputCls} w-full mt-1`}
+                placeholder="e.g. 6 for a playset, 2 for a pack"
+                aria-label="Cards per item"
+                inputMode="numeric"
+                value={form.ship_cards}
+                onChange={set('ship_cards')}
+              />
+            </label>
+            <label className="text-xs text-text-muted">
+              Own shipping price (optional)
+              <input
+                className={`${inputCls} w-full mt-1`}
+                placeholder="e.g. 8.99 for a playmat"
+                aria-label="Shipping price"
+                inputMode="decimal"
+                value={form.shipping_price}
+                onChange={set('shipping_price')}
+              />
+            </label>
+          </div>
+          <ListingShippingHint form={form} rules={shippingRules} />
+        </fieldset>
 
         <div className="sm:col-span-2 min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-3">
@@ -345,20 +456,224 @@ function ProductForm({ initial, onSaved, onCancel, storefronts = [], defaultStor
   )
 }
 
+// Moves product `id` to where `targetId` is. Only within one storefront,
+// since each storefront has its own page order.
+function moveProduct(products, id, targetId) {
+  const from = products.findIndex((p) => p.id === id)
+  const to = products.findIndex((p) => p.id === targetId)
+  if (from < 0 || to < 0 || from === to) return products
+  if (products[from].storefront_id !== products[to].storefront_id) return products
+  const next = [...products]
+  const [moved] = next.splice(from, 1)
+  next.splice(to, 0, moved)
+  return next
+}
+
+function GripIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+      {[6, 10, 14].map((y) => [7, 13].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.5" />))}
+    </svg>
+  )
+}
+
+// Short shipping note under a listing's price in the products table
+function ListingShippingTag({ product }) {
+  const parts = []
+  if (product.ship_cards != null) parts.push(`${product.ship_cards} card${product.ship_cards === 1 ? '' : 's'}`)
+  if (product.shipping_cents != null) parts.push(`ships ${formatMoney(product.shipping_cents)}`)
+  return (
+    <span className="block text-xs text-text-muted whitespace-nowrap">
+      {parts.length ? parts.join(' · ') : 'shipping not set'}
+    </span>
+  )
+}
+
+// The link and QR code of a private (link only) listing
+function PrivateLinkPanel({ product, onChanged, onClose }) {
+  const [copied, setCopied] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const url = product.private_url
+  // Changes when the link does, so the browser doesn't show an old QR code
+  const bust = product.private_token || ''
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url)
+    } catch {
+      // Clipboard blocked: select the text so it can be copied by hand
+      document.getElementById(`private-url-${product.id}`)?.select()
+      return
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const share = async () => {
+    try {
+      await navigator.share({ title: product.name, url })
+    } catch {
+      // Cancelled or not supported
+    }
+  }
+
+  const newLink = async () => {
+    if (!window.confirm('Make a new link? The old link and any printed QR codes for it will stop working.')) return
+    setBusy(true)
+    setError(null)
+    try {
+      await adminSetProductPrivate(product.id, true, true)
+      onChanged()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const btn = 'rounded border border-border bg-bg-elevated px-3 py-2 text-sm hover:border-primary transition-colors text-center'
+  return (
+    <div className="flex flex-col sm:flex-row gap-4 p-3 rounded-lg border border-secondary/40 bg-secondary/5">
+      <img
+        src={adminProductQrUrl(product.id, { bust })}
+        alt={`QR code for ${product.name}`}
+        className="w-40 h-40 self-center sm:self-start rounded bg-white p-1"
+      />
+      <div className="flex-1 min-w-0 space-y-3">
+        <div className="relative pr-8">
+          <p className="text-sm font-medium">Private link: {product.name}</p>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="absolute top-0 right-0 text-text-muted hover:text-text px-1"
+              aria-label="Close link and QR code"
+            >
+              ✕
+            </button>
+          )}
+          <p className="text-xs text-text-muted">
+            Only people with this link or QR code can see and buy {product.name}. It&apos;s not on the store page.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <input
+            id={`private-url-${product.id}`}
+            readOnly
+            value={url || ''}
+            onFocus={(e) => e.target.select()}
+            className={`${inputCls} flex-1 min-w-0 font-mono text-xs`}
+            aria-label={`Private link for ${product.name}`}
+          />
+          <button type="button" onClick={copy} className={`${btn} shrink-0`}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+          <a href={adminProductQrUrl(product.id, { download: true, bust })} className={btn} download>
+            Download QR (PNG)
+          </a>
+          <a href={adminProductSignUrl(product.id, bust)} target="_blank" rel="noopener noreferrer" className={btn}>
+            Print sign (PDF)
+          </a>
+          <a href={url} target="_blank" rel="noopener noreferrer" className={btn}>
+            Open page
+          </a>
+          {typeof navigator !== 'undefined' && navigator.share && (
+            <button type="button" onClick={share} className={btn}>Share</button>
+          )}
+          <button type="button" onClick={newLink} disabled={busy} className={`${btn} text-text-muted disabled:opacity-50`}>
+            {busy ? 'Making…' : 'New link'}
+          </button>
+        </div>
+        {error && <p className="text-accent-red text-sm">{error}</p>}
+      </div>
+    </div>
+  )
+}
+
 function ProductsPanel({ storefrontId, storefronts }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(null) // product row being edited
+  const [linkOpen, setLinkOpen] = useState(null) // id of the private listing showing its link & QR
+  const [shippingRules, setShippingRules] = useState(DEFAULT_SHIPPING_RULES)
 
   const load = useCallback(() => {
     adminGetProducts(storefrontId)
-      .then((d) => setProducts(d.products || []))
+      .then((d) => {
+        setProducts(d.products || [])
+        if (d.shipping_rules) setShippingRules(d.shipping_rules)
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
   }, [storefrontId])
   useEffect(load, [load])
   const storefrontName = (id) => storefronts.find((sf) => sf.id === id)?.name
+
+  // ---- Reordering: drag the grip (mouse or finger) or use the arrows.
+  const [dragId, setDragId] = useState(null)
+  const [orderSaved, setOrderSaved] = useState(false)
+  const productsRef = useRef(products)
+  productsRef.current = products
+  const dragStart = useRef(null)
+
+  const saveOrder = async (list, sfId) => {
+    setOrderSaved(false)
+    try {
+      await adminReorderProducts(sfId, list.filter((p) => p.storefront_id === sfId).map((p) => p.id))
+      setOrderSaved(true)
+    } catch (e) {
+      setError(e.message)
+      load()
+    }
+  }
+
+  const nudge = (p, dir) => {
+    const i = products.findIndex((x) => x.id === p.id)
+    const target = products[i + dir]
+    if (!target || target.storefront_id !== p.storefront_id) return
+    const next = moveProduct(products, p.id, target.id)
+    setProducts(next)
+    saveOrder(next, p.storefront_id)
+  }
+
+  const onGripDown = (e, p) => {
+    if (e.button != null && e.button !== 0) return
+    e.preventDefault()
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    dragStart.current = { id: p.id, order: productsRef.current.map((x) => x.id) }
+    setDragId(p.id)
+    setError(null)
+    // Stop the page selecting text while a row is dragged
+    document.body.style.userSelect = 'none'
+  }
+  const onGripMove = (e) => {
+    if (!dragStart.current) return
+    const { clientX: x, clientY: y } = e
+    // Scroll the page when dragging near the top (under the sticky nav bar)
+    // or bottom edge, so a long list can be dragged on a phone
+    if (y < 120) window.scrollBy?.(0, -14)
+    else if (y > window.innerHeight - 80) window.scrollBy?.(0, 14)
+    const row = document.elementFromPoint?.(x, y)?.closest?.('tr[data-product-id]')
+    const targetId = row ? Number(row.dataset.productId) : null
+    if (targetId && targetId !== dragStart.current.id) {
+      setProducts((list) => moveProduct(list, dragStart.current.id, targetId))
+    }
+  }
+  const onGripUp = () => {
+    const start = dragStart.current
+    dragStart.current = null
+    setDragId(null)
+    document.body.style.userSelect = ''
+    if (!start) return
+    const list = productsRef.current
+    const changed = list.map((x) => x.id).join() !== start.order.join()
+    const moved = list.find((x) => x.id === start.id)
+    if (changed && moved) saveOrder(list, moved.storefront_id)
+  }
 
   const updateStock = async (p, value) => {
     const stock_quantity = parseInt(value, 10)
@@ -383,12 +698,17 @@ function ProductsPanel({ storefrontId, storefronts }) {
 
   if (loading) return <Spinner className="py-12" />
 
+  const linkProduct = products.find((p) => p.id === linkOpen && p.is_private)
+  const productLines = [...new Set(products.map((p) => (p.product_line || '').trim()).filter(Boolean))].sort()
+
   return (
     <div>
       {editing ? (
         <ProductForm
           key={editing.id}
           initial={editing}
+          productLines={productLines}
+          shippingRules={shippingRules}
           onCancel={() => setEditing(null)}
           onSaved={() => {
             setEditing(null)
@@ -399,6 +719,8 @@ function ProductsPanel({ storefrontId, storefronts }) {
         <ProductForm
           key={`new-${storefrontId}`}
           initial={null}
+          productLines={productLines}
+          shippingRules={shippingRules}
           onSaved={load}
           storefronts={storefronts}
           defaultStorefrontId={storefrontId}
@@ -407,10 +729,25 @@ function ProductsPanel({ storefrontId, storefronts }) {
 
       {error && <p className="text-accent-red text-sm mb-3">{error}</p>}
 
+      {linkProduct && (
+        <div className="mb-4" id="private-link-panel">
+          <PrivateLinkPanel product={linkProduct} onChanged={load} onClose={() => setLinkOpen(null)} />
+        </div>
+      )}
+
+      {products.length > 1 && (
+        <p className="text-xs text-text-muted mb-2">
+          Drag <span className="inline-block align-middle"><GripIcon /></span> or use the arrows to set
+          the order listings show in on the store.
+          {orderSaved && <span className="text-accent-green ml-1">Order saved.</span>}
+        </p>
+      )}
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left">
+              <th className="py-2 pl-1 pr-0 w-px"><span className="sr-only">Order</span></th>
               <th className="py-2 px-3" />
               <th className="py-2 px-3 font-semibold text-text-muted">SKU</th>
               <th className="py-2 px-3 font-semibold text-text-muted">Name</th>
@@ -422,10 +759,43 @@ function ProductsPanel({ storefrontId, storefronts }) {
             </tr>
           </thead>
           <tbody>
-            {products.map((p) => {
+            {products.map((p, i) => {
               const imageCount = p.images?.length ?? (p.image_url ? 1 : 0)
+              const canUp = products[i - 1]?.storefront_id === p.storefront_id
+              const canDown = products[i + 1]?.storefront_id === p.storefront_id
+              const firstOfStorefront = storefrontId == null && storefronts.length > 1
+                && products[i - 1]?.storefront_id !== p.storefront_id
+              const arrowCls = 'block px-1 leading-none text-text-muted hover:text-text disabled:opacity-20 disabled:cursor-default'
               return (
-                <tr key={p.id} className={`border-b border-border/50 hover:bg-bg-surface/50 ${editing?.id === p.id ? 'bg-primary/5' : ''}`}>
+                <tr
+                  data-product-id={p.id}
+                  className={`border-b border-border/50 hover:bg-bg-surface/50 ${editing?.id === p.id ? 'bg-primary/5' : ''} ${
+                    dragId === p.id ? 'bg-primary/10 outline outline-1 outline-primary' : ''} ${
+                    firstOfStorefront && i > 0 ? 'border-t-2 border-t-border' : ''}`}
+                >
+                  <td className="py-2 pl-1 pr-0">
+                    <div className="flex items-center select-none">
+                      <button
+                        type="button"
+                        onPointerDown={(e) => onGripDown(e, p)}
+                        onPointerMove={onGripMove}
+                        onPointerUp={onGripUp}
+                        onPointerCancel={onGripUp}
+                        style={{ touchAction: 'none' }}
+                        className={`p-1.5 rounded text-text-muted hover:text-text ${dragId === p.id ? 'cursor-grabbing' : 'cursor-grab'}`}
+                        aria-label={`Drag to reorder ${p.name}`}
+                        title="Drag to reorder"
+                      >
+                        <GripIcon />
+                      </button>
+                      <div className="flex flex-col">
+                        <button type="button" onClick={() => nudge(p, -1)} disabled={!canUp}
+                          className={arrowCls} aria-label={`Move ${p.name} up`}>▲</button>
+                        <button type="button" onClick={() => nudge(p, 1)} disabled={!canDown}
+                          className={arrowCls} aria-label={`Move ${p.name} down`}>▼</button>
+                      </div>
+                    </div>
+                  </td>
                   <td className="py-2 px-3">
                     <div className="relative h-10 w-10">
                       {p.image_url ? (
@@ -450,7 +820,10 @@ function ProductsPanel({ storefrontId, storefronts }) {
                       <span className="block text-xs text-text-muted">{storefrontName(p.storefront_id)}</span>
                     )}
                   </td>
-                  <td className="py-2 px-3 text-secondary">{formatMoney(p.price_cents, p.currency)}</td>
+                  <td className="py-2 px-3 text-secondary">
+                    {formatMoney(p.price_cents, p.currency)}
+                    <ListingShippingTag product={p} />
+                  </td>
                   <td className="py-2 px-3">
                     <input
                       type="number"
@@ -470,6 +843,9 @@ function ProductsPanel({ storefrontId, storefronts }) {
                     ) : (
                       <span className="text-text-muted">Hidden</span>
                     )}
+                    {p.is_private ? (
+                      <span className="block text-xs font-medium text-secondary whitespace-nowrap">Private · link only</span>
+                    ) : null}
                   </td>
                   <td className="py-2 px-3 text-right whitespace-nowrap">
                     <button
@@ -482,6 +858,24 @@ function ProductsPanel({ storefrontId, storefronts }) {
                     >
                       Edit
                     </button>
+                    {p.is_private ? (
+                      <button
+                        onClick={() => {
+                          const opening = linkOpen !== p.id
+                          setLinkOpen(opening ? p.id : null)
+                          // The panel sits above the list, so bring it into view
+                          if (opening) {
+                            setTimeout(() => document.getElementById('private-link-panel')
+                              ?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }), 0)
+                          }
+                        }}
+                        className="text-primary hover:underline mr-3"
+                        aria-expanded={linkOpen === p.id}
+                        aria-label={`Link and QR code for ${p.name}`}
+                      >
+                        Link &amp; QR
+                      </button>
+                    ) : null}
                     <button onClick={() => toggleActive(p)} className="text-primary hover:underline">
                       {p.is_active ? 'Hide' : 'Show'}
                     </button>
@@ -513,12 +907,51 @@ const QUEUE_FILTERS = [
 // Keep in sync with TRACKING_REQUIRED_OVER_CENTS in routes/api/store.py
 const TRACKING_REQUIRED_OVER_CENTS = 5000
 
-function OrderRow({ order, onChanged, showStorefront = false }) {
-  const trackingRequired = order.total_cents > TRACKING_REQUIRED_OVER_CENTS
-  const [expanded, setExpanded] = useState(false)
-  const [detail, setDetail] = useState(null)
+// Tracking number + carrier + "Mark shipped". totalCents is what's in the
+// package, so paired orders are judged on their combined total.
+function ShipForm({ totalCents, busy, onShip, label = 'Mark shipped' }) {
+  const trackingRequired = totalCents > TRACKING_REQUIRED_OVER_CENTS
   const [tracking, setTracking] = useState('')
   const [carrier, setCarrier] = useState('USPS')
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          className={`${inputCls} flex-1 min-w-40`}
+          placeholder={trackingRequired ? 'Tracking number (required)' : 'Tracking number (optional)'}
+          value={tracking}
+          onChange={(e) => setTracking(e.target.value)}
+        />
+        {tracking.trim() && (
+          <select className={inputCls} value={carrier} onChange={(e) => setCarrier(e.target.value)}>
+            <option>USPS</option>
+            <option>UPS</option>
+            <option>FedEx</option>
+            <option>Other</option>
+          </select>
+        )}
+        <button
+          onClick={() => onShip(tracking.trim() || null, tracking.trim() ? carrier : null)}
+          disabled={busy || (trackingRequired && !tracking.trim())}
+          className="bg-accent-green hover:opacity-90 text-white font-medium px-4 py-2 rounded disabled:opacity-50"
+        >
+          {label}
+        </button>
+      </div>
+      {!tracking.trim() && (
+        <p className="text-xs text-text-muted mt-1">
+          {trackingRequired
+            ? 'This package is over $50, so it needs a tracking number.'
+            : 'Tracking is only required for packages over $50.'}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function OrderRow({ order, onChanged, showStorefront = false, pairedWith = 0, printHref = null }) {
+  const [expanded, setExpanded] = useState(false)
+  const [detail, setDetail] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -530,11 +963,23 @@ function OrderRow({ order, onChanged, showStorefront = false }) {
     setExpanded((x) => !x)
   }
 
-  const ship = async () => {
+  const ship = async (tracking, carrier) => {
     setBusy(true)
     setError(null)
     try {
-      await adminShipOrder(order.id, tracking.trim() || null, tracking.trim() ? carrier : null)
+      await adminShipOrder(order.id, tracking, carrier)
+      onChanged()
+    } catch (e) {
+      setError(e.message)
+      setBusy(false)
+    }
+  }
+
+  const unpair = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await adminUnpairOrder(order.id)
       onChanged()
     } catch (e) {
       setError(e.message)
@@ -578,10 +1023,15 @@ function OrderRow({ order, onChanged, showStorefront = false }) {
             <span className="text-xs text-brand-sky">{order.storefront_name}</span>
           )}
           <span className="text-sm text-secondary font-medium">{formatMoney(order.total_cents, order.currency)}</span>
-          <span className="text-sm text-text-muted">{order.status}</span>
+          <span className="text-sm text-text-muted">
+            {order.status}
+            {pairedWith > 0 && order.status === 'paid' && (
+              <span className="ml-2 text-xs rounded-full border border-secondary/40 bg-secondary/10 text-secondary px-2 py-0.5">Paired</span>
+            )}
+          </span>
         </button>
         <a
-          href={`/admin/store/orders/${order.id}/print?print=1`}
+          href={printHref || `/admin/store/orders/${order.id}/print?print=1`}
           target="_blank"
           rel="noopener"
           className="shrink-0 mr-3 inline-flex items-center gap-1.5 rounded border border-border px-2.5 py-1.5 text-xs text-text-muted hover:text-text hover:border-primary transition-colors"
@@ -618,40 +1068,26 @@ function OrderRow({ order, onChanged, showStorefront = false }) {
             <Spinner className="py-2" />
           )}
 
-          {order.status === 'paid' && (
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  className={`${inputCls} flex-1 min-w-40`}
-                  placeholder={trackingRequired ? 'Tracking number (required)' : 'Tracking number (optional)'}
-                  value={tracking}
-                  onChange={(e) => setTracking(e.target.value)}
-                />
-                {tracking.trim() && (
-                  <select className={inputCls} value={carrier} onChange={(e) => setCarrier(e.target.value)}>
-                    <option>USPS</option>
-                    <option>UPS</option>
-                    <option>FedEx</option>
-                    <option>Other</option>
-                  </select>
-                )}
-                <button
-                  onClick={ship}
-                  disabled={busy || (trackingRequired && !tracking.trim())}
-                  className="bg-accent-green hover:opacity-90 text-white font-medium px-4 py-2 rounded disabled:opacity-50"
-                >
-                  Mark shipped
-                </button>
-              </div>
-              {!tracking.trim() && (
-                <p className="text-xs text-text-muted mt-1">
-                  {trackingRequired
-                    ? 'This order is over $50, so it needs a tracking number.'
-                    : 'Tracking is only required for orders over $50.'}
+          {order.status === 'paid' && (pairedWith > 0 ? (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="text-text-muted">
+                Ships with the {pairedWith === 1 ? 'other paired order' : `other ${pairedWith} paired orders`}. Use the box above to mark the package shipped.
+              </span>
+              <button onClick={unpair} disabled={busy} className="text-primary hover:underline">
+                Unpair
+              </button>
+            </div>
+          ) : (
+            <>
+              {order.ship_group && (
+                <p className="text-xs text-text-muted">
+                  Paired with an order that isn't in this list. Marking this shipped ships the whole pair.{' '}
+                  <button onClick={unpair} disabled={busy} className="text-primary hover:underline">Unpair</button>
                 </p>
               )}
-            </div>
-          )}
+              <ShipForm totalCents={order.total_cents} busy={busy} onShip={ship} />
+            </>
+          ))}
           {order.status === 'shipped' && (
             <button onClick={() => setStatus('delivered')} disabled={busy} className="text-primary hover:underline">
               Mark delivered
@@ -671,6 +1107,139 @@ function OrderRow({ order, onChanged, showStorefront = false }) {
       )}
     </div>
   )
+}
+
+const MATCH_WORDS = { account: 'same account', email: 'same email', address: 'same address', paired: 'paired' }
+
+function addressKey(o) {
+  return `${(o.ship_line1 || '').toLowerCase().replace(/[^a-z0-9]/g, '')}|${(o.ship_postal || '').slice(0, 5)}`
+}
+
+// Orders that look like they're from one buyer, shown together so they can
+// be paired and sent in one package.
+function BuyerGroup({ orders, onChanged, showStorefront }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  const toShip = orders.filter((o) => o.status === 'paid')
+  const pairCounts = {}
+  toShip.forEach((o) => { if (o.ship_group) pairCounts[o.ship_group] = (pairCounts[o.ship_group] || 0) + 1 })
+  const pairs = Object.keys(pairCounts).filter((g) => pairCounts[g] > 1)
+  const pairedIds = toShip.filter((o) => pairs.includes(o.ship_group))
+  const unpaired = toShip.filter((o) => !pairs.includes(o.ship_group))
+  const canPair = toShip.length > 1 && unpaired.length > 0
+  // One pair at a time is the normal case; it's the one the box ships
+  const pair = pairs.length === 1 ? pairs[0] : null
+  const pairOrders = pair ? toShip.filter((o) => o.ship_group === pair) : []
+  const pairTotal = pairOrders.reduce((n, o) => n + o.total_cents, 0)
+
+  const names = [...new Set(orders.map((o) => o.username))]
+  const total = orders.reduce((n, o) => n + o.total_cents, 0)
+  const addresses = new Set(toShip.filter((o) => o.ship_line1).map(addressKey))
+  const why = (orders[0].buyer_match || []).filter((m) => m !== 'paired').map((m) => MATCH_WORDS[m])
+
+  const run = async (fn) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await fn()
+      onChanged()
+    } catch (e) {
+      setError(e.message)
+      setBusy(false)
+    }
+  }
+  const pairAll = () => run(() => adminPairOrders(toShip.map((o) => o.id)))
+  const shipPair = (tracking, carrier) => run(() => adminShipOrder(pairOrders[0].id, tracking, carrier))
+  const printPair = pairOrders.length > 1
+    ? `/admin/store/orders/${pairOrders[0].id}/print?print=1&with=${pairOrders.slice(1).map((o) => o.id).join(',')}`
+    : null
+
+  return (
+    <section
+      className="rounded-lg border border-secondary/40 bg-secondary/5 p-2 space-y-2"
+      aria-label={`Orders from ${names.join(' / ')}`}
+    >
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 pt-1">
+        <span className="text-xs font-semibold uppercase tracking-wide text-secondary">Same buyer</span>
+        <span className="text-sm font-medium">{names.join(' / ')}</span>
+        <span className="text-sm text-text-muted">
+          {orders.length} orders · {formatMoney(total, orders[0].currency)}
+          {why.length > 0 && ` · ${why.join(', ')}`}
+        </span>
+        {canPair && (
+          <button
+            onClick={pairAll}
+            disabled={busy}
+            className="ml-auto rounded border border-secondary px-3 py-1.5 text-sm font-medium text-secondary hover:bg-secondary/10 disabled:opacity-50"
+          >
+            {pairedIds.length ? 'Add to the pair' : 'Pair to ship together'}
+          </button>
+        )}
+      </div>
+      {canPair && addresses.size > 1 && (
+        <p className="px-1 text-xs text-accent-red">
+          These orders have different shipping addresses. Check with the buyer before sending them in one package.
+        </p>
+      )}
+
+      {pair && (
+        <div className="rounded border border-secondary/40 bg-bg-surface p-3 space-y-2 text-sm">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="font-medium">
+              Paired: {pairOrders.length} orders in one package · {formatMoney(pairTotal, pairOrders[0].currency)}
+            </span>
+            {printPair && (
+              <a href={printPair} target="_blank" rel="noopener" className="text-primary hover:underline">
+                Print one packing slip
+              </a>
+            )}
+          </div>
+          <ShipForm
+            totalCents={pairTotal}
+            busy={busy}
+            onShip={shipPair}
+            label={`Mark all ${pairOrders.length} shipped`}
+          />
+        </div>
+      )}
+      {error && <p className="px-1 text-sm text-accent-red">{error}</p>}
+
+      <div className="space-y-2">
+        {orders.map((o) => {
+          const others = o.status === 'paid' && pairs.includes(o.ship_group) ? pairCounts[o.ship_group] - 1 : 0
+          return (
+            <OrderRow
+              key={o.id}
+              order={o}
+              onChanged={onChanged}
+              showStorefront={showStorefront}
+              pairedWith={others}
+              printHref={others && o.ship_group === pair ? printPair : null}
+            />
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+// Split the list into single orders and same-buyer groups, keeping the
+// queue's order (a group sits where its newest order would).
+function groupByBuyer(orders) {
+  const out = []
+  const groups = {}
+  orders.forEach((o) => {
+    if (!o.buyer_group) {
+      out.push({ key: `o${o.id}`, orders: [o] })
+    } else if (groups[o.buyer_group]) {
+      groups[o.buyer_group].orders.push(o)
+    } else {
+      groups[o.buyer_group] = { key: o.buyer_group, orders: [o] }
+      out.push(groups[o.buyer_group])
+    }
+  })
+  return out
 }
 
 function OrdersPanel({ storefrontId, showStorefront }) {
@@ -788,9 +1357,16 @@ function OrdersPanel({ storefrontId, showStorefront }) {
         <p className="text-center text-text-muted py-12">No orders here.</p>
       ) : (
         <div className="space-y-2">
-          {orders.map((o) => (
-            <OrderRow key={o.id} order={o} onChanged={load} showStorefront={showStorefront} />
-          ))}
+          {groupByBuyer(orders).map((g) => (g.orders.length > 1 ? (
+            <BuyerGroup key={g.key} orders={g.orders} onChanged={load} showStorefront={showStorefront} />
+          ) : (
+            <OrderRow
+              key={g.key}
+              order={g.orders[0]}
+              onChanged={load}
+              showStorefront={showStorefront}
+            />
+          )))}
         </div>
       )}
     </div>

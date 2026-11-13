@@ -11,8 +11,12 @@ vi.mock('@/api/store', async () => {
     adminCreateProduct: vi.fn(),
     adminUpdateProduct: vi.fn(),
     adminDeactivateProduct: vi.fn(),
+    adminReorderProducts: vi.fn(),
+    adminSetProductPrivate: vi.fn(),
     adminUploadProductImages: vi.fn(),
     adminGetOrders: vi.fn(),
+    adminPairOrders: vi.fn(),
+    adminShipOrder: vi.fn(),
     adminStartStripeOnboarding: vi.fn(),
     adminDeleteStorefront: vi.fn(),
     adminLinkStripe: vi.fn(),
@@ -27,7 +31,8 @@ vi.mock('@/api/store', async () => {
 import {
   adminGetMe, adminGetProducts, adminCreateProduct, adminUpdateProduct, adminUploadProductImages, adminGetOrders,
   adminStartStripeOnboarding, adminDeleteStorefront, adminGetStorefrontApplications, adminLinkStripe,
-  adminGetStorefrontAdmins, adminSetSaleAlerts, adminSetStorefrontDescription,
+  adminGetStorefrontAdmins, adminSetSaleAlerts, adminSetStorefrontDescription, adminReorderProducts,
+  adminPairOrders, adminShipOrder, adminSetProductPrivate,
 } from '@/api/store'
 import StoreAdmin from '../StoreAdmin'
 
@@ -72,6 +77,52 @@ describe('StoreAdmin order queue', () => {
   })
 })
 
+describe('StoreAdmin same-buyer orders', () => {
+  const base = { username: 'bruce', currency: 'USD', status: 'paid', storefront_id: 1, buyer_group: 'b1', buyer_match: ['account'],
+    ship_line1: '1 Main St', ship_postal: '43201' }
+  const A = { ...base, id: 1, order_number: 'SUM-A', total_cents: 1198 }
+  const B = { ...base, id: 2, order_number: 'SUM-B', total_cents: 2098 }
+  const OTHER = { id: 3, order_number: 'SUM-C', username: 'grish', total_cents: 599, currency: 'USD', status: 'paid', buyer_group: null }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    adminGetMe.mockResolvedValue(FULL_ADMIN)
+    adminGetProducts.mockResolvedValue({ products: [] })
+  })
+
+  it('boxes one buyer\'s orders together and pairs them', async () => {
+    adminGetOrders.mockResolvedValue({ orders: [A, OTHER, B] })
+    adminPairOrders.mockResolvedValue({ success: true })
+    renderWithRouter(<StoreAdmin />)
+    const box = await screen.findByRole('region', { name: 'Orders from bruce' })
+    expect(within(box).getByText('SUM-A')).toBeInTheDocument()
+    expect(within(box).getByText('SUM-B')).toBeInTheDocument()
+    expect(within(box).queryByText('SUM-C')).not.toBeInTheDocument()
+    expect(within(box).getByText(/2 orders · \$32\.96 · same account/)).toBeInTheDocument()
+    await userEvent.click(within(box).getByRole('button', { name: 'Pair to ship together' }))
+    expect(adminPairOrders).toHaveBeenCalledWith([1, 2])
+  })
+
+  it('ships a pair with one tracking number and prints one slip', async () => {
+    adminGetOrders.mockResolvedValue({ orders: [{ ...A, ship_group: 'SG-1' }, { ...B, ship_group: 'SG-1' }] })
+    adminShipOrder.mockResolvedValue({ success: true })
+    renderWithRouter(<StoreAdmin />)
+    const box = await screen.findByRole('region', { name: 'Orders from bruce' })
+    expect(within(box).getByText(/Paired: 2 orders in one package/)).toBeInTheDocument()
+    expect(within(box).queryByRole('button', { name: 'Pair to ship together' })).not.toBeInTheDocument()
+    expect(within(box).getByRole('link', { name: 'Print one packing slip' }))
+      .toHaveAttribute('href', '/admin/store/orders/1/print?print=1&with=2')
+    await userEvent.click(within(box).getByRole('button', { name: 'Mark all 2 shipped' }))
+    expect(adminShipOrder).toHaveBeenCalledWith(1, null, null)
+  })
+
+  it('warns when the orders go to different addresses', async () => {
+    adminGetOrders.mockResolvedValue({ orders: [A, { ...B, ship_line1: '9 Elm Rd', ship_postal: '45402' }] })
+    renderWithRouter(<StoreAdmin />)
+    expect(await screen.findByText(/different shipping addresses/)).toBeInTheDocument()
+  })
+})
+
 describe('StoreAdmin products', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -103,6 +154,9 @@ describe('StoreAdmin products', () => {
     await userEvent.clear(screen.getByLabelText('Price'))
     await userEvent.type(screen.getByLabelText('Price'), '9.50')
     await userEvent.clear(screen.getByLabelText('Monthly limit per user'))
+    await userEvent.type(screen.getByLabelText('Product line'), '  Fire Tokens ')
+    await userEvent.type(screen.getByLabelText('Cards per item'), '6')
+    expect(screen.getByText(/One on its own ships for \$1\.99 in a plain white envelope/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Remove image 1' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
@@ -114,8 +168,12 @@ describe('StoreAdmin products', () => {
       price_cents: 950,
       stock_quantity: 4,
       max_per_user_monthly: null,
+      product_line: 'Fire Tokens',
+      ship_cards: 6,
+      shipping_cents: null,
       images: ['/two.png'],
       image_framing: {},
+      is_private: false,
     })
     // Editor closes and the list reloads
     const callsBefore = adminGetProducts.mock.calls.length
@@ -210,8 +268,12 @@ describe('StoreAdmin products', () => {
       price_cents: 500,
       stock_quantity: 3,
       max_per_user_monthly: undefined,
+      product_line: '',
+      ship_cards: null,
+      shipping_cents: null,
       images: ['https://img.example/ice.png'],
       image_framing: {},
+      is_private: false,
       storefront_id: 1,
     })
   })
@@ -388,5 +450,118 @@ describe('StoreAdmin sale messages', () => {
     await userEvent.click(toggle)
     expect(adminSetSaleAlerts).toHaveBeenCalledWith(2, false)
     expect(toggle).toHaveAttribute('aria-checked', 'false')
+  })
+})
+
+describe('StoreAdmin product order', () => {
+  const p = (id, sku, storefront_id = 1) => ({ ...TOKEN, id, sku, name: `Product ${sku}`, storefront_id, images: [] })
+  const skus = () => screen.getAllByText(/^(A|B|C|X)$/).map((el) => el.textContent)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    adminGetMe.mockResolvedValue(FULL_ADMIN)
+    adminGetProducts.mockResolvedValue({ products: [p(1, 'A'), p(2, 'B'), p(3, 'C')] })
+    adminGetOrders.mockResolvedValue({ orders: [] })
+    adminReorderProducts.mockResolvedValue({ success: true })
+  })
+
+  async function open() {
+    renderWithRouter(<StoreAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Products' }))
+    await screen.findByText('A')
+  }
+
+  it('moves a listing with the arrows and saves the storefront order', async () => {
+    await open()
+    expect(screen.getByRole('button', { name: 'Move Product A up' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Move Product C up' }))
+    expect(skus()).toEqual(['A', 'C', 'B'])
+    expect(adminReorderProducts).toHaveBeenCalledWith(1, [1, 3, 2])
+    expect(await screen.findByText('Order saved.')).toBeInTheDocument()
+  })
+
+  it('drags a listing with the grip (mouse or finger)', async () => {
+    await open()
+    const rowOf = (sku) => screen.getByText(sku).closest('tr')
+    const grip = screen.getByRole('button', { name: 'Drag to reorder Product A' })
+    document.elementFromPoint = vi.fn(() => rowOf('C'))
+    fireEvent.pointerDown(grip, { pointerId: 1, button: 0, clientX: 5, clientY: 300 })
+    fireEvent.pointerMove(grip, { pointerId: 1, clientX: 5, clientY: 300 })
+    fireEvent.pointerUp(grip, { pointerId: 1 })
+    expect(skus()).toEqual(['B', 'C', 'A'])
+    await waitFor(() => expect(adminReorderProducts).toHaveBeenCalledWith(1, [2, 3, 1]))
+    delete document.elementFromPoint
+  })
+
+  it('keeps each storefront in its own group in the all-storefronts view', async () => {
+    const explorer = { id: 2, slug: 'explorer', name: 'Explorer', role: 'owner', is_active: 1 }
+    adminGetMe.mockResolvedValue({ is_full_admin: true, storefronts: [SUMMIT, explorer] })
+    adminGetProducts.mockResolvedValue({ products: [p(1, 'A'), p(2, 'B'), p(9, 'X', 2)] })
+    await open()
+    expect(screen.getByRole('button', { name: 'Move Product B down' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Move Product X up' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Move Product B up' }))
+    expect(adminReorderProducts).toHaveBeenCalledWith(1, [2, 1])
+  })
+
+  it('reloads the list when saving fails', async () => {
+    adminReorderProducts.mockRejectedValue(new Error('The product list changed since this page loaded. Reload and try again.'))
+    await open()
+    const calls = adminGetProducts.mock.calls.length
+    await userEvent.click(screen.getByRole('button', { name: 'Move Product B up' }))
+    expect(await screen.findByText(/product list changed/)).toBeInTheDocument()
+    await waitFor(() => expect(adminGetProducts.mock.calls.length).toBeGreaterThan(calls))
+  })
+})
+
+describe('StoreAdmin private listings', () => {
+  const PRIVATE = {
+    ...TOKEN,
+    is_private: 1,
+    private_token: 'abc123',
+    private_url: 'https://sorcererssummit.com/store/p/abc123',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    adminGetMe.mockResolvedValue(FULL_ADMIN)
+    adminGetProducts.mockResolvedValue({ products: [PRIVATE] })
+    adminGetOrders.mockResolvedValue({ orders: [] })
+    adminSetProductPrivate.mockResolvedValue({ product: PRIVATE })
+  })
+
+  it('marks private listings and shows their link and QR code', async () => {
+    await openProductsTab()
+    expect(screen.getByText('Private · link only')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Link and QR code for Fire Token' }))
+    expect(screen.getByRole('textbox', { name: 'Private link for Fire Token' })).toHaveValue(PRIVATE.private_url)
+    expect(screen.getByRole('img', { name: 'QR code for Fire Token' }).getAttribute('src'))
+      .toContain('/api/store/admin/products/7/qr.png')
+    expect(screen.getByRole('link', { name: 'Download QR (PNG)' }).getAttribute('href')).toContain('download=1')
+    expect(screen.getByRole('link', { name: 'Print sign (PDF)' }).getAttribute('href'))
+      .toContain('/api/store/admin/products/7/qr-sign.pdf')
+  })
+
+  it('makes a new link only after confirming', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    await openProductsTab()
+    await userEvent.click(screen.getByRole('button', { name: 'Link and QR code for Fire Token' }))
+    await userEvent.click(screen.getByRole('button', { name: 'New link' }))
+    expect(adminSetProductPrivate).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'New link' }))
+    await waitFor(() => expect(adminSetProductPrivate).toHaveBeenCalledWith(7, true, true))
+    confirm.mockRestore()
+  })
+
+  it('saves the private switch from the editor', async () => {
+    adminGetProducts.mockResolvedValue({ products: [TOKEN] })
+    adminUpdateProduct.mockResolvedValue({ success: true })
+    await openProductsTab()
+    expect(screen.queryByText('Private · link only')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Edit Fire Token' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /Private \(link only\)/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(adminUpdateProduct).toHaveBeenCalledTimes(1))
+    expect(adminUpdateProduct.mock.calls[0][1].is_private).toBe(true)
   })
 })

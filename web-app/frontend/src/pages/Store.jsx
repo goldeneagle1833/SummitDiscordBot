@@ -10,8 +10,11 @@ import FramedImage from '@/components/store/FramedImage'
 import LinkifiedText from '@/components/ui/LinkifiedText'
 import usePageTitle from '@/hooks/usePageTitle'
 import ImageLightbox from '@/components/store/ImageLightbox'
+import NewTag from '@/components/common/NewTag'
+import { useIsNew } from '@/hooks/useNewContent'
+import { ES_STOREFRONT_SLUG } from '@/utils/explorerSite'
 
-function LoginPromptModal({ onClose }) {
+export function LoginPromptModal({ onClose }) {
   const returnUrl = encodeURIComponent(window.location.href)
 
   useEffect(() => {
@@ -61,7 +64,7 @@ function productImages(p) {
 
 // Main image plus a thumbnail strip when a product has more than one image.
 // Clicking the main image opens it full screen, uncropped.
-function ProductGallery({ product }) {
+export function ProductGallery({ product }) {
   const images = productImages(product)
   const [index, setIndex] = useState(0)
   const [viewing, setViewing] = useState(false)
@@ -125,66 +128,35 @@ function ProductGallery({ product }) {
   )
 }
 
-// Summit shirts are printed and sold by Crit Apparel, so this card links out
-// to their store in a new tab instead of going in the cart.
-export const SUMMIT_SHIRTS = {
-  url: 'https://critapparel.com/collections/sorcerersummit',
-  image: '/static/images/store/summit-shirts.png',
-}
-
-function ShirtsCard() {
-  return (
-    <a
-      href={SUMMIT_SHIRTS.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="group bg-bg-surface border border-border rounded-lg overflow-hidden flex flex-col transition-all duration-200 hover:border-secondary/40 hover:-translate-y-0.5 hover:shadow-harsh"
-    >
-      <img
-        src={SUMMIT_SHIRTS.image}
-        alt="Sorcerers Summit T-shirt"
-        className="w-full aspect-[3/2] object-contain bg-gradient-to-br from-bg-elevated to-bg-surface"
-      />
-      <div className="p-4 flex flex-col flex-1">
-        <h2 className="font-semibold text-text-primary">Summit T-Shirts</h2>
-        <p className="text-sm text-text-muted mt-1">
-          Sorcerers Summit shirts, printed by Crit Apparel. Back only $28, front &amp; back $33.
-          Lightweight: back only $23, front &amp; back $25.
-        </p>
-        <p className="text-xs text-text-muted mt-2 flex-1">
-          Ordered and shipped through Crit Apparel's store, not your cart here.
-        </p>
-        <div className="flex items-center justify-between mt-3">
-          <span className="text-secondary font-semibold text-lg">From $23</span>
-          <span className="bg-primary group-hover:bg-primary-dark text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5">
-            Shop shirts
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
-            </svg>
-            <span className="sr-only">(opens in a new tab)</span>
-          </span>
-        </div>
-      </div>
-    </a>
-  )
-}
-
 // Used when the storefront list can't load: everything shows in one tab
 const FALLBACK_STOREFRONTS = [{ id: null, slug: DEFAULT_STOREFRONT, name: 'Summit Store' }]
 
-export default function Store() {
-  usePageTitle('Store')
+// The Explorer Series storefront lives on the Explorer Series site's Shop
+// instead of as a tab here.
+const MINI_SITE_STOREFRONTS = [ES_STOREFRONT_SLUG]
+
+/**
+ * storefrontSlug: show just that storefront, with no tabs (the Explorer Series
+ * site's Shop). Without it, /store shows every other storefront as tabs.
+ */
+export default function Store({ storefrontSlug = null }) {
+  usePageTitle(storefrontSlug ? 'Shop' : 'Store')
   const { user } = useAuth()
+  const isNewProduct = useIsNew('store')
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [allProducts, setAllProducts] = useState([])
-  const [storefronts, setStorefronts] = useState(FALLBACK_STOREFRONTS)
+  const [allStorefronts, setStorefronts] = useState(FALLBACK_STOREFRONTS)
+  const storefronts = storefrontSlug
+    ? allStorefronts.filter((s) => s.slug === storefrontSlug)
+    : allStorefronts.filter((s) => !MINI_SITE_STOREFRONTS.includes(s.slug))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
 
   const active =
-    storefronts.find((s) => s.slug === params.get('storefront')) || storefronts[0]
+    storefronts.find((s) => s.slug === params.get('storefront')) || storefronts[0] ||
+    { id: -1, slug: storefrontSlug || DEFAULT_STOREFRONT, name: 'Shop', accepts_payments: false }
   // Each storefront has its own cart, because each one checks out separately
   const [cart, setCart] = useStoreCart(active.slug) // { [productId]: quantity }
   const products = allProducts.filter((p) =>
@@ -225,9 +197,6 @@ export default function Store() {
   const subtotal = cartItems.reduce((sum, p) => sum + p.price_cents * cart[p.id], 0)
   const totalQty = cartItems.reduce((n, p) => n + cart[p.id], 0)
 
-  // The shirts link lives on the Summit Store tab only
-  const showShirts = active === storefronts[0]
-
   // Storefronts other than Summit can't check out until their Stripe is set up
   const notTakingOrders = active.accepts_payments === false
   const goToCheckout = () =>
@@ -239,7 +208,7 @@ export default function Store() {
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-        <h1 className="text-2xl font-display text-secondary">Sorcery Community Store</h1>
+        <h1 className="text-2xl font-display text-secondary">{storefrontSlug ? active.name : 'Sorcery Community Store'}</h1>
         <div className="flex flex-col items-end gap-2">
           {user && (
             <Link to="/store/orders" className="text-sm text-primary hover:underline">
@@ -249,6 +218,7 @@ export default function Store() {
         </div>
       </div>
 
+      {storefrontSlug ? <div className="border-b border-border mb-6" /> : (
       <div role="tablist" aria-label="Storefronts" className="flex gap-6 border-b border-border mb-6 overflow-x-auto no-scrollbar">
         {storefronts.map((sf) => {
           const selected = sf.slug === active.slug
@@ -276,6 +246,7 @@ export default function Store() {
           )
         })}
       </div>
+      )}
 
       {active.description && (
         <p className="text-sm text-text-muted mb-2 max-w-3xl whitespace-pre-line">
@@ -303,7 +274,7 @@ export default function Store() {
         </p>
       )}
 
-      {products.length === 0 && !showShirts ? (
+      {products.length === 0 ? (
         <p className="text-center text-text-muted py-12">
           Nothing for sale right now. Check back soon!
         </p>
@@ -326,7 +297,10 @@ export default function Store() {
               >
                 <ProductGallery product={p} />
                 <div className="p-4 flex flex-col flex-1">
-                  <h2 className="font-semibold text-text-primary">{p.name}</h2>
+                  <h2 className="font-semibold text-text-primary flex items-center gap-2">
+                    {p.name}
+                    {isNewProduct(p.created_at) && <NewTag />}
+                  </h2>
                   {p.description && (
                     <p className="text-sm text-text-muted mt-1 flex-1">{p.description}</p>
                   )}
@@ -383,7 +357,6 @@ export default function Store() {
               </div>
             )
           })}
-          {showShirts && <ShirtsCard />}
         </div>
       )}
 

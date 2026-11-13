@@ -349,6 +349,90 @@ def matchup_grid(games: list[dict], archetypes: list[dict] | None = None) -> dic
 
 
 ELEMENTS = ("Air", "Earth", "Fire", "Water")
+
+
+# ---------------------------------------------------------------------- #
+# Deck type matchups ("what does my deck lose to?")                        #
+# ---------------------------------------------------------------------- #
+# Deck types are the Deck Archetypes page's element groups: a deck's top two
+# elements by Spellbook copies (repositories.archetype_decks.element_label),
+# so "Fire" is a mono Fire deck and "Air / Fire" a two-element deck. "Any X"
+# takes every group with that element, like the Deck Archetypes Element filter.
+
+def _deck_type_label(key: str) -> str:
+    if key.startswith("any:"):
+        return f"Any {key[4:]} deck"
+    return f"Mono {key}" if " / " not in key else key
+
+
+def _deck_type_keys(elements: str) -> list[str]:
+    """Every deck type key a deck's element label belongs to."""
+    return [elements] + [f"any:{e}" for e in elements.split(" / ") if e in ELEMENTS]
+
+
+def deck_type_matchups(games: list[dict], min_deck_games: int = MIN_ARCHETYPE_GAMES) -> dict:
+    """For each deck type (optionally with one Avatar), what it beats and loses to.
+
+    Your side needs as many games as an Avatar does to make the tiers; each
+    opponent row needs MIN_MATCHUP_GAMES, like a matchup grid cell. A game where
+    both decks fit the pick is a mirror and is left out. Totals only.
+    """
+    # pick -> [games, wins, {view: {opponent: [games, wins]}}]
+    stats: dict[tuple[str, str], list] = {}
+    for g in games:
+        w, l = g["winner"], g["loser"]
+        if not (w and l):
+            continue
+        sides = ((w, l, True), (l, w, False))
+        picks = [{(k, a) for k in _deck_type_keys(me[1]) for a in ("", me[0])} for me, _o, _won in sides]
+        for (me, opp, won), mine, theirs in zip(sides, picks, reversed(picks)):
+            for pick in mine - theirs:
+                rec = stats.setdefault(pick, [0, 0, {"avatar": {}, "deckType": {}, "both": {}}])
+                rec[0] += 1
+                rec[1] += 1 if won else 0
+                for view, name in (("avatar", opp[0]), ("deckType", opp[1]), ("both", f"{opp[0]}|{opp[1]}")):
+                    cell = rec[2][view].setdefault(name, [0, 0])
+                    cell[0] += 1
+                    cell[1] += 1 if won else 0
+
+    picks: dict[str, dict] = {}
+    options: dict[str, dict] = {}
+    for (key, avatar), (n, wins, views) in stats.items():
+        if n < min_deck_games:
+            continue
+        rows = {}
+        for view, opps in views.items():
+            out = []
+            for name, (m, won) in opps.items():
+                if m < MIN_MATCHUP_GAMES:
+                    continue
+                row = {"games": m, "winRate": round(won / m * 100, 1)}
+                if view == "both":
+                    row["avatar"], row["elements"] = name.split("|", 1)
+                elif view == "avatar":
+                    row["avatar"] = name
+                else:
+                    row["elements"] = name
+                out.append(row)
+            out.sort(key=lambda r: (r["winRate"], -r["games"]))
+            rows[view] = out
+        picks[f"{key}|{avatar}"] = {"games": n, "winRate": round(wins / n * 100, 1), **rows}
+        opt = options.setdefault(key, {"key": key, "label": _deck_type_label(key),
+                                       "kind": "any" if key.startswith("any:") else "pair" if " / " in key else "mono",
+                                       "games": 0, "avatars": []})
+        if avatar:
+            opt["avatars"].append({"avatar": avatar, "games": n})
+        else:
+            opt["games"] = n
+    kind_order = {"mono": 0, "pair": 1, "any": 2}
+    ordered = sorted((o for o in options.values() if o["games"]),
+                     key=lambda o: (kind_order[o["kind"]], -o["games"]))
+    for o in ordered:
+        o["avatars"].sort(key=lambda a: -a["games"])
+    return {"options": ordered, "picks": picks, "minDeckGames": min_deck_games,
+            "minGames": MIN_MATCHUP_GAMES}
+
+
 MIN_SIGNAL_GAMES = 5       # games each side of a comparison needs before a counter signal shows
 MIN_KEY_CARD_DECKS = 10    # winning decks that must run a card before it's named
 
@@ -893,6 +977,7 @@ def build_payload(period: Period, repo: MetaReportRepository | None = None,
     _with_moves(ranked["archetypes"], previous["archetypes"])
     ranked["matchups"] = matchup_grid(games, ranked["archetypes"])
     ranked["counters"] = counter_picks(games, ranked["archetypes"])
+    ranked["deckTypes"] = deck_type_matchups(games, ranked["minArchetypeGames"])
     ranked["elementTrend"] = element_trend(games, previous_games, period)
 
     history = repo.reports_before(f, limit=4)
@@ -917,6 +1002,24 @@ def build(period: Period, repo: MetaReportRepository | None = None, **kwargs) ->
     payload = build_payload(period, repo, **kwargs)
     return repo.save_build(period.slug, payload["period"]["from"], payload["period"]["through"],
                            payload, draft_story(payload))
+
+
+def with_deck_types(report: dict | None, repo: MetaReportRepository | None = None, db_path=None) -> dict | None:
+    """Reports built before deck type matchups get them from the saved ranked games
+    (our own match records, never PSO) the first time they're opened."""
+    if not report:
+        return report
+    ranked = (report.get("payload") or {}).get("ranked")
+    if ranked is None or "deckTypes" in ranked:
+        return report
+    try:
+        games = ranked_games(report["from"], report["through"], db_path)
+        minimum = ranked.get("minArchetypeGames") or archetype_stats(games)["minArchetypeGames"]
+        ranked["deckTypes"] = deck_type_matchups(games, minimum)
+        (repo or MetaReportRepository()).update_payload(report["slug"], report["payload"])
+    except Exception:
+        logger.exception("Deck type matchups backfill failed for %s", report.get("slug"))
+    return report
 
 
 def public_report(report: dict | None) -> dict | None:

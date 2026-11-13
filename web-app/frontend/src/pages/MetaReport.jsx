@@ -7,6 +7,7 @@ import ShareLinkButton from '@/components/ui/ShareLinkButton'
 import TryDeckButton from '@/components/deck/TryDeckButton'
 import usePageTitle from '@/hooks/usePageTitle'
 import MetaMap, { ELEMENT_COLORS, ElementPair, TIER_COLORS } from '@/components/meta/MetaMap'
+import DeckTypeMatchups, { cellStyle } from '@/components/meta/DeckTypeMatchups'
 
 /**
  * Meta Report: what the Summit plays and wins with, one report per half-month.
@@ -336,13 +337,6 @@ function TournamentVsLadder({ data }) {
   )
 }
 
-function cellStyle(v) {
-  if (v == null) return { background: '#21262d', color: '#8b949e' }
-  const t = Math.max(-1, Math.min(1, (v - 50) / 12))
-  const rgb = t >= 0 ? '63,185,80' : '244,112,103'
-  return { background: `rgba(${rgb},${(Math.abs(t) * 0.55 + 0.08).toFixed(2)})`, color: '#f0f6fc' }
-}
-
 function Matchups({ matchups }) {
   const names = matchups?.archetypes || []
   const cells = matchups?.cells || []
@@ -656,6 +650,7 @@ export default function MetaReport() {
           <Section title="What beats what" sub={`The six most-played Avatars, row against column, in Summit ranked games. Totals only; cells under ${report.ranked?.matchups?.minGames || 10} games stay blank.`}>
             <CounterPicks counters={report.ranked?.counters} />
             <Matchups matchups={report.ranked?.matchups} />
+            <DeckTypeMatchups data={report.ranked?.deckTypes} />
           </Section>
 
           <div className="grid gap-5 grid-cols-[repeat(auto-fit,minmax(min(100%,460px),1fr))]">
@@ -676,7 +671,7 @@ export default function MetaReport() {
               <li>Each report covers half a month and comes out as soon as that half ends, in step with the two-week batches of ranked card data on Card Win Rates. The report on the 15th covers the 1st to 14th; the report on the 1st covers the 15th to the end of the month before. Reports come out at 00:01 UTC, which is 8:01 PM Eastern the evening before (7:01 PM in winter).</li>
               <li>Ranked games count toward totals only. No ranked deck lists or player names appear in a report.</li>
               <li>Deck lists come only from public Top 8 events.</li>
-              <li>Small samples are hidden: an Avatar needs 20 games (or 1% of decks) for the tiers, matchups and counter picks need 10, and card win rates need 20.</li>
+              <li>Small samples are hidden: an Avatar needs 20 games (or 1% of decks) for the tiers, matchups and counter picks need 10, and card win rates need 20. In Your deck&apos;s matchups, a deck type (or deck type and Avatar) needs as many games as an Avatar does for the tiers, and each opponent needs 10.</li>
               <li>Counter pick explanations use game length, who went first, mana curve, element pairs and how often winning decks ran a card. A card is only named when 10 or more winning decks ran it.</li>
             </ul>
           </Section>

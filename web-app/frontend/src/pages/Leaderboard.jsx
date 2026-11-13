@@ -12,6 +12,7 @@ import {
   getPreconStandings,
 } from '@/api/leaderboard'
 import usePageTitle from '@/hooks/usePageTitle'
+import { isNum } from '@/utils/provisional'
 
 // The page shows one board at a time, picked from the sidebar (a select on
 // phones). The pick lives in the URL (?board=...) so a board can be linked.
@@ -216,7 +217,12 @@ function CurrentEventBoard({ eventData }) {
         meta={`Started ${formatDate(info.start_date)} · ${plural(players, 'player')} · ${plural(matches, 'match', 'matches')}`}
       />
       {rows.length > 0 ? (
-        <LeaderboardTable data={rows} columns="event" voiceRequirement={eventData?.voice_requirement} />
+        <LeaderboardTable
+          data={rows}
+          columns="event"
+          voiceRequirement={eventData?.voice_requirement}
+          topCutMinGames={eventData?.top_cut_min_games || 0}
+        />
       ) : (
         <p className="text-text-muted text-center py-8">No matches played yet</p>
       )}
@@ -372,7 +378,8 @@ export default function Leaderboard() {
     fetchAll().finally(() => setLoading(false))
   }, [])
 
-  const elos = eloValues.length > 0 ? eloValues : lifetimeData.map((p) => p.elo)
+  // Provisional players have no rating (null): keep them out of the distribution
+  const elos = (eloValues.length > 0 ? eloValues : lifetimeData.map((p) => p.elo)).filter(isNum)
   const eventInfo = eventData?.info
   const eventLeaderboard = eventData?.leaderboard || []
 

@@ -74,3 +74,37 @@ describe('MatchHistoryTable column order', () => {
     expect(h[h.length - 1]).toBe('Notes')
   })
 })
+
+describe('MatchHistoryTable provisional ELO changes', () => {
+  it('shows a muted dash with a tooltip for a hidden change', () => {
+    renderWithRouter(
+      <MatchHistoryTable
+        title="Ranked Match History"
+        matches={[{ ...match(1, true), elo_change: null, elo_change_hidden: true }]}
+        isOwner={false}
+      />
+    )
+    const row = screen.getAllByRole('row')[1]
+    const dash = within(row).getByTestId('hidden-change')
+    expect(dash).toHaveTextContent('\u2014')
+    expect(dash).toHaveAttribute('title', 'Provisional: shown after 8 games')
+    expect(row).not.toHaveTextContent('+0')
+    expect(row).not.toHaveTextContent('null')
+    expect(row).not.toHaveTextContent('NaN')
+  })
+
+  it('still shows a settled change as before', () => {
+    renderWithRouter(
+      <MatchHistoryTable
+        title="Ranked Match History"
+        matches={[match(1, true), { ...match(2, true), result: 'Loss', elo_change: -9 }]}
+        isOwner={false}
+      />
+    )
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(within(rows[0]).getByText('+12')).toBeInTheDocument()
+    expect(within(rows[1]).getByText('-9')).toBeInTheDocument()
+    expect(screen.queryByTestId('hidden-change')).toBeNull()
+  })
+})
+

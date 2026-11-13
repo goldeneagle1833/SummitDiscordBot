@@ -1,5 +1,6 @@
 """Daily Summary cog — posts an automated recap of the day's competitive activity."""
 
+from utils.match_tables import live_matches
 import asyncio
 import datetime
 import json
@@ -11,6 +12,7 @@ import discord
 from discord.ext import commands, tasks
 
 import config
+from services.glicko2_season import PROVISIONAL_GAMES, lifetime_is_glicko2
 
 logger = logging.getLogger("discord_bot")
 
@@ -24,6 +26,19 @@ MATCH_TYPES = (
     ("limited_matches", "Limited"),
     ("rumble_matches", "Rumble"),
 )
+
+
+def _visible_change_sql(side: str) -> str:
+    """SQL keeping a side's lifetime change only when it is shown (see glicko2_season.change_hidden)."""
+    return f"({side}_lifetime_games IS NULL OR {side}_lifetime_games > {PROVISIONAL_GAMES})"
+
+
+def _lifetime_is_glicko2() -> bool:
+    conn = sqlite3.connect("elo.db")
+    try:
+        return lifetime_is_glicko2(conn)
+    finally:
+        conn.close()
 
 
 def _player(guild, user_id, name) -> str:
@@ -268,7 +283,7 @@ class DailySummaryCog(commands.Cog):
 
         # Ranked matches
         cur.execute(
-            "SELECT COUNT(*) FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'",
+            f"SELECT COUNT(*) FROM {live_matches()} WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'",
             (start, end),
         )
         counts["total_matches"] = cur.fetchone()[0]
@@ -295,19 +310,19 @@ class DailySummaryCog(commands.Cog):
 
         # Rumble match count
         cur.execute(
-            "SELECT COUNT(*) FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'rumble'",
+            f"SELECT COUNT(*) FROM {live_matches()} WHERE timestamp >= ? AND timestamp < ? AND match_type = 'rumble'",
             (start, end),
         )
         counts["rumble_matches"] = cur.fetchone()[0]
 
         # Unique ranked players
         cur.execute(
-            """
+            f"""
             SELECT COUNT(DISTINCT player_id) FROM (
-                SELECT winner_id as player_id FROM match_records
+                SELECT winner_id as player_id FROM {live_matches()}
                 WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                 UNION
-                SELECT losser_id as player_id FROM match_records
+                SELECT losser_id as player_id FROM {live_matches()}
                 WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
             )
             """,
@@ -348,13 +363,13 @@ class DailySummaryCog(commands.Cog):
 
             # 2. Most active player
             cur.execute(
-                """
+                f"""
                 SELECT player_id, player_name, COUNT(*) as match_count FROM (
                     SELECT winner_id as player_id, winner_display_name as player_name
-                    FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
+                    FROM {live_matches()} WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                     UNION ALL
                     SELECT losser_id as player_id, losser_display_name as player_name
-                    FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
+                    FROM {live_matches()} WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                 ) GROUP BY player_id ORDER BY match_count DESC LIMIT 1
                 """,
                 (start, end, start, end),
@@ -363,19 +378,26 @@ class DailySummaryCog(commands.Cog):
             if row:
                 stats["most_active"] = (row[0], row[1], row[2])  # (user_id, name, count)
 
+            # Lifetime changes made while a side was provisional (its first
+            # Glicko-2 lifetime games) aren't shown, so they don't count here
+            visible_winner = _visible_change_sql("winner")
+            visible_loser = _visible_change_sql("loser")
+
             # 3. Top ELO gainer (net across all matches)
             cur.execute(
-                """
+                f"""
                 SELECT player_id, player_name, SUM(elo_change) as net_change FROM (
                     SELECT winner_id as player_id, winner_display_name as player_name,
                            winner_lifetime_elo_change as elo_change
-                    FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
+                    FROM {live_matches()} WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                                              AND winner_lifetime_elo_change IS NOT NULL
+                                             AND {visible_winner}
                     UNION ALL
                     SELECT losser_id as player_id, losser_display_name as player_name,
                            loser_lifetime_elo_change as elo_change
-                    FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
+                    FROM {live_matches()} WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                                              AND loser_lifetime_elo_change IS NOT NULL
+                                             AND {visible_loser}
                 ) GROUP BY player_id ORDER BY net_change DESC LIMIT 1
                 """,
                 (start, end, start, end),
@@ -386,17 +408,19 @@ class DailySummaryCog(commands.Cog):
 
             # 5. Biggest ELO loser
             cur.execute(
-                """
+                f"""
                 SELECT player_id, player_name, SUM(elo_change) as net_change FROM (
                     SELECT winner_id as player_id, winner_display_name as player_name,
                            winner_lifetime_elo_change as elo_change
-                    FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
+                    FROM {live_matches()} WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                                              AND winner_lifetime_elo_change IS NOT NULL
+                                             AND {visible_winner}
                     UNION ALL
                     SELECT losser_id as player_id, losser_display_name as player_name,
                            loser_lifetime_elo_change as elo_change
-                    FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
+                    FROM {live_matches()} WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                                              AND loser_lifetime_elo_change IS NOT NULL
+                                             AND {visible_loser}
                 ) GROUP BY player_id ORDER BY net_change ASC LIMIT 1
                 """,
                 (start, end, start, end),
@@ -407,7 +431,7 @@ class DailySummaryCog(commands.Cog):
 
             # 7. Average match duration
             cur.execute(
-                "SELECT AVG(match_time) FROM match_records WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked' AND match_time > 0",
+                f"SELECT AVG(match_time) FROM {live_matches()} WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked' AND match_time > 0",
                 (start, end),
             )
             row = cur.fetchone()
@@ -416,12 +440,13 @@ class DailySummaryCog(commands.Cog):
 
             # 8. Biggest upset (highest winner_lifetime_elo_change = lower-rated winner)
             cur.execute(
-                """
+                f"""
                 SELECT winner_id, winner_display_name, losser_id, losser_display_name, winner_lifetime_elo_change
-                FROM match_records
+                FROM {live_matches()}
                 WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                       AND winner_lifetime_elo_change IS NOT NULL
                       AND winner_lifetime_elo_change > 0
+                      AND {visible_winner}
                 ORDER BY winner_lifetime_elo_change DESC LIMIT 1
                 """,
                 (start, end),
@@ -432,12 +457,12 @@ class DailySummaryCog(commands.Cog):
 
             # 9. Rivalry of the Day (pair who played each other most, min 2)
             cur.execute(
-                """
+                f"""
                 SELECT
                     MIN(winner_id, losser_id) as p1_id,
                     MAX(winner_id, losser_id) as p2_id,
                     COUNT(*) as match_count
-                FROM match_records
+                FROM {live_matches()}
                 WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                 GROUP BY p1_id, p2_id
                 HAVING match_count >= 2
@@ -449,9 +474,9 @@ class DailySummaryCog(commands.Cog):
             if pair:
                 p1_id, p2_id, total = pair
                 cur.execute(
-                    """
+                    f"""
                     SELECT winner_id, winner_display_name, losser_display_name
-                    FROM match_records
+                    FROM {live_matches()}
                     WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                           AND ((winner_id = ? AND losser_id = ?)
                                OR (winner_id = ? AND losser_id = ?))
@@ -473,17 +498,25 @@ class DailySummaryCog(commands.Cog):
             # 10. Highest Rated Match (highest combined ELO)
             try:
                 cur.execute("ATTACH DATABASE 'elo.db' AS elo_db")
+                # A Glicko-2 lifetime rating isn't shown while provisional: skip those matches
+                settled = ""
+                if _lifetime_is_glicko2():
+                    settled = (
+                        f"AND COALESCE(w.online_games, 0) >= {PROVISIONAL_GAMES} "
+                        f"AND COALESCE(l.online_games, 0) >= {PROVISIONAL_GAMES}"
+                    )
                 cur.execute(
-                    """
+                    f"""
                     SELECT m.winner_id, m.winner_display_name, m.losser_id, m.losser_display_name,
-                           COALESCE(w.online_elo, w.elo, 1500) as winner_elo,
-                           COALESCE(l.online_elo, l.elo, 1500) as loser_elo
-                    FROM match_records m
+                           COALESCE(w.online_elo, 1500) as winner_elo,
+                           COALESCE(l.online_elo, 1500) as loser_elo
+                    FROM {live_matches()} m
                     LEFT JOIN elo_db.overall_standings w ON w.user_id = m.winner_id
                     LEFT JOIN elo_db.overall_standings l ON l.user_id = m.losser_id
                     WHERE m.timestamp >= ? AND m.timestamp < ? AND m.match_type = 'ranked'
-                    ORDER BY (COALESCE(w.online_elo, w.elo, 1500)
-                              + COALESCE(l.online_elo, l.elo, 1500)) DESC
+                          {settled}
+                    ORDER BY (COALESCE(w.online_elo, 1500)
+                              + COALESCE(l.online_elo, 1500)) DESC
                     LIMIT 1
                     """,
                     (start, end),
@@ -497,9 +530,9 @@ class DailySummaryCog(commands.Cog):
 
             # 11. Ironman (total hours of Sorcery played today)
             cur.execute(
-                """
+                f"""
                 SELECT ROUND(SUM(match_time) / 60.0, 1) as total_hours
-                FROM match_records
+                FROM {live_matches()}
                 WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked' AND match_time > 0
                 """,
                 (start, end),
@@ -510,12 +543,12 @@ class DailySummaryCog(commands.Cog):
 
             # 12. Deck Variety (most different decks used, min 2)
             cur.execute(
-                """
+                f"""
                 SELECT player_id, player_name, COUNT(DISTINCT deck_url) as deck_count FROM (
                     SELECT winner_id as player_id,
                            winner_display_name as player_name,
                            curiosa_url_winner as deck_url
-                    FROM match_records
+                    FROM {live_matches()}
                     WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                           AND curiosa_url_winner IS NOT NULL
                           AND curiosa_url_winner != ''
@@ -523,7 +556,7 @@ class DailySummaryCog(commands.Cog):
                     SELECT losser_id as player_id,
                            losser_display_name as player_name,
                            curiosa_url_loser as deck_url
-                    FROM match_records
+                    FROM {live_matches()}
                     WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                           AND curiosa_url_loser IS NOT NULL
                           AND curiosa_url_loser != ''
@@ -540,9 +573,9 @@ class DailySummaryCog(commands.Cog):
 
             # 13. Busiest day (only shown on the weekly recap)
             cur.execute(
-                """
+                f"""
                 SELECT substr(timestamp, 1, 10) as day, COUNT(*) as match_count
-                FROM match_records
+                FROM {live_matches()}
                 WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                 GROUP BY day ORDER BY match_count DESC LIMIT 1
                 """,
@@ -571,12 +604,12 @@ class DailySummaryCog(commands.Cog):
 
             # Get distinct player IDs from today
             cur.execute(
-                """
+                f"""
                 SELECT DISTINCT player_id FROM (
-                    SELECT winner_id as player_id FROM match_records
+                    SELECT winner_id as player_id FROM {live_matches()}
                     WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                     UNION
-                    SELECT losser_id as player_id FROM match_records
+                    SELECT losser_id as player_id FROM {live_matches()}
                     WHERE timestamp >= ? AND timestamp < ? AND match_type = 'ranked'
                 )
                 """,
@@ -587,9 +620,9 @@ class DailySummaryCog(commands.Cog):
             for player_id in player_ids:
                 # Fetch last 20 matches for this player
                 cur.execute(
-                    """
+                    f"""
                     SELECT winner_id, losser_id, winner_display_name, losser_display_name, timestamp
-                    FROM match_records
+                    FROM {live_matches()}
                     WHERE (winner_id = ? OR losser_id = ?) AND match_type = 'ranked'
                     ORDER BY timestamp DESC LIMIT 20
                     """,

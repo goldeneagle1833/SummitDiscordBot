@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import PostseasonName, { useBracketMarks } from '@/components/player/BracketMarks'
 import { AvatarHonourBadge, useAvatarHonours } from '@/components/player/AvatarHonours'
 import { PaperFinishChips, usePaperFinishes } from '@/components/player/PaperFinishes'
+import { ProvisionalTag } from '@/components/common/Provisional'
+import { provisionalOf } from '@/utils/provisional'
 
 function initials(name) {
   const parts = String(name || '?').replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/)
@@ -175,14 +177,33 @@ export default function PlayerHeader({
               className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-bg-raised border border-border text-xs sm:text-sm"
             >
               <strong className="text-text-primary">{entry.avatar}</strong>
-              <span className="text-text-muted tabular-nums">{entry.event_elo} · #{entry.rank}</span>
+              {provisionalOf(entry) ? (
+                <ProvisionalTag games={provisionalOf(entry).games} />
+              ) : (
+                <span className="text-text-muted tabular-nums">
+                  {entry.event_elo}{entry.rank != null && ` · #${entry.rank}`}
+                </span>
+              )}
             </li>
           ))}
         </ul>
       )}
 
       <div className="flex flex-wrap gap-8">
-        {headline.elo != null && <BigStat value={headline.elo} label={headline.eloLabel} gold />}
+        {headline.provisional ? (
+          <div>
+            <div className="h-10 flex items-end">
+              <ProvisionalTag
+                games={headline.provisional.games}
+                className="px-2.5 py-1 rounded-full bg-bg-raised border border-border text-sm"
+              />
+            </div>
+            <div className="text-sm text-text-muted mt-1.5">{headline.eloLabel}</div>
+          </div>
+        ) : (
+          headline.elo != null && <BigStat value={headline.elo} label={headline.eloLabel} gold />
+        )}
+        {headline.legacyElo != null && <BigStat value={headline.legacyElo} label="Legacy ELO (Seasons 1-8)" />}
         {headline.rank != null && <BigStat value={`#${headline.rank}`} label={headline.rankLabel} />}
         {wins + losses > 0 && (
           <BigStat value={`${data.win_rate ?? 0}%`} label={`${wins} W · ${losses} L`} />

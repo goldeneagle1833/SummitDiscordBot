@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, renderWithRouter, waitFor, within } from '@/test/test-utils'
+import userEvent from '@testing-library/user-event'
 import AvatarTopPlayers from '../AvatarTopPlayers'
 import { getAvatarFilters, getAvatarTopPlayers } from '@/api/cards'
-import { getAvatarLeaderboards } from '@/api/leaderboard'
+import { getAvatarLeaderboards, getLifetimeAvatarLeaderboards } from '@/api/leaderboard'
 
 vi.mock('@/api/cards', () => ({
   getAvatarFilters: vi.fn(),
@@ -10,6 +11,7 @@ vi.mock('@/api/cards', () => ({
 }))
 vi.mock('@/api/leaderboard', () => ({
   getAvatarLeaderboards: vi.fn(),
+  getLifetimeAvatarLeaderboards: vi.fn(),
 }))
 
 const SEASONS = [
@@ -49,6 +51,7 @@ describe('AvatarTopPlayers season filter', () => {
     vi.clearAllMocks()
     getAvatarTopPlayers.mockResolvedValue({ avatars: [] })
     getAvatarLeaderboards.mockResolvedValue({ elo_mode: 'player', avatars: [] })
+    getLifetimeAvatarLeaderboards.mockResolvedValue({ scope: 'lifetime', avatars: [] })
   })
 
   it('opens on the running season, listed first', async () => {
@@ -80,6 +83,7 @@ describe('AvatarTopPlayers season Elo', () => {
     getAvatarFilters.mockResolvedValue({ events: SEASONS })
     getAvatarTopPlayers.mockResolvedValue(SCORE_DATA)
     getAvatarLeaderboards.mockResolvedValue(AVATAR_LADDER)
+    getLifetimeAvatarLeaderboards.mockResolvedValue({ scope: 'lifetime', avatars: [] })
   })
 
   it('opens on the avatar from the link, ranked by season Elo', async () => {
@@ -88,7 +92,8 @@ describe('AvatarTopPlayers season Elo', () => {
     })
 
     expect(await screen.findByRole('heading', { name: 'Avatar of Air' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Season Elo' }).selected).toBe(true)
+    expect(screen.getByRole('option', { name: 'Elo' }).selected).toBe(true)
+    expect(screen.getByRole('columnheader', { name: 'Season Elo' })).toBeInTheDocument()
     expect(screen.getByText('2 players rated on Avatar of Air this season')).toBeInTheDocument()
     const rows = screen.getAllByRole('row').slice(1)
     expect(within(rows[0]).getByRole('link', { name: 'Amy' })).toHaveAttribute('href', '/player/11')
@@ -105,11 +110,74 @@ describe('AvatarTopPlayers season Elo', () => {
     expect(screen.getByRole('option', { name: 'Avatar Score' }).selected).toBe(true)
   })
 
-  it('has no Season Elo option in a Player-mode season', async () => {
+  it('has no Elo option in a Player-mode season before lifetime avatar Elo exists', async () => {
     getAvatarLeaderboards.mockResolvedValue({ elo_mode: 'player', avatars: [] })
     renderWithRouter(<AvatarTopPlayers />, { route: '/avatars/top-players?avatar=Witch' })
 
     expect(await screen.findByRole('columnheader', { name: /avatar score/i })).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: 'Season Elo' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Elo' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Elo ladder' })).not.toBeInTheDocument()
+  })
+})
+
+const LIFETIME_LADDER = {
+  scope: 'lifetime',
+  elo_mode: 'avatar',
+  avatars: [{
+    avatar: 'Avatar of Air',
+    players: 2,
+    entries: [
+      { rank: 1, overall_rank: null, user_id: '22', display_name: 'Ed', elo: 1640, games: 20, wins: 14, losses: 6, provisional: false, provisional_games: 20 },
+      { rank: null, overall_rank: null, user_id: '11', display_name: 'Amy', elo: null, games: 3, wins: 2, losses: 1, provisional: true, provisional_games: 3 },
+    ],
+  }],
+}
+
+describe('AvatarTopPlayers lifetime Elo', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getAvatarFilters.mockResolvedValue({ events: SEASONS })
+    getAvatarTopPlayers.mockResolvedValue(SCORE_DATA)
+    getAvatarLeaderboards.mockResolvedValue(AVATAR_LADDER)
+    getLifetimeAvatarLeaderboards.mockResolvedValue(LIFETIME_LADDER)
+  })
+
+  it('switches the Elo table between season and lifetime', async () => {
+    const user = userEvent.setup()
+    renderWithRouter(<AvatarTopPlayers />, {
+      route: '/avatars/top-players?avatar=Avatar%20of%20Air',
+    })
+
+    expect(await screen.findByRole('columnheader', { name: 'Season Elo' })).toBeInTheDocument()
+    const ladder = screen.getByRole('group', { name: 'Elo ladder' })
+    expect(within(ladder).getByRole('button', { name: 'Season' })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(within(ladder).getByRole('button', { name: 'Lifetime' }))
+
+    expect(await screen.findByRole('columnheader', { name: 'Lifetime Elo' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Lifetime Elo by Avatar' })).toBeInTheDocument()
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(within(rows[0]).getByRole('link', { name: 'Ed' })).toBeInTheDocument()
+    expect(within(rows[0]).getByText('1640')).toBeInTheDocument()
+    expect(within(rows[0]).getByText('#1')).toBeInTheDocument()
+    // Provisional: no rating, no rank
+    expect(within(rows[1]).getByText('Provisional (3/8)')).toBeInTheDocument()
+    expect(within(rows[1]).queryByText(/#/)).not.toBeInTheDocument()
+  })
+
+  it('offers lifetime Elo in a Player-mode season', async () => {
+    getAvatarLeaderboards.mockResolvedValue({ elo_mode: 'player', avatars: [] })
+    const user = userEvent.setup()
+    renderWithRouter(<AvatarTopPlayers />, {
+      route: '/avatars/top-players?avatar=Avatar%20of%20Air',
+    })
+
+    // Default stays Avatar Score; Elo opens the lifetime ladder, season disabled
+    const sort = (await screen.findByRole('option', { name: 'Elo' })).closest('select')
+    expect(screen.getByRole('option', { name: 'Avatar Score' }).selected).toBe(true)
+    await user.selectOptions(sort, 'elo')
+
+    expect(await screen.findByRole('columnheader', { name: 'Lifetime Elo' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Season' })).toBeDisabled()
   })
 })

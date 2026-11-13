@@ -6,6 +6,9 @@ import datetime
 import json
 import logging
 
+from services import glicko2_season
+from utils.match_tables import LEGACY_MATCH_TABLE, SEASON_MATCH_TABLE, live_matches
+
 from utils.avatars import read_deck_avatar
 from utils.deck_checker import get_pso_deck_id, scrape_Curosa, scrape_curosa_async
 from repositories.avatar_elo_repo import (
@@ -182,6 +185,53 @@ def update_elo_db(user_id, user_display_name, did_win, opponent_id):
     conn.close()
 
     return (new_online_elo, online_change, new_online_event_elo, online_event_change, True)
+
+
+def rate_top_cut_lifetime(match_id, winner_id, winner_name, loser_id, loser_name):
+    """Move only lifetime ELO for an admin-reported top cut match.
+
+    Elo lifetime: each side with K=32, as before. Glicko-2 lifetime: one
+    Glicko-2 game, stored on the match record so a lifetime rebuild replays it.
+
+    Returns (winner_new, winner_change, loser_new, loser_change).
+    """
+    conn = sqlite3.connect("elo.db")
+    try:
+        glicko = glicko2_season.lifetime_is_glicko2(conn)
+    finally:
+        conn.close()
+    if not glicko:
+        w_new, w_change = update_elo_db_lifetime_only(winner_id, winner_name, True, loser_id)
+        l_new, l_change = update_elo_db_lifetime_only(loser_id, loser_name, False, winner_id)
+        return w_new, w_change, l_new, l_change
+
+    elo_conn = sqlite3.connect("elo.db")
+    match_conn = sqlite3.connect("match_records.db")
+    try:
+        at = match_conn.execute(
+            f"SELECT timestamp FROM {live_matches()} WHERE rowid = ?", (match_id,)
+        ).fetchone()[0]
+        life = glicko2_season.apply_lifetime_match(
+            elo_conn, winner_id, winner_name, loser_id, loser_name, at,
+        )
+        match_conn.execute(
+            f"UPDATE {live_matches()} SET lifetime_system = ?, winner_lifetime_elo_change = ?, "
+            "loser_lifetime_elo_change = ?, winner_lifetime_elo_after = ?, loser_lifetime_elo_after = ?, "
+            "winner_lifetime_games = ?, loser_lifetime_games = ? WHERE rowid = ?",
+            (glicko2_season.GLICKO2, life["winner_change"], life["loser_change"],
+             life["winner_rating"], life["loser_rating"], life["winner_games"], life["loser_games"],
+             match_id),
+        )
+        elo_conn.commit()
+        match_conn.commit()
+    except Exception:
+        elo_conn.rollback()
+        match_conn.rollback()
+        raise
+    finally:
+        elo_conn.close()
+        match_conn.close()
+    return life["winner_rating"], life["winner_change"], life["loser_rating"], life["loser_change"]
 
 
 def update_elo_db_lifetime_only(user_id, user_display_name, did_win, opponent_id):
@@ -526,12 +576,14 @@ def get_current_event_match_elo_snapshot(match_id: int):
     match_cur = match_conn.cursor()
 
     match_cur.execute(
-        """
+        f"""
         SELECT rowid as match_id, winner_id, winner_display_name, losser_id, losser_display_name,
                timestamp, match_type, did_win,
                winner_elo_change, loser_elo_change,
-               winner_lifetime_elo_change, loser_lifetime_elo_change, event_k
-        FROM match_records
+               winner_lifetime_elo_change, loser_lifetime_elo_change, event_k,
+               winner_event_games, loser_event_games, winner_avatar_games, loser_avatar_games,
+               winner_lifetime_games, loser_lifetime_games
+        FROM {live_matches()}
         WHERE timestamp >= ?
         ORDER BY timestamp ASC, rowid ASC
         """,
@@ -673,6 +725,7 @@ def get_current_event_match_elo_snapshot(match_id: int):
         )
     )
 
+    glicko = glicko2_season.is_glicko2(active_event)
     event_state = {user_id: 1500 for user_id in participant_ids}
     season_games = {}  # rated games so far, per player: sets each player's K
     event_snapshots = {}
@@ -689,7 +742,7 @@ def get_current_event_match_elo_snapshot(match_id: int):
         loser_id = row["losser_id"]
         match_timestamp = operation["timestamp"]
         # The K the match was recorded at; rows from before K was stored are replayed
-        event_k = row.get("event_k") or match_event_k(
+        event_k = None if glicko else row.get("event_k") or match_event_k(
             season_games.get(winner_id, 0), season_games.get(loser_id, 0)
         )
         challenger_info = ladder_challengers.get(match_id_value)
@@ -715,6 +768,15 @@ def get_current_event_match_elo_snapshot(match_id: int):
                 "winner_after": winner_before_event,
                 "loser_before": loser_before_event,
                 "loser_after": loser_before_event,
+            }
+        elif glicko:
+            # Glicko-2 season: the stored changes are the season's own numbers
+            # (every fix rebuilds the season and rewrites them)
+            event_result = {
+                "winner_before": winner_before_event,
+                "winner_after": winner_before_event + (row.get("winner_elo_change") or 0),
+                "loser_before": loser_before_event,
+                "loser_after": loser_before_event + (row.get("loser_elo_change") or 0),
             }
         else:
             if challenger_id and challenger_id != winner_id:
@@ -820,8 +882,16 @@ def get_current_event_match_elo_snapshot(match_id: int):
 
     # Avatar-mode events: the ladder that counts is the avatars' — report the
     # stored per-avatar before/after instead of the per-player replay.
-    winner_event = {"event_before": snapshot["winner_before"], "event_after": snapshot["winner_after"]}
-    loser_event = {"event_before": snapshot["loser_before"], "event_after": snapshot["loser_after"]}
+    # Each side's game count after the match (Glicko-2 rows; None on Elo rows):
+    # a change made while provisional is not shown (see services/provisional.py)
+    winner_event = {
+        "event_before": snapshot["winner_before"], "event_after": snapshot["winner_after"],
+        "event_games": target_match["winner_event_games"],
+    }
+    loser_event = {
+        "event_before": snapshot["loser_before"], "event_after": snapshot["loser_after"],
+        "event_games": target_match["loser_event_games"],
+    }
     avatar_row = None
     if active_event.get("elo_mode") == AVATAR_MODE:
         conn = sqlite3.connect("match_records.db")
@@ -829,7 +899,7 @@ def get_current_event_match_elo_snapshot(match_id: int):
         try:
             avatar_row = conn.execute(
                 "SELECT winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, "
-                "winner_avatar_elo_after, loser_avatar_elo_after FROM match_records WHERE rowid = ?",
+                f"winner_avatar_elo_after, loser_avatar_elo_after FROM {live_matches()} WHERE rowid = ?",
                 (match_id,),
             ).fetchone()
         finally:
@@ -839,11 +909,13 @@ def get_current_event_match_elo_snapshot(match_id: int):
             "avatar": avatar_row["winner_avatar"],
             "event_before": avatar_row["winner_avatar_elo_after"] - (avatar_row["winner_avatar_elo_change"] or 0),
             "event_after": avatar_row["winner_avatar_elo_after"],
+            "event_games": target_match["winner_avatar_games"],
         }
         loser_event = {
             "avatar": avatar_row["loser_avatar"],
             "event_before": avatar_row["loser_avatar_elo_after"] - (avatar_row["loser_avatar_elo_change"] or 0),
             "event_after": avatar_row["loser_avatar_elo_after"],
+            "event_games": target_match["loser_avatar_games"],
         }
         notes.append("Avatar-mode event: event Elo shown is each player's entry for the avatar they played.")
 
@@ -861,11 +933,13 @@ def get_current_event_match_elo_snapshot(match_id: int):
         "winner": {
             "lifetime_before": lifetime_snapshot["winner_before"] if lifetime_snapshot else None,
             "lifetime_after": lifetime_snapshot["winner_after"] if lifetime_snapshot else None,
+            "lifetime_games": target_match["winner_lifetime_games"],
             **winner_event,
         },
         "loser": {
             "lifetime_before": lifetime_snapshot["loser_before"] if lifetime_snapshot else None,
             "lifetime_after": lifetime_snapshot["loser_after"] if lifetime_snapshot else None,
+            "lifetime_games": target_match["loser_lifetime_games"],
             **loser_event,
         },
         "notes": notes,
@@ -1008,7 +1082,7 @@ async def _update_deck_data(match_id: int, winner_url: str, loser_url: str, tabl
             )
         else:
             conn.execute(
-                "UPDATE match_records SET json_deck_data = ?, json_deck_data_winner = ?, json_deck_data_loser = ? WHERE rowid = ?",
+                f"UPDATE {live_matches()} SET json_deck_data = ?, json_deck_data_winner = ?, json_deck_data_loser = ? WHERE rowid = ?",
                 (winner_json, winner_json, loser_json, match_id),
             )
         conn.commit()
@@ -1022,7 +1096,7 @@ async def _update_deck_data(match_id: int, winner_url: str, loser_url: str, tabl
 # matches into the archive, and the profile page reads both, so a deck that was
 # never fetched (e.g. a PSO link from before the bot accepted them) has to be
 # recovered there too.
-_BACKFILL_TABLES = ("match_records", "match_records_archive")
+_BACKFILL_TABLES = (LEGACY_MATCH_TABLE, "match_records_archive", SEASON_MATCH_TABLE)
 
 
 async def backfill_deck_data() -> None:
@@ -1150,6 +1224,17 @@ async def record_match(
     )
 
     event_k = None  # the season K-factor this match was played at (rated season games only)
+    # One time for the whole report: a Glicko-2 season rates the match at the
+    # time stored on its record, so a later rebuild replays it identically
+    now_iso = datetime.datetime.now().isoformat()
+    match_event_id = None
+    match_rating_system = None
+    glicko = False
+    # Glicko-2 ladders: each side's game count after this match (provisional display)
+    match_games = dict.fromkeys((
+        "winner_event_games", "loser_event_games", "winner_avatar_games", "loser_avatar_games",
+        "winner_lifetime_games", "loser_lifetime_games",
+    ))
 
     # Per-avatar ladder (Avatar-mode events only; stays None otherwise)
     avatar_event_id = None
@@ -1200,14 +1285,19 @@ async def record_match(
             winner_new_elo = winner_new_event_elo = None
             loser_new_elo = loser_new_event_elo = None
         else:
+            match_event_id = active_event.get("event_id")
+            match_rating_system = active_event.get("rating_system") or glicko2_season.ELO
+            glicko = glicko2_season.is_glicko2(active_event)
             # Each player's season K ramps up with their own games; the match
-            # is played at the lower of the two
-            event_k = match_event_k(winner_event_games, loser_event_games)
+            # is played at the lower of the two (Elo seasons only: a Glicko-2
+            # season's numbers come from glicko2_season.apply_match below,
+            # and only the lifetime ladder uses this calculation)
+            event_k = None if glicko else match_event_k(winner_event_games, loser_event_games)
             winner_lifetime_change, winner_elo_change, loser_lifetime_change, loser_elo_change = (
                 _calculate_both_elo_changes(
                     winner_elo, winner_event_elo,
                     loser_elo, loser_event_elo,
-                    event_k,
+                    event_k or EVENT_K_MAX,
                     elo_multiplier_winner,
                     elo_multiplier_loser,
                 )
@@ -1222,7 +1312,10 @@ async def record_match(
                     pairing_id, winner_id, loser_id, winner_avatar, loser_avatar,
                     winner_deck_url, loser_deck_url,
                 )
-                if winner_avatar and loser_avatar:
+                if winner_avatar and loser_avatar and glicko:
+                    # Rated with the player ladder in step 2
+                    avatar_event_id = active_event["event_id"]
+                elif winner_avatar and loser_avatar:
                     avatar_event_id = active_event["event_id"]
                     winner_avatar_elo = get_avatar_event_elo(avatar_event_id, winner_id, winner_avatar)
                     loser_avatar_elo = get_avatar_event_elo(avatar_event_id, loser_id, loser_avatar)
@@ -1243,8 +1336,74 @@ async def record_match(
         # Player mode (or unknown avatars): avatars aren't part of the record
         winner_avatar = loser_avatar = None
 
-    # ── Step 2: write both ELOs atomically ──
+    if match_event_id is None and match_type != "limited":
+        # Unrated rows (testing, rumble, points) still belong to the season,
+        # so a Glicko-2 season's history keeps them with its event
+        stamp_event = get_active_event()
+        if stamp_event:
+            match_event_id = stamp_event.get("event_id")
+            match_rating_system = stamp_event.get("rating_system") or glicko2_season.ELO
+
+    # Each side's rating and rank just before this game (skill matrices, history)
+    snapshot = dict.fromkeys(glicko2_season.SNAPSHOT_COLUMNS)
     if match_type not in NON_ELO_MATCH_TYPES and event_active:
+        conn_elo = sqlite3.connect("elo.db")
+        try:
+            snapshot = glicko2_season.pre_game_snapshot(
+                conn_elo, active_event, winner_id, loser_id,
+                winner_avatar if avatar_event_id is not None else None,
+                loser_avatar if avatar_event_id is not None else None,
+            )
+        except sqlite3.Error as e:
+            logger.warning("record_match: pre-game snapshot skipped: %s", e)
+        finally:
+            conn_elo.close()
+
+    # ── Step 2: write both ELOs atomically ──
+    if match_type not in NON_ELO_MATCH_TYPES and event_active and glicko:
+        # Glicko-2 season: the lifetime ladder stays Elo; the season ladders
+        # (player, and avatar entries in Avatar mode) move by Glicko-2. Ladder
+        # challenge stakes don't apply to a Glicko-2 season rating.
+        conn_elo = sqlite3.connect("elo.db")
+        try:
+            for uid, name, new_elo in (
+                (winner_id, winner_global, winner_new_elo),
+                (loser_id, loser_global, loser_new_elo),
+            ):
+                conn_elo.execute(
+                    "INSERT OR IGNORE INTO overall_standings (user_id, user_display_name) VALUES (?, ?)",
+                    (uid, name),
+                )
+                if not glicko2_season.lifetime_is_glicko2(conn_elo):
+                    conn_elo.execute(
+                        "UPDATE overall_standings SET online_elo = ?, user_display_name = ? WHERE user_id = ?",
+                        (new_elo, name, uid),
+                    )
+            result = glicko2_season.apply_match(
+                conn_elo, active_event, winner_id, winner_global, loser_id, loser_global, now_iso,
+                winner_avatar if avatar_event_id is not None else None,
+                loser_avatar if avatar_event_id is not None else None,
+            )
+            conn_elo.commit()
+        except Exception:
+            conn_elo.rollback()
+            raise
+        finally:
+            conn_elo.close()
+        winner_elo_change, loser_elo_change = result["winner_change"], result["loser_change"]
+        winner_avatar_change, loser_avatar_change = result["winner_avatar_change"], result["loser_avatar_change"]
+        winner_avatar_after, loser_avatar_after = result["winner_avatar_after"], result["loser_avatar_after"]
+        match_games.update(
+            winner_event_games=result["winner_games"], loser_event_games=result["loser_games"],
+            winner_avatar_games=result["winner_avatar_games"], loser_avatar_games=result["loser_avatar_games"],
+        )
+        logger.info(
+            "record_match Glicko-2: %s %+d → %d | %s %+d → %d (avatars %s %s / %s %s)",
+            winner_global, winner_elo_change, result["winner_rating"],
+            loser_global, loser_elo_change, result["loser_rating"],
+            winner_avatar, winner_avatar_after, loser_avatar, loser_avatar_after,
+        )
+    elif match_type not in NON_ELO_MATCH_TYPES and event_active:
         update_both_player_elos(
             winner_id, winner_global,
             winner_new_elo, winner_new_event_elo,
@@ -1270,9 +1429,43 @@ async def record_match(
                 loser_global, loser_avatar, loser_avatar_change, loser_avatar_after,
             )
 
+    # ── Step 2b: lifetime on Glicko-2 (from the first Glicko-2 season on) ──
+    # Replaces the Elo lifetime numbers worked out above; ladder challenge
+    # stakes scale the move and are kept on the record for rebuilds.
+    lifetime_system = None
+    winner_lifetime_mult = loser_lifetime_mult = None
+    avatar_lifetime = dict.fromkeys(glicko2_season.AVATAR_LIFETIME_COLUMNS)
+    if match_type not in NON_ELO_MATCH_TYPES and event_active:
+        conn_elo = sqlite3.connect("elo.db")
+        try:
+            if glicko2_season.lifetime_is_glicko2(conn_elo):
+                life = glicko2_season.apply_lifetime_match(
+                    conn_elo, winner_id, winner_global, loser_id, loser_global, now_iso,
+                    elo_multiplier_winner, elo_multiplier_loser,
+                )
+                conn_elo.commit()
+                lifetime_system = glicko2_season.GLICKO2
+                winner_lifetime_mult, loser_lifetime_mult = elo_multiplier_winner, elo_multiplier_loser
+                winner_lifetime_change, loser_lifetime_change = life["winner_change"], life["loser_change"]
+                winner_new_elo, loser_new_elo = life["winner_rating"], life["loser_rating"]
+                match_games.update(
+                    winner_lifetime_games=life["winner_games"], loser_lifetime_games=life["loser_games"],
+                )
+                if avatar_event_id is not None and winner_avatar and loser_avatar:
+                    avatar_lifetime = glicko2_season.apply_lifetime_avatar_match(
+                        conn_elo, winner_id, winner_global, winner_avatar,
+                        loser_id, loser_global, loser_avatar, now_iso,
+                        elo_multiplier_winner, elo_multiplier_loser,
+                    )
+                conn_elo.commit()
+        except Exception:
+            conn_elo.rollback()
+            raise
+        finally:
+            conn_elo.close()
+
     # ── Step 3: insert match record (deck data filled in async below) ──
     create_db()
-    now_iso = datetime.datetime.now().isoformat()
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
 
@@ -1305,7 +1498,7 @@ async def record_match(
         table_name = "rumble_match_records"
     else:
         cur.execute(
-            "INSERT INTO match_records (reporter_id, winner_id, winner_display_name, "
+            f"INSERT INTO {live_matches()} (reporter_id, winner_id, winner_display_name, "
             "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
             "curiosa_url, curiosa_url_winner, curiosa_url_loser, match_comment, "
             "json_deck_data, json_deck_data_winner, json_deck_data_loser, "
@@ -1314,9 +1507,16 @@ async def record_match(
             "winner_went_first, loser_went_first, match_type, "
             "winner_lifetime_elo_after, loser_lifetime_elo_after, pairing_id, voice, "
             "winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, "
-            "winner_avatar_elo_after, loser_avatar_elo_after, event_k, replay_url) "
+            "winner_avatar_elo_after, loser_avatar_elo_after, event_k, replay_url, "
+            "event_id, rating_system, lifetime_system, winner_lifetime_mult, loser_lifetime_mult, "
+            "winner_event_games, loser_event_games, winner_avatar_games, loser_avatar_games, "
+            "winner_lifetime_games, loser_lifetime_games, "
+            f"{', '.join(glicko2_season.SNAPSHOT_COLUMNS)}, "
+            f"{', '.join(glicko2_season.AVATAR_LIFETIME_COLUMNS)}) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "?, ?, ?, ?, ?, ?, ?, ?)",
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
+            + ", ?" * (len(glicko2_season.SNAPSHOT_COLUMNS) + len(glicko2_season.AVATAR_LIFETIME_COLUMNS))
+            + ")",
             (
                 reporter_id,
                 winner_id, winner_global,
@@ -1351,6 +1551,14 @@ async def record_match(
                 loser_avatar_after,
                 event_k,
                 get_pairing_replay(pairing_id) if match_type != "limited" else None,
+                match_event_id,
+                match_rating_system,
+                lifetime_system,
+                winner_lifetime_mult,
+                loser_lifetime_mult,
+                *match_games.values(),
+                *(snapshot[c] for c in glicko2_season.SNAPSHOT_COLUMNS),
+                *(avatar_lifetime[c] for c in glicko2_season.AVATAR_LIFETIME_COLUMNS),
             ),
         )
         table_name = "match_records"
@@ -1368,7 +1576,7 @@ async def record_match(
 # --- Event Management ---
 
 
-def start_new_event(event_name, elo_mode=PLAYER_MODE, scheduled_end_at=None):
+def start_new_event(event_name, elo_mode=PLAYER_MODE, scheduled_end_at=None, rating_system=None):
     """
     Start a new event, archiving any active event first.
 
@@ -1379,6 +1587,9 @@ def start_new_event(event_name, elo_mode=PLAYER_MODE, scheduled_end_at=None):
         scheduled_end_at: Unix seconds at which the season ends by itself
             (the bot then takes the top cut and drafts the postseason
             bracket), or None to end it by hand.
+        rating_system: "elo" (default) or "glicko2". Locked for the life of
+            the event. A Glicko-2 season keeps its matches in match_records
+            (tagged with event_id) instead of archiving them at the end.
 
     Returns:
         dict with new event info and optional previous event summary
@@ -1386,6 +1597,11 @@ def start_new_event(event_name, elo_mode=PLAYER_MODE, scheduled_end_at=None):
     elo_mode = (elo_mode or PLAYER_MODE).strip().lower()
     if elo_mode not in ELO_MODES:
         raise ValueError(f"elo_mode must be one of {', '.join(ELO_MODES)}")
+    rating_system = (rating_system or glicko2_season.ELO).strip().lower()
+    if rating_system not in glicko2_season.RATING_SYSTEMS:
+        raise ValueError(
+            f"rating_system must be one of {', '.join(glicko2_season.RATING_SYSTEMS)}"
+        )
 
     create_events_table()
     create_match_records_archive()
@@ -1398,22 +1614,39 @@ def start_new_event(event_name, elo_mode=PLAYER_MODE, scheduled_end_at=None):
     if active_event:
         previous_event_summary = end_current_event()
 
+    if rating_system == glicko2_season.GLICKO2:
+        # The first Glicko-2 season (Season 9) opens the season match table:
+        # Seasons 1-8 stay in match_records / match_records_archive untouched
+        conn_match = sqlite3.connect("match_records.db")
+        try:
+            if glicko2_season.create_season_match_table(conn_match):
+                logger.info("Created %s for Glicko-2 seasons", SEASON_MATCH_TABLE)
+            conn_match.commit()
+        finally:
+            conn_match.close()
+
     # Create new event
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
     start_date = datetime.datetime.now().isoformat()
+    if rating_system == glicko2_season.GLICKO2 and glicko2_season.freeze_lifetime(conn, start_date):
+        # Lifetime moves to Glicko-2 with the first Glicko-2 season: the Elo
+        # lifetime is kept as Legacy ELO (Seasons 1-8) and everyone restarts at 1500
+        logger.info("Lifetime ELO frozen as legacy_online_elo; lifetime now Glicko-2")
     cur.execute(
-        "INSERT INTO events (event_name, start_date, is_active, elo_mode, scheduled_end_at) "
-        "VALUES (?, ?, 1, ?, ?)",
-        (event_name, start_date, elo_mode, scheduled_end_at),
+        "INSERT INTO events (event_name, start_date, is_active, elo_mode, scheduled_end_at, rating_system) "
+        "VALUES (?, ?, 1, ?, ?, ?)",
+        (event_name, start_date, elo_mode, scheduled_end_at, rating_system),
     )
     event_id = cur.lastrowid
 
     # Reset all players' event ELOs to 1500 (both paper and online). Avatar
     # entries need no reset: they're keyed by event, so a new event starts empty.
     cur.execute(
-        "UPDATE overall_standings SET paper_event_elo = 1500, online_event_elo = 1500, online_event_games = 0"
+        "UPDATE overall_standings SET paper_event_elo = 1500, online_event_elo = 1500, online_event_games = 0, "
+        "online_event_rating = NULL, online_event_rd = NULL, online_event_vol = NULL, "
+        "online_event_last_at = NULL"
     )
 
     conn.commit()
@@ -1424,9 +1657,15 @@ def start_new_event(event_name, elo_mode=PLAYER_MODE, scheduled_end_at=None):
         "event_name": event_name,
         "start_date": datetime.datetime.fromisoformat(start_date),
         "elo_mode": elo_mode,
+        "rating_system": rating_system,
         "scheduled_end_at": scheduled_end_at,
         "previous_event": previous_event_summary,
     }
+
+
+# Rows an Elo season's end archives: everything except Glicko-2 seasons' matches,
+# which live in match_records for good (Season 9 onward)
+_KEEP_OUT_OF_ARCHIVE = "COALESCE(rating_system, 'elo') != 'glicko2'"
 
 
 def end_current_event():
@@ -1504,6 +1743,12 @@ def end_current_event():
         (archived_at, event_id),
     )
 
+    # Glicko-2 season: only settled ratings make the summary's top 3
+    settled_games = (
+        dict(cur_elo.execute("SELECT user_id, COALESCE(online_event_games, 0) FROM overall_standings"))
+        if glicko2_season.is_glicko2(active_event) else None
+    )
+
     conn_elo.commit()
     conn_elo.close()
 
@@ -1511,13 +1756,22 @@ def end_current_event():
     conn_match = sqlite3.connect("match_records.db")
     cur_match = conn_match.cursor()
 
-    # Copy all matches to archive
-    cur_match.execute("SELECT * FROM match_records")
-    matches = cur_match.fetchall()
-    match_count = len(matches)
+    season_table = live_matches() == SEASON_MATCH_TABLE
+    if season_table:
+        # Season 9 onward: matches stay in the season match table, tagged with
+        # their event_id, so nothing is copied to match_records_archive or deleted.
+        match_count = cur_match.execute(
+            f"SELECT COUNT(*) FROM {live_matches()} WHERE event_id = ?", (event_id,)
+        ).fetchone()[0]
+        matches = []
+    else:
+        # Copy all matches to archive (Glicko-2 seasons' rows stay put)
+        cur_match.execute(f"SELECT * FROM {LEGACY_MATCH_TABLE} WHERE {_KEEP_OUT_OF_ARCHIVE}")
+        matches = cur_match.fetchall()
+        match_count = len(matches)
 
     # Get column names from match_records
-    cur_match.execute("PRAGMA table_info(match_records)")
+    cur_match.execute(f"PRAGMA table_info({LEGACY_MATCH_TABLE})")
     columns = [col[1] for col in cur_match.fetchall()]
 
     for match in matches:
@@ -1572,8 +1826,9 @@ def end_current_event():
             ),
         )
 
-    # Clear match_records table
-    cur_match.execute("DELETE FROM match_records")
+    # Clear match_records table (Seasons 1-8 only; see above)
+    if not season_table:
+        cur_match.execute(f"DELETE FROM {LEGACY_MATCH_TABLE} WHERE {_KEEP_OUT_OF_ARCHIVE}")
 
     conn_match.commit()
     conn_match.close()
@@ -1585,11 +1840,18 @@ def end_current_event():
     if active_event.get("elo_mode") == AVATAR_MODE:
         # The avatar entries stay in event_avatar_standings as this event's archive
         top_players = []
-        for row in get_avatar_standings(event_id)[:3]:
+        avatar_rows = [
+            row for row in get_avatar_standings(event_id)
+            if settled_games is None or not glicko2_season.is_provisional(row["games_played"])
+        ]
+        for row in avatar_rows[:3]:
             name = row["user_display_name"] or "User#{}".format(row["user_id"])
             top_players.append(("{} ({})".format(name, row["avatar"]), row["event_elo"]))
     else:
-        top_players = [(name, elo) for _, name, elo in standings[:3]]
+        top_players = [
+            (name, elo) for uid, name, elo in standings
+            if settled_games is None or not glicko2_season.is_provisional(settled_games.get(uid))
+        ][:3]
     return {
         "event_id": event_id,
         "event_name": event_name,
@@ -1626,6 +1888,8 @@ def recalculate_event_elo() -> dict:
 
     migrate_to_dual_elo_system()
     create_db()
+    if glicko2_season.is_glicko2(active_event):
+        return _recalculate_glicko2_event(active_event)
     event_start_str = active_event["start_date"].isoformat()
     event_name = active_event["event_name"]
 
@@ -1634,7 +1898,7 @@ def recalculate_event_elo() -> dict:
     match_cur.execute(
         f"""
         SELECT rowid, winner_id, losser_id
-        FROM match_records
+        FROM {live_matches()}
         WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
         ORDER BY timestamp ASC, rowid ASC
         """,
@@ -1654,7 +1918,7 @@ def recalculate_event_elo() -> dict:
         player_elos[loser_id] = l_elo + l_change
         player_games[winner_id] = player_games.get(winner_id, 0) + 1
         player_games[loser_id] = player_games.get(loser_id, 0) + 1
-        match_cur.execute("UPDATE match_records SET event_k = ? WHERE rowid = ?", (k_value, rowid))
+        match_cur.execute(f"UPDATE {live_matches()} SET event_k = ? WHERE rowid = ?", (k_value, rowid))
     match_conn.commit()
     match_conn.close()
 
@@ -1694,6 +1958,45 @@ def recalculate_event_elo() -> dict:
     }
 
 
+def _recalculate_glicko2_event(active_event) -> dict:
+    """recalculate_event_elo for a Glicko-2 season: a full season rebuild."""
+    elo_conn = sqlite3.connect("elo.db")
+    match_conn = sqlite3.connect("match_records.db")
+    try:
+        players_reset = elo_conn.execute("SELECT COUNT(*) FROM overall_standings").fetchone()[0]
+        result = glicko2_season.rebuild_season(elo_conn, match_conn, active_event)
+        elo_conn.commit()
+        match_conn.commit()
+        if active_event.get("elo_mode") == AVATAR_MODE:
+            rows = elo_conn.execute(
+                "SELECT user_display_name, user_id, avatar, event_elo FROM event_avatar_standings "
+                "WHERE event_id = ? AND games_played >= ? ORDER BY rating DESC LIMIT 5",
+                (active_event["event_id"], glicko2_season.PROVISIONAL_GAMES),
+            ).fetchall()
+            top_players = [(f"{name or uid} ({avatar})", elo) for name, uid, avatar, elo in rows]
+        else:
+            top_players = elo_conn.execute(
+                "SELECT user_display_name, online_event_elo FROM overall_standings "
+                "WHERE online_event_rating IS NOT NULL AND COALESCE(online_event_games, 0) >= ? "
+                "ORDER BY online_event_rating DESC LIMIT 5",
+                (glicko2_season.PROVISIONAL_GAMES,),
+            ).fetchall()
+    except Exception:
+        elo_conn.rollback()
+        match_conn.rollback()
+        raise
+    finally:
+        elo_conn.close()
+        match_conn.close()
+    return {
+        "event_name": active_event["event_name"],
+        "players_reset": players_reset,
+        "matches_replayed": result["matches"],
+        "players_updated": result["players"],
+        "top_players": [tuple(r) for r in top_players],
+    }
+
+
 def _recalculate_avatar_event_elo(active_event) -> list:
     """Rebuild an Avatar-mode event's avatar entries by replaying its matches.
 
@@ -1709,7 +2012,7 @@ def _recalculate_avatar_event_elo(active_event) -> list:
         matches = match_conn.execute(
             f"""SELECT rowid, winner_id, losser_id, winner_display_name, losser_display_name,
                        timestamp, winner_avatar, loser_avatar, event_k
-                FROM match_records
+                FROM {live_matches()}
                 WHERE timestamp >= ? AND winner_avatar IS NOT NULL AND loser_avatar IS NOT NULL
                   AND {ELO_COUNTING_MATCH_FILTER}
                 ORDER BY timestamp ASC, rowid ASC""",
@@ -1731,7 +2034,7 @@ def _recalculate_avatar_event_elo(active_event) -> list:
             names[m["winner_id"]] = m["winner_display_name"]
             names[m["losser_id"]] = m["losser_display_name"]
             match_conn.execute(
-                "UPDATE match_records SET winner_avatar_elo_change = ?, loser_avatar_elo_change = ?, "
+                f"UPDATE {live_matches()} SET winner_avatar_elo_change = ?, loser_avatar_elo_change = ?, "
                 "winner_avatar_elo_after = ?, loser_avatar_elo_after = ? WHERE rowid = ?",
                 (w_change, l_change, elos[w_key], elos[l_key], m["rowid"]),
             )
@@ -1770,7 +2073,7 @@ def get_match_players(match_id: int) -> dict:
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
     cur.execute(
-        "SELECT winner_id, losser_id, winner_display_name, losser_display_name FROM match_records WHERE rowid = ?",
+        f"SELECT winner_id, losser_id, winner_display_name, losser_display_name FROM {live_matches()} WHERE rowid = ?",
         (match_id,),
     )
     row = cur.fetchone()
@@ -1789,11 +2092,13 @@ _ADMIN_MATCH_COLUMNS = """rowid AS row_id, winner_id, losser_id, winner_display_
        timestamp, match_type, winner_elo_change, loser_elo_change,
        winner_lifetime_elo_change, loser_lifetime_elo_change,
        winner_avatar, loser_avatar, winner_avatar_elo_change, loser_avatar_elo_change, event_k,
-       source"""
+       source, event_id, rating_system,
+       winner_event_games, loser_event_games, winner_avatar_games, loser_avatar_games,
+       winner_lifetime_games, loser_lifetime_games"""
 
 
 def _load_admin_match_rows(match_cur, where: str, params) -> list[dict]:
-    match_cur.execute(f"SELECT {_ADMIN_MATCH_COLUMNS} FROM match_records WHERE {where}", params)
+    match_cur.execute(f"SELECT {_ADMIN_MATCH_COLUMNS} FROM {live_matches()} WHERE {where}", params)
     columns = [d[0] for d in match_cur.description]
     return [dict(zip(columns, row)) for row in match_cur.fetchall()]
 
@@ -1887,7 +2192,7 @@ def _replay_match_elo(elo_cur, match_cur, row: dict, active_event, avatar_event_
             )
 
     match_cur.execute(
-        """UPDATE match_records
+        f"""UPDATE {live_matches()}
            SET winner_elo_change = ?, loser_elo_change = ?,
                winner_lifetime_elo_change = ?, loser_lifetime_elo_change = ?,
                winner_lifetime_elo_after = ?, loser_lifetime_elo_after = ?,
@@ -1900,6 +2205,46 @@ def _replay_match_elo(elo_cur, match_cur, row: dict, active_event, avatar_event_
     row.update(
         winner_elo_change=w_ev, loser_elo_change=l_ev,
         winner_lifetime_elo_change=w_life, loser_lifetime_elo_change=l_life,
+    )
+
+
+def _glicko2_rebuild(elo_conn, match_conn, active_event) -> None:
+    """After a fix: replay every ladder rated by Glicko-2 (not committed).
+
+    Glicko-2 can't be undone by subtracting a stored change, so a Glicko-2
+    season (player and avatar entries, each match's season change) and, once
+    lifetime is Glicko-2, the lifetime ladder are rebuilt from their matches.
+    Elo ladders have already been fixed the usual way.
+    """
+    result = glicko2_season.rebuild_after_fix(elo_conn, match_conn, active_event)
+    if "season" in result:
+        logger.info(
+            "Glicko-2 season %s rebuilt: %d matches, %d ratings moved",
+            active_event["event_id"], result["season"]["matches"], len(result["season"]["moved"]),
+        )
+    if "lifetime" in result:
+        logger.info("Glicko-2 lifetime rebuilt: %d matches", result["lifetime"]["matches"])
+
+
+def _closed_season_row(row: dict, active_event) -> bool:
+    """A match from an ended season that stayed in the season match table.
+
+    Season 9 onward is never archived, so older seasons' matches sit next to
+    the running season's; the admin fixes leave them alone.
+    """
+    return row.get("rating_system") is not None and (
+        not active_event or row.get("event_id") != active_event["event_id"]
+    )
+
+
+def _current_rows_sql(active_event) -> tuple[str, tuple]:
+    """SQL limiting the live match table to rows the current admin tools may change.
+
+    Untagged rows (no event running when reported) and the running event's.
+    """
+    return (
+        "(rating_system IS NULL OR event_id = ?)",
+        (active_event["event_id"] if active_event else -1,),
     )
 
 
@@ -1939,6 +2284,8 @@ def correct_match_record(match_id: int) -> dict:
         if not rows:
             raise ValueError(f"Match ID #{match_id} not found.")
         target = rows[0]
+        if _closed_season_row(target, active_event):
+            raise ValueError(f"Match ID #{match_id} is from an ended season and can't be changed.")
         # Top cut (bracket) games never move ELO, so flipping one only swaps sides
         rated = (
             target["match_type"] not in NON_ELO_MATCH_TYPES
@@ -1951,13 +2298,16 @@ def correct_match_record(match_id: int) -> dict:
         # Later rated matches of either player are replayed on top of the fix
         subsequent = []
         if rated:
+            current_sql, current_params = _current_rows_sql(active_event)
             subsequent = _load_admin_match_rows(
                 match_cur,
                 f"""timestamp > ? AND (winner_id IN (?, ?) OR losser_id IN (?, ?))
                     AND (match_type IS NULL OR match_type NOT IN ({NON_ELO_MATCH_TYPES_SQL}))
                     AND (source IS NULL OR source NOT IN ({NON_SEASON_SOURCES_SQL}))
+                    AND {current_sql}
                     ORDER BY timestamp ASC""",
-                (target["timestamp"], orig_winner_id, orig_loser_id, orig_winner_id, orig_loser_id),
+                (target["timestamp"], orig_winner_id, orig_loser_id, orig_winner_id, orig_loser_id,
+                 *current_params),
             )
         affected_players = {orig_winner_id, orig_loser_id}
         for m in subsequent:
@@ -1970,7 +2320,7 @@ def correct_match_record(match_id: int) -> dict:
 
         # Flip the target match (players, their decks and their avatars)
         match_cur.execute(
-            """UPDATE match_records
+            f"""UPDATE {live_matches()}
                SET winner_id = losser_id, losser_id = winner_id,
                    winner_display_name = losser_display_name, losser_display_name = winner_display_name,
                    curiosa_url = curiosa_url_loser,
@@ -1983,6 +2333,7 @@ def correct_match_record(match_id: int) -> dict:
         flipped = _load_admin_match_rows(match_cur, "rowid = ?", (match_id,))[0]
 
         new_w_change = new_l_change = 0
+        new_w_games = new_l_games = None  # game counts after it (Glicko-2 only)
         recalculated = 0
         if rated:
             _replay_match_elo(elo_cur, match_cur, flipped, active_event, avatar_event_id)
@@ -1990,6 +2341,13 @@ def correct_match_record(match_id: int) -> dict:
             for m in subsequent:
                 _replay_match_elo(elo_cur, match_cur, m, active_event, avatar_event_id)
                 recalculated += 1
+            _glicko2_rebuild(elo_conn, match_conn, active_event)
+            if glicko2_season.is_glicko2(active_event):
+                new_w_change, new_l_change, new_w_games, new_l_games = match_conn.execute(
+                    f"SELECT winner_elo_change, loser_elo_change, winner_event_games, loser_event_games "
+                    f"FROM {live_matches()} WHERE rowid = ?",
+                    (match_id,),
+                ).fetchone()
 
         elo_conn.commit()
         match_conn.commit()
@@ -2013,6 +2371,9 @@ def correct_match_record(match_id: int) -> dict:
         "new_loser_name": orig_winner_name,
         "new_winner_elo_change": new_w_change,
         "new_loser_elo_change": new_l_change,
+        # A change made while that side was provisional (first 8 Glicko-2 games) isn't shown
+        "new_winner_elo_change_hidden": glicko2_season.change_hidden(new_w_games),
+        "new_loser_elo_change_hidden": glicko2_season.change_hidden(new_l_games),
         "recalculated_count": recalculated,
         "affected_players": affected_players,
     }
@@ -2027,7 +2388,8 @@ def remove_match_record(match_id: int) -> dict:
     Raises:
         ValueError: If match_id not found.
     """
-    avatar_event_id = _avatar_event_id(get_active_event())
+    active_event = get_active_event()
+    avatar_event_id = _avatar_event_id(active_event)
 
     elo_conn = sqlite3.connect("elo.db")
     elo_cur = elo_conn.cursor()
@@ -2039,6 +2401,8 @@ def remove_match_record(match_id: int) -> dict:
         if not rows:
             raise ValueError(f"Match ID #{match_id} not found.")
         match = rows[0]
+        if _closed_season_row(match, active_event):
+            raise ValueError(f"Match ID #{match_id} is from an ended season and can't be removed.")
         _revert_match_elo(elo_cur, match, avatar_event_id)
         if match["event_k"] is not None:
             # A rated season game: both players have one game fewer toward their K ramp
@@ -2054,13 +2418,22 @@ def remove_match_record(match_id: int) -> dict:
             event = match[f"{side}_elo_change"] or 0
             if not (lifetime or event):
                 continue
-            text = f"**{match[name_col]}**: Lifetime {sign * abs(lifetime):+d}, Event {sign * abs(event):+d} ELO"
+            # A change made while that side was provisional (Glicko-2) isn't shown
+            parts = []
+            if not glicko2_season.change_hidden(match[f"{side}_lifetime_games"]):
+                parts.append(f"Lifetime {sign * abs(lifetime):+d}")
+            if not glicko2_season.change_hidden(match[f"{side}_event_games"]):
+                parts.append(f"Event {sign * abs(event):+d}")
+            text = ", ".join(parts) + (" ELO" if parts else "")
             avatar_change = match[f"{side}_avatar_elo_change"]
-            if avatar_event_id and match[f"{side}_avatar"] and avatar_change is not None:
-                text += f", {match[f'{side}_avatar']} {-avatar_change:+d}"
-            reverted_info.append(text)
+            if (avatar_event_id and match[f"{side}_avatar"] and avatar_change is not None
+                    and not glicko2_season.change_hidden(match[f"{side}_avatar_games"])):
+                text += f"{', ' if text else ''}{match[f'{side}_avatar']} {-avatar_change:+d}"
+            reverted_info.append(f"**{match[name_col]}**: {text or 'provisional, change not shown'}")
 
-        match_cur.execute("DELETE FROM match_records WHERE rowid = ?", (match_id,))
+        match_cur.execute(f"DELETE FROM {live_matches()} WHERE rowid = ?", (match_id,))
+        # Glicko-2 numbers (season, lifetime) come from a full replay without this match
+        _glicko2_rebuild(elo_conn, match_conn, active_event)
         elo_conn.commit()
         match_conn.commit()
     except Exception:
@@ -2096,7 +2469,10 @@ def remove_player(user_id: int, user_name: str) -> dict:
     Raises:
         ValueError: If no matches found for the player.
     """
-    avatar_event_id = _avatar_event_id(get_active_event())
+    active_event = get_active_event()
+    avatar_event_id = _avatar_event_id(active_event)
+    # Ended Glicko-2 seasons keep their matches in match_records; leave those alone
+    current_sql, current_params = _current_rows_sql(active_event)
 
     elo_conn = sqlite3.connect("elo.db")
     elo_cur = elo_conn.cursor()
@@ -2104,13 +2480,18 @@ def remove_player(user_id: int, user_name: str) -> dict:
     match_cur = match_conn.cursor()
 
     try:
-        matches = _load_admin_match_rows(match_cur, "winner_id = ? OR losser_id = ?", (user_id, user_id))
+        matches = _load_admin_match_rows(
+            match_cur, f"(winner_id = ? OR losser_id = ?) AND {current_sql}",
+            (user_id, user_id, *current_params),
+        )
         if not matches:
             raise ValueError(f"No matches found for {user_name}.")
 
         # Per opponent: (lifetime, event, name) adjustment; avatar entries apply directly
         elo_adjustments: dict[int, tuple[int, str]] = {}
         lifetime_adjustments: dict[int, int] = {}
+        # What the message shows: changes made while provisional (Glicko-2) left out
+        shown_adjustments: dict[int, int] = {}
         for m in matches:
             opp_side = "loser" if m["winner_id"] == user_id else "winner"
             opp_id = m["losser_id"] if opp_side == "loser" else m["winner_id"]
@@ -2121,6 +2502,8 @@ def remove_player(user_id: int, user_name: str) -> dict:
             lifetime = _lifetime_change(m, opp_side)
             adj, name = elo_adjustments.get(opp_id, (0, opp_name))
             elo_adjustments[opp_id] = (adj - event, name)
+            if event and not glicko2_season.change_hidden(m[f"{opp_side}_event_games"]):
+                shown_adjustments[opp_id] = shown_adjustments.get(opp_id, 0) - event
             lifetime_adjustments[opp_id] = lifetime_adjustments.get(opp_id, 0) - lifetime
             if m["event_k"] is not None:
                 elo_cur.execute(
@@ -2147,11 +2530,14 @@ def remove_player(user_id: int, user_name: str) -> dict:
                     "online_event_elo = online_event_elo + ? WHERE user_id = ?",
                     (lifetime_adj, event_adj, opp_id),
                 )
-                adjustments_made.append(f"{opp_name}: {event_adj:+d}")
+                if opp_id in shown_adjustments:
+                    adjustments_made.append(f"{opp_name}: {shown_adjustments[opp_id]:+d}")
+                else:
+                    adjustments_made.append(f"{opp_name}: provisional, change not shown")
 
         match_cur.execute(
-            "DELETE FROM match_records WHERE winner_id = ? OR losser_id = ?",
-            (user_id, user_id),
+            f"DELETE FROM {live_matches()} WHERE (winner_id = ? OR losser_id = ?) AND {current_sql}",
+            (user_id, user_id, *current_params),
         )
         matches_deleted = match_cur.rowcount
 
@@ -2162,6 +2548,15 @@ def remove_player(user_id: int, user_name: str) -> dict:
                 "DELETE FROM event_avatar_standings WHERE user_id = ? AND event_id = ?",
                 (user_id, avatar_event_id),
             )
+        if glicko2_season.is_glicko2(active_event):
+            # Their admin resets go too, then the season is replayed without them
+            elo_conn.execute(
+                "DELETE FROM event_rating_adjustments WHERE user_id = ? AND event_id = ?",
+                (user_id, active_event["event_id"]),
+            )
+        if glicko2_season.lifetime_is_glicko2(elo_conn):
+            elo_conn.execute("DELETE FROM lifetime_rating_adjustments WHERE user_id = ?", (user_id,))
+        _glicko2_rebuild(elo_conn, match_conn, active_event)
 
         elo_conn.commit()
         match_conn.commit()

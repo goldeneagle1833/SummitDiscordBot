@@ -1,5 +1,6 @@
 """Card and element statistics API routes."""
 
+from utils.match_tables import live_matches
 import fcntl
 import itertools
 import json
@@ -66,20 +67,20 @@ def get_cards():
 
         # Query current match_records
         try:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT json_deck_data_winner, json_deck_data_loser
-                FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                FROM {live_matches()}
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT
                     CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
                     json_deck_data
-                FROM match_records
-                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                FROM {live_matches()}
+                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
             """)
             all_rows.extend(cur.fetchall())
             use_new_columns = False
@@ -246,7 +247,7 @@ def get_live_popular_cards():
     try:
         cur.execute(f"""
             SELECT json_deck_data_winner, json_deck_data_loser
-            FROM match_records
+            FROM {live_matches()}
             WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
                OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
             {where_clause}
@@ -258,7 +259,7 @@ def get_live_popular_cards():
         use_new_columns = False
         cur.execute(f"""
             SELECT json_deck_data
-            FROM match_records
+            FROM {live_matches()}
             WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
             {where_clause}
         """)
@@ -438,7 +439,7 @@ def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False
             try:
                 run(f"""
                     SELECT json_deck_data_winner, json_deck_data_loser{ts}
-                    FROM match_records
+                    FROM {live_matches()}
                     WHERE {deck_where} {source_clause}
                 """)
             except sqlite3.OperationalError:
@@ -447,7 +448,7 @@ def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False
                         SELECT
                             CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
                             json_deck_data{ts}
-                        FROM match_records
+                        FROM {live_matches()}
                         WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
                     """)
                     use_new_columns = False
@@ -472,7 +473,7 @@ def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False
                     try:
                         run(f"""
                             SELECT json_deck_data_winner, json_deck_data_loser{ts}
-                            FROM match_records
+                            FROM {live_matches()}
                             WHERE {deck_where} {source_clause}
                               AND timestamp >= ? AND timestamp <= ?
                         """, (start_date, end_date))
@@ -518,7 +519,7 @@ def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False
             params.append(event_end)
 
         try:
-            query = f"SELECT json_deck_data_winner, json_deck_data_loser{ts} FROM match_records WHERE {' AND '.join(where_parts)}"
+            query = f"SELECT json_deck_data_winner, json_deck_data_loser{ts} FROM {live_matches()} WHERE {' AND '.join(where_parts)}"
             run(query, params)
         except sqlite3.OperationalError:
             pass
@@ -804,7 +805,7 @@ def get_card_stats(card_name):
         cur = conn.cursor()
         deck_where = ("(json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
                       " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')")
-        for table in ("match_records", "match_records_archive"):
+        for table in ("match_records", "match_records_archive", "season_match_records"):
             try:
                 cur.execute(f"SELECT json_deck_data_winner, json_deck_data_loser FROM {table} WHERE {deck_where}")
                 # Stream: each row holds two full decks (~38 KB), so fetchall()
@@ -879,20 +880,20 @@ def get_card_popularity(card_name):
 
         # Query current match_records with timestamps
         try:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT json_deck_data_winner, json_deck_data_loser, timestamp
-                FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                FROM {live_matches()}
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError as e:
             logger.warning(f"Failed to query new columns format: {e}")
             try:
-                cur.execute("""
+                cur.execute(f"""
                     SELECT json_deck_data, '', timestamp
-                    FROM match_records
-                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                    FROM {live_matches()}
+                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
                 """)
                 all_rows.extend(cur.fetchall())
                 use_new_columns = False
@@ -1076,7 +1077,7 @@ def get_all_cards_popularity():
         try:
             cur.execute(f"""
                 SELECT json_deck_data_winner, json_deck_data_loser, timestamp
-                FROM match_records
+                FROM {live_matches()}
                 WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
                    OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
                 {where_clause}
@@ -1086,7 +1087,7 @@ def get_all_cards_popularity():
             try:
                 cur.execute(f"""
                     SELECT json_deck_data, '', timestamp
-                    FROM match_records
+                    FROM {live_matches()}
                     WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
                     {where_clause}
                 """)
@@ -1724,16 +1725,16 @@ def get_played_winrate_season_stats():
         for season in _get_all_seasons_for_played():
             if season["end_date"]:
                 cur.execute(
-                    """SELECT COUNT(*) FROM sorcery_online_match_callbacks c
-                       JOIN match_records m ON c.match_id = m.match_id
+                    f"""SELECT COUNT(*) FROM sorcery_online_match_callbacks c
+                       JOIN {live_matches()} m ON c.match_id = m.match_id
                        WHERE c.outcome = 'decided' AND c.played_cards IS NOT NULL
                          AND m.timestamp >= ? AND m.timestamp < ?""",
                     (season["start_date"], season["end_date"]),
                 )
             else:
                 cur.execute(
-                    """SELECT COUNT(*) FROM sorcery_online_match_callbacks c
-                       JOIN match_records m ON c.match_id = m.match_id
+                    f"""SELECT COUNT(*) FROM sorcery_online_match_callbacks c
+                       JOIN {live_matches()} m ON c.match_id = m.match_id
                        WHERE c.outcome = 'decided' AND c.played_cards IS NOT NULL
                          AND m.timestamp >= ?""",
                     (season["start_date"],),

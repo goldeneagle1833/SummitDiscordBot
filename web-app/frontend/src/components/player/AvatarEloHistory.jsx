@@ -3,6 +3,8 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from 'recharts'
 import CollapsibleSection from './CollapsibleSection'
+import { ProvisionalTag } from '@/components/common/Provisional'
+import { isNum, provisionalOf } from '@/utils/provisional'
 
 // Avatar-mode seasons: each avatar has its own event ELO, so each gets its own graph
 export default function AvatarEloHistory({ history, entries = [], eventName, open, onToggle }) {
@@ -20,12 +22,13 @@ export default function AvatarEloHistory({ history, entries = [], eventName, ope
     return [
       { game: 0, elo: 1500, date: 'Start' },
       ...points.map((p, i) => ({
-        game: i + 1,
+        // Glicko-2 points carry the entry's game number (its first 8 games are hidden)
+        game: p.game ?? i + 1,
         elo: p.elo,
         date: p.timestamp
           ? new Date(p.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
           : '',
-      })),
+      })).filter((p) => isNum(p.elo)), // provisional (hidden) points are skipped
     ]
   }, [history, avatar])
 
@@ -62,7 +65,10 @@ export default function AvatarEloHistory({ history, entries = [], eventName, ope
       </div>
       {entry && (
         <p className="text-sm text-text-muted mb-2">
-          {entry.event_elo} ELO · Rank #{entry.rank} · {entry.games_played} game{entry.games_played === 1 ? '' : 's'}
+          {provisionalOf(entry)
+            ? <ProvisionalTag games={provisionalOf(entry).games} className="text-sm" />
+            : <>{entry.event_elo} ELO{entry.rank != null && ` · Rank #${entry.rank}`}</>}
+          {' · '}{entry.games_played} game{entry.games_played === 1 ? '' : 's'}
         </p>
       )}
       <div style={{ height: 200 }}>

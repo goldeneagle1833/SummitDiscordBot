@@ -5,6 +5,7 @@ import sqlite3
 from collections import Counter
 from flask import Blueprint, jsonify, request
 
+from services import provisional
 from services.leaderboard import LeaderboardService
 from services.ticket_leaderboard import TicketLeaderboardService
 from utils.api_auth import require_integration_api_key
@@ -49,6 +50,8 @@ def get_avatar_leaderboards():
         rank_by: "elo" (default) or "avatar_score" (like the Top Players page)
         min_games: entries with fewer games rank after the rest (default 10,
             like the Top Players page; 0 turns it off)
+        scope: "season" (default) or "lifetime": the lifetime avatar ELO
+            ladders (Glicko-2, first Glicko-2 season on), same shape
     """
     limit = request.args.get("limit", type=int)
     if limit is not None and limit < 1:
@@ -59,9 +62,13 @@ def get_avatar_leaderboards():
     min_games = request.args.get("min_games", 10, type=int)
     if min_games < 0:
         return jsonify({"success": False, "error": "min_games must be 0 or more"}), 400
+    scope = (request.args.get("scope") or "season").strip().lower()
+    if scope not in ("season", "lifetime"):
+        return jsonify({"success": False, "error": "scope must be season or lifetime"}), 400
     try:
         data = LeaderboardService().get_avatar_leaderboards(
-            avatar=request.args.get("avatar"), limit=limit, rank_by=rank_by, min_games=min_games
+            avatar=request.args.get("avatar"), limit=limit, rank_by=rank_by, min_games=min_games,
+            scope=scope,
         )
         return jsonify({"success": True, **data})
     except Exception as e:
@@ -289,6 +296,14 @@ def get_player_event_stats(player_id, event_id):
         # Keep as string to avoid overflow with large Google IDs
         stats = repo.get_player_event_elo(player_id, event_id)
         if stats:
+            ladder = provisional.archived_ladder(event_id, repo._db_path)
+            if ladder is not None:
+                # Glicko-2 season: rank among settled players; provisional shows no ELO
+                row = next((r for r in ladder if str(r["user_id"]) == str(player_id)), None)
+                if row:
+                    stats.update(elo=row["event_elo"], rank=row["rank"],
+                                 provisional=row["provisional"],
+                                 provisional_games=row["provisional_games"])
             return jsonify(stats)
         return jsonify({"error": "No data found for this player in this event"}), 404
     except Exception as e:
@@ -304,7 +319,8 @@ def get_archived_event_leaderboard(event_id):
         from repositories.matches import MatchRepository
 
         repo = EloRepository()
-        leaderboard = repo.get_archived_event_leaderboard(event_id)
+        ladder = provisional.archived_ladder(event_id, repo._db_path)
+        leaderboard = ladder if ladder is not None else repo.get_archived_event_leaderboard(event_id)
 
         # Season records come from the match archive (older events may have none)
         records = MatchRepository().get_event_archive_records(event_id)
@@ -350,7 +366,7 @@ def get_season_leaderboard(season_id):
         player_names = {}
 
         # Query match_records within date range
-        for table in ("match_records", "match_records_archive"):
+        for table in ("match_records", "match_records_archive", "season_match_records"):
             try:
                 cur.execute(f"""
                     SELECT winner_id, winner_display_name, losser_id, losser_display_name

@@ -9,6 +9,8 @@ import CollapsibleSection from '@/components/player/CollapsibleSection'
 import { get } from '@/api/client'
 import usePageTitle from '@/hooks/usePageTitle'
 import { getDeckSourceLabel } from '@/utils/deckLinks'
+import { HiddenChange } from '@/components/common/Provisional'
+import { isHidden } from '@/utils/provisional'
 
 const TCGPLAYER_IMPACT_LINK = 'https://partner.tcgplayer.com/c/5746741/1780961/21018'
 const CARD_TYPE_ORDER = ['Minion', 'Magic', 'Artifact', 'Aura', 'Site', 'Other']
@@ -325,7 +327,7 @@ export default function DeckStats() {
                     </td>
                     <td className="py-2 pr-4 text-text-muted">{m.opponent_avatar}</td>
                     <td className="py-2 pr-4 text-text-muted">
-                      {m.elo_change > 0
+                      {isHidden(m, 'elo_change') ? <HiddenChange /> : m.elo_change > 0
                         ? <span className="text-accent-green">+{m.elo_change}</span>
                         : m.elo_change < 0
                           ? <span className="text-accent-red">{m.elo_change}</span>

@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import PostseasonName, { PostseasonLegend } from '@/components/player/BracketMarks'
 import { VoiceGamesCell } from '@/components/leaderboard/VoiceGames'
+import { ProvisionalTag } from '@/components/common/Provisional'
+import { provisionalOf } from '@/utils/provisional'
 
 const SHOW_OPTIONS = [
   { value: 16, label: 'Top 16' },
@@ -18,6 +20,8 @@ export default function LeaderboardTable({
   columns = 'lifetime',
   voiceRequirement = null,
   eloLabel = 'Event ELO',
+  // Glicko-2 seasons: ranked games an entry needs to count for top cut (0 = none)
+  topCutMinGames = 0,
 }) {
   const [showCount, setShowCount] = useState(16)
   // Avatar-mode seasons rate each player/avatar pair: rows carry an avatar
@@ -27,6 +31,10 @@ export default function LeaderboardTable({
   const showRecord = columns === 'event' && data.some((entry) => entry.wins != null || entry.losses != null)
 
   const visible = data.slice(0, showCount === Infinity ? data.length : showCount)
+  // Provisional (Glicko-2, < 8 games) rows get no rank and do not take rank
+  // positions from settled players: position counts settled rows only.
+  let settled = 0
+  const positions = visible.map((entry) => (provisionalOf(entry) ? null : settled++))
 
   if (!data.length) {
     return <p className="text-text-muted text-center py-8">No data available.</p>
@@ -48,6 +56,11 @@ export default function LeaderboardTable({
       </div>
 
       <PostseasonLegend className="mb-2 px-1" />
+      {columns === 'event' && topCutMinGames > 0 && (
+        <p className="text-xs text-text-muted mb-2 px-1" data-testid="top-cut-min-note">
+          An entry needs {topCutMinGames} ranked games this season to count for top cut.
+        </p>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="border-b border-border">
@@ -77,7 +90,9 @@ export default function LeaderboardTable({
           </thead>
           <tbody className="divide-y divide-border">
             {visible.map((entry, index) => {
-              const rankDisplay = index < 3 ? RANK_MEDALS[index] : `#${index + 1}`
+              const prov = provisionalOf(entry)
+              const position = positions[index]
+              const rankDisplay = position == null ? '' : position < 3 ? RANK_MEDALS[position] : `#${position + 1}`
               const totalGames = (entry.wins || 0) + (entry.losses || 0)
               const winPct = totalGames > 0 ? ((entry.wins / totalGames) * 100).toFixed(1) : '0.0'
               const playerId = entry.id || entry.user_id
@@ -100,7 +115,9 @@ export default function LeaderboardTable({
                   )}
                   {columns === 'lifetime' && (
                     <>
-                      <td className="px-3 py-2 text-sm text-right hidden sm:table-cell">{entry.elo}</td>
+                      <td className="px-3 py-2 text-sm text-right hidden sm:table-cell">
+                        {prov ? <ProvisionalTag games={prov.games} /> : entry.elo}
+                      </td>
                       <td className="px-3 py-2 text-sm text-right hidden sm:table-cell">
                         <span className="text-accent-green">{entry.wins || 0}</span>
                         {'-'}
@@ -122,7 +139,17 @@ export default function LeaderboardTable({
                     </td>
                   )}
                   {columns === 'event' && (
-                    <td className="px-3 py-2 text-sm text-right">{entry.event_elo}</td>
+                    <td className="px-3 py-2 text-sm text-right whitespace-nowrap">
+                      {topCutMinGames > 0 && entry.top_cut_eligible === false && !prov && (
+                        <span
+                          className="mr-2 text-xs text-text-muted"
+                          title={`Needs ${topCutMinGames} ranked games to count for top cut`}
+                        >
+                          not yet eligible
+                        </span>
+                      )}
+                      {prov ? <ProvisionalTag games={prov.games} /> : entry.event_elo}
+                    </td>
                   )}
                 </tr>
               )

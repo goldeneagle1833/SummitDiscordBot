@@ -1,5 +1,6 @@
 """Fun Stats API routes."""
 
+from utils.match_tables import live_matches
 import json
 import logging
 import sqlite3
@@ -10,6 +11,7 @@ from flask import Blueprint, jsonify, request
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS
 from utils.auth import is_admin
 from utils.deck_sql import avatar_only
+from services import provisional
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +58,7 @@ def get_fun_stats_filters():
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
         cur.execute(
-            "SELECT DISTINCT source FROM match_records WHERE source IS NOT NULL ORDER BY source"
+            f"SELECT DISTINCT source FROM {live_matches()} WHERE source IS NOT NULL ORDER BY source"
         )
         sources = [row[0] for row in cur.fetchall()]
         conn.close()
@@ -134,6 +136,8 @@ def _collect_match_rows(event_filter, source_filter):
         "winner_elo_change", "loser_elo_change",
         "winner_lifetime_elo_change", "loser_lifetime_elo_change",
         "winner_went_first", "loser_went_first",
+        # Glicko-2 game counts, to leave out changes made while provisional
+        *provisional.GAMES_COLUMNS,
     ]
 
     rows = []
@@ -160,7 +164,7 @@ def _collect_match_rows(event_filter, source_filter):
 
         if not event_filter or event_filter == "all":
             # No filter — all data from both tables
-            _query_table(cur, "match_records", columns, where_parts, params, rows, col_keys)
+            _query_table(cur, live_matches(), columns, where_parts, params, rows, col_keys)
             if has_archive:
                 _query_table(cur, "match_records_archive", columns, where_parts, params, rows, col_keys)
 
@@ -175,7 +179,7 @@ def _collect_match_rows(event_filter, source_filter):
             if end_date:
                 date_where.append("timestamp <= ?")
                 date_params.append(end_date)
-            _query_table(cur, "match_records", columns, date_where, date_params, rows, col_keys)
+            _query_table(cur, live_matches(), columns, date_where, date_params, rows, col_keys)
             if has_archive:
                 _query_table(cur, "match_records_archive", columns, date_where, date_params, rows, col_keys)
 
@@ -189,7 +193,7 @@ def _collect_match_rows(event_filter, source_filter):
                 if end_date:
                     date_where.append("timestamp <= ?")
                     date_params.append(end_date)
-                _query_table(cur, "match_records", columns, date_where, date_params, rows, col_keys)
+                _query_table(cur, live_matches(), columns, date_where, date_params, rows, col_keys)
 
             if has_archive:
                 try:
@@ -204,6 +208,9 @@ def _collect_match_rows(event_filter, source_filter):
     except Exception as e:
         logger.error(f"Error collecting match rows: {e}")
 
+    # Changes made while a side was provisional (Glicko-2) count for nothing
+    for row in rows:
+        provisional.mask_match(row)
     return rows
 
 

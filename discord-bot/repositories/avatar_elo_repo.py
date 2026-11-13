@@ -11,6 +11,8 @@ then on (a trigger on ``events`` refuses any change):
 import datetime
 import sqlite3
 
+from services import glicko2_season
+
 PLAYER_MODE = "player"
 AVATAR_MODE = "avatar"
 ELO_MODES = (PLAYER_MODE, AVATAR_MODE)
@@ -137,7 +139,11 @@ def set_avatar_event_elo(
             "WHERE event_id = ? AND user_id = ? AND avatar = ?",
             (event_id, user_id, avatar),
         ).fetchone()
-        if row:
+        event = glicko2_season.get_event(conn, event_id)
+        if glicko2_season.is_glicko2(event):
+            # Stored as an adjustment so a later season rebuild applies it again
+            glicko2_season.add_adjustment(conn, event, user_id, display_name, elo, avatar=avatar)
+        elif row:
             conn.execute(
                 "UPDATE event_avatar_standings SET event_elo = ?, user_display_name = ? "
                 "WHERE event_id = ? AND user_id = ? AND avatar = ?",

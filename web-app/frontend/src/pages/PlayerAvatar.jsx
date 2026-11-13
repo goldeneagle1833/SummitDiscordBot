@@ -5,6 +5,8 @@ import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
 import StatCard from '@/components/player/StatCard'
 import CollapsibleSection from '@/components/player/CollapsibleSection'
+import { HiddenChange, ProvisionalTag } from '@/components/common/Provisional'
+import { isHidden, provisionalOf } from '@/utils/provisional'
 import usePageTitle from '@/hooks/usePageTitle'
 
 export default function PlayerAvatar() {
@@ -50,6 +52,9 @@ export default function PlayerAvatar() {
   const onDraw = data.on_draw || {}
   const knownMatchups = (data.matchups || []).filter((m) => m.opponent_avatar !== 'Unknown')
   const pastEvents = events?.events?.filter((e) => !e.is_active) || []
+  // Lifetime avatar ELO on this avatar (Glicko-2, Season 9 on); null before then
+  const lifetime = data.lifetime_avatar_elo
+  const lifetimeProv = provisionalOf(lifetime)
 
   return (
     <div className="space-y-6">
@@ -92,6 +97,14 @@ export default function PlayerAvatar() {
         <StatCard label="Losses" value={<span className="text-accent-red">{data.losses}</span>} />
         <StatCard label="Win Rate" value={`${data.win_rate}%`} />
         <StatCard label="Total Games" value={data.total} />
+        {lifetime && (
+          <StatCard
+            label="Lifetime avatar ELO"
+            value={lifetimeProv
+              ? <ProvisionalTag games={lifetimeProv.games} className="text-sm" />
+              : <>{lifetime.elo}{lifetime.rank != null && <span className="text-sm text-text-muted"> · #{lifetime.rank}</span>}</>}
+          />
+        )}
         {onPlay.total > 0 && (
           <StatCard
             label="On the Play"
@@ -171,7 +184,7 @@ export default function PlayerAvatar() {
                     </td>
                     <td className="py-2 pr-4 text-text-muted">{m.opponent_avatar !== 'Unknown' ? m.opponent_avatar : '-'}</td>
                     <td className="py-2 pr-4 text-text-muted">
-                      {m.elo_change > 0
+                      {isHidden(m, 'elo_change') ? <HiddenChange /> : m.elo_change > 0
                         ? <span className="text-accent-green">+{m.elo_change}</span>
                         : m.elo_change < 0
                           ? <span className="text-accent-red">{m.elo_change}</span>

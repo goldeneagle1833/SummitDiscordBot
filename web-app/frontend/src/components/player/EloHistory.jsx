@@ -3,9 +3,46 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from 'recharts'
 import CollapsibleSection from './CollapsibleSection'
+import { isHidden, isNum } from '@/utils/provisional'
 
 const WIN_COLOR = 'rgba(63,185,80,0.95)'
 const LOSS_COLOR = 'rgba(248,81,73,0.95)'
+const LIFETIME_COLOR = 'rgba(77,184,255,0.85)'
+const LEGACY_COLOR = 'rgba(200,160,90,0.85)'
+
+export const LEGACY_LABEL = 'Legacy ELO (Seasons 1-8)'
+export const LIFETIME_LABEL = 'Lifetime'
+
+/**
+ * Chart rows for the last `gameCount` points.
+ *
+ * Points carry an `era`: "legacy" (Elo lifetime, Seasons 1-8) or "glicko2"
+ * (the Glicko-2 lifetime ladder, which restarted at 1500). Each era gets its
+ * own series (`legacy` / `lifetime` keys, null outside it) so the restart
+ * shows as a break between two lines, not a drop. `switchIndex` is the `idx`
+ * of the first Glicko-2 point when the window holds both eras.
+ */
+export function buildEloChartData(points, gameCount) {
+  const window = points.slice(-gameCount)
+  const hasGlicko = window.some((m) => m.era === 'glicko2')
+  const chartData = window.map((m, idx) => {
+    const glicko = m.era === 'glicko2'
+    return {
+      idx,
+      date: new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      // Before the switch there is only one ladder: draw it as "lifetime"
+      legacy: hasGlicko && !glicko ? m.elo_after : null,
+      lifetime: !hasGlicko || glicko ? m.elo_after : null,
+      era: glicko ? 'glicko2' : 'legacy',
+      result: m.result,
+      opponent: m.opponent,
+      change: isHidden(m, 'elo_change') ? null : m.elo_change,
+    }
+  })
+  const firstGlicko = chartData.findIndex((d) => d.era === 'glicko2')
+  const switchIndex = hasGlicko && firstGlicko > 0 ? firstGlicko : null
+  return { chartData, hasGlicko, hasLegacy: chartData.some((d) => d.legacy != null), switchIndex }
+}
 
 function GameDot(props) {
   const { cx, cy, payload } = props
@@ -41,7 +78,8 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
   const validMatches = useMemo(
     () =>
       [...(eloHistory || [])]
-        .filter((m) => m.elo_after != null && m.date)
+        // Provisional (hidden) points come back null or flagged: skip them
+        .filter((m) => isNum(m.elo_after) && !isHidden(m, 'elo_after') && m.date)
         .sort((a, b) => new Date(a.date) - new Date(b.date)),
     [eloHistory],
   )
@@ -49,25 +87,14 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
   const maxGames = validMatches.length
   const [gameCount, setGameCount] = useState(() => Math.min(validMatches.length, 30))
 
-  const chartData = useMemo(() => {
-    if (!validMatches.length) return []
-
-    // Take the last `gameCount` matches — elo_after is computed server-side
-    // with proper season resets, so no client-side reconstruction needed.
-    const window = validMatches.slice(-gameCount)
-
-    return window.map((m) => ({
-      date: new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      elo: m.elo_after,
-      result: m.result,
-      opponent: m.opponent,
-      change: m.elo_change,
-    }))
-  }, [validMatches, gameCount])
+  const { chartData, hasLegacy, switchIndex } = useMemo(
+    () => buildEloChartData(validMatches, gameCount),
+    [validMatches, gameCount],
+  )
 
   if (!validMatches.length) return null
 
-  const eloValues = chartData.map((d) => d.elo)
+  const eloValues = chartData.map((d) => d.legacy ?? d.lifetime)
   const eloMin = Math.min(...eloValues)
   const eloMax = Math.max(...eloValues)
   const padding = Math.max(40, Math.round((eloMax - eloMin) * 0.2))
@@ -104,7 +131,11 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
             <XAxis
-              dataKey="date"
+              dataKey="idx"
+              type="number"
+              domain={['dataMin', 'dataMax']}
+              allowDecimals={false}
+              tickFormatter={(idx) => chartData[idx]?.date ?? ''}
               tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
               tickLine={false}
               axisLine={false}
@@ -124,10 +155,10 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
                 borderRadius: 4,
                 fontSize: 11,
               }}
-              formatter={(value, _name, props) => {
+              formatter={(value, name, props) => {
                 const change = props.payload?.change
                 const suffix = change > 0 ? ` (+${change})` : change < 0 ? ` (${change})` : ''
-                return [`${value}${suffix}`, 'ELO']
+                return [`${value}${suffix}`, name === 'legacy' ? 'Legacy ELO' : 'ELO']
               }}
               labelFormatter={(label, payload) => {
                 if (payload?.[0]) {
@@ -136,7 +167,7 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
                   return (
                     <span>
                       <span style={{ color: resultColor }}>{p.result}</span>
-                      {` vs ${p.opponent} · ${label}`}
+                      {` vs ${p.opponent} · ${p.date}`}
                     </span>
                   )
                 }
@@ -144,12 +175,33 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
               }}
             />
             <ReferenceLine y={1500} stroke="rgba(255,255,255,0.15)" strokeDasharray="4 4" />
+            {switchIndex != null && (
+              <ReferenceLine
+                x={switchIndex - 0.5}
+                stroke="rgba(255,255,255,0.35)"
+                strokeDasharray="2 3"
+                label={{ value: 'Glicko-2', position: 'insideTopRight', fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
+              />
+            )}
+            {hasLegacy && (
+              <Area
+                type="monotone"
+                dataKey="legacy"
+                stroke={LEGACY_COLOR}
+                fill="none"
+                strokeWidth={2}
+                connectNulls={false}
+                dot={showDots ? <GameDot /> : false}
+                activeDot={<ActiveGameDot />}
+              />
+            )}
             <Area
               type="monotone"
-              dataKey="elo"
-              stroke="rgba(77,184,255,0.85)"
+              dataKey="lifetime"
+              stroke={LIFETIME_COLOR}
               fill="url(#eloGrad)"
               strokeWidth={2}
+              connectNulls={false}
               dot={showDots ? <GameDot /> : false}
               activeDot={<ActiveGameDot />}
             />
@@ -158,7 +210,19 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 mt-2 text-xs text-text-muted">
+      <div className="flex flex-wrap items-center gap-4 mt-2 text-xs text-text-muted">
+        {hasLegacy && (
+          <>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-0.5" style={{ background: LEGACY_COLOR }} />
+              {LEGACY_LABEL}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-0.5" style={{ background: LIFETIME_COLOR }} />
+              {LIFETIME_LABEL} (Glicko-2, from 1500)
+            </span>
+          </>
+        )}
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: WIN_COLOR }} />
           Win

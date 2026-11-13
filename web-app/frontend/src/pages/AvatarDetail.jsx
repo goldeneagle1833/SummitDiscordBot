@@ -8,6 +8,8 @@ import AvatarImageAdmin from '@/components/ui/AvatarImageAdmin'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import DataReleaseNote from '@/components/ui/DataReleaseNote'
+import { HiddenChange } from '@/components/common/Provisional'
+import { isHidden } from '@/utils/provisional'
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -83,9 +85,9 @@ function MatchTable({ matches, emptyText }) {
               <td className="px-3 py-2">{m.winner_name}</td>
               <td className="px-3 py-2">{m.loser_name}</td>
               <td className="px-3 py-2 text-text-muted whitespace-nowrap">
-                <span className="text-accent-green">+{m.winner_elo_change || 0}</span>
+                {isHidden(m, 'winner_elo_change') ? <HiddenChange /> : <span className="text-accent-green">+{m.winner_elo_change || 0}</span>}
                 {' / '}
-                <span className="text-accent-red">{m.loser_elo_change || 0}</span>
+                {isHidden(m, 'loser_elo_change') ? <HiddenChange /> : <span className="text-accent-red">{m.loser_elo_change || 0}</span>}
               </td>
             </tr>
           ))}

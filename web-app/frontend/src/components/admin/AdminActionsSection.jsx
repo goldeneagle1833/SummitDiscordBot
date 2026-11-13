@@ -5,6 +5,8 @@ export default function AdminActionsSection({ onRefresh }) {
   const [activeEvent, setActiveEvent] = useState(undefined) // undefined = loading
   const [eventName, setEventName] = useState('')
   const [eloMode, setEloMode] = useState('player')
+  // 'elo' through Season 8; 'glicko2' from Season 9 (locked once the event starts)
+  const [ratingSystem, setRatingSystem] = useState('elo')
   const [activityHours, setActivityHours] = useState(24)
   const [activityResult, setActivityResult] = useState(null)
   const [activityLoading, setActivityLoading] = useState(false)
@@ -58,17 +60,24 @@ export default function AdminActionsSection({ onRefresh }) {
     const modeText = eloMode === 'avatar'
       ? 'AVATAR mode: every player/avatar pair gets its own event ELO, and ranked games need a deck link.'
       : 'PLAYER mode: one event ELO per player.'
+    const ratingText = ratingSystem === 'glicko2'
+      ? 'GLICKO-2 rating: new entries move fast, and an entry needs 8 ranked games to count for top cut.'
+      : 'ELO rating (K-factor), as used through Season 8.'
     if (!confirm(
-      `Start new event "${eventName}"?\n\n${modeText}\nThe mode can't be changed once the event starts.\n\nThis will archive the current event (if any) and reset event ELO for all players.`
+      `Start new event "${eventName}"?\n\n${modeText}\n${ratingText}\nThe mode and rating can't be changed once the event starts.\n\nThis will archive the current event (if any) and reset event ELO for all players.`
     )) return
 
     setActionLoading('start')
     try {
-      const d = await post('/api/admin/start-event', { event_name: eventName.trim(), elo_mode: eloMode })
+      const d = await post('/api/admin/start-event', {
+        event_name: eventName.trim(),
+        elo_mode: eloMode,
+        rating_system: ratingSystem,
+      })
       if (d.success) {
         alert('✅ ' + d.message)
         setEventName('')
-        setActiveEvent({ event_name: eventName.trim(), elo_mode: eloMode })
+        setActiveEvent({ event_name: eventName.trim(), elo_mode: eloMode, rating_system: ratingSystem })
         onRefresh?.()
       } else {
         alert('❌ Error: ' + d.error)
@@ -112,6 +121,7 @@ export default function AdminActionsSection({ onRefresh }) {
           {activeEvent
             ? `📅 Current Event: ${activeEvent.event_name}${activeEvent.event_id ? ` (ID: ${activeEvent.event_id})` : ''}`
               + ` · ${activeEvent.elo_mode === 'avatar' ? 'Avatar' : 'Player'} mode`
+              + ` · ${activeEvent.rating_system === 'glicko2' ? 'Glicko-2' : 'Elo'}`
             : 'ℹ️ No active event'}
         </div>
       )}
@@ -211,6 +221,31 @@ export default function AdminActionsSection({ onRefresh }) {
               <span>
                 <strong>Avatar</strong>: one event ELO per player and avatar; ranked games need a deck link.
                 Top cut stays one invite per player.
+              </span>
+            </label>
+          </fieldset>
+          <fieldset className="text-xs space-y-1">
+            <legend className="text-text-muted mb-1">Rating system (locked once the event starts)</legend>
+            <label className="flex items-start gap-2">
+              <input
+                type="radio"
+                name="rating_system"
+                value="elo"
+                checked={ratingSystem === 'elo'}
+                onChange={() => setRatingSystem('elo')}
+              />
+              <span><strong>Elo</strong>: the K-factor rating used through Season 8</span>
+            </label>
+            <label className="flex items-start gap-2">
+              <input
+                type="radio"
+                name="rating_system"
+                value="glicko2"
+                checked={ratingSystem === 'glicko2'}
+                onChange={() => setRatingSystem('glicko2')}
+              />
+              <span>
+                <strong>Glicko-2</strong>: new entries move fast; an entry needs 8 ranked games to count for top cut.
               </span>
             </label>
           </fieldset>

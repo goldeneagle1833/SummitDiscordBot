@@ -1,5 +1,6 @@
 """Miscellaneous API routes."""
 
+from utils.match_tables import live_matches
 import logging
 from flask import Blueprint, jsonify, request, session
 from services.youtube import get_latest_videos
@@ -274,7 +275,7 @@ def database_status():
 
                 # Get row counts for main tables
                 if db_name == "match_records" and "match_records" in tables:
-                    cur.execute("SELECT COUNT(*) FROM match_records")
+                    cur.execute(f"SELECT COUNT(*) FROM {live_matches()}")
                     db_info["row_count"] = cur.fetchone()[0]
 
                 conn.close()

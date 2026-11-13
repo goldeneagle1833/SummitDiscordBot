@@ -101,7 +101,7 @@ def test_standings_rank_players_with_enough_games_and_split_records_by_precon(co
     assert rows[-1]["user_id"] == "3"
     stats = precon_ladder.season_stats(conn, season["season_id"])
     assert stats["games"] == MIN_RANKED_GAMES + 1
-    assert stats["lm_vs_fm"] == {"lm_wins": MIN_RANKED_GAMES, "fm_wins": 0, "lm_mirrors": 0, "fm_mirrors": 1}
+    assert stats["lm_vs_fm"] == {"lm_wins": MIN_RANKED_GAMES, "fm_wins": 0, "lm_mirrors": 0, "fm_mirrors": 1, "no_precon": 0}
 
 
 def test_rebuild_gives_the_same_ratings_as_playing_live(conn):

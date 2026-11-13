@@ -313,6 +313,13 @@ class PreconLadderCog(commands.Cog):
                 value=f"LM {matchup['lm_wins']} – {matchup['fm_wins']} FM",
                 inline=True,
             )
+            mirrors = matchup.get("lm_mirrors", 0) + matchup.get("fm_mirrors", 0)
+            if mirrors:
+                embed.add_field(
+                    name="Mirror games",
+                    value=f"{mirrors} (LM vs LM {matchup['lm_mirrors']} · FM vs FM {matchup['fm_mirrors']})",
+                    inline=True,
+                )
             embed.add_field(name="Full standings", value=STANDINGS_URL, inline=False)
             try:
                 if channel:

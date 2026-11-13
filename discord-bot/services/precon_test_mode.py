@@ -12,7 +12,8 @@ is closed, the three precon calls PSO makes answer 200 with sample data:
 So PSO can build and test against the real endpoints without a ladder running.
 """
 
-from services.precon_ladder import normalize_precon, precon_choices, precon_label
+from services.precon_ladder import normalize_precon, precon_choices
+from services.precon_service import random_precons
 
 TEST_NOTE = "Precon test mode: no ladder is running. Nobody was queued and nothing was recorded."
 SAMPLE_PAIRING_ID = 0
@@ -34,6 +35,7 @@ def test_queue_entry(voice_choices, default_voice, label="Precon (LM/FM)", emoji
         "voice_flexible_supported": True,
         "voice_hold_seconds": 0,
         "precon_choices": precon_choices(),
+        "precon_assignment": "random",
         "precon": None,
         "waiting_by_voice": dict.fromkeys(voice_choices, 0),
         "waiting_willing": dict.fromkeys(voice_choices, 0),
@@ -45,15 +47,13 @@ def test_queue_entry(voice_choices, default_voice, label="Precon (LM/FM)", emoji
 
 
 def test_join(payload, user_id, display_name, voice):
-    """Check a precon join like a real one; return the test answer. ValueError on a bad request."""
-    precon = normalize_precon(payload.get("precon"))
-    if not precon:
-        raise ValueError("precon must be one of: lavamancer, frostmage")
-    other = "frostmage" if precon == "lavamancer" else "lavamancer"
+    """Answer a precon join in test mode. Precons are assigned at random (one LM,
+    one FM), so any "precon" sent is ignored, as in a real join."""
+    precon, other = random_precons()
     return {
         "test_mode": True,
         "test_note": TEST_NOTE,
-        "accepted": {"queue_type": "precon", "precon": precon, "precon_label": precon_label(precon), "voice": voice},
+        "accepted": {"queue_type": "precon", "voice": voice, "precon_assignment": "random"},
         # What Summit sends PSO when a real precon pairing is made
         "sample_table_request": {
             "queueType": "precon",

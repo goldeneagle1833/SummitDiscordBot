@@ -191,24 +191,25 @@ def test_precon_matches_only_pair_with_precon():
     assert LFGCog.resolve_match_type("precon", "precon") == "precon"
 
 
+def test_random_precons_always_split_lm_and_fm():
+    import random as _random
+
+    seen = set()
+    for seed in range(20):
+        pair = precon_service.random_precons(_random.Random(seed))
+        assert sorted(pair) == sorted([LAVAMANCER, FROSTMAGE])
+        seen.add(pair)
+    assert len(seen) == 2  # both ways round happen
+
+
 @pytest.mark.asyncio
-async def test_joining_precon_without_a_pick_is_refused(mock_bot, mock_interaction):
-    from cogs.lfg import queue as queue_mod
-
-    lfg_cog = mock_bot.get_cog.return_value
-    await queue_mod._process_queue_join(mock_bot, mock_interaction, "precon", 30, None)
-    lfg_cog.add_to_lfg_queue.assert_not_called()
-    assert "Lavamancer or Frostmage" in mock_interaction.followup.send.await_args.args[0]
-
-
-@pytest.mark.asyncio
-async def test_precon_pairing_carries_each_players_pick(mock_bot, mock_interaction):
+async def test_precon_pairing_assigns_one_lm_and_one_fm_at_random(mock_bot, mock_interaction):
     from cogs.lfg import queue as queue_mod
     from cogs.lfg.state import lfg_queue
 
     opponent_id = 4242
     lfg_queue[opponent_id] = {"queues": {"precon": {
-        "deck_url": None, "voice": "voice", "precon": FROSTMAGE,
+        "deck_url": None, "voice": "voice", "precon": None,
     }}}
     lfg_cog = mock_bot.get_cog.return_value
     lfg_cog.check_if_someone_is_lfg.return_value = opponent_id
@@ -220,9 +221,10 @@ async def test_precon_pairing_carries_each_players_pick(mock_bot, mock_interacti
                 patch.object(queue_mod, "provision_match_and_publish_results", provision), \
                 patch.object(queue_mod, "send_pairing_messages", AsyncMock()) as send, \
                 patch.object(queue_mod, "announce_pairing", AsyncMock()), \
-                patch.object(queue_mod, "create_match_card_view", return_value=None):
+                patch.object(queue_mod, "create_match_card_view", return_value=None), \
+                patch("services.precon_service.random_precons", return_value=(FROSTMAGE, LAVAMANCER)):
             await queue_mod._process_queue_join(
-                mock_bot, mock_interaction, "precon", 30, None, precon="LM",
+                mock_bot, mock_interaction, "precon", 30, None, precon="LM",  # a pick is ignored
             )
             for _ in range(3):
                 await asyncio.gather(*list(queue_mod._background_tasks))
@@ -230,16 +232,16 @@ async def test_precon_pairing_carries_each_players_pick(mock_bot, mock_interacti
         lfg_queue.clear()
 
     assert save.call_args.kwargs["match_type"] == "precon"
-    assert save.call_args.kwargs["player1_avatar"] == "Lavamancer"
-    assert save.call_args.kwargs["player2_avatar"] == "Frostmage"
+    assert save.call_args.kwargs["player1_avatar"] == "Frostmage"
+    assert save.call_args.kwargs["player2_avatar"] == "Lavamancer"
     players = provision.await_args.args[3]
-    assert [p["precon"] for p in players] == [LAVAMANCER, FROSTMAGE]
+    assert [p["precon"] for p in players] == [FROSTMAGE, LAVAMANCER]
     shown = {send.await_args.kwargs[k].avatar for k in ("reporter", "other")}
     assert shown == {"Lavamancer", "Frostmage"}
 
 
 @pytest.mark.asyncio
-async def test_queued_precon_player_is_told_their_pick(mock_bot, mock_interaction):
+async def test_queued_precon_player_is_told_the_precon_is_random(mock_bot, mock_interaction):
     from cogs.lfg import queue as queue_mod
 
     lfg_cog = mock_bot.get_cog.return_value
@@ -248,9 +250,9 @@ async def test_queued_precon_player_is_told_their_pick(mock_bot, mock_interactio
     await queue_mod._process_queue_join(
         mock_bot, mock_interaction, "precon", 30, None, precon=FROSTMAGE,
     )
-    assert lfg_cog.add_to_lfg_queue.call_args.kwargs["precon"] == FROSTMAGE
+    assert lfg_cog.add_to_lfg_queue.call_args.kwargs["precon"] is None
     message = mock_interaction.followup.send.await_args.args[0]
-    assert "Precon (LM/FM)" in message and "Frostmage" in message
+    assert "Precon (LM/FM)" in message and "at random" in message
 
 
 def test_pso_provisioning_names_the_precon():

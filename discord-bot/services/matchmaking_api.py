@@ -36,7 +36,7 @@ from services.avatar_mode import (
 )
 from services.card_points_service import validate_deck_points
 from services.ranked_eligibility import ranked_block_message
-from services.precon_ladder import normalize_precon, precon_choices
+from services.precon_ladder import precon_choices
 from services.summit_result_reporting import record_sorcery_online_result
 from services import precon_service, precon_test_mode
 from repositories.elo_repo import get_pairing_by_id
@@ -173,9 +173,11 @@ async def _status(bot, user_id):
                 for choice in willing_voice_choices(entry.get("voice"), entry_voice_flexible(entry)):
                     waiting_willing[choice] += 1
             if queue_type == "precon":
-                # Join with "precon": one of these keys (no deck link)
+                # No deck link and no pick: Summit assigns one Lavamancer and one
+                # Frostmage at random when the pair is made (named in the table request)
                 queue["precon_choices"] = precon_choices()
-                queue["precon"] = joined.get(queue_type, {}).get("precon") if queue_type in joined else None
+                queue["precon_assignment"] = "random"
+                queue["precon"] = None
             queue["waiting_by_voice"] = waiting_by_voice
             queue["waiting_willing"] = waiting_willing
             queue["voice"] = None
@@ -302,9 +304,7 @@ async def start_matchmaking_api(bot):
         run_id = None
         precon = None
         if queue_type == "precon":
-            precon = normalize_precon(payload.get("precon"))
-            if not precon:
-                raise web.HTTPBadRequest(text="precon must be one of: lavamancer, frostmage")
+            # Assigned at random at pairing time; a "precon" sent here is ignored
             deck_url = None
         if definition["deck_mode"] == "required" and not deck_url:
             raise web.HTTPBadRequest(text="A deck is required for this queue")

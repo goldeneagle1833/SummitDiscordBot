@@ -2,6 +2,7 @@
 
 import contextlib
 import logging
+import random
 import sqlite3
 import time
 
@@ -158,6 +159,14 @@ def player_standing(season_id, user_id):
 def season_stats(season_id):
     with connect() as conn:
         return precon_ladder.season_stats(conn, season_id)
+
+
+def random_precons(rng=random) -> tuple[str, str]:
+    """Each pairing gets one Lavamancer and one Frostmage; a coin flip decides who
+    plays which. Players don't pick."""
+    pair = [precon_ladder.LAVAMANCER, precon_ladder.FROSTMAGE]
+    rng.shuffle(pair)
+    return pair[0], pair[1]
 
 
 def rating_change_text(result, winner_name, loser_name) -> str:

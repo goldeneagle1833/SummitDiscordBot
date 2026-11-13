@@ -136,16 +136,27 @@ export function PreconLadder({ data }) {
   const stats = data.stats || {}
   const matchup = stats.lm_vs_fm || {}
   const crossGames = (matchup.lm_wins || 0) + (matchup.fm_wins || 0)
+  // LM vs LM and FM vs FM games (from before precons were handed out at random)
+  const mirrors = (matchup.lm_mirrors || 0) + (matchup.fm_mirrors || 0)
+  const noPrecon = matchup.no_precon || 0
   const minGames = data.min_ranked_games || 5
 
   return (
     <div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-2">
         <StatBox label="Players" value={stats.players || 0} />
         <StatBox label="Games" value={stats.games || 0} />
         <StatBox label="LM wins vs FM" value={matchup.lm_wins || 0} />
         <StatBox label="FM wins vs LM" value={matchup.fm_wins || 0} />
+        <div className="col-span-2 sm:col-span-1">
+          <StatBox label="Mirror games" value={mirrors} />
+        </div>
       </div>
+      <p className="text-xs text-text-muted mb-6">
+        Games = LM vs FM games + mirror games
+        {mirrors > 0 && <> · Mirrors: LM vs LM {matchup.lm_mirrors || 0}, FM vs FM {matchup.fm_mirrors || 0}</>}
+        {noPrecon > 0 && <> · {noPrecon} game{noPrecon === 1 ? '' : 's'} with no precon recorded</>}
+      </p>
       {crossGames > 0 && (
         <div className="mb-6" aria-label="Lavamancer against Frostmage">
           <div className="flex justify-between text-xs font-semibold mb-1">

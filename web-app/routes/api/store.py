@@ -115,13 +115,16 @@ def list_products():
         p.pop("private_token", None)
 
     # Discord role products and bundles (e.g. season tickets) give a role to
-    # the buyer's Discord account, so only people signed in with Discord see them.
+    # the buyer's Discord account. Everyone sees them; only people signed in
+    # with Discord can buy (the store shows a Discord login button instead,
+    # and checkout refuses them too).
     signed_in_with_discord = (
         session.get("user_id") is not None
         and session.get("auth_provider", "discord") == "discord"
     )
-    if not signed_in_with_discord:
-        products = [p for p in products if not repo.is_role_product(p)]
+    for p in products:
+        if repo.is_role_product(p):
+            p["needs_discord_login"] = not signed_in_with_discord
     roles_held = {str(r) for r in session.get("discord_roles") or []}
     from services.store_roles import resolve_role_id
     for p in products:

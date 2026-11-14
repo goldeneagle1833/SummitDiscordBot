@@ -73,6 +73,17 @@ describe('Store page', () => {
     expect(screen.queryByLabelText('Add one Season 9 Ticket')).not.toBeInTheDocument()
   })
 
+  it('shows a Discord role to logged-out visitors with a login button instead of the cart', async () => {
+    useAuth.mockReturnValue({ user: null, loading: false })
+    getProducts.mockResolvedValue({
+      products: [{ ...TOKEN, id: 9, name: 'Season 9 Ticket', product_type: 'discord_role', needs_discord_login: true }],
+    })
+    renderStore()
+    const login = await screen.findByRole('link', { name: /Log in with Discord/ })
+    expect(login.getAttribute('href')).toMatch(/^\/auth\/discord\?next=/)
+    expect(screen.queryByLabelText('Add one Season 9 Ticket')).not.toBeInTheDocument()
+  })
+
   it('shows a thumbnail strip for products with several images and switches the main image', async () => {
     getProducts.mockResolvedValue({
       products: [{ ...TOKEN, images: ['/one.png', '/two.png', '/three.png'] }],

@@ -11,7 +11,7 @@ QUEUE_DEFINITIONS = (
         "emoji": "⚔️",
         "pilot": "RankedQueue",
         "deck_mode": "required",
-        "status_note": "no Seer/Scry",
+        "status_note": "Seer/Scry is back, LM and FM legal",
     },
     {
         "type": "testing",

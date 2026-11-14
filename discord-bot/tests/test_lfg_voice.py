@@ -306,7 +306,7 @@ class TestVoiceModal:
         self.assert_voice_dropdown(modal)
         notice = modal.children[0]
         assert isinstance(notice, discord.ui.TextDisplay)
-        assert notice.content == "For Gothic Season 8 **(NO SEER/SCRY)**"
+        assert notice.content == "For Gothic Season 9 **(Seer/Scry is back. LM and FM are legal)**"
         assert modal.children[1] is modal.deck_url
 
     def test_rumble_modal_has_no_season_rules(self):

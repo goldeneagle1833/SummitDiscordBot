@@ -259,7 +259,7 @@ def add_voice_select(modal, last_answers=None):
 
 
 # Season rules shown under the title of the Ranked/Casual join modal.
-SEASON_RULES_NOTICE = "For Gothic Season 8 **(NO SEER/SCRY)**"
+SEASON_RULES_NOTICE = "For Gothic Season 9 **(Seer/Scry is back. LM and FM are legal)**"
 SEASON_RULES_QUEUES = ("ranked", "testing")
 
 

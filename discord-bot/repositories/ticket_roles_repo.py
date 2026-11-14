@@ -169,8 +169,8 @@ def ticket_holders_heading() -> str:
     """Title of the leaderboard's Ticket Holders section.
 
     Names this season's ticket role (and Patreon) once a season has its own
-    role, so players can see which role counts. Role mentions inside an
-    embed don't ping anyone.
+    role. The leaderboard message is edited in place, not reposted, so the
+    role mentions don't keep tagging players.
     """
     try:
         active = get_role("active")
@@ -183,3 +183,15 @@ def ticket_holders_heading() -> str:
         f"<@&{r}>" for r in sorted(always_ticket_role_ids()) if str(r) != str(active["role_id"])
     ]
     return "Ticket Holders: " + " + ".join(roles)
+
+
+def ticket_store_link() -> str:
+    """Line under the Ticket Holders title pointing to the Summit Store."""
+    try:
+        import config
+        base = getattr(config, "WEB_APP_URL", "") or ""
+    except ImportError:
+        base = ""
+    if not isinstance(base, str) or not base.startswith("http"):
+        base = "https://sorcererssummit.com"
+    return f"[Get a ticket in the Summit Store]({base.rstrip('/')}/store)"

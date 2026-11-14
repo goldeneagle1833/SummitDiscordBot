@@ -67,6 +67,14 @@ def test_leaderboard_heading_names_the_season_role():
     assert repo.ticket_holders_heading() == "Ticket Holders: <@&99> + <@&7>"
 
 
+def test_store_link_points_at_the_store(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "WEB_APP_URL", "https://example.test/", raising=False)
+    assert repo.ticket_store_link() == "[Get a ticket in the Summit Store](https://example.test/store)"
+    monkeypatch.setattr(config, "WEB_APP_URL", None, raising=False)
+    assert repo.ticket_store_link().endswith("(https://sorcererssummit.com/store)")
+
+
 def test_season_without_a_new_role_falls_back_to_config():
     repo.put_role_on_sale(98, "Season 8 Ticket")
     repo.activate_on_sale_role(8)

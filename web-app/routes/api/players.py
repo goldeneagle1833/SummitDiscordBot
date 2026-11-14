@@ -2325,6 +2325,30 @@ def player_api(player_id):
         }
 
     row_facts = {id(r): _row_facts(r) for r in sorted_rows}
+
+    # Card filter: the cards this player played, from saved PSO card data.
+    # Only their own cards, and only for viewers who may see their Card Stats.
+    card_filter_allowed = source == "bot" and (
+        is_owner or UserProfileRepository().get_profile_visibility(player_id_normalized).get("card_stats", False)
+    )
+    row_cards = {}
+    if card_filter_allowed and sorted_rows:
+        from services.player_card_stats import archive_original_ids, played_cards_by_match
+        played_by_match = played_cards_by_match(MATCH_RECORDS_DB_PATH, player_id_normalized)
+        if played_by_match:
+            archived = archive_original_ids(MATCH_RECORDS_DB_PATH, player_id_normalized)
+            for r in sorted_rows:
+                if len(r) <= 12 or not isinstance(r[12], int):
+                    continue
+                if r[12] >= 1_000_000_000:
+                    original = archived.get(r[12] - 1_000_000_000)
+                else:
+                    original = r[12]
+                if original is None:
+                    continue
+                cards = played_by_match.get((original, str(r[10]), str(r[11])))
+                if cards:
+                    row_cards[id(r)] = cards
     opponent_games = {}
     opponent_names = {}
     for r in sorted_rows:
@@ -2341,6 +2365,15 @@ def player_api(player_id):
         "avatars": sorted({row_facts[id(r)]["avatar"] for r in sorted_rows} - {None}),
         "opponent_avatars": sorted({row_facts[id(r)]["opponent_avatar"] for r in sorted_rows} - {None}),
     }
+    if card_filter_allowed:
+        card_games = {}
+        for cards in row_cards.values():
+            for name in cards:
+                card_games[name] = card_games.get(name, 0) + 1
+        filter_options["cards"] = sorted(
+            ({"name": n, "games": g} for n, g in card_games.items()), key=lambda c: c["name"].lower()
+        )
+        filter_options["card_games"] = len(row_cards)
     match_filters = {
         "opponent_id": (request.args.get("opponent") or "").strip(),
         "result": (request.args.get("result") or "").strip().lower(),
@@ -2350,12 +2383,20 @@ def player_api(player_id):
         "play_draw": (request.args.get("play_draw") or "").strip().lower(),
     }
     match_filters = {k: v for k, v in match_filters.items() if v}
+    # Games where the player played this card (needs saved PSO card data)
+    card_filter = (request.args.get("card") or "").strip() if card_filter_allowed else ""
+    if card_filter:
+        match_filters["card"] = card_filter
 
     def _passes_filters(row):
         facts = row_facts[id(row)]
-        return all(
-            str(facts[k] or "").lower() == v.lower() for k, v in match_filters.items()
-        )
+        for k, v in match_filters.items():
+            if k == "card":
+                if v.lower() not in {c.lower() for c in row_cards.get(id(row), ())}:
+                    return False
+            elif str(facts[k] or "").lower() != v.lower():
+                return False
+        return True
 
     if match_filters:
         ranked_rows = [r for r in ranked_rows if _passes_filters(r)]

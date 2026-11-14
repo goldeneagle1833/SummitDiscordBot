@@ -1,8 +1,11 @@
 /**
  * Filters for the Matches tab: opponent, result, my avatar, opponent
- * avatar and play/draw. The server applies them before paging and sends back the record
+ * avatar, play/draw and (when the viewer may see the player's Card Stats) a card
+ * the player played, from saved Play Sorcery Online card data. The server applies them before paging and sends back the record
  * for what is left, shown as a one-line summary.
  */
+import { useEffect, useState } from 'react'
+
 const SELECT_CLASS = 'h-11 w-full min-w-0 rounded-lg border border-border bg-bg-raised px-3 text-sm text-text-primary'
 
 function withCurrent(list, value, label = value) {
@@ -26,7 +29,8 @@ export default function MatchFilters({ filters = {}, data, onChange }) {
   const avatars = withCurrent((options.avatars || []).map((a) => ({ value: a, label: a })), filters.avatar)
   const oppAvatars = withCurrent((options.opponent_avatars || []).map((a) => ({ value: a, label: a })), filters.opponent_avatar)
 
-  const active = ['opponent', 'result', 'avatar', 'opponent_avatar', 'play_draw'].some((k) => filters[k])
+  const cards = options.cards
+  const active = ['opponent', 'result', 'avatar', 'opponent_avatar', 'play_draw', 'card'].some((k) => filters[k])
   if (!active && !(options.opponents || []).length) return null
   const ranked = data?.ranked || { wins: 0, losses: 0 }
   const casual = data?.casual || { wins: 0, losses: 0 }
@@ -38,7 +42,7 @@ export default function MatchFilters({ filters = {}, data, onChange }) {
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-4 space-y-3">
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className={`grid grid-cols-2 gap-3 ${cards ? 'lg:grid-cols-6' : 'lg:grid-cols-5'}`}>
         <label className="flex flex-col gap-1 text-xs text-text-muted">
           Opponent
           <select
@@ -82,7 +86,16 @@ export default function MatchFilters({ filters = {}, data, onChange }) {
             <option value="draw">On the draw</option>
           </select>
         </label>
+        {cards && (
+          <CardFilter cards={cards} value={filters.card || ''} onPick={(name) => set('card', name)} />
+        )}
       </div>
+      {filters.card && (
+        <p className="text-xs text-text-muted">
+          Card played only counts games with card data from Play Sorcery Online
+          {options.card_games != null ? ` (${options.card_games} game${options.card_games === 1 ? '' : 's'} in this period)` : ''}.
+        </p>
+      )}
       {active && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <p className="text-text-primary" data-testid="filter-record">
@@ -100,6 +113,46 @@ export default function MatchFilters({ filters = {}, data, onChange }) {
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * Type-ahead card picker. Picking a card from the list applies the filter;
+ * emptying the box clears it.
+ */
+function CardFilter({ cards, value, onPick }) {
+  const [text, setText] = useState(value)
+  useEffect(() => { setText(value) }, [value])
+  const byName = new Map(cards.map((c) => [c.name.toLowerCase(), c.name]))
+
+  const change = (next) => {
+    setText(next)
+    const match = byName.get(next.trim().toLowerCase())
+    if (match && match !== value) onPick(match)
+    else if (!next.trim() && value) onPick('')
+  }
+
+  return (
+    <div className="flex flex-col gap-1 text-xs text-text-muted">
+      <label htmlFor="match-filter-card">Card played</label>
+      <input
+        id="match-filter-card"
+        type="search"
+        list="match-filter-cards"
+        value={text}
+        onChange={(e) => change(e.target.value)}
+        onBlur={() => { if (!byName.has(text.trim().toLowerCase())) setText(value) }}
+        placeholder={cards.length ? 'Any card' : 'No card data yet'}
+        disabled={!cards.length && !value}
+        autoComplete="off"
+        className={`${SELECT_CLASS} placeholder:text-text-primary disabled:opacity-60`}
+      />
+      <datalist id="match-filter-cards">
+        {cards.map((c) => (
+          <option key={c.name} value={c.name}>{`${c.games} game${c.games === 1 ? '' : 's'}`}</option>
+        ))}
+      </datalist>
     </div>
   )
 }

@@ -182,6 +182,13 @@ TICKET_HOLDER_ROLE_IDS = {
     if r.strip() and r.strip() != "0"
 } | _bot_config_set("TICKET_HOLDER_ROLE_IDS")
 
+# Roles that count as a ticket every season, on top of the season's own
+# ticket role (services/ticket_roles.py): Patreon supporters. The bot's
+# config.py can set ALWAYS_TICKET_ROLE_IDS to change it.
+ALWAYS_TICKET_ROLE_IDS = _bot_config_set("ALWAYS_TICKET_ROLE_IDS") or {
+    "1455669646370799667",   # Patreon
+}
+
 # Who may create community brackets: these Discord roles, or when none are
 # set, the server role with this name (looked up with the bot token).
 BRACKET_ORGANIZER_ROLE_IDS = {

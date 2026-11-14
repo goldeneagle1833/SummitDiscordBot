@@ -345,7 +345,8 @@ class LFGCog(commands.Cog):
             logger.warning(f"Leaderboard channel {leaderboard_channel_id} not found")
             return
 
-        TICKET_HOLDER_ROLE_IDS = config.TICKET_HOLDER_ROLE_IDS
+        from repositories.ticket_roles_repo import ticket_holder_role_ids
+        TICKET_HOLDER_ROLE_IDS = ticket_holder_role_ids(config.TICKET_HOLDER_ROLE_IDS)
 
         try:
             # Get active event info for filtering matches
@@ -803,9 +804,11 @@ class LFGCog(commands.Cog):
 
     async def _ticket_holder_ids(self, user_ids) -> set:
         """Which of these players hold a ticket role right now."""
+        from repositories.ticket_roles_repo import ticket_holder_role_ids
         guild = self.bot.get_guild(config.GUILD_ID)
         if not guild:
             return set()
+        ticket_roles = ticket_holder_role_ids(config.TICKET_HOLDER_ROLE_IDS)
         holders = set()
         for user_id in user_ids:
             member = guild.get_member(user_id)
@@ -814,7 +817,7 @@ class LFGCog(commands.Cog):
                     member = await guild.fetch_member(user_id)
                 except (discord.NotFound, discord.HTTPException):
                     continue
-            if any(role.id in config.TICKET_HOLDER_ROLE_IDS for role in member.roles):
+            if any(role.id in ticket_roles for role in member.roles):
                 holders.add(user_id)
         return holders
 
@@ -3263,6 +3266,15 @@ class LFGCog(commands.Cog):
                 rating_system=rating_system,
             )
 
+            # The ticket role on sale for this season now counts; last
+            # season's stops counting
+            from repositories.ticket_roles_repo import activate_on_sale_role
+            try:
+                ticket_role = activate_on_sale_role(result["event_id"])
+            except Exception as e:
+                logger.error(f"Could not switch the season ticket role: {e}")
+                ticket_role = None
+
             # Build response embed
             embed = discord.Embed(
                 title="New Event Started!",
@@ -3297,6 +3309,16 @@ class LFGCog(commands.Cog):
                 name="ELO Mode (locked for this event)", value=mode_text, inline=False,
             )
             embed.add_field(name="Season End", value=_season_end_text(scheduled_end_at), inline=False)
+            embed.add_field(
+                name="Ticket Holders",
+                value=(
+                    f"<@&{ticket_role['role_id']}> holders are this season's ticket holders."
+                    if ticket_role else
+                    "No ticket role was on sale (`!ticket_role`), so the ticket roles "
+                    "from the bot config still count."
+                ),
+                inline=False,
+            )
 
             # Add previous event summary if there was one
             if result.get("previous_event"):
@@ -3356,6 +3378,102 @@ class LFGCog(commands.Cog):
             )
             await ctx.send(embed=error_embed)
             logger.error(f"Failed to start event: {e}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def ticket_role(self, ctx, *, name_or_role: str = None):
+        """
+        Create next season's ticket role and put it on sale.
+        Usage: !ticket_role Season 10 Ticket     (the bot creates the role)
+               !ticket_role @ExistingRole        (use a role you made)
+               !ticket_role now Season 9 Ticket  (counts for the season running now)
+               !ticket_role                      (show the ticket roles)
+
+        Summit Store listings set to "current season ticket" give this role
+        from now on. It starts counting on the leaderboard and for top cut
+        when the next !start_event runs, or straight away with "now".
+        """
+        from repositories.ticket_roles_repo import (
+            activate_role_now, get_role, put_role_on_sale,
+        )
+
+        now_mode = False
+        if name_or_role:
+            first, _, rest = name_or_role.strip().partition(" ")
+            if first.lower() == "now":
+                now_mode = True
+                name_or_role = rest.strip()
+                if not name_or_role and not ctx.message.role_mentions:
+                    await ctx.send("Usage: `!ticket_role now Season 9 Ticket` or `!ticket_role now @Role`")
+                    return
+
+        if not name_or_role:
+            active, on_sale = get_role("active"), get_role("on_sale")
+            lines = [
+                f"**This season:** <@&{active['role_id']}>" if active
+                else "**This season:** the ticket roles in the bot config",
+                f"**On sale for next season:** <@&{on_sale['role_id']}>" if on_sale
+                else "**On sale for next season:** none (use `!ticket_role Season N Ticket`)",
+            ]
+            await ctx.send("\n".join(lines), allowed_mentions=discord.AllowedMentions.none())
+            return
+
+        guild = ctx.guild or self.bot.get_guild(config.GUILD_ID)
+        if ctx.message.role_mentions:
+            role = ctx.message.role_mentions[0]
+            if role >= guild.me.top_role:
+                await ctx.send(
+                    f"{role.mention} is above the bot's own role, so the bot can't give it out. "
+                    "Move the bot's role higher in Server Settings > Roles first.",
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                return
+            created = False
+        else:
+            try:
+                role = await guild.create_role(
+                    name=name_or_role.strip()[:100],
+                    reason=f"Season ticket role, by {ctx.author}",
+                )
+            except discord.Forbidden:
+                await ctx.send("The bot needs the Manage Roles permission to create roles.")
+                return
+            created = True
+
+        if now_mode:
+            from utils.database import get_active_event
+            active_event = get_active_event()
+            activate_role_now(
+                role.id, role.name,
+                event_id=active_event.get("event_id") if active_event else None,
+                created_by=ctx.author.id,
+            )
+            await ctx.send(
+                f"{'Created' if created else 'Using'} {role.mention} (ID `{role.id}`) as this season's ticket. "
+                "It counts for the leaderboard and top cut right away (Patreon still counts too), "
+                "and store listings set to \"current season ticket\" give it.",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            log_admin_action(
+                ctx.author.id, ctx.author.display_name, "ticket_role",
+                new_state={"role_id": str(role.id), "name": role.name,
+                           "created": created, "active_now": True},
+                details=f"Made {role.name} this season's ticket",
+            )
+            return
+
+        put_role_on_sale(role.id, role.name, created_by=ctx.author.id)
+        await ctx.send(
+            f"{'Created' if created else 'Using'} {role.mention} (ID `{role.id}`) as next season's ticket. "
+            "Store listings set to \"current season ticket\" now give it. "
+            "It counts for the leaderboard and top cut once the next `!start_event` runs.",
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        log_admin_action(
+            ctx.author.id, ctx.author.display_name, "ticket_role",
+            new_state={"role_id": str(role.id), "name": role.name, "created": created},
+            details=f"Put {role.name} on sale as next season's ticket",
+        )
 
     @start_event.error
     async def start_event_error(self, ctx, error):

@@ -163,3 +163,23 @@ def ticket_holder_role_ids(fallback) -> set[int]:
     if active:
         return {int(active["role_id"])} | always_ticket_role_ids()
     return {int(r) for r in fallback or ()}
+
+
+def ticket_holders_heading() -> str:
+    """Title of the leaderboard's Ticket Holders section.
+
+    Names this season's ticket role (and Patreon) once a season has its own
+    role, so players can see which role counts. Role mentions inside an
+    embed don't ping anyone.
+    """
+    try:
+        active = get_role("active")
+    except sqlite3.Error as e:
+        logger.warning(f"Could not read season ticket roles: {e}")
+        active = None
+    if not active:
+        return "Ticket Holders"
+    roles = [f"<@&{active['role_id']}>"] + [
+        f"<@&{r}>" for r in sorted(always_ticket_role_ids()) if str(r) != str(active["role_id"])
+    ]
+    return "Ticket Holders: " + " + ".join(roles)

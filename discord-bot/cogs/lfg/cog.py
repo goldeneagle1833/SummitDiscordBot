@@ -345,7 +345,7 @@ class LFGCog(commands.Cog):
             logger.warning(f"Leaderboard channel {leaderboard_channel_id} not found")
             return
 
-        from repositories.ticket_roles_repo import ticket_holder_role_ids
+        from repositories.ticket_roles_repo import ticket_holder_role_ids, ticket_holders_heading
         TICKET_HOLDER_ROLE_IDS = ticket_holder_role_ids(config.TICKET_HOLDER_ROLE_IDS)
 
         try:
@@ -534,7 +534,7 @@ class LFGCog(commands.Cog):
                 # limit fits all 32 ticket rows without splitting them up.
                 embed.description = "\n\n".join([
                     section("Overall Rankings", overall_text, "No players ranked yet."),
-                    section("Ticket Holders", ticket_text, "No ticket holders ranked yet."),
+                    section(ticket_holders_heading(), ticket_text, "No ticket holders ranked yet."),
                     section("Free Play", free_text, "No free play players ranked yet."),
                 ])[:4096]
             else:

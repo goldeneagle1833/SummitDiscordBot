@@ -58,7 +58,8 @@ export function isRoleOnly(product) {
 
 export function maxQuantity(product) {
   // A Discord role is one per order, and not for someone who already has it
-  const roleCap = isRoleProduct(product) ? (product.has_role ? 0 : 1) : Infinity
+  // and only for someone signed in with Discord
+  const roleCap = isRoleProduct(product) ? (product.has_role || product.needs_discord_login ? 0 : 1) : Infinity
   return Math.max(0, Math.min(product.stock_quantity, product.remaining_this_month ?? Infinity, roleCap))
 }
 

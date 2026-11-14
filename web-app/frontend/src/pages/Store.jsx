@@ -325,6 +325,16 @@ export default function Store({ storefrontSlug = null }) {
                       <span className="text-xs font-medium bg-accent-red/20 text-accent-red px-2.5 py-1 rounded-full">
                         Sold out
                       </span>
+                    ) : isRole && p.needs_discord_login ? (
+                      <a
+                        href={`/auth/discord?next=${encodeURIComponent(window.location.pathname + window.location.search)}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-[#5865F2] hover:bg-[#4752c4] text-white text-sm font-semibold px-3 py-2 transition-colors"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                          <path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.6 1.3a18.3 18.3 0 0 0-5.6 0L8.6 3a19.7 19.7 0 0 0-4.9 1.4C.6 9 0 13.6.3 18.1a19.9 19.9 0 0 0 6 3l1.3-2a12.9 12.9 0 0 1-2-1l.5-.4a14.2 14.2 0 0 0 12.2 0l.5.4c-.6.4-1.3.7-2 1l1.3 2a19.8 19.8 0 0 0 6-3c.5-5.2-.8-9.7-3.8-13.7ZM8.5 15.3c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm7 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z" />
+                        </svg>
+                        Log in with Discord
+                      </a>
                     ) : hasRole ? (
                       <span className="text-xs font-medium bg-[#5865F2]/20 text-[#8f99f7] px-2.5 py-1 rounded-full">
                         You have this role

@@ -202,14 +202,18 @@ class TestRoleProductRoutes:
     def _skus(self, client):
         return {p["sku"]: p for p in client.get("/api/store/products").get_json()["products"]}
 
-    def test_hidden_unless_signed_in_with_discord(self, client, store_repo):
+    def test_shown_to_everyone_but_buyable_only_with_discord(self, client, store_repo):
         _ticket(store_repo)
         store_repo.create_product(sku="TOK", name="Token", price_cents=100, stock_quantity=5)
-        assert set(self._skus(client)) == {"TOK"}
+        # Logged out: listed, with a Discord login button instead of the cart
+        products = self._skus(client)
+        assert set(products) == {"TOK", "TICKET-S9"}
+        assert products["TICKET-S9"]["needs_discord_login"] is True
+        assert "needs_discord_login" not in products["TOK"]
         _login(client, "google_abc", provider="google")
-        assert set(self._skus(client)) == {"TOK"}
+        assert self._skus(client)["TICKET-S9"]["needs_discord_login"] is True
         _login(client, "111111111111111111")
-        assert set(self._skus(client)) == {"TOK", "TICKET-S9"}
+        assert self._skus(client)["TICKET-S9"]["needs_discord_login"] is False
 
     def test_has_role_flag(self, client, store_repo):
         _ticket(store_repo)

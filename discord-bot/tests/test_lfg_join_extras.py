@@ -100,7 +100,7 @@ def test_ranked_modal_fits_recent_decks_and_alert_by_moving_the_season_rules(ava
     assert not [i for i in modal.children if isinstance(i, discord.ui.TextDisplay)]
     recent, voice, alert = _labels(modal)
     assert recent.text == "Recent decks"
-    assert recent.description.startswith("For Gothic Season 8 (NO SEER/SCRY).")
+    assert recent.description.startswith("For Gothic Season 9 (Seer/Scry is back. LM and FM are legal).")
     assert [o.label for o in modal.recent_decks_select.options] == ["Blue Skies", "Seer"]
     assert modal.children[:2] == [recent, modal.deck_url]
     # Alert checkbox sits at the bottom, under the duration

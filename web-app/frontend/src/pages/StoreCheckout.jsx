@@ -106,6 +106,7 @@ export default function StoreCheckout() {
               price_cents: p.price_cents,
               ship_cards: p.ship_cards,
               shipping_cents: p.shipping_cents,
+              role_only: p.product_type === 'discord_role',
             })),
         )
       })
@@ -131,8 +132,9 @@ export default function StoreCheckout() {
   if (items.length === 0) return <Navigate to={storeUrl} replace />
 
   const subtotal = items.reduce((s, i) => s + i.price_cents * i.quantity, 0)
+  const digitalOnly = items.length > 0 && items.every((i) => i.role_only)
   // Known before payment when every listing has its shipping set
-  const shipping = freeShipping
+  const shipping = freeShipping || digitalOnly
     ? null
     : cartShipping(items.map((i) => ({ product: i, quantity: i.quantity })), shippingRules)
 
@@ -215,9 +217,11 @@ export default function StoreCheckout() {
             </>
           ) : (
             <p className="text-xs text-text-muted mt-2">
-              {freeShipping
-                ? 'Free shipping \u2014 thank you for your support!'
-                : 'Shipping calculated at payment'}
+              {digitalOnly
+                ? 'No shipping. The Summit bot adds your Discord role after payment.'
+                : freeShipping
+                  ? 'Free shipping \u2014 thank you for your support!'
+                  : 'Shipping calculated at payment'}
             </p>
           )}
         </div>

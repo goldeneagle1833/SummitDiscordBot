@@ -163,3 +163,35 @@ def ticket_holder_role_ids(fallback) -> set[int]:
     if active:
         return {int(active["role_id"])} | always_ticket_role_ids()
     return {int(r) for r in fallback or ()}
+
+
+def ticket_holders_heading() -> str:
+    """Title of the leaderboard's Ticket Holders section.
+
+    Names this season's ticket role (and Patreon) once a season has its own
+    role. The leaderboard message is edited in place, not reposted, so the
+    role mentions don't keep tagging players.
+    """
+    try:
+        active = get_role("active")
+    except sqlite3.Error as e:
+        logger.warning(f"Could not read season ticket roles: {e}")
+        active = None
+    if not active:
+        return "Ticket Holders"
+    roles = [f"<@&{active['role_id']}>"] + [
+        f"<@&{r}>" for r in sorted(always_ticket_role_ids()) if str(r) != str(active["role_id"])
+    ]
+    return "Ticket Holders: " + " + ".join(roles)
+
+
+def ticket_store_link() -> str:
+    """Line under the Ticket Holders title pointing to the Summit Store."""
+    try:
+        import config
+        base = getattr(config, "WEB_APP_URL", "") or ""
+    except ImportError:
+        base = ""
+    if not isinstance(base, str) or not base.startswith("http"):
+        base = "https://sorcererssummit.com"
+    return f"[Get a ticket in the Summit Store]({base.rstrip('/')}/store)"

@@ -332,6 +332,55 @@ class LFGCog(commands.Cog):
     async def before_cleanup_old_limited_leaderboard_messages(self):
         await self.bot.wait_until_ready()
 
+    async def _post_or_edit_board(self, channel, embeds, state_attr, is_board_embed):
+        """Show a leaderboard as one message that is edited, not reposted.
+
+        Uses the message id kept in lfg_state, else the newest board message
+        this bot already has in the channel (after a restart), and only posts
+        a new message when neither exists. Any other copies are deleted.
+        """
+        def is_board(message):
+            return (
+                message.author.id == self.bot.user.id
+                and message.embeds
+                and any(is_board_embed(e) for e in message.embeds)
+            )
+
+        message = None
+        message_id = getattr(lfg_state, state_attr)
+        if message_id:
+            try:
+                message = await channel.fetch_message(message_id)
+            except Exception:
+                message = None
+        others = []
+        try:
+            async for m in channel.history(limit=50):
+                if not is_board(m):
+                    continue
+                if message is None:
+                    message = m  # newest copy
+                elif m.id != message.id:
+                    others.append(m)
+        except Exception as e:
+            logger.warning(f"Could not read leaderboard channel history: {e}")
+
+        if message is not None:
+            try:
+                await message.edit(embeds=embeds)
+            except discord.NotFound:
+                message = None
+        if message is None:
+            message = await channel.send(embeds=embeds)
+        setattr(lfg_state, state_attr, message.id)
+
+        for m in others:
+            try:
+                await m.delete()
+                logger.info(f"Cleaned up duplicate leaderboard message: {m.id}")
+            except Exception as e:
+                logger.warning(f"Could not clean up duplicate leaderboard: {e}")
+
     async def update_leaderboard(self):
         """Update the leaderboard in the designated channel"""
         import sqlite3
@@ -345,7 +394,9 @@ class LFGCog(commands.Cog):
             logger.warning(f"Leaderboard channel {leaderboard_channel_id} not found")
             return
 
-        from repositories.ticket_roles_repo import ticket_holder_role_ids
+        from repositories.ticket_roles_repo import (
+            ticket_holder_role_ids, ticket_holders_heading, ticket_store_link,
+        )
         TICKET_HOLDER_ROLE_IDS = ticket_holder_role_ids(config.TICKET_HOLDER_ROLE_IDS)
 
         try:
@@ -534,7 +585,12 @@ class LFGCog(commands.Cog):
                 # limit fits all 32 ticket rows without splitting them up.
                 embed.description = "\n\n".join([
                     section("Overall Rankings", overall_text, "No players ranked yet."),
-                    section("Ticket Holders", ticket_text, "No ticket holders ranked yet."),
+                    section(
+                        ticket_holders_heading(),
+                        [ticket_store_link()]
+                        + (ticket_text or ["No ticket holders ranked yet."]),
+                        "No ticket holders ranked yet.",
+                    ),
                     section("Free Play", free_text, "No free play players ranked yet."),
                 ])[:4096]
             else:
@@ -557,38 +613,13 @@ class LFGCog(commands.Cog):
             if underdog:
                 embeds.append(underdog)
 
-            # Send new leaderboard message first (before deleting old one)
-            new_message = await leaderboard_channel.send(embeds=embeds)
-            old_message_id = lfg_state.leaderboard_message_id
-            lfg_state.leaderboard_message_id = new_message.id
-
-            # Delete old leaderboard message
-            if old_message_id:
-                try:
-                    old_message = await leaderboard_channel.fetch_message(old_message_id)
-                    await old_message.delete()
-                except discord.NotFound:
-                    pass
-                except Exception as e:
-                    logger.warning(f"Could not delete old leaderboard message: {e}")
-
-            # Ensure only one constructed leaderboard message exists in the channel
-            async for message in leaderboard_channel.history(limit=50):
-                if (
-                    message.id != new_message.id
-                    and message.author.id == self.bot.user.id
-                    and message.embeds
-                    and any(
-                        "Leaderboard" in str(embed.title)
-                        and "Limited Leaderboard" not in str(embed.title)
-                        for embed in message.embeds
-                    )
-                ):
-                    try:
-                        await message.delete()
-                        logger.info(f"Cleaned up duplicate leaderboard message: {message.id}")
-                    except Exception as e:
-                        logger.warning(f"Could not clean up duplicate leaderboard: {e}")
+            # Edit the one leaderboard message in place (new posts each match
+            # would notify the channel); post only when there isn't one yet
+            await self._post_or_edit_board(
+                leaderboard_channel, embeds, "leaderboard_message_id",
+                lambda e: "Leaderboard" in str(e.title)
+                and "Limited Leaderboard" not in str(e.title),
+            )
 
             logger.info("Leaderboard updated successfully")
 
@@ -669,35 +700,11 @@ class LFGCog(commands.Cog):
 
             embed.set_footer(text="Season ELO | LT = Lifetime ELO \u2022 Updates after each match")
 
-            # Send new message, delete old one
-            new_message = await channel.send(embed=embed)
-            old_message_id = lfg_state.limited_leaderboard_message_id
-            lfg_state.limited_leaderboard_message_id = new_message.id
-
-            if old_message_id:
-                try:
-                    old_message = await channel.fetch_message(old_message_id)
-                    await old_message.delete()
-                except discord.NotFound:
-                    pass
-                except Exception as e:
-                    logger.warning(f"Could not delete old limited leaderboard message: {e}")
-
-            # Clean up any other limited leaderboard messages from this bot
-            async for message in channel.history(limit=50):
-                if (
-                    message.id != new_message.id
-                    and message.author.id == self.bot.user.id
-                    and message.embeds
-                    and any(
-                        "Limited Leaderboard" in str(e.title)
-                        for e in message.embeds
-                    )
-                ):
-                    try:
-                        await message.delete()
-                    except Exception:
-                        pass
+            # Edit the one Limited leaderboard message in place
+            await self._post_or_edit_board(
+                channel, [embed], "limited_leaderboard_message_id",
+                lambda e: "Limited Leaderboard" in str(e.title),
+            )
 
             logger.info("Limited leaderboard updated successfully")
 

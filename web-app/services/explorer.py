@@ -143,6 +143,48 @@ def event_fetch_error_message(status_code: int, event_id: str, detail: str) -> s
     return f"{lead} Their reply: {detail}" if detail else lead
 
 
+def _needs_compact(resp) -> bool:
+    """True when sorcerytcg.com rejected event.get because it wants compact mode.
+
+    Since Nov 2026 big events (Avatar of the Realm 2026, ~300 players) answer
+    the plain request with 400 "compact: Invalid input: expected true".
+    """
+    return resp.status_code == 400 and "compact" in trpc_error_detail(resp).lower()
+
+
+def request_event_get(event_id: str, timeout: int = 15):
+    """GET event.get for one event, retrying in compact mode if the site asks.
+
+    Small events still answer the plain request with the full payload, so we
+    only send ``compact: true`` when the site refuses without it.
+    """
+    def _get(payload):
+        return requests.get(
+            f"{SORCERY_TRPC_BASE}/event.get",
+            params={"batch": "1", "input": json.dumps({"0": {"json": payload}})},
+            timeout=timeout,
+        )
+
+    resp = _get({"id": event_id})
+    if _needs_compact(resp):
+        logger.info("event.get for %s needs compact mode, retrying", event_id)
+        resp = _get({"id": event_id, "compact": True})
+    return resp
+
+
+def check_event_payload(event, event_id: str) -> dict:
+    """Make sure an event.get payload is usable; say what we got if not."""
+    if not isinstance(event, dict):
+        raise ValueError(f"sorcerytcg.com sent no event data for {event_id}.")
+    if not isinstance(event.get("players"), list):
+        keys = ", ".join(sorted(event.keys())[:40])
+        raise ValueError(
+            f"sorcerytcg.com sent event {event_id} without its player list, so the "
+            f"importer needs an update. Fields received: {keys}"
+        )
+    return event
+
+
 class ExplorerService:
     def fetch_event_data(self, url: str) -> dict:
         """Fetch and structure event data from a sorcerytcg.com event URL.
@@ -333,16 +375,8 @@ class ExplorerService:
 
     def _fetch_event_trpc(self, event_id: str) -> dict:
         """Fetch event data from sorcerytcg.com tRPC endpoint."""
-        params = {
-            "batch": "1",
-            "input": json.dumps({"0": {"json": {"id": event_id}}}),
-        }
         try:
-            resp = requests.get(
-                f"{SORCERY_TRPC_BASE}/event.get",
-                params=params,
-                timeout=15,
-            )
+            resp = request_event_get(event_id)
         except requests.exceptions.RequestException as exc:
             raise ExplorerFetchError(f"Network error fetching event: {exc}") from exc
 
@@ -358,11 +392,14 @@ class ExplorerService:
         try:
             body = resp.json()
             event = body[0]["result"]["data"]["json"]["event"]
-            return event
         except (KeyError, IndexError, TypeError) as exc:
             raise ExplorerFetchError(
                 f"Unexpected response format from sorcerytcg.com: {exc}"
             ) from exc
+        try:
+            return check_event_payload(event, event_id)
+        except ValueError as exc:
+            raise ExplorerFetchError(str(exc)) from exc
 
     def _build_results(
         self,
@@ -585,6 +622,11 @@ class ExplorerService:
                 body = resp.json()
                 for j, ev in enumerate(batch):
                     if j < len(body):
+                        if body[j].get("error"):
+                            # Big events refuse the batched plain request
+                            # (they need compact mode); fetch them one by one.
+                            results.append(self._single_event_summary(ev))
+                            continue
                         detail = body[j].get("result", {}).get("data", {}).get("json", {}).get("event", {})
                         players = detail.get("players", [])
                         active = [p for p in players if p.get("status") != "Dropped" or p.get("seats")]
@@ -599,6 +641,18 @@ class ExplorerService:
         # Sort by date ascending for chronological graph
         results.sort(key=lambda r: r["date"] or "")
         return results
+
+    def _single_event_summary(self, ev: dict) -> dict:
+        """Player count for one event via event.get (compact if needed)."""
+        try:
+            resp = request_event_get(ev["id"], timeout=30)
+            event = resp.json()[0]["result"]["data"]["json"]["event"]
+            players = event.get("players") or []
+            active = [p for p in players if p.get("status") != "Dropped" or p.get("seats")]
+            return self._event_summary(ev, len(active))
+        except Exception as exc:  # best effort, same as the batch path
+            logger.warning("Single event fetch for %s failed: %s", ev.get("id"), exc)
+            return self._event_summary(ev, 0)
 
     @staticmethod
     def _event_summary(event: dict, player_count: int) -> dict:

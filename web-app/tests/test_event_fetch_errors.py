@@ -172,3 +172,11 @@ def test_round_numbers_already_running_on_are_kept():
     event["phases"][0]["rounds"][0]["number"] = 10
     attach_seats_from_phases(event)
     assert sorted(s["round"]["number"] for s in event["players"][0]["seats"]) == [1, 2, 10]
+
+
+def test_pasted_link_is_not_used_as_title():
+    from routes.api.events import _looks_like_url
+    assert _looks_like_url("https://sorcerytcg.com/events/cmvrgzj9w004x08l0myf1wpen")
+    assert _looks_like_url("sorcerytcg.com/events/abc")
+    assert not _looks_like_url("Avatar of the Realm 2026 Championship")
+    assert not _looks_like_url("")

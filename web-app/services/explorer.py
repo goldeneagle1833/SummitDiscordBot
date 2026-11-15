@@ -90,6 +90,59 @@ def _matching_bracket(text: str, open_at: int) -> int | None:
     return None
 
 
+def trpc_error_detail(resp) -> str:
+    """Pull sorcerytcg.com's own explanation out of a failed tRPC response.
+
+    tRPC answers errors with [{"error": {"json": {"message": ..., "data":
+    {"code": "BAD_REQUEST"}}}}]. Without this we only ever saw "returned 400",
+    which says nothing about why. Falls back to the first bit of the body.
+    """
+    try:
+        body = resp.json()
+    except ValueError:
+        text = (getattr(resp, "text", "") or "").strip()
+        return text[:300]
+    items = body if isinstance(body, list) else [body]
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        err = item.get("error") or {}
+        err = err.get("json", err) if isinstance(err, dict) else {}
+        if not isinstance(err, dict):
+            continue
+        message = str(err.get("message") or "").strip()
+        code = ((err.get("data") or {}).get("code") or "") if isinstance(err.get("data"), dict) else ""
+        if message or code:
+            # Zod validation errors arrive as a JSON list in the message.
+            try:
+                issues = json.loads(message)
+                if isinstance(issues, list):
+                    message = "; ".join(
+                        f"{'.'.join(str(x) for x in (i.get('path') or [])) or 'input'}: {i.get('message', '')}"
+                        for i in issues if isinstance(i, dict)
+                    )
+            except ValueError:
+                pass
+            return f"{code}: {message}".strip(": ")[:300]
+    return json.dumps(body)[:300]
+
+
+def event_fetch_error_message(status_code: int, event_id: str, detail: str) -> str:
+    """Plain-English error for a failed event lookup, with the site's reason."""
+    if status_code == 404 or "NOT_FOUND" in detail:
+        lead = f"sorcerytcg.com couldn't find event {event_id}. Check the link is right and the event is public."
+    elif status_code in (401, 403) or "UNAUTHORIZED" in detail or "FORBIDDEN" in detail:
+        lead = f"sorcerytcg.com won't share event {event_id} without a login (it may be private)."
+    elif status_code >= 500:
+        lead = f"sorcerytcg.com had a problem loading event {event_id} (HTTP {status_code}). Try again in a few minutes."
+    else:
+        lead = (
+            f"sorcerytcg.com refused our request for event {event_id} (HTTP {status_code}). "
+            "Their site may have changed how events are loaded, so the importer needs an update."
+        )
+    return f"{lead} Their reply: {detail}" if detail else lead
+
+
 class ExplorerService:
     def fetch_event_data(self, url: str) -> dict:
         """Fetch and structure event data from a sorcerytcg.com event URL.
@@ -294,8 +347,12 @@ class ExplorerService:
             raise ExplorerFetchError(f"Network error fetching event: {exc}") from exc
 
         if resp.status_code != 200:
+            detail = trpc_error_detail(resp)
+            logger.warning(
+                "event.get for %s returned %s: %s", event_id, resp.status_code, detail
+            )
             raise ExplorerFetchError(
-                f"sorcerytcg.com returned {resp.status_code} for event {event_id}"
+                event_fetch_error_message(resp.status_code, event_id, detail)
             )
 
         try:

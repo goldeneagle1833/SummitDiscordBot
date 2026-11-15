@@ -178,6 +178,27 @@ class SlashCommandsCog(commands.Cog):
 
         await lfg_cog.voice_only(ctx, setting)
 
+    @app_commands.command(
+        name="tag-me",
+        description="Choose whether the LFG match announcement pings you",
+    )
+    @app_commands.describe(setting="Turn Tag me on or off (leave empty to see your setting)")
+    @app_commands.choices(setting=[
+        app_commands.Choice(name="🔔 On: ping me when I'm matched", value="on"),
+        app_commands.Choice(name="🔕 Off: name me but don't ping me", value="off"),
+    ])
+    async def tag_me_slash(self, interaction: discord.Interaction, setting: str = None):
+        """Players with Tag me off are named in match announcements without a ping"""
+        await interaction.response.defer(ephemeral=True)
+        ctx = FakeContext(self.bot, interaction)
+
+        lfg_cog = self.bot.get_cog("LFGCog")
+        if not lfg_cog:
+            await interaction.followup.send("LFG system is not available.", ephemeral=True)
+            return
+
+        await lfg_cog.tag_me(ctx, setting)
+
     # ==================== ADMIN MATCH REPORTS ====================
 
     async def _admin_report_flow(self, interaction, winner, loser, top16_player=None):

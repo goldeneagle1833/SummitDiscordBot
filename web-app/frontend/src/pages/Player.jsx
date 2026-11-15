@@ -164,13 +164,13 @@ export default function Player() {
     const lifetimeProv = provisionalOf(data, 'lifetime')
     if (canSeeLifetime && (data.elo != null || lifetimeProv)) {
       headline.elo = data.elo
-      headline.eloLabel = 'Lifetime ELO'
+      headline.eloLabel = 'Lifetime Rating'
       headline.provisional = lifetimeProv
       headline.rank = lifetimeProv ? null : data.rank || null
       headline.legacyElo = data.legacy_elo ?? null
     } else if (eventProv || (data.event_elo && data.event_elo !== 1500)) {
       headline.elo = data.event_elo
-      headline.eloLabel = 'Event ELO'
+      headline.eloLabel = 'Event Rating'
       headline.provisional = eventProv
     }
   } else if (avatarMode) {
@@ -178,10 +178,10 @@ export default function Player() {
   } else if (provisionalOf(data, 'displayed')) {
     // displayed_* is the selected event's rating (event_* is the running one)
     headline.provisional = provisionalOf(data, 'displayed')
-    headline.eloLabel = eventFilter === 'current' ? 'Current event ELO' : 'Event ELO'
+    headline.eloLabel = eventFilter === 'current' ? 'Current event rating' : 'Event Rating'
   } else if (data.displayed_elo != null && data.displayed_elo !== 1500) {
     headline.elo = data.displayed_elo
-    headline.eloLabel = eventFilter === 'current' ? 'Current event ELO' : 'Event ELO'
+    headline.eloLabel = eventFilter === 'current' ? 'Current event rating' : 'Event Rating'
     headline.rank = data.displayed_rank > 0 ? data.displayed_rank : null
     headline.rankLabel = eventFilter === 'current' ? 'Event rank' : 'Rank'
   } else {
@@ -401,7 +401,7 @@ export default function Player() {
           {data.casual_matches?.length > 0 && (
             <MatchHistoryTable
               title="Casual Match History"
-              subtitle="Casual games do not affect ELO ratings."
+              subtitle="Casual games do not affect ratings."
               matches={data.casual_matches}
               pagination={data.casual_pagination}
               playerId={playerId}
@@ -513,7 +513,7 @@ export default function Player() {
                   This will hide your match history and stats from previous seasons on your profile. Games from the current season always stay visible.
                 </p>
                 <p className="text-sm text-text-muted mb-4">
-                  Your ELO rating will stay the same. No matches are deleted — they just won't be shown on your profile. You can undo this at any time.
+                  Your rating will stay the same. No matches are deleted — they just won't be shown on your profile. You can undo this at any time.
                 </p>
               </>
             )}

@@ -476,7 +476,7 @@ function StatBar({ leaderboard, totalGames, eloKey = 'event_elo' }) {
   const stats = [['Players', players]]
   if (typeof totalGames === 'number') stats.push(['Ranked Games', totalGames])
   if (total !== players) stats.push(['Avatar Entries', total])
-  stats.push(['Top ELO', top], ['Avg ELO', avg])
+  stats.push(['Top Rating', top], ['Avg Rating', avg])
   return (
     <div className="grid grid-cols-3 gap-x-6 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-9">
       {stats.map(([label, val]) => (
@@ -719,7 +719,7 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
               <th className="py-3 px-4 text-text-muted font-semibold">Player</th>
               {showBadges && <th className="py-3 px-4 text-text-muted font-semibold">Badge</th>}
               {avatarMode && <th className="py-3 px-4 text-text-muted font-semibold">Avatar</th>}
-              <th className="py-3 px-4 text-right text-text-muted font-semibold">ELO</th>
+              <th className="py-3 px-4 text-right text-text-muted font-semibold">Rating</th>
             </tr>
           </thead>
           <tbody>

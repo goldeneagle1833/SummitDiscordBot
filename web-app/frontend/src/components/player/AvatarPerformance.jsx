@@ -169,12 +169,12 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
                   {eventProv(av) ? (
                     <div className="text-right shrink-0">
                       <ProvisionalTag games={eventProv(av).games} className="text-sm" />
-                      <div className="text-xs text-gray-300">Event ELO</div>
+                      <div className="text-xs text-gray-300">Event Rating</div>
                     </div>
                   ) : av.event_elo != null && (
                     <div className="text-right shrink-0">
                       <div className="text-lg font-bold text-secondary tabular-nums">{av.event_elo}</div>
-                      <div className="text-xs text-gray-300">{av.event_rank ? `#${av.event_rank}` : 'Event ELO'}</div>
+                      <div className="text-xs text-gray-300">{av.event_rank ? `#${av.event_rank}` : 'Event Rating'}</div>
                     </div>
                   )}
                 </div>
@@ -199,7 +199,7 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
                       {/* Summed season change; hidden (provisional) changes come back null */}
                       {av.elo_change ? (
                         <div className="text-gray-300 tabular-nums">
-                          {av.elo_change > 0 ? '+' : ''}{av.elo_change} ELO
+                          {av.elo_change > 0 ? '+' : ''}{av.elo_change} Rating
                         </div>
                       ) : null}
                     </div>
@@ -248,9 +248,9 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
                 <th className="py-3 px-3 font-bold">Record</th>
                 <th className="py-3 px-3 font-bold">Win Rate</th>
                 <th className="py-3 px-3 font-bold">Games</th>
-                {showEventElo && <th className="py-3 px-3 font-bold">Event ELO</th>}
+                {showEventElo && <th className="py-3 px-3 font-bold">Event Rating</th>}
                 {showEventElo && <th className="py-3 px-3 font-bold">Rank</th>}
-                {showLifetimeElo && <th className="py-3 px-3 font-bold">Lifetime avatar ELO</th>}
+                {showLifetimeElo && <th className="py-3 px-3 font-bold">Lifetime avatar rating</th>}
                 <th className="py-3 px-5 font-bold">Last played</th>
               </tr>
             </thead>
@@ -282,7 +282,7 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
 
       <p className="text-xs text-text-muted">
         &ldquo;Everyone&rdquo; is the win rate of every reported game on that avatar in this period, and the number in brackets is how far you are above or below it. The squares are your last 10 games, newest first.
-        {showLifetimeElo && ' Lifetime avatar ELO is your rating on that avatar across seasons, with your place on it among settled players; it shows after 8 games.'}
+        {showLifetimeElo && ' Lifetime avatar rating is your rating on that avatar across seasons, with your place on it among settled players; it shows after 8 games.'}
       </p>
     </div>
   )

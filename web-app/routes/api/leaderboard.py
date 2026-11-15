@@ -333,7 +333,7 @@ def get_archived_event_leaderboard(event_id):
         event_info = None
         for event in repo.get_all_events():
             if event["event_id"] == event_id:
-                event_info = dict(event, value_label="Event ELO")
+                event_info = dict(event, value_label="Event Rating")
                 break
 
         return jsonify({

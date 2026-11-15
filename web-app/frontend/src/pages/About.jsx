@@ -21,7 +21,7 @@ export default function About() {
         </p>
         <p>
           Whether you are a seasoned veteran or just getting started, Summit provides tools to help you
-          improve your game. Track your ELO rating, analyze your match history, explore top tournament
+          improve your game. Track your rating, analyze your match history, explore top tournament
           decks, and find opponents through our Looking For Game system.
         </p>
         <p>

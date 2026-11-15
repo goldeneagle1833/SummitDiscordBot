@@ -297,14 +297,14 @@ function CreateForm({ onCreated, sets = [] }) {
           {pool.players.length} player{pool.players.length === 1 ? '' : 's'} available
           {pool.event?.event_name
             ? ` from ${pool.event.event_name}`
-            : form.source === 'limited' || form.source === 'underdog' ? '' : ' (lifetime ELO)'}.
+            : form.source === 'limited' || form.source === 'underdog' ? '' : ' (lifetime rating)'}.
           {form.source === 'limited' && (
-            <> Makes a Limited bracket: its games count toward lifetime Limited ELO.</>
+            <> Makes a Limited bracket: its games count toward lifetime Limited rating.</>
           )}
           {form.source === 'underdog' && (
             <>
               {' '}Makes an Underdog bracket, apart from the top cut: players need {pool.min_games ?? 10}+
-              games on an avatar, one avatar each, seeded by their Avatar Score. Its games don't affect ELO.
+              games on an avatar, one avatar each, seeded by their Avatar Score. Its games don't affect rating.
             </>
           )}
           {form.source === 'ticket_holders' && !pool.ticket_filter_applied && (
@@ -406,8 +406,8 @@ function OrganizerCreateForm({ onCreated }) {
 
       <p className="text-xs text-text-muted">
         {form.format === 'limited'
-          ? 'Limited games count toward each player’s lifetime Limited ELO (not the season ladder). Players submit their DraftSorcery deck.'
-          : 'Constructed games don’t affect anyone’s ELO. Players submit a Curiosa deck.'}{' '}
+          ? 'Limited games count toward each player’s lifetime Limited rating (not the season ladder). Players submit their DraftSorcery deck.'
+          : 'Constructed games don’t affect anyone’s rating. Players submit a Curiosa deck.'}{' '}
         Pairings are DMed to players on Discord, tables open on Sorcery Online, and replays
         show on the bracket page once it’s finished.
       </p>
@@ -838,7 +838,7 @@ function BracketRow({ bracket, onChanged, onGraphic, sets = [], organizer = fals
                 onClick={() => {
                   const note =
                     bracket.kind === 'community' && bracket.format === 'limited'
-                      ? ' Any Limited ELO they moved is given back.'
+                      ? ' Any Limited rating they moved is given back.'
                       : ''
                   if (window.confirm(`Unpublish? The current results will be discarded.${note}`)) {
                     act(() => adminUnpublishBracket(bracket.slug))

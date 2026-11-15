@@ -20,7 +20,7 @@ export default function AdminActionsSection({ onRefresh }) {
 
   const handleResetAll = async () => {
     if (!confirm(
-      '⚠️ WARNING: This will DELETE ALL ELO ratings and match history!\n\nThis action CANNOT be undone!\n\nAre you absolutely sure?'
+      '⚠️ WARNING: This will DELETE ALL ratings and match history!\n\nThis action CANNOT be undone!\n\nAre you absolutely sure?'
     )) return
     if (!confirm(
       'This is your FINAL warning. ALL data will be permanently deleted.\n\nClick OK to confirm.'
@@ -58,13 +58,13 @@ export default function AdminActionsSection({ onRefresh }) {
   const handleStartEvent = async () => {
     if (!eventName.trim()) { alert('Please enter an event name.'); return }
     const modeText = eloMode === 'avatar'
-      ? 'AVATAR mode: every player/avatar pair gets its own event ELO, and ranked games need a deck link.'
-      : 'PLAYER mode: one event ELO per player.'
+      ? 'AVATAR mode: every player/avatar pair gets its own event rating, and ranked games need a deck link.'
+      : 'PLAYER mode: one event rating per player.'
     const ratingText = ratingSystem === 'glicko2'
       ? 'GLICKO-2 rating: new entries move fast, and an entry needs 8 ranked games to count for top cut.'
       : 'ELO rating (K-factor), as used through Season 8.'
     if (!confirm(
-      `Start new event "${eventName}"?\n\n${modeText}\n${ratingText}\nThe mode and rating can't be changed once the event starts.\n\nThis will archive the current event (if any) and reset event ELO for all players.`
+      `Start new event "${eventName}"?\n\n${modeText}\n${ratingText}\nThe mode and rating can't be changed once the event starts.\n\nThis will archive the current event (if any) and reset event rating for all players.`
     )) return
 
     setActionLoading('start')
@@ -131,7 +131,7 @@ export default function AdminActionsSection({ onRefresh }) {
         <div className="bg-bg-raised border border-accent-red/30 rounded-lg p-4 space-y-2">
           <h3 className="text-sm font-semibold text-accent-red">⚠️ Full Database Reset</h3>
           <p className="text-xs text-text-muted">
-            DANGER: Completely reset ALL ELO ratings and match history. This cannot be undone!
+            DANGER: Completely reset ALL ratings and match history. This cannot be undone!
           </p>
           <button
             onClick={handleResetAll}
@@ -188,7 +188,7 @@ export default function AdminActionsSection({ onRefresh }) {
         <div className="bg-bg-raised border border-border rounded-lg p-4 space-y-2">
           <h3 className="text-sm font-semibold">🎯 Start New Event</h3>
           <p className="text-xs text-text-muted">
-            Archives current event (if any) and resets event ELO for all players.
+            Archives current event (if any) and resets event rating for all players.
           </p>
           <input
             value={eventName}
@@ -199,7 +199,7 @@ export default function AdminActionsSection({ onRefresh }) {
             maxLength={100}
           />
           <fieldset className="text-xs space-y-1">
-            <legend className="text-text-muted mb-1">ELO mode (locked once the event starts)</legend>
+            <legend className="text-text-muted mb-1">Rating mode (locked once the event starts)</legend>
             <label className="flex items-start gap-2">
               <input
                 type="radio"
@@ -208,7 +208,7 @@ export default function AdminActionsSection({ onRefresh }) {
                 checked={eloMode === 'player'}
                 onChange={() => setEloMode('player')}
               />
-              <span><strong>Player</strong>: one event ELO per player</span>
+              <span><strong>Player</strong>: one event rating per player</span>
             </label>
             <label className="flex items-start gap-2">
               <input
@@ -219,7 +219,7 @@ export default function AdminActionsSection({ onRefresh }) {
                 onChange={() => setEloMode('avatar')}
               />
               <span>
-                <strong>Avatar</strong>: one event ELO per player and avatar; ranked games need a deck link.
+                <strong>Avatar</strong>: one event rating per player and avatar; ranked games need a deck link.
                 Top cut stays one invite per player.
               </span>
             </label>

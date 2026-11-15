@@ -57,11 +57,11 @@ describe('MatchHistoryTable replay column', () => {
 describe('MatchHistoryTable column order', () => {
   const headers = () => screen.getAllByRole('columnheader').map((th) => th.textContent)
 
-  it('puts Replay between ELO and Play/Draw for visitors', () => {
+  it('puts Replay between Rating and Play/Draw for visitors', () => {
     renderWithRouter(
       <MatchHistoryTable title="Ranked Match History" matches={[match(1, true)]} isOwner={false} />
     )
-    expect(headers()).toEqual(['ID', 'Result', 'Type', 'Voice', 'Opponent', 'ELO', 'Replay', 'Play/Draw', 'Time', 'Date'])
+    expect(headers()).toEqual(['ID', 'Result', 'Type', 'Voice', 'Opponent', 'Rating', 'Replay', 'Play/Draw', 'Time', 'Date'])
   })
 
   it('puts Notes last for the owner', () => {
@@ -69,13 +69,13 @@ describe('MatchHistoryTable column order', () => {
       <MatchHistoryTable title="Ranked Match History" matches={[match(1, true)]} isOwner />
     )
     const h = headers()
-    expect(h.indexOf('Replay')).toBe(h.indexOf('ELO') + 1)
+    expect(h.indexOf('Replay')).toBe(h.indexOf('Rating') + 1)
     expect(h.indexOf('Play/Draw')).toBe(h.indexOf('Replay') + 1)
     expect(h[h.length - 1]).toBe('Notes')
   })
 })
 
-describe('MatchHistoryTable provisional ELO changes', () => {
+describe('MatchHistoryTable provisional Rating changes', () => {
   it('shows a muted dash with a tooltip for a hidden change', () => {
     renderWithRouter(
       <MatchHistoryTable

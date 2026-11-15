@@ -617,7 +617,7 @@ def auto_confirm_match(confirmation_id):
 
         return jsonify({
             "success": True,
-            "message": "Match auto-confirmed with ELO applied",
+            "message": "Match auto-confirmed with rating applied",
             **result,
         })
 

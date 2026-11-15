@@ -308,7 +308,7 @@ export default function DeckStats() {
                   <th className="pb-2 pr-4">Result</th>
                   <th className="pb-2 pr-4">Opponent</th>
                   <th className="pb-2 pr-4">Opp. Avatar</th>
-                  <th className="pb-2 pr-4">ELO</th>
+                  <th className="pb-2 pr-4">Rating</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">

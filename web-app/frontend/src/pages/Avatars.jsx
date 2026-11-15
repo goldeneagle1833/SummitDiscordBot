@@ -115,8 +115,8 @@ function EloBracketMatrix({ sourceFilter, eventFilter }) {
     return () => { cancelled = true }
   }, [sourceFilter, eventFilter])
 
-  if (loading) return <p className="text-text-muted text-sm py-4">Loading ELO bracket matrix...</p>
-  if (!data || !data.rows?.length) return <p className="text-text-muted text-sm py-4">Not enough data for ELO bracket matrix.</p>
+  if (loading) return <p className="text-text-muted text-sm py-4">Loading rating bracket matrix...</p>
+  if (!data || !data.rows?.length) return <p className="text-text-muted text-sm py-4">Not enough data for rating bracket matrix.</p>
 
   const { brackets, rows, games, pre_match_games: preMatchGames } = data
   const currentRatingGames = (games || 0) - (preMatchGames || 0)
@@ -132,7 +132,7 @@ function EloBracketMatrix({ sourceFilter, eventFilter }) {
         <thead>
           <tr className="border-b border-border">
             <th className="px-2 py-2 text-left text-xs font-semibold text-text-muted uppercase whitespace-nowrap">
-              Player ELO
+              Player Rating
             </th>
             {brackets.map((b) => (
               <th key={b} className="px-2 py-2 text-center text-xs font-semibold text-text-muted uppercase whitespace-nowrap">
@@ -219,8 +219,8 @@ function EloBreakdown({ sourceFilter }) {
       .finally(() => setLoading(false))
   }, [sourceFilter])
 
-  if (loading) return <p className="text-text-muted text-sm py-4">Loading ELO breakdown...</p>
-  if (!data || !data.avatars?.length) return <p className="text-text-muted text-sm py-4">Not enough data for ELO breakdown.</p>
+  if (loading) return <p className="text-text-muted text-sm py-4">Loading rating breakdown...</p>
+  if (!data || !data.avatars?.length) return <p className="text-text-muted text-sm py-4">Not enough data for rating breakdown.</p>
 
   const { brackets, avatars, bracket_averages } = data
 
@@ -658,7 +658,7 @@ export default function Avatars() {
 
           <section className="mb-8">
             <h2 className="text-lg font-semibold text-center mb-1">
-              Win Rate by ELO Bracket (All Avatars)
+              Win Rate by Rating Bracket (All Avatars)
             </h2>
             <p className="text-xs text-text-muted text-center mb-4">
               Compares avatar win rates at each skill level. Yellow cells deviate 10%+ from average. Uses current player ratings.
@@ -668,10 +668,10 @@ export default function Avatars() {
 
           <section className="mb-8">
             <h2 className="text-lg font-semibold text-center mb-1">
-              Win Rate by Player ELO vs Opponent ELO
+              Win Rate by Player Rating vs Opponent Rating
             </h2>
             <p className="text-xs text-text-muted text-center mb-4">
-              Shows win rates for each player ELO bracket against each opponent ELO bracket, plus each bracket's
+              Shows win rates for each player rating bracket against each opponent rating bracket, plus each bracket's
               win rate on the play and on the draw (matches from 2/7/2026 onward). Uses each player's rating at the time of the game.
             </p>
             <EloBracketMatrix sourceFilter={sourceFilter} eventFilter={eventFilter} />

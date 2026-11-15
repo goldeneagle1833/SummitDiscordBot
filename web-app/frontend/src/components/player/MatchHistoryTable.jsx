@@ -63,7 +63,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
               <th className="py-2 px-3 text-text-muted font-semibold">Opponent</th>
               {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Opp. Avatar</th>}
               {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Opp. Elements</th>}
-              <th className="py-2 px-3 text-text-muted font-semibold">ELO</th>
+              <th className="py-2 px-3 text-text-muted font-semibold">Rating</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Replay</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Play/Draw</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Time</th>

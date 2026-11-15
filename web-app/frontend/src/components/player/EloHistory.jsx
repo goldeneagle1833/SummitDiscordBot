@@ -10,7 +10,7 @@ const LOSS_COLOR = 'rgba(248,81,73,0.95)'
 const LIFETIME_COLOR = 'rgba(77,184,255,0.85)'
 const LEGACY_COLOR = 'rgba(200,160,90,0.85)'
 
-export const LEGACY_LABEL = 'Legacy ELO (Seasons 1-8)'
+export const LEGACY_LABEL = 'Legacy Rating (Seasons 1-8)'
 export const LIFETIME_LABEL = 'Lifetime'
 
 /**
@@ -102,7 +102,7 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
   const showDots = gameCount <= 60
 
   return (
-    <CollapsibleSection title="ELO History" open={open} onToggle={onToggle}>
+    <CollapsibleSection title="Rating History" open={open} onToggle={onToggle}>
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-4 mb-4 text-xs text-text-muted">
         <div className="flex items-center gap-2 flex-1 min-w-[160px]">
@@ -158,7 +158,7 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
               formatter={(value, name, props) => {
                 const change = props.payload?.change
                 const suffix = change > 0 ? ` (+${change})` : change < 0 ? ` (${change})` : ''
-                return [`${value}${suffix}`, name === 'legacy' ? 'Legacy ELO' : 'ELO']
+                return [`${value}${suffix}`, name === 'legacy' ? 'Legacy Rating' : 'Rating']
               }}
               labelFormatter={(label, payload) => {
                 if (payload?.[0]) {

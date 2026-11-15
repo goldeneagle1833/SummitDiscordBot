@@ -42,10 +42,10 @@ describe('LeaderboardTable', () => {
     expect(select).toBeInTheDocument()
   })
 
-  it('renders event ELO column when columns="event"', () => {
+  it('renders event rating column when columns="event"', () => {
     const eventData = [{ id: '1', name: 'Alice', event_elo: 1600 }]
     renderWithRouter(<LeaderboardTable data={eventData} columns="event" />)
-    expect(screen.getByText('Event ELO')).toBeInTheDocument()
+    expect(screen.getByText('Event Rating')).toBeInTheDocument()
     expect(screen.getByText('1600')).toBeInTheDocument()
   })
 
@@ -68,7 +68,7 @@ describe('LeaderboardTable', () => {
   it('labels the event column with eloLabel', () => {
     renderWithRouter(<LeaderboardTable data={[{ id: '1', name: 'Alice', event_elo: 12 }]} columns="event" eloLabel="Wins" />)
     expect(screen.getByText('Wins')).toBeInTheDocument()
-    expect(screen.queryByText('Event ELO')).not.toBeInTheDocument()
+    expect(screen.queryByText('Event Rating')).not.toBeInTheDocument()
   })
 
   it('uses display_name as fallback for name', () => {
@@ -87,7 +87,7 @@ describe('LeaderboardTable', () => {
     expect(screen.getAllByText('not yet eligible')).toHaveLength(1)
   })
 
-  it('shows no top cut note in Elo seasons', () => {
+  it('shows no top cut note in Rating seasons', () => {
     const rows = [{ id: '1', name: 'Alice', event_elo: 1620, top_cut_eligible: true }]
     renderWithRouter(<LeaderboardTable data={rows} columns="event" />)
     expect(screen.queryByTestId('top-cut-min-note')).toBeNull()

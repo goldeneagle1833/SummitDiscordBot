@@ -99,7 +99,7 @@ def test_ticket_holder_outside_the_cut_sees_the_gap(repo):
     you = season(hub(repo, players, "u35"))["you"]
     assert you["state"] == "out"
     # #32 sits on 1680, #35 on 1650.
-    assert "30 ELO behind #32" in you["notes"]
+    assert "30 points behind #32" in you["notes"]
 
 
 def test_player_without_a_ticket_is_told_so(repo):

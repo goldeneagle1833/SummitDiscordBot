@@ -141,7 +141,7 @@ export default function TransferHistorySection({ onRefresh }) {
       return
     }
     if (!confirm(
-      `Transfer ALL history from "${oldUser.display_name}" (${oldUser.user_id}) to "${newUser.display_name}" (${newUser.user_id})?\n\nThis will update all match records, ELO standings, and other data. This action is difficult to reverse.`
+      `Transfer ALL history from "${oldUser.display_name}" (${oldUser.user_id}) to "${newUser.display_name}" (${newUser.user_id})?\n\nThis will update all match records, rating standings, and other data. This action is difficult to reverse.`
     )) return
 
     setLoading(true)

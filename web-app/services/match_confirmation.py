@@ -1243,14 +1243,14 @@ class MatchConfirmationService:
 
         # Customize message based on match type and repeat status
         if is_casual:
-            message = "Casual match confirmed and recorded! No ELO changes."
+            message = "Casual match confirmed and recorded! No rating changes."
         elif is_repeat_matchup:
             message = (
                 "Match confirmed and recorded! However, this is a repeat game with the same opponent. "
-                "Repeat games do not affect ELO - you must play someone else to gain ELO."
+                "Repeat games do not affect your rating - you must play someone else to gain rating."
             )
         else:
-            message = "Match confirmed successfully! ELO ratings have been updated."
+            message = "Match confirmed successfully! Ratings have been updated."
 
         return {
             "success": True,

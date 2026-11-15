@@ -372,7 +372,7 @@ def og_player(player_id: str):
         losses = stats["losses"] if stats else 0
         win_rate = stats["win_rate"] if stats else None
 
-        parts = [f"ELO: {elo}", f"{wins}W – {losses}L"]
+        parts = [f"Rating: {elo}", f"{wins}W – {losses}L"]
         if win_rate is not None and (wins + losses) > 0:
             parts.append(f"{win_rate:.1f}% win rate")
 
@@ -409,14 +409,14 @@ def og_elo():
             top = standings[0]
             top_name = top.get("display_name", "")
             top_elo = top.get("online_elo", 0)
-            description = f"{count} ranked players | #1: {top_name} ({top_elo} ELO)"
+            description = f"{count} ranked players | #1: {top_name} ({top_elo} Rating)"
         else:
             description = f"{count} ranked players on the Sorcery: Contested Realm leaderboard"
     except Exception:
-        description = "ELO leaderboard for Sorcery: Contested Realm — see top ranked players"
+        description = "Rating leaderboard for Sorcery: Contested Realm — see top ranked players"
 
     return _og_html(
-        title="ELO Leaderboard — Sorcerers Summit",
+        title="Rating Leaderboard — Sorcerers Summit",
         description=description,
         url=f"{SITE_URL}/elo",
     )

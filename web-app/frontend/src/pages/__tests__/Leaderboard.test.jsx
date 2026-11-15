@@ -46,7 +46,7 @@ const GOTHIC = {
 }
 
 const ARCHIVED = {
-  event_info: { ...SEASON_7, value_label: 'Event ELO' },
+  event_info: { ...SEASON_7, value_label: 'Event Rating' },
   total_matches: 312,
   leaderboard: [
     { user_id: 1, display_name: 'duckworthy_', event_elo: 1773, rank: 1, wins: 21, losses: 6 },
@@ -98,7 +98,7 @@ describe('Leaderboard page', () => {
 
     const nav = sidebar()
     expect(nav.getByRole('button', { name: /Season 8/ })).toHaveAttribute('aria-current', 'true')
-    expect(nav.getByRole('button', { name: /Lifetime ELO/ })).toBeInTheDocument()
+    expect(nav.getByRole('button', { name: /Lifetime Rating/ })).toBeInTheDocument()
     expect(nav.queryByRole('button', { name: /Limited format/ })).not.toBeInTheDocument()
     expect(nav.getByRole('button', { name: /Season 7/ })).toHaveTextContent('48 players · 312 matches')
     expect(nav.getByRole('button', { name: /Season 7/ })).toHaveTextContent('duckworthy_')
@@ -106,14 +106,14 @@ describe('Leaderboard page', () => {
     expect(nav.queryByRole('button', { name: /Season leaderboards/ })).not.toBeInTheDocument()
   })
 
-  it('shows a past event with its summary, records and ELO when picked', async () => {
+  it('shows a past event with its summary, records and Rating when picked', async () => {
     await renderPage()
     await userEvent.click(sidebar().getByRole('button', { name: /Season 7/ }))
 
     expect(getArchivedLeaderboard).toHaveBeenCalledWith(7)
     expect(await screen.findByText('8/30/2026 - 9/28/2026 · 2 players · 312 matches')).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Season 7' })).toBeInTheDocument()
-    expect(screen.getByText('Event ELO')).toBeInTheDocument()
+    expect(screen.getByText('Event Rating')).toBeInTheDocument()
 
     const seamoose = screen.getByRole('link', { name: 'Seamoose' }).closest('tr')
     expect(seamoose).toHaveTextContent('9-11')
@@ -125,8 +125,8 @@ describe('Leaderboard page', () => {
   it('opens the board named in the URL', async () => {
     await renderPage('/elo?board=lifetime')
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Lifetime ELO Leaderboard' })).toBeInTheDocument()
-    expect(screen.getByText('ELO Distribution')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Lifetime Rating Leaderboard' })).toBeInTheDocument()
+    expect(screen.getByText('Rating Distribution')).toBeInTheDocument()
     expect(screen.getByText('1812')).toBeInTheDocument()
   })
 
@@ -140,7 +140,7 @@ describe('Leaderboard page', () => {
     await renderPage()
     await userEvent.selectOptions(screen.getByLabelText('Leaderboard'), 'lifetime')
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Lifetime ELO Leaderboard' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Lifetime Rating Leaderboard' })).toBeInTheDocument()
   })
 
   it('labels a wins-ranked season and keeps it in the sidebar', async () => {
@@ -154,7 +154,7 @@ describe('Leaderboard page', () => {
 
     expect(await screen.findByText('Wins')).toBeInTheDocument()
     expect(getArchivedLeaderboard).toHaveBeenCalledWith('season_gothic_1')
-    expect(screen.queryByText('Event ELO')).not.toBeInTheDocument()
+    expect(screen.queryByText('Event Rating')).not.toBeInTheDocument()
   })
 
   it('says so when an event has no archived standings', async () => {

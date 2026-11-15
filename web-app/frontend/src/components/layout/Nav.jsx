@@ -36,7 +36,7 @@ const ALL_NAV_OPTIONS = [
   { to: '/card-stats', label: 'Card Stats' },
   { to: '/articles', label: 'Player Articles' },
   { to: '/standings', label: 'Event Standings' },
-  { to: '/elo', label: 'ELO Leaderboards' },
+  { to: '/elo', label: 'Rating Leaderboards' },
   { to: '/brackets', label: 'Season Top Cut' },
   { to: '/match-history', label: 'Match History' },
   { to: '/rumble', label: 'Rumble' },
@@ -842,7 +842,7 @@ export default function Nav() {
 
           <SidebarHeading label="Summit Ranked" />
           <SidebarLink to="/standings" dot={isNew('/standings')} label="Event Standings" location={location} onClick={close} />
-          <SidebarLink to="/elo" dot={isNew('/elo')} label="ELO Leaderboards" location={location} onClick={close} />
+          <SidebarLink to="/elo" dot={isNew('/elo')} label="Rating Leaderboards" location={location} onClick={close} />
           <SidebarLink to="/brackets" dot={isNew('/brackets')} label="Season Top Cut" location={location} onClick={close} />
           <SidebarLink to="/match-history" dot={isNew('/match-history')} label="Match History" location={location} onClick={close} />
           <SidebarLink to="/rumble" dot={isNew('/rumble')} label="Rumble" location={location} onClick={close} />

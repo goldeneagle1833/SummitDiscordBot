@@ -88,7 +88,7 @@ function Side({
       {eloChange != null && !reported && (
         <span
           className={`ml-auto text-[11px] ${eloChange > 0 ? 'text-accent-green' : 'text-accent-red'}`}
-          title="Lifetime ELO from this match"
+          title="Lifetime Rating from this match"
         >
           {eloChange > 0 ? `+${eloChange}` : eloChange}
         </span>

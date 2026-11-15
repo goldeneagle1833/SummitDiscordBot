@@ -116,7 +116,7 @@ function BiggestUpsets({ data: all }) {
   return (
     <StatCard title="Biggest Upsets">
       <RankTable
-        headers={['Player', 'ELO Gained']}
+        headers={['Player', 'Rating Gained']}
         rows={data.map((m) => [
           m.winner_name,
           <span key="e" className="text-accent-green font-medium">+{m.elo_change}</span>,
@@ -223,7 +223,7 @@ function MostImproved({ data: all }) {
   return (
     <StatCard title={<>Most Improved <span className="text-xs text-text-muted font-normal">Last 7 Days</span></>}>
       <RankTable
-        headers={['Player', 'ELO']}
+        headers={['Player', 'Rating']}
         rows={data.map((p) => [
           p.name,
           <span key="e" className="text-accent-green font-medium">+{p.elo_change}</span>,

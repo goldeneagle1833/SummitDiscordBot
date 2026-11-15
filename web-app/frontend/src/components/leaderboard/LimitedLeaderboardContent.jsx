@@ -33,7 +33,7 @@ export function TrophyRuns({ runs }) {
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Player</th>
               <th className="px-3 py-2 text-center text-xs font-semibold text-text-muted uppercase">Record</th>
               <th className="px-3 py-2 text-center text-xs font-semibold text-text-muted uppercase">Deck</th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase hidden sm:table-cell">Starting ELO</th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase hidden sm:table-cell">Starting Rating</th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase">Date</th>
             </tr>
           </thead>
@@ -108,7 +108,7 @@ export function LimitedLeaderboardTable({ data }) {
             <tr>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wider w-12">#</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Player</th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider hidden sm:table-cell">ELO</th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider hidden sm:table-cell">Rating</th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider hidden sm:table-cell">W/L</th>
               <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">Win %</th>
             </tr>

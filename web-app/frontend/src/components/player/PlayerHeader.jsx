@@ -170,7 +170,7 @@ export default function PlayerHeader({
       )}
 
       {avatarEntries.length > 0 && (
-        <ul className="basis-full flex flex-wrap gap-2 -mt-2 lg:order-last" aria-label="Event ELO per avatar">
+        <ul className="basis-full flex flex-wrap gap-2 -mt-2 lg:order-last" aria-label="Event Rating per avatar">
           {avatarEntries.map((entry) => (
             <li
               key={entry.avatar}
@@ -203,7 +203,7 @@ export default function PlayerHeader({
         ) : (
           headline.elo != null && <BigStat value={headline.elo} label={headline.eloLabel} gold />
         )}
-        {headline.legacyElo != null && <BigStat value={headline.legacyElo} label="Legacy ELO (Seasons 1-8)" />}
+        {headline.legacyElo != null && <BigStat value={headline.legacyElo} label="Legacy Rating (Seasons 1-8)" />}
         {headline.rank != null && <BigStat value={`#${headline.rank}`} label={headline.rankLabel} />}
         {wins + losses > 0 && (
           <BigStat value={`${data.win_rate ?? 0}%`} label={`${wins} W · ${losses} L`} />

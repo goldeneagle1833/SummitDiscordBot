@@ -28,6 +28,12 @@ os.makedirs(_JOBS_DIR, exist_ok=True)
 
 
 
+
+def _looks_like_url(text: str) -> bool:
+    """True for a pasted link (or bare sorcerytcg.com address), not a name."""
+    lowered = (text or "").strip().lower()
+    return lowered.startswith(("http://", "https://", "www.")) or "sorcerytcg.com/" in lowered
+
 def _job_error_text(exc: Exception) -> str:
     """What the admin sees when an event job fails.
 
@@ -965,7 +971,7 @@ def _import_event(title, event_url, on_progress, curiosa=None, discovery=None):
 
     # Use event name as title if not provided, and make sure it's a usable
     # folder name before spending time fetching every deck
-    if not title:
+    if not title or _looks_like_url(title):
         title = discovery["event_name"] or "Imported Event"
     title, name_error = EventRepository().check_new_folder_name(title)
     if name_error:
@@ -1097,6 +1103,10 @@ def import_event_from_url():
         }), 400
 
     title = data.get("title", "").strip()
+    if _looks_like_url(title):
+        # The event link pasted into the optional title box would become the
+        # event's name ("Httpssorcerytcgcomevents..."); use the event's own.
+        title = ""
     if title:
         # A given title can be checked now; otherwise the worker checks the
         # event's own name right after discovery, before fetching decks

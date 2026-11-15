@@ -12,7 +12,8 @@ import { badgesByPlayer, getAvatarImagePath } from '@/utils/avatarBadges'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import { STORE_LIVE } from '@/utils/store'
-import { getProducts } from '@/api/store'
+import { getProducts, getStorefronts } from '@/api/store'
+import { DEFAULT_STOREFRONT } from '@/hooks/useStoreCart'
 import { articleImage, articlePath, listArticles } from '@/api/articles'
 import { ProvisionalTag } from '@/components/common/Provisional'
 import { isProvisional, provisionalOf } from '@/utils/provisional'
@@ -733,16 +734,22 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
 
 // ── Store Card ────────────────────────────────────────────────
 
-// Once the store is live, the tile's background is a photo from a random listing
+// Once the store is live, the tile's background is a photo from a random
+// Summit Store listing (never another storefront's, e.g. the Explorer Series)
 export function StoreCard({ live = STORE_LIVE }) {
   const [bgImage, setBgImage] = useState(null)
 
   useEffect(() => {
     if (!live) return
     let cancelled = false
-    getProducts()
-      .then((data) => {
-        const images = (data?.products || []).map((p) => p.images?.[0] || p.image_url).filter(Boolean)
+    Promise.all([getProducts(), getStorefronts()])
+      .then(([data, sfData]) => {
+        const summit = (sfData?.storefronts || []).find((s) => s.slug === DEFAULT_STOREFRONT)
+        if (!summit) return // can't tell which listings are Summit's, so show no photo
+        const images = (data?.products || [])
+          .filter((p) => p.storefront_id === summit.id || p.storefront_id == null)
+          .map((p) => p.images?.[0] || p.image_url)
+          .filter(Boolean)
         if (!cancelled && images.length) setBgImage(images[Math.floor(Math.random() * images.length)])
       })
       .catch(() => {})

@@ -27,11 +27,11 @@ class TestQueueSettingsApi:
 
     def test_owner_turns_voice_only_on_and_off(self, client):
         c = _discord_user(client)
-        assert c.get("/api/player/123456789/queue-settings").get_json() == {"voice_only": False}
+        assert c.get("/api/player/123456789/queue-settings").get_json()["voice_only"] is False
         resp = c.post("/api/player/123456789/queue-settings", json={"voice_only": True})
         assert resp.status_code == 200
         assert VoiceOnlyRepository().is_voice_only("123456789") is True
-        assert c.get("/api/player/123456789/queue-settings").get_json() == {"voice_only": True}
+        assert c.get("/api/player/123456789/queue-settings").get_json()["voice_only"] is True
         c.post("/api/player/123456789/queue-settings", json={"voice_only": False})
         assert VoiceOnlyRepository().is_voice_only("123456789") is False
 

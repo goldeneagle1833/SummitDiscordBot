@@ -1533,6 +1533,26 @@ class LFGCog(commands.Cog):
             current = await asyncio.to_thread(is_voice_only, ctx.author.id)
         await ctx.send(voice_only_text(current), view=VoiceOnlyToggleView(ctx.author.id, current))
 
+    @commands.command(aliases=["tagme"])
+    async def tag_me(self, ctx, setting: str = None):
+        """Choose whether the match announcement pings you.
+
+        Usage: !tag_me (shows your setting), !tag_me on, !tag_me off
+        """
+        from repositories.tag_me_repo import set_tag_me, wants_tag
+
+        choice = (setting or "").strip().lower()
+        if choice in ("on", "yes", "true"):
+            current = await asyncio.to_thread(set_tag_me, ctx.author.id, True, "command")
+        elif choice in ("off", "no", "false"):
+            current = await asyncio.to_thread(set_tag_me, ctx.author.id, False, "command")
+        elif choice:
+            await ctx.send("Use `!tag_me on`, `!tag_me off`, or just `!tag_me` to see your setting.")
+            return
+        else:
+            current = await asyncio.to_thread(wants_tag, ctx.author.id)
+        await ctx.send(tag_me_text(current))
+
     @commands.command()
     async def challenge(self, ctx, opponent: discord.Member = None):
         """Challenge a specific player to a match
@@ -2070,6 +2090,8 @@ class LFGCog(commands.Cog):
                 "**When to use:** Before joining, to see if someone is already waiting.\n\n"
                 "`!voice_only on` / `!voice_only off` or `/voice-only` - Voice-only players never get "
                 "\"want to play a no-voice game?\" DMs\n\n"
+                "`!tag_me on` / `!tag_me off` or `/tag-me` - Choose whether the match "
+                "announcement in the LFG channel pings you (on by default)\n\n"
                 "**Tip:** Use the **Join Queue** button in the LFG channel to enter your deck URL and join the matchmaking queue!"
             ),
             inline=False,
@@ -5249,3 +5271,17 @@ class LFGCog(commands.Cog):
         except Exception as e:
             await ctx.send("An error occurred while forfeiting your run.")
             logger.error(f"Forfeit command failed for {ctx.author} ({user_id}): {e}")
+
+
+def tag_me_text(tag_me):
+    """What the bot says about a player's "Tag me" setting."""
+    if tag_me:
+        return (
+            "🔔 Tag me is **on**. When you're matched, the announcement in the LFG "
+            "channel pings you. Turn it off with `!tag_me off`."
+        )
+    return (
+        "🔕 Tag me is **off**. When you're matched, the LFG channel announcement still "
+        "names you but won't ping you. Your match DM still comes as usual. "
+        "Turn it back on with `!tag_me on`."
+    )

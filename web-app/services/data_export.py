@@ -81,6 +81,7 @@ OWNED_TABLES = [
     ("decks", "saved_decks", ("user_id",)),
     ("settings", "blocked_users", ("user_id",)),
     ("settings", "voice_only_players", ("user_id",)),
+    ("settings", "no_tag_players", ("user_id",)),
     ("settings", "creator_access", ("user_id",)),
     ("settings", "ticket_holders", ("user_id",)),
     ("settings", "meta_report_dm_subscribers", ("discord_id",)),

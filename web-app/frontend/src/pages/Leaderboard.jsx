@@ -220,7 +220,6 @@ function CurrentEventBoard({ eventData }) {
         <LeaderboardTable
           data={rows}
           columns="event"
-          voiceRequirement={eventData?.voice_requirement}
           topCutMinGames={eventData?.top_cut_min_games || 0}
         />
       ) : (

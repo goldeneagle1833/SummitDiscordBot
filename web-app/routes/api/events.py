@@ -27,6 +27,18 @@ _JOBS_DIR = os.environ.get("SUMMIT_EVENT_JOBS_DIR") or os.path.join(
 os.makedirs(_JOBS_DIR, exist_ok=True)
 
 
+
+def _job_error_text(exc: Exception) -> str:
+    """What the admin sees when an event job fails.
+
+    ValueErrors from the importer are already written for people (bad link,
+    sorcerytcg.com refused the event and why), so show them as they are;
+    anything else is a real bug and keeps the "Internal error" label.
+    """
+    if isinstance(exc, ValueError):
+        return str(exc)
+    return f"Internal error: {exc}"
+
 def _job_path(job_id):
     """Return the filesystem path for a job's status file."""
     # Sanitise to prevent path traversal
@@ -730,7 +742,7 @@ def _run_event_creation(job_id, title, valid_ranked, valid_bulk, event_url=""):
         logger.exception("Background event creation failed: %s", e)
         _write_job(job_id, {
             "status": "failed",
-            "result": {"success": False, "error": f"Internal error: {e}"},
+            "result": {"success": False, "error": _job_error_text(e)},
         })
 
 
@@ -851,7 +863,7 @@ def _run_event_deck_update(job_id, event_folder, table_type, urls, mode):
         logger.exception("Background deck update failed: %s", e)
         _write_job(job_id, {
             "status": "failed",
-            "result": {"success": False, "error": f"Internal error: {e}"},
+            "result": {"success": False, "error": _job_error_text(e)},
         })
 
 
@@ -913,7 +925,7 @@ def _run_event_refresh(job_id, event_folder):
         logger.exception("Background event refresh failed: %s", e)
         _write_job(job_id, {
             "status": "failed",
-            "result": {"success": False, "error": f"Internal error: {e}"},
+            "result": {"success": False, "error": _job_error_text(e)},
         })
 
 
@@ -1058,7 +1070,7 @@ def _run_event_import(job_id, title, event_url):
         logger.exception("Background event import failed: %s", e)
         _write_job(job_id, {
             "status": "failed",
-            "result": {"success": False, "error": f"Internal error: {e}"},
+            "result": {"success": False, "error": _job_error_text(e)},
         })
 
 
@@ -1152,7 +1164,7 @@ def _run_match_history_import(job_id, event_folder, event_url):
         logger.exception("Background match history import failed: %s", e)
         _write_job(job_id, {
             "status": "failed",
-            "result": {"success": False, "error": f"Internal error: {e}"},
+            "result": {"success": False, "error": _job_error_text(e)},
         })
 
 

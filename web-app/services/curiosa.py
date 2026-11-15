@@ -7,7 +7,11 @@ import time
 import urllib.parse
 import requests
 
-from services.explorer import ExplorerService
+from services.explorer import (
+    ExplorerService,
+    event_fetch_error_message,
+    trpc_error_detail,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -716,8 +720,12 @@ class CuriosaService:
             f"{_TRPC_BASE_ROOT}/event.get", params=params, timeout=15
         )
         if resp.status_code != 200:
+            detail = trpc_error_detail(resp)
+            logger.warning(
+                "event.get for %s returned %s: %s", event_id, resp.status_code, detail
+            )
             raise ValueError(
-                f"sorcerytcg.com returned {resp.status_code} for event {event_id}"
+                event_fetch_error_message(resp.status_code, event_id, detail)
             )
         try:
             return resp.json()[0]["result"]["data"]["json"]["event"]
@@ -756,7 +764,10 @@ class CuriosaService:
             return [None] * len(players)
 
         if resp.status_code != 200:
-            logger.warning("Batch snapshot fetch returned %s", resp.status_code)
+            logger.warning(
+                "Batch snapshot fetch returned %s: %s",
+                resp.status_code, trpc_error_detail(resp),
+            )
             return [None] * len(players)
 
         results = []

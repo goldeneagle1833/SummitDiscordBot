@@ -169,7 +169,8 @@ def attach_seats_from_phases(event: dict) -> dict:
     {"round": {"number", "phase": {"structure"}}, "result": {...},
      "pairing": {"seats": [...]}, "registrationId": ...}.
     Round numbers run on across phases (Swiss 1-9, then top cut 10, 11, 12)
-    so the newest match still sorts first. Players that already carry seats
+    so the newest match still sorts first; the site already numbers them that
+    way, and a phase that restarts at 1 is shifted to match. Players that already carry seats
     (full replies) are left alone.
     """
     players = event.get("players")
@@ -177,15 +178,23 @@ def attach_seats_from_phases(event: dict) -> dict:
         return event
 
     seats_by_registration: dict[str, list] = {}
-    offset = 0
+    last_number = 0
+    planned = 0  # rounds the earlier phases were scheduled for
     for phase in sorted(event.get("phases") or [], key=lambda ph: ph.get("number") or 0):
         rounds = phase.get("rounds") or []
+        earlier_planned = planned
+        planned += phase.get("roundCount") or 0
+        if not rounds:
+            continue
         phase_info = {"structure": phase.get("structure") or "", "type": phase.get("type")}
-        top_number = 0
+        # The live site numbers rounds across phases already (Swiss 1-9, top
+        # cut 10-12); only shift a phase whose numbering starts over.
+        first = min((r.get("number") or 0) for r in rounds)
+        shift = max(last_number, earlier_planned) if first <= last_number else 0
         for rnd in rounds:
-            number = rnd.get("number") or 0
-            top_number = max(top_number, number)
-            round_info = {"number": offset + number, "phase": phase_info}
+            number = (rnd.get("number") or 0) + shift
+            last_number = max(last_number, number)
+            round_info = {"number": number, "phase": phase_info}
             for pairing in rnd.get("pairings") or []:
                 for seat in pairing.get("seats") or []:
                     registration_id = seat.get("registrationId")
@@ -196,7 +205,6 @@ def attach_seats_from_phases(event: dict) -> dict:
                         "round": round_info,
                         "pairing": pairing,
                     })
-        offset += max(top_number, phase.get("roundCount") or 0) if rounds else 0
 
     if seats_by_registration:
         for player in players:

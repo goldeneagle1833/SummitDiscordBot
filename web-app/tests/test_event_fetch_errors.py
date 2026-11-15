@@ -163,3 +163,12 @@ def test_full_reply_seats_are_left_alone():
     attach_seats_from_phases(event)
     assert event["players"][0]["seats"] == [{"round": {"number": 1}}]
     assert "seats" not in event["players"][1]
+
+
+def test_round_numbers_already_running_on_are_kept():
+    """Live data numbers top-cut rounds 10-12 after 9 Swiss rounds."""
+    from services.explorer import attach_seats_from_phases
+    event = _compact_event()
+    event["phases"][0]["rounds"][0]["number"] = 10
+    attach_seats_from_phases(event)
+    assert sorted(s["round"]["number"] for s in event["players"][0]["seats"]) == [1, 2, 10]

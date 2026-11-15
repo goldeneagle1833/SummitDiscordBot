@@ -9,7 +9,9 @@ import requests
 
 from services.explorer import (
     ExplorerService,
+    check_event_payload,
     event_fetch_error_message,
+    request_event_get,
     trpc_error_detail,
 )
 
@@ -712,13 +714,7 @@ class CuriosaService:
 
     def _fetch_event_trpc(self, event_id: str) -> dict:
         """Fetch event data from sorcerytcg.com tRPC endpoint."""
-        params = {
-            "batch": "1",
-            "input": json.dumps({"0": {"json": {"id": event_id}}}),
-        }
-        resp = requests.get(
-            f"{_TRPC_BASE_ROOT}/event.get", params=params, timeout=15
-        )
+        resp = request_event_get(event_id)
         if resp.status_code != 200:
             detail = trpc_error_detail(resp)
             logger.warning(
@@ -728,9 +724,10 @@ class CuriosaService:
                 event_fetch_error_message(resp.status_code, event_id, detail)
             )
         try:
-            return resp.json()[0]["result"]["data"]["json"]["event"]
+            event = resp.json()[0]["result"]["data"]["json"]["event"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ValueError(f"Unexpected event response format: {exc}") from exc
+        return check_event_payload(event, event_id)
 
     def _fetch_player_snapshots_batch(
         self, event_id: str, players: list[dict]

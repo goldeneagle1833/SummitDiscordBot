@@ -41,7 +41,7 @@ export default function AvatarEloHistory({ history, entries = [], eventName, ope
   const entry = entries.find((e) => e.avatar === avatar)
 
   return (
-    <CollapsibleSection title="Event ELO by Avatar" open={open} onToggle={onToggle}>
+    <CollapsibleSection title="Event Rating by Avatar" open={open} onToggle={onToggle}>
       <p className="text-xs text-text-muted mb-3">
         {eventName ? `${eventName}: ` : ''}every avatar is rated separately, starting at 1500.
       </p>
@@ -67,7 +67,7 @@ export default function AvatarEloHistory({ history, entries = [], eventName, ope
         <p className="text-sm text-text-muted mb-2">
           {provisionalOf(entry)
             ? <ProvisionalTag games={provisionalOf(entry).games} className="text-sm" />
-            : <>{entry.event_elo} ELO{entry.rank != null && ` · Rank #${entry.rank}`}</>}
+            : <>{entry.event_elo} Rating{entry.rank != null && ` · Rank #${entry.rank}`}</>}
           {' · '}{entry.games_played} game{entry.games_played === 1 ? '' : 's'}
         </p>
       )}
@@ -95,7 +95,7 @@ export default function AvatarEloHistory({ history, entries = [], eventName, ope
                 borderRadius: 4,
                 fontSize: 11,
               }}
-              formatter={(value) => [value, `${avatar} ELO`]}
+              formatter={(value) => [value, `${avatar} Rating`]}
               labelFormatter={(game, payload) => {
                 const date = payload?.[0]?.payload?.date
                 return game === 0 ? 'Start' : `Game ${game}${date ? ` · ${date}` : ''}`

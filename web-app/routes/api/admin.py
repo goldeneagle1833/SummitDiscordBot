@@ -142,7 +142,7 @@ def reset_elo(user_id):
             except (ValueError, TypeError):
                 return jsonify({"success": False, "error": "new_elo must be a number"}), 400
             if new_elo < 0 or new_elo > 5000:
-                return jsonify({"success": False, "error": "ELO must be between 0 and 5000"}), 400
+                return jsonify({"success": False, "error": "Rating must be between 0 and 5000"}), 400
         if data.get("source") in ("bot", "paper", "both"):
             source = data["source"]
 

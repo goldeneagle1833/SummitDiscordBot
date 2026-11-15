@@ -99,7 +99,7 @@ export default function PlayerAvatar() {
         <StatCard label="Total Games" value={data.total} />
         {lifetime && (
           <StatCard
-            label="Lifetime avatar ELO"
+            label="Lifetime avatar rating"
             value={lifetimeProv
               ? <ProvisionalTag games={lifetimeProv.games} className="text-sm" />
               : <>{lifetime.elo}{lifetime.rank != null && <span className="text-sm text-text-muted"> · #{lifetime.rank}</span>}</>}
@@ -160,7 +160,7 @@ export default function PlayerAvatar() {
                   <th className="pb-2 pr-4">Result</th>
                   <th className="pb-2 pr-4">Opponent</th>
                   <th className="pb-2 pr-4">Opp. Avatar</th>
-                  <th className="pb-2 pr-4">ELO</th>
+                  <th className="pb-2 pr-4">Rating</th>
                   <th className="pb-2 pr-4">Play/Draw</th>
                 </tr>
               </thead>

@@ -10,7 +10,7 @@ const AVATARS = [
   { name: 'Sparkmage', wins: 1, losses: 0, win_rate: 100 },
 ]
 
-describe('AvatarPerformance lifetime avatar ELO', () => {
+describe('AvatarPerformance lifetime avatar rating', () => {
   it('adds a column with the rating and rank, or the provisional tag', () => {
     renderWithRouter(
       <AvatarPerformance
@@ -22,7 +22,7 @@ describe('AvatarPerformance lifetime avatar ELO', () => {
         ]}
       />,
     )
-    expect(screen.getByRole('columnheader', { name: 'Lifetime avatar ELO' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Lifetime avatar rating' })).toBeInTheDocument()
     const row = (name) => screen.getByRole('link', { name }).closest('tr')
     expect(within(row('Witch')).getByText('1588')).toBeInTheDocument()
     expect(within(row('Witch')).getByText('· #2')).toBeInTheDocument()
@@ -32,10 +32,10 @@ describe('AvatarPerformance lifetime avatar ELO', () => {
     expect(within(row('Sparkmage')).getAllByText('-').length).toBeGreaterThan(0)
   })
 
-  it('shows nothing new without lifetime avatar ELO (before Season 9, or hidden)', () => {
+  it('shows nothing new without lifetime avatar rating (before Season 9, or hidden)', () => {
     renderWithRouter(<AvatarPerformance playerId="1" avatars={AVATARS} lifetimeElo={[]} />)
-    expect(screen.queryByRole('columnheader', { name: 'Lifetime avatar ELO' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Lifetime avatar rating' })).not.toBeInTheDocument()
     renderWithRouter(<AvatarPerformance playerId="1" avatars={AVATARS} />)
-    expect(screen.queryByText(/Lifetime avatar ELO/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Lifetime avatar rating/)).not.toBeInTheDocument()
   })
 })

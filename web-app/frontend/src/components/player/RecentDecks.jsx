@@ -90,9 +90,9 @@ export default function RecentDecks({ decks, playerId, showLinks = false, open, 
                   {(hasSeason || hasLifetime) && (
                     <p
                       className="text-xs text-text-muted mt-0.5"
-                      title="Lifetime ELO gained or lost while piloting this deck"
+                      title="Lifetime Rating gained or lost while piloting this deck"
                     >
-                      ELO:{' '}
+                      Rating:{' '}
                       {hasSeason && (
                         <>
                           Season <EloDelta value={deck.elo_season} hidden={seasonHidden} />

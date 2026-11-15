@@ -61,7 +61,7 @@ describe('PlayerAvatar period picker', () => {
   })
 })
 
-describe('PlayerAvatar lifetime avatar ELO', () => {
+describe('PlayerAvatar lifetime avatar rating', () => {
   const base = { player_name: 'Hicham', avatar: 'Pathfinder', wins: 5, losses: 2, total: 7, win_rate: 71, matchups: [], matches: [] }
 
   it('shows the rating and its rank on this avatar', async () => {
@@ -70,7 +70,7 @@ describe('PlayerAvatar lifetime avatar ELO', () => {
       lifetime_avatar_elo: { avatar: 'Pathfinder', elo: 1612, games: 14, rank: 3, provisional: false, provisional_games: 14 },
     })
     renderAt('/player/1/avatar/Pathfinder')
-    const card = (await screen.findByText('Lifetime avatar ELO')).parentElement
+    const card = (await screen.findByText('Lifetime avatar rating')).parentElement
     expect(card).toHaveTextContent('1612 · #3')
   })
 
@@ -87,6 +87,6 @@ describe('PlayerAvatar lifetime avatar ELO', () => {
     getPlayerAvatarStats.mockResolvedValueOnce({ ...base, lifetime_avatar_elo: null })
     renderAt('/player/1/avatar/Pathfinder')
     await screen.findByText('Total Games')
-    expect(screen.queryByText('Lifetime avatar ELO')).not.toBeInTheDocument()
+    expect(screen.queryByText('Lifetime avatar rating')).not.toBeInTheDocument()
   })
 })

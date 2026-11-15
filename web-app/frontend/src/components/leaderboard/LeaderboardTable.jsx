@@ -19,7 +19,7 @@ export default function LeaderboardTable({
   data = [],
   columns = 'lifetime',
   voiceRequirement = null,
-  eloLabel = 'Event ELO',
+  eloLabel = 'Event Rating',
   // Glicko-2 seasons: ranked games an entry needs to count for top cut (0 = none)
   topCutMinGames = 0,
 }) {
@@ -72,7 +72,7 @@ export default function LeaderboardTable({
               )}
               {columns === 'lifetime' && (
                 <>
-                  <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider hidden sm:table-cell">ELO</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider hidden sm:table-cell">Rating</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider hidden sm:table-cell">W/L</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">Win %</th>
                 </>

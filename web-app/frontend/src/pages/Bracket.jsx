@@ -259,8 +259,8 @@ export default function Bracket({ slug: slugProp, brackets: bracketsProp } = {})
             {entrants.length} players
             {community && bracket.organizer_name ? ` · run by ${bracket.organizer_name}` : ''}
             {bracket.elo_event_name ? ` · seeded from ${bracket.elo_event_name}` : ''}
-            {bracket.format === 'limited' ? ' · games count toward lifetime Limited ELO' : ''}
-            {community && bracket.format !== 'limited' ? ' · games don’t affect ELO' : ''}
+            {bracket.format === 'limited' ? ' · games count toward lifetime Limited rating' : ''}
+            {community && bracket.format !== 'limited' ? ' · games don’t affect rating' : ''}
             {bracketHidden
               ? ' · waiting on decklists'
               : bracket.status === 'complete'

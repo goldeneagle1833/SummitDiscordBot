@@ -58,7 +58,7 @@ export default function MatchNotesSection() {
                   <th className="py-2 px-3 text-text-muted font-semibold">ID</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Winner</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Loser</th>
-                  <th className="py-2 px-3 text-text-muted font-semibold">ELO</th>
+                  <th className="py-2 px-3 text-text-muted font-semibold">Rating</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Time</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Date</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Source</th>

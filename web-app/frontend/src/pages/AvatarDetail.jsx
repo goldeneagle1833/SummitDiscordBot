@@ -76,7 +76,7 @@ function MatchTable({ matches, emptyText }) {
           <tr className="border-b border-border text-left">
             <th className="px-3 py-2 text-xs font-semibold text-text-muted uppercase">Winner</th>
             <th className="px-3 py-2 text-xs font-semibold text-text-muted uppercase">Loser</th>
-            <th className="px-3 py-2 text-xs font-semibold text-text-muted uppercase">ELO</th>
+            <th className="px-3 py-2 text-xs font-semibold text-text-muted uppercase">Rating</th>
           </tr>
         </thead>
         <tbody>
@@ -175,8 +175,8 @@ function EloMatrix({ avatarName, source, eventFilter }) {
       .finally(() => setLoading(false))
   }, [avatarName, source, eventFilter])
 
-  if (loading) return <p className="text-text-muted text-sm py-4">Loading ELO matrix...</p>
-  if (!data || !data.matrix?.length) return <p className="text-text-muted text-sm py-4">Not enough data for ELO breakdown.</p>
+  if (loading) return <p className="text-text-muted text-sm py-4">Loading rating matrix...</p>
+  if (!data || !data.matrix?.length) return <p className="text-text-muted text-sm py-4">Not enough data for rating breakdown.</p>
 
   const { brackets, matrix } = data
 
@@ -186,7 +186,7 @@ function EloMatrix({ avatarName, source, eventFilter }) {
         <thead>
           <tr className="border-b border-border">
             <th className="px-2 py-2 text-left text-xs font-semibold text-text-muted uppercase whitespace-nowrap">
-              Player ELO ↓ / Opp →
+              Player Rating ↓ / Opp →
             </th>
             {brackets.map((b) => (
               <th key={b} className="px-2 py-2 text-center text-xs font-semibold text-text-muted uppercase whitespace-nowrap">
@@ -518,8 +518,8 @@ export default function AvatarDetail() {
 
         {/* ELO Win Rate Matrix */}
         <div className="p-6 border-t border-border">
-          <h3 className="text-lg font-semibold mb-1">Win Rate by ELO Bracket</h3>
-          <p className="text-xs text-text-muted mb-4">How this avatar performs across different ELO ranges (using current player ratings)</p>
+          <h3 className="text-lg font-semibold mb-1">Win Rate by Rating Bracket</h3>
+          <p className="text-xs text-text-muted mb-4">How this avatar performs across different rating ranges (using current player ratings)</p>
           <EloMatrix avatarName={name} source={source} eventFilter={eventFilter} />
         </div>
 

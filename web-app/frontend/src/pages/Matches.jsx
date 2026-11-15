@@ -123,9 +123,9 @@ export default function Matches() {
               <tr className="border-b border-border text-left">
                 <th className="py-2 px-3 font-semibold text-text-muted">Match ID</th>
                 <th className="py-2 px-3 font-semibold text-text-muted">Winner</th>
-                <th className="py-2 px-3 font-semibold text-text-muted">Winner ELO</th>
+                <th className="py-2 px-3 font-semibold text-text-muted">Winner Rating</th>
                 <th className="py-2 px-3 font-semibold text-text-muted">Loser</th>
-                <th className="py-2 px-3 font-semibold text-text-muted">Loser ELO</th>
+                <th className="py-2 px-3 font-semibold text-text-muted">Loser Rating</th>
                 <th className="py-2 px-3 font-semibold text-text-muted">Match Time</th>
                 <th className="py-2 px-3 font-semibold text-text-muted">Date</th>
                 <th className="py-2 px-3 font-semibold text-text-muted">Replay</th>

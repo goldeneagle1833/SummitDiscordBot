@@ -10,10 +10,10 @@ import { Rating } from '@/components/common/Provisional'
 
 // Elo reads a per-avatar ladder: the running season's (Avatar-mode seasons only)
 // or the lifetime avatar Elo (Glicko-2, from the first Glicko-2 season on)
-const ELO_SORT = { value: 'elo', label: 'Elo' }
+const ELO_SORT = { value: 'elo', label: 'Rating' }
 const LADDERS = {
-  season: { label: 'Season', column: 'Season Elo', rated: 'this season', empty: 'this season' },
-  lifetime: { label: 'Lifetime', column: 'Lifetime Elo', rated: 'across seasons', empty: 'yet' },
+  season: { label: 'Season', column: 'Season Rating', rated: 'this season', empty: 'this season' },
+  lifetime: { label: 'Lifetime', column: 'Lifetime Rating', rated: 'across seasons', empty: 'yet' },
 }
 
 const SORT_OPTIONS = [
@@ -43,14 +43,14 @@ function sortPlayers(players, sortBy) {
 
 function LadderSwitch({ ladder, available, onChange }) {
   return (
-    <div role="group" aria-label="Elo ladder" className="flex justify-center gap-2 mb-4">
+    <div role="group" aria-label="Rating ladder" className="flex justify-center gap-2 mb-4">
       {Object.entries(LADDERS).map(([key, { label }]) => (
         <button
           key={key}
           type="button"
           aria-pressed={ladder === key}
           disabled={!available[key]}
-          title={available[key] ? undefined : `No ${label.toLowerCase()} avatar Elo yet`}
+          title={available[key] ? undefined : `No ${label.toLowerCase()} avatar rating yet`}
           onClick={() => onChange(key)}
           className={`h-9 px-4 rounded-full border text-sm font-semibold disabled:opacity-40 ${
             ladder === key ? 'border-secondary text-secondary bg-bg-elevated' : 'border-border text-text-muted'
@@ -262,8 +262,8 @@ export default function AvatarTopPlayers() {
           {!eloMode
             ? 'Pick an avatar to see its strongest pilots ranked by Avatar Score.'
             : ladder === 'lifetime'
-              ? 'Every player rated on an avatar, ranked by their lifetime Elo on it across seasons.'
-              : 'Every player rated on an avatar this season, ranked by their season Elo on it.'}
+              ? 'Every player rated on an avatar, ranked by their lifetime rating on it across seasons.'
+              : 'Every player rated on an avatar this season, ranked by their season rating on it.'}
         </p>
       </section>
 
@@ -304,7 +304,7 @@ export default function AvatarTopPlayers() {
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
               disabled={eloMode}
-              title={eloMode ? 'Elo is the ranked ladder (online games)' : undefined}
+              title={eloMode ? 'Rating is the ranked ladder (online games)' : undefined}
               className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm disabled:opacity-50"
             >
               <option value="discord">Online</option>
@@ -334,7 +334,7 @@ export default function AvatarTopPlayers() {
               value={minGames}
               onChange={(e) => setMinGames(Number(e.target.value) || 1)}
               disabled={eloMode}
-              title={eloMode ? 'Elo lists every rated player' : undefined}
+              title={eloMode ? 'Rating lists every rated player' : undefined}
               className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm disabled:opacity-50"
             />
           </label>

@@ -27,7 +27,7 @@ const baseDeck = {
 }
 
 describe('RecentDecks', () => {
-  it('shows season and lifetime ELO impact for a deck', () => {
+  it('shows season and lifetime rating impact for a deck', () => {
     renderWithRouter(
       <RecentDecks
         decks={[{ ...baseDeck, elo_season: 42, elo_lifetime: -7, season_wins: 21, season_losses: 5 }]}
@@ -37,7 +37,7 @@ describe('RecentDecks', () => {
       />,
     )
 
-    const line = screen.getByText(/^ELO:/).textContent
+    const line = screen.getByText(/^Rating:/).textContent
     expect(line).toContain('Season +42 (21-5)')
     expect(line).toContain('Lifetime -7')
   })
@@ -52,16 +52,16 @@ describe('RecentDecks', () => {
       />,
     )
 
-    const line = screen.getByText(/^ELO:/).textContent
+    const line = screen.getByText(/^Rating:/).textContent
     expect(line).not.toContain('Season')
     expect(line).toContain('Lifetime +13')
   })
 
-  it('renders decks without ELO fields unchanged', () => {
+  it('renders decks without Rating fields unchanged', () => {
     renderWithRouter(<RecentDecks decks={[baseDeck]} playerId="111" open onToggle={() => {}} />)
 
     expect(screen.getByText('Earth/Fire')).toBeInTheDocument()
-    expect(screen.queryByText(/^ELO:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Rating:/)).not.toBeInTheDocument()
   })
 
   it('shows a link preview for the deck when deck links are visible', async () => {

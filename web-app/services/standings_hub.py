@@ -343,7 +343,7 @@ class StandingsHubService:
         if not p:
             return {"state": "none", "headline": "No ranked games this season",
                     "detail": "Queue in the Summit Discord to get on the ladder."}
-        rank = f"#{p['overall_rank']} on the ladder · {round(p["elo"] or 0)} Rating · {p['games']} games"
+        rank = f"#{p['overall_rank']} on the ladder · {round(p['elo'] or 0)} Rating · {p['games']} games"
         notes = []
         if voice.get("enforced") and p["voice_games"] < voice["min_games"]:
             notes.append(f"{p['voice_games']} of {voice['min_games']} voice games for the top cut")

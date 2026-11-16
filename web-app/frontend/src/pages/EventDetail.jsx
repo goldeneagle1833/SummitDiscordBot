@@ -4,6 +4,7 @@ import { getEvent, updateEventMetadata, updateEventDecks, refreshEvent, deleteEv
 import { getAvatarImageFiles } from '@/api/cards'
 import { getEventProfiles } from '@/api/paperFinishes'
 import Top8Profile from '@/components/deck/Top8Profile'
+import ParticipantFilters, { EMPTY_PARTICIPANT_FILTERS, filterParticipants, hasParticipantFilters } from '@/components/events/ParticipantFilters'
 import Spinner from '@/components/ui/Spinner'
 import ShareLinkButton from '@/components/ui/ShareLinkButton'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -811,6 +812,7 @@ export default function EventDetail() {
 
   // Which Summit profile each Top 8 entry matched (paper tournament badges)
   const [profiles, setProfiles] = useState(null)
+  const [participantFilters, setParticipantFilters] = useState(EMPTY_PARTICIPANT_FILTERS)
   const loadProfiles = useCallback(() => {
     getEventProfiles(folder)
       .then((res) => setProfiles(res?.entries || []))
@@ -964,6 +966,10 @@ export default function EventDetail() {
   if (!data) return null
 
   const { event_name, top8_decks, all_decks, card_data, top8_card_data, element_stats, element_stats_by_group, is_admin, description } = data
+  const participantsFiltered = hasParticipantFilters(participantFilters)
+  const shownParticipants = participantsFiltered
+    ? filterParticipants(all_decks || [], participantFilters, (deck) => matchHistory?.by_deck_id?.[deck.deck_id] || null)
+    : all_decks || []
   const hasComparison = element_stats_by_group?.top8 && element_stats_by_group?.all
 
   const saveDescription = async () => {
@@ -1003,6 +1009,14 @@ export default function EventDetail() {
             path={`/top-8/${encodeURIComponent(folder)}`}
             className="text-xs bg-bg-raised text-text-muted px-3 py-1.5 border border-border hover:text-primary"
           />
+          {all_decks?.length > 0 && (
+            <a
+              href="#all-participants"
+              className="text-xs bg-bg-raised text-text-muted px-3 py-1.5 rounded border border-border hover:text-primary"
+            >
+              All {all_decks.length} decks ↓
+            </a>
+          )}
         </div>
         {is_admin && (
           <div className="flex flex-wrap gap-2">
@@ -1192,7 +1206,7 @@ export default function EventDetail() {
 
       {/* All Participants */}
       {(all_decks?.length > 0 || is_admin) && (
-        <section>
+        <section id="all-participants" className="scroll-mt-20">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-lg font-semibold text-text-primary border-b-2 border-border pb-1">All Participants</h2>
             <div className="flex gap-2">
@@ -1226,10 +1240,23 @@ export default function EventDetail() {
             </div>
           </div>
           {all_decks?.length > 0 && (
+            <ParticipantFilters
+              decks={all_decks}
+              filters={participantFilters}
+              onChange={setParticipantFilters}
+              shown={shownParticipants.length}
+              hasHistory={Boolean(matchHistory?.by_deck_id)}
+            />
+          )}
+          {all_decks?.length > 0 && shownParticipants.length === 0 && (
+            <p className="text-sm text-text-muted py-4">No decks match these filters.</p>
+          )}
+          {shownParticipants.length > 0 && (
             <div className="bg-bg-surface border border-border rounded-lg overflow-hidden">
               <DeckTable
-                decks={all_decks}
-                isAdmin={is_admin}
+                decks={shownParticipants}
+                // Drag-to-reorder works on the full list only
+                isAdmin={is_admin && !participantsFiltered}
                 tableType="all"
                 eventFolder={folder}
                 onReorder={handleReorder}

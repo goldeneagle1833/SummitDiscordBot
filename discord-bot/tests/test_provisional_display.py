@@ -275,6 +275,47 @@ async def test_leaderboard_channel_embed_ranks_settled_players_only():
     assert overall[3] == f"- **P{C}** — Provisional (1/8)"
 
 
+@pytest.mark.asyncio
+async def test_leaderboard_lists_provisional_ticket_holders_after_the_cut():
+    """A ticket buyer under 8 games shows as Provisional under Ticket Holders.
+
+    Before, the top cut filter dropped them, and having a ticket kept them out
+    of Free Play, so they were on neither list.
+    """
+    from cogs.lfg.cog import LFGCog
+
+    start_new_event("Season 9", rating_system="glicko2")
+    await _play(8, A, B)
+    await _play(1, C, A)  # C provisional at 1 game
+    ticket_role = MagicMock(id=555)
+    members = {
+        A: MagicMock(roles=[ticket_role]),
+        B: MagicMock(roles=[]),
+        C: MagicMock(roles=[ticket_role]),
+    }
+    guild = MagicMock()
+    guild.get_member.side_effect = members.get
+    channel = MagicMock()
+    channel.send = AsyncMock(return_value=MagicMock(id=1))
+    channel.history = MagicMock(return_value=_no_messages())
+    bot = MagicMock()
+    bot.get_channel.return_value = channel
+    bot.get_guild.return_value = guild
+    cog = LFGCog.__new__(LFGCog)
+    cog.bot = bot
+    with patch("services.underdog_standings.underdog_embed", AsyncMock(return_value=None)), \
+            patch("repositories.ticket_roles_repo.ticket_holder_role_ids", return_value={555}):
+        await cog.update_leaderboard()
+    description = channel.send.await_args.kwargs["embeds"][0].description
+    sections = description.split("\n\n")
+    ticket = sections[1].splitlines()
+    assert ticket[2].startswith(f"1. **P{A}** — ")
+    assert ticket[3] == f"- **P{C}** — Provisional (1/8)"
+    assert len(ticket) == 4
+    free = sections[2]
+    assert f"P{B}" in free and f"P{C}" not in free
+
+
 async def _no_messages():
     return
     yield

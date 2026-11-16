@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sqlite3
@@ -19,6 +20,7 @@ STORE_DB_PATH = Path(
 )
 
 MAX_ATTEMPTS = 5
+LEADERBOARD_REFRESH_DELAY = 5  # seconds
 
 # Discord role products in the Summit Store (e.g. a season ticket): the web
 # app queues one row per role, recipient = buyer's Discord id, body = role id
@@ -122,9 +124,10 @@ class StoreNotificationsCog(commands.Cog):
             logger.error(f"Store notifications: fetch failed: {e}")
             return
 
+        roles_changed = False
         for n in pending:
             if n["channel"] in ROLE_CHANNELS:
-                await self._deliver_role(n)
+                roles_changed |= await self._deliver_role(n)
                 continue
             try:
                 if n["channel"] == "discord_admin":
@@ -148,11 +151,32 @@ class StoreNotificationsCog(commands.Cog):
                     f"Store notification {n['id']} delivery error: {e}"
                 )
 
-    async def _deliver_role(self, n: dict):
+        if roles_changed:
+            await self._refresh_leaderboard()
+
+    async def _refresh_leaderboard(self):
+        """Redraw the leaderboard so a new ticket holder shows up right away.
+
+        It otherwise only redraws after a match, so someone who bought a
+        ticket would sit in Free Play until the next game was played.
+        """
+        lfg = self.bot.get_cog("LFGCog")
+        if lfg is None:
+            return
+        # Let Discord's member update reach the bot's cache first; the
+        # leaderboard reads roles from that cache
+        await asyncio.sleep(LEADERBOARD_REFRESH_DELAY)
+        try:
+            await lfg.update_leaderboard()
+        except Exception as e:
+            logger.warning(f"Leaderboard refresh after a store role change failed: {e}")
+
+    async def _deliver_role(self, n: dict) -> bool:
+        """Give or take back one role. True when the role was changed."""
         try:
             await self._change_role(n)
             self._mark(n["id"], success=True)
-            return
+            return True
         except RoleGrantProblem as e:
             error = str(e)
             final = True
@@ -176,6 +200,7 @@ class StoreNotificationsCog(commands.Cog):
                 })
             except Exception as e:
                 logger.error(f"Store role failure alert not sent: {e}")
+        return False
 
     async def _change_role(self, n: dict):
         guild = self.bot.get_guild(config.GUILD_ID)

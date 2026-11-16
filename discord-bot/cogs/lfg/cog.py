@@ -199,6 +199,12 @@ def _settled_lifetime(rows):
     return [row for row in rows if not provisional.is_provisional(games.get(row[0]))]
 
 
+# Ticket holders still provisional (Glicko-2, under 8 games) listed under the
+# top cut rows on the leaderboard; the rest are summed up in one line so the
+# message stays inside Discord's 4096-character limit.
+TICKET_PENDING_ROWS = 12
+
+
 class LFGCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -571,11 +577,30 @@ class LFGCog(commands.Cog):
                 # best avatar entry, so a second entry never takes someone's slot.
                 from services.avatar_mode import top_cut_eligible, unique_players
 
-                # Glicko-2 seasons: an entry needs enough games to hold a top cut spot
-                ticket_players = unique_players(
-                    top_cut_eligible([p for p in ordered if p["has_ticket"]], active_event or {})
+                # Glicko-2 seasons: an entry needs enough games to hold a top cut
+                # spot, so the numbered rows are the settled entries only. Ticket
+                # holders still under that count are listed after them as
+                # Provisional (n/8), so a new ticket buyer shows up from their
+                # first game instead of vanishing from the board.
+                ticket_entries = [p for p in ordered if p["has_ticket"]]
+                cut_players = unique_players(
+                    top_cut_eligible(ticket_entries, active_event or {})
                 )
-                ticket_text = [format_row(rank, p) for rank, p in ranked(ticket_players, TOP_CUT_SIZE)]
+                in_cut = {p["user_id"] for p in cut_players}
+                pending_players = unique_players([
+                    p for p in ticket_entries
+                    if p["user_id"] not in in_cut
+                ])
+                ticket_rows = [
+                    format_row(rank, p) for rank, p in ranked(cut_players, TOP_CUT_SIZE)
+                ]
+                pending_rows = [format_row(None, p) for _, p in ranked(pending_players, None)]
+                ticket_text = ticket_rows + pending_rows[:TICKET_PENDING_ROWS]
+                if len(pending_rows) > TICKET_PENDING_ROWS:
+                    ticket_text.append(
+                        f"*+{len(pending_rows) - TICKET_PENDING_ROWS} more ticket holders "
+                        f"still provisional*"
+                    )
 
                 # Free Play section (top 8 from non-ticket holders)
                 free_players = unique_players([p for p in ordered if not p["has_ticket"]])

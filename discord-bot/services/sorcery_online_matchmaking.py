@@ -11,6 +11,7 @@ import aiohttp
 from dotenv import dotenv_values
 
 from cogs.lfg.voice import NO_VOICE, VOICE
+from repositories.turn_order_repo import pick_first_player
 
 
 logger = logging.getLogger("discord_bot")
@@ -142,6 +143,10 @@ async def provision_sorcery_online_match(
         "voiceType": VOICE if voice else NO_VOICE,
         "players": [_provision_player(player) for player in players],
     }
+    # Who goes first, balanced from each player's history (PSO used to roll)
+    first_player = pick_first_player(players)
+    if first_player is not None:
+        payload["firstPlayerDiscordUserId"] = str(first_player)
     timeout = aiohttp.ClientTimeout(total=5, connect=2)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:

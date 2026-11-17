@@ -465,6 +465,22 @@ def admin_swap_players(slug):
     return jsonify({"success": True, **result}), 200
 
 
+@brackets_bp.route("/admin/brackets/<slug>/replace", methods=["POST"])
+@require_bracket_manager
+def admin_replace_player(slug):
+    """Put a new player in an unplayed seat of a published bracket."""
+    data = request.get_json() or {}
+    try:
+        result = service.replace_player(
+            slug, int(data.get("seed")), data.get("user_id"), data.get("display_name")
+        )
+    except BracketError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "seed and user_id are required"}), 400
+    return jsonify({"success": True, **result}), 200
+
+
 @brackets_bp.route("/admin/brackets/<slug>/top8", methods=["POST"])
 @require_admin
 def admin_publish_to_top8(slug):

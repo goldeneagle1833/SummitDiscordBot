@@ -4,14 +4,14 @@ export const getEvents = () => get('/api/top-8-events').then((data) => data.even
 export const getEventsWithAdmin = () => get('/api/top-8-events')
 export const getEvent = (folder) => get(`/api/events/${folder}`)
 export const reorderEvents = (order) => post('/api/events/reorder', { order })
-export const updateEventMetadata = (folder, { name, rating, description, event_date, tag, attendance }) =>
-  put(`/api/events/${folder}/metadata`, { name, rating, description, event_date, tag, attendance })
-export const createEvent = ({ title, ranked_urls, bulk_urls, event_url }) =>
-  post('/api/events/create', { title, ranked_urls, bulk_urls, event_url })
+export const updateEventMetadata = (folder, { name, rating, description, event_date, tag, attendance, format }) =>
+  put(`/api/events/${folder}/metadata`, { name, rating, description, event_date, tag, attendance, format })
+export const createEvent = ({ title, ranked_urls, bulk_urls, event_url, format }) =>
+  post('/api/events/create', { title, ranked_urls, bulk_urls, event_url, format })
 export const updateEventDecks = (folder, { table, mode, urls }) =>
   post(`/api/events/${folder}/decks`, { table, mode, urls })
-export const importEventFromUrl = ({ title, event_url }) =>
-  post('/api/events/import-from-url', { title, event_url })
+export const importEventFromUrl = ({ title, event_url, format }) =>
+  post('/api/events/import-from-url', { title, event_url, format })
 export const refreshEvent = (folder) => post(`/api/events/${folder}/refresh`)
 export const getEventMatchHistory = (folder) => get(`/api/events/${folder}/match-history`)
 export const importMatchHistory = (folder, eventUrl) =>
@@ -52,5 +52,5 @@ export const submitEvent = ({ event_url, title, note, deck_urls }) =>
 export const getMySubmissions = () => get('/api/events/submissions/mine')
 export const getEventSubmissions = (status) =>
   get(`/api/events/submissions${status ? `?${new URLSearchParams({ status })}` : ''}`)
-export const approveSubmission = (id, note) => post(`/api/events/submissions/${id}/approve`, { note })
+export const approveSubmission = (id, note, format) => post(`/api/events/submissions/${id}/approve`, { note, format })
 export const rejectSubmission = (id, note) => post(`/api/events/submissions/${id}/reject`, { note })

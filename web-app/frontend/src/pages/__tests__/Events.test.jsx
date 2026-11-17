@@ -120,6 +120,27 @@ describe('Events page — desktop', () => {
   })
 })
 
+describe('Events page — compact Year control', () => {
+  beforeEach(() => {
+    mockApi()
+    setViewport({ desktop: true })
+    Element.prototype.scrollIntoView = vi.fn()
+  })
+
+  it('keeps year filtering functional with the short default label', async () => {
+    renderWithRouter(<Events />)
+    await screen.findByText('SCG Portland 2026')
+    const year = screen.getByLabelText('Year')
+    expect(within(year).getByRole('option', { name: 'All' })).toHaveValue('')
+    expect(year.parentElement).toHaveClass('w-[66px]')
+
+    await userEvent.selectOptions(year, '2025')
+    expect(screen.getByText('No events match your filters.')).toBeInTheDocument()
+    await userEvent.selectOptions(year, '2026')
+    expect(screen.getByText('2 events')).toBeInTheDocument()
+  })
+})
+
 describe('Events page — event type tags', () => {
   const TAGGED = [
     { ...EVENTS[0], tag: 'Grand Contest' },
@@ -155,6 +176,73 @@ describe('Events page — event type tags', () => {
     await userEvent.selectOptions(select, 'Local')
     expect(screen.getByText('No events match your filters.')).toBeInTheDocument()
 
+    await userEvent.selectOptions(select, '')
+    expect(screen.getByText('3 events')).toBeInTheDocument()
+  })
+})
+
+describe('Events page — format filtering', () => {
+  const FORMATTED = [
+    { ...EVENTS[0], format: 'Constructed' },
+    { ...EVENTS[1], format: 'Draft' },
+    { folder: 'legacy-event', name: 'Legacy Event', event_date: '2026-02-10', rating: 2, format: 'Sealed' },
+  ]
+
+  beforeEach(() => {
+    setViewport({ desktop: true })
+    get.mockImplementation((url) => {
+      if (url === '/api/top-8-events') return Promise.resolve({ events: FORMATTED, is_admin: false, featured_event: null })
+      if (url === '/api/avatar-image-files') return Promise.resolve([])
+      if (url.startsWith('/api/events/')) return Promise.resolve({ top8_decks: [], all_decks: [], element_stats: null })
+      return Promise.resolve({})
+    })
+  })
+
+  it('uses compact Sort and Stars labels while preserving values', async () => {
+    renderWithRouter(<Events />)
+    await screen.findByText('SCG Portland 2026')
+    const sortSelect = screen.getByLabelText('Sort')
+    const starSelect = screen.getByLabelText('Stars')
+    expect(within(sortSelect).getByRole('option', { name: 'Newest' })).toHaveValue('date-desc')
+    expect(within(sortSelect).getByRole('option', { name: 'Oldest' })).toHaveValue('date-asc')
+    expect(within(starSelect).getByRole('option', { name: 'Any' })).toHaveValue('')
+    expect(within(starSelect).getByRole('option', { name: '★★+' })).toHaveValue('2')
+    expect(within(starSelect).getByRole('option', { name: '★★★' })).toHaveValue('3')
+    const typeSelect = screen.getByLabelText('Type')
+    const formatSelect = screen.getByLabelText('Format')
+    expect(typeSelect.compareDocumentPosition(formatSelect) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(formatSelect.compareDocumentPosition(starSelect) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('uses the Sorcery element symbols with accessible names', async () => {
+    renderWithRouter(<Events />)
+    await screen.findByText('SCG Portland 2026')
+    for (const element of ['Fire', 'Water', 'Earth', 'Air']) {
+      const button = screen.getByRole('button', { name: element, pressed: false })
+      expect(button).toHaveAttribute('title', element)
+      expect(button.querySelector('img')).toHaveAttribute('src', `/static/images/elements/${element === 'Air' ? 'wind' : element.toLowerCase()}.png`)
+    }
+  })
+
+  it('offers Peasant as a format instead of Limited', async () => {
+    renderWithRouter(<Events />)
+    await screen.findByText('SCG Portland 2026')
+    const formatSelect = screen.getByLabelText('Format')
+    expect(within(formatSelect).getByRole('option', { name: 'Peasant' })).toHaveValue('peasant')
+    expect(within(formatSelect).queryByRole('option', { name: 'Limited' })).toBeNull()
+  })
+
+  it('filters by event format, including Sealed events', async () => {
+    renderWithRouter(<Events />)
+    await screen.findByText('SCG Portland 2026')
+    const select = screen.getByLabelText('Format')
+    await userEvent.selectOptions(select, 'constructed')
+    expect(rowFor('GenCon 2026')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /SCG Portland 2026/ })).toBeNull()
+    await userEvent.selectOptions(select, 'sealed')
+    expect(rowFor('Legacy Event')).toBeInTheDocument()
+    expect(within(rowFor('Legacy Event')).getByText('Sealed')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /GenCon 2026/ })).toBeNull()
     await userEvent.selectOptions(select, '')
     expect(screen.getByText('3 events')).toBeInTheDocument()
   })
@@ -244,5 +332,33 @@ describe('Events page — deck filters', () => {
     await waitFor(() => expect(rowFor('SCG Portland 2026')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: /GenCon 2026/ })).toBeNull()
     expect(screen.getByLabelText('Avatar')).toHaveValue('Elementalist')
+  })
+})
+
+describe('Events page — required format on event creation', () => {
+  beforeEach(() => {
+    mockApi()
+    const originalGet = get.getMockImplementation()
+    get.mockImplementation((url) => url === '/api/top-8-events'
+      ? Promise.resolve({ events: EVENTS, is_admin: true, event_formats: ['Constructed', 'Sealed', 'Draft', 'Peasant', 'Unknown'] })
+      : originalGet(url))
+    setViewport({ desktop: true })
+    Element.prototype.scrollIntoView = vi.fn()
+  })
+
+  it('requires an explicit choice for both creation modes', async () => {
+    renderWithRouter(<Events />)
+    await screen.findByText('SCG Portland 2026')
+    await userEvent.click(screen.getByRole('button', { name: /Add Event/ }))
+
+    const format = screen.getByLabelText('Format (required)')
+    expect(format).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Create Event' })).toBeDisabled()
+
+    await userEvent.selectOptions(format, 'Sealed')
+    expect(format).toHaveValue('Sealed')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Manual URLs' }))
+    expect(screen.getByLabelText('Format (required)')).toHaveValue('Sealed')
   })
 })

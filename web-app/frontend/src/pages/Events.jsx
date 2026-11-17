@@ -17,15 +17,17 @@ const ELEMENT_COLORS = {
 
 const YEARS = ['2026', '2025', '2024', '2023']
 const SORT_OPTIONS = [
-  { value: 'date-desc', label: 'Newest First' },
-  { value: 'date-asc', label: 'Oldest First' },
-  { value: 'players-desc', label: 'Most Players' },
-  { value: 'players-asc', label: 'Fewest Players' },
+  { value: 'date-desc', label: 'Newest' },
+  { value: 'date-asc', label: 'Oldest' },
+  { value: 'players-desc', label: 'Most players' },
+  { value: 'players-asc', label: 'Fewest players' },
 ]
 
 // Event types an admin can tag an event with. The server sends its own list
 // (event_tags); this is the fallback if it doesn't.
+const ELEMENT_SYMBOLS = { Fire: '/static/images/elements/fire.png', Water: '/static/images/elements/water.png', Earth: '/static/images/elements/earth.png', Air: '/static/images/elements/wind.png' }
 const DEFAULT_EVENT_TAGS = ['Grand Contest', 'Cornerstone', 'Local']
+const DEFAULT_EVENT_FORMATS = ['Constructed', 'Sealed', 'Draft', 'Peasant', 'Unknown']
 const UNTAGGED = '__untagged__'
 const TAG_STYLES = {
   'Grand Contest': 'text-yellow-300 bg-yellow-400/10 border-yellow-400/30',
@@ -101,8 +103,8 @@ const PLACE_OPTIONS = [
 ]
 const STAR_OPTIONS = [
   { value: '', label: 'Any' },
-  { value: '2', label: '★★ and up' },
-  { value: '3', label: '★★★ only' },
+  { value: '2', label: '★★+' },
+  { value: '3', label: '★★★' },
 ]
 
 function placeLabel(place) {
@@ -187,6 +189,8 @@ export default function Events() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [yearFilter, setYearFilter] = useState(() => searchParams.get('year') || '')
   const [tagFilter, setTagFilter] = useState(() => searchParams.get('type') || '')
+  const [formatFilter, setFormatFilter] = useState(() => searchParams.get('format') || '')
+  const [eventFormats, setEventFormats] = useState(DEFAULT_EVENT_FORMATS)
   const [eventTags, setEventTags] = useState(DEFAULT_EVENT_TAGS)
   const [sortBy, setSortBy] = useState('date-desc')
 
@@ -222,6 +226,7 @@ export default function Events() {
   const [editSaving, setEditSaving] = useState(false)
   const [createModal, setCreateModal] = useState(false)
   const [createMode, setCreateMode] = useState('import') // 'import' or 'manual'
+  const [createFormat, setCreateFormat] = useState('')
   const [createForm, setCreateForm] = useState({ title: '', ranked: Array(8).fill(''), bulk: '', eventUrl: '' })
   const [importUrl, setImportUrl] = useState('')
   const [importTitle, setImportTitle] = useState('')
@@ -274,6 +279,7 @@ export default function Events() {
         if (data.local_player_threshold) setLocalThreshold(data.local_player_threshold)
         setFeaturedFolder(data.featured_event || null)
         if (Array.isArray(data.event_tags) && data.event_tags.length) setEventTags(data.event_tags)
+        if (Array.isArray(data.event_formats) && data.event_formats.length) setEventFormats(data.event_formats)
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
@@ -318,20 +324,21 @@ export default function Events() {
     if (starFilter) next.set('stars', starFilter)
     if (yearFilter) next.set('year', yearFilter)
     if (tagFilter) next.set('type', tagFilter)
+    if (formatFilter) next.set('format', formatFilter)
     if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true })
-  }, [query, avatarFilter, elementFilter, placeFilter, cardFilter, starFilter, yearFilter, tagFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [query, avatarFilter, elementFilter, placeFilter, cardFilter, starFilter, yearFilter, tagFilter, formatFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleElement = useCallback((el) => {
     setElementFilter((prev) => (prev.includes(el) ? prev.filter((e) => e !== el) : [...prev, el]))
   }, [])
 
-  const secondaryCount = (elementFilter.length ? 1 : 0) + (yearFilter ? 1 : 0) + (tagFilter ? 1 : 0) + (starFilter ? 1 : 0) + (sortBy !== 'date-desc' ? 1 : 0)
+  const secondaryCount = (elementFilter.length ? 1 : 0) + (yearFilter ? 1 : 0) + (tagFilter ? 1 : 0) + (formatFilter ? 1 : 0) + (starFilter ? 1 : 0) + (sortBy !== 'date-desc' ? 1 : 0)
   const showMoreFilters = moreFiltersOpen
   const deckFiltersOn = Boolean(avatarFilter || elementFilter.length || placeFilter || cardFilter)
-  const anyFilterOn = Boolean(deckFiltersOn || query.trim() || starFilter || yearFilter || tagFilter)
+  const anyFilterOn = Boolean(deckFiltersOn || query.trim() || starFilter || yearFilter || tagFilter || formatFilter)
   const clearFilters = useCallback(() => {
     setQuery(''); setAvatarFilter(''); setElementFilter([]); setPlaceFilter('')
-    setCardInput(''); setCardFilter(''); setStarFilter(''); setYearFilter(''); setTagFilter('')
+    setCardInput(''); setCardFilter(''); setStarFilter(''); setYearFilter(''); setTagFilter(''); setFormatFilter('')
   }, [])
   // Deck filters need the deck index (and the card search, if a card is set).
   const deckDataPending = (deckFiltersOn || query.trim()) && !deckIndex && !deckIndexError
@@ -345,13 +352,16 @@ export default function Events() {
     if (yearFilter) {
       result = result.filter((ev) => getEventYear(ev) === yearFilter)
     }
+    if (formatFilter) {
+      result = result.filter((ev) => (ev.format || 'Constructed').toLowerCase() === formatFilter)
+    }
     if (tagFilter === UNTAGGED) {
       result = result.filter((ev) => !ev.tag)
     } else if (tagFilter) {
       result = result.filter((ev) => ev.tag === tagFilter)
     }
     return sortEvents(result, sortBy)
-  }, [events, yearFilter, tagFilter, sortBy, starFilter])
+  }, [events, yearFilter, tagFilter, formatFilter, sortBy, starFilter])
 
   // folder -> matching decks, or null when no deck filter / search is on.
   const deckMatches = useMemo(() => {
@@ -434,13 +444,14 @@ export default function Events() {
         rating: editModal.rating,
         event_date: editModal.event_date || null,
         tag: editModal.tag || '',
+        format: editModal.format || 'Constructed',
         attendance: editModal.attendance === '' ? 0 : Number(editModal.attendance),
       })
       if (result.success) {
         setEvents((prev) =>
           prev.map((e) =>
             e.folder === editModal.folder
-              ? { ...e, name: editModal.name, rating: editModal.rating, event_date: editModal.event_date || null, tag: editModal.tag || null, attendance: editModal.attendance === '' ? null : Number(editModal.attendance) || null }
+              ? { ...e, name: editModal.name, rating: editModal.rating, event_date: editModal.event_date || null, tag: editModal.tag || null, format: editModal.format || 'Constructed', attendance: editModal.attendance === '' ? null : Number(editModal.attendance) || null }
               : e
           )
         )
@@ -455,12 +466,17 @@ export default function Events() {
     setImportUrl('')
     setImportTitle('')
     setCreateMode('import')
+    setCreateFormat('')
     setCreateError(null)
     setCreateResult(null)
     setCreateModal(true)
   }
 
   const handleCreate = useCallback(async () => {
+    if (!createFormat) {
+      setCreateError('Select a tournament format before creating an event.')
+      return
+    }
     if (createMode === 'import') {
       if (!importUrl.trim()) return
     } else {
@@ -476,6 +492,7 @@ export default function Events() {
         submitResult = await importEventFromUrl({
           title: importTitle.trim(),
           event_url: importUrl.trim(),
+          format: createFormat,
         })
       } else {
         const bulk_urls = createForm.bulk
@@ -484,6 +501,7 @@ export default function Events() {
           .filter(Boolean)
         submitResult = await createEvent({
           title: createForm.title.trim(),
+          format: createFormat,
           ranked_urls: createForm.ranked,
           event_url: createForm.eventUrl.trim(),
           bulk_urls,
@@ -513,7 +531,7 @@ export default function Events() {
       setCreating(false)
       setCreateProgress(null)
     }
-  }, [createForm, createMode, importUrl, importTitle])
+  }, [createForm, createMode, importUrl, importTitle, createFormat])
 
   const handleSetFeatured = useCallback(async (folder) => {
     try {
@@ -606,9 +624,10 @@ export default function Events() {
             )}
           </div>
           <h2 className={`font-display text-secondary mb-2 ${inAccordion ? 'text-xl' : 'text-2xl'}`}>{event.name || event.folder}</h2>
-          {event.event_date_display && (
-            <p className="text-sm text-text-muted mb-2">{event.event_date_display}</p>
-          )}
+          <p className="text-sm text-text-muted mb-2">
+            {event.event_date_display && <>{event.event_date_display} · </>}
+            {event.format || "Constructed"}
+          </p>
           <div className="flex flex-wrap items-center gap-4 text-sm text-text-muted mb-4">
             {event.winner_username && (
               <span>
@@ -655,7 +674,7 @@ export default function Events() {
                 </button>
               )}
               <button
-                onClick={() => setEditModal({ folder: event.folder, name: event.name || event.folder, rating: event.rating || 1, event_date: event.event_date || '', tag: event.tag || '', attendance: event.attendance ?? '' })}
+                onClick={() => setEditModal({ folder: event.folder, name: event.name || event.folder, rating: event.rating || 1, event_date: event.event_date || '', tag: event.tag || '', format: event.format || 'Constructed', attendance: event.attendance ?? '' })}
                 className="p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-secondary transition-colors"
                 title="Edit event"
               >
@@ -873,10 +892,10 @@ export default function Events() {
               </div>
             </div>
             {/* Elements + event filters (folded away on phones until asked for) */}
-            <div id="top8-more-filters" className={`${showMoreFilters ? 'flex' : 'hidden'} lg:flex flex-wrap items-end gap-3`}>
+            <div id="top8-more-filters" className={`${showMoreFilters ? 'flex' : 'hidden'} lg:flex flex-wrap items-end gap-2`}>
               <div>
                 <span className="text-xs text-text-muted block mb-1" id="top8-elements-label">Elements</span>
-                <div className="flex gap-1" role="group" aria-labelledby="top8-elements-label">
+                <div className="flex gap-1 min-w-0" role="group" aria-labelledby="top8-elements-label">
                   {ELEMENTS.map((el) => {
                     const on = elementFilter.includes(el)
                     return (
@@ -884,47 +903,49 @@ export default function Events() {
                         key={el}
                         type="button"
                         aria-pressed={on}
+                        aria-label={el}
+                        title={el}
                         onClick={() => toggleElement(el)}
-                        className={`px-2.5 py-1.5 rounded text-xs font-semibold border transition-colors ${
+                        className={`inline-flex w-8 h-8 flex-none items-center justify-center rounded border transition-colors ${
                           on
-                            ? `${ELEMENT_COLORS[el].bar} text-black border-transparent`
+                            ? 'bg-secondary/15 border-secondary ring-1 ring-secondary/40'
                             : `bg-bg-raised border-border ${ELEMENT_COLORS[el].label} hover:border-white/30`
                         }`}
                       >
-                        {el}
+                        <img src={ELEMENT_SYMBOLS[el]} alt="" aria-hidden="true" className="w-5 h-5 object-contain" />
                       </button>
                     )
                   })}
                 </div>
               </div>
-              <div>
+              <div className="w-[125px] min-w-0">
                 <label className="text-xs text-text-muted block mb-1" htmlFor="top8-sort">Sort</label>
                 <select
                   id="top8-sort"
-                  className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                  className="w-full min-w-0 bg-bg-raised border border-border rounded px-2 py-1.5 text-sm"
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
                 >
                   {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
-              <div>
+              <div className="w-[66px] min-w-0">
                 <label className="text-xs text-text-muted block mb-1" htmlFor="top8-year">Year</label>
                 <select
                   id="top8-year"
-                  className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                  className="w-full min-w-0 bg-bg-raised border border-border rounded px-2 py-1.5 text-sm"
                   value={yearFilter}
                   onChange={(e) => setYearFilter(e.target.value)}
                 >
-                  <option value="">All Years</option>
+                  <option value="">All</option>
                   {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
                 </select>
               </div>
-              <div>
+              <div className="w-[130px] min-w-0">
                 <label htmlFor="event-type-filter" className="text-xs text-text-muted block mb-1">Type</label>
                 <select
                   id="event-type-filter"
-                  className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                  className="w-full min-w-0 bg-bg-raised border border-border rounded px-2 py-1.5 text-sm"
                   value={tagFilter}
                   onChange={(e) => setTagFilter(e.target.value)}
                 >
@@ -933,11 +954,25 @@ export default function Events() {
                   {isAdmin && <option value={UNTAGGED}>Untagged</option>}
                 </select>
               </div>
-              <div>
+              <div className="w-[140px] min-w-0">
+                <label htmlFor="event-format-filter" className="text-xs text-text-muted block mb-1">Format</label>
+                <select
+                  id="event-format-filter"
+                  className="w-full min-w-0 bg-bg-raised border border-border rounded px-2 py-1.5 text-sm"
+                  value={formatFilter}
+                  onChange={(e) => setFormatFilter(e.target.value)}
+                >
+                  <option value="">All Formats</option>
+                  {eventFormats.map((eventFormat) => (
+                    <option key={eventFormat} value={eventFormat.toLowerCase()}>{eventFormat}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-[76px] min-w-0">
                 <label htmlFor="top8-stars" className="text-xs text-text-muted block mb-1">Stars</label>
                 <select
                   id="top8-stars"
-                  className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                  className="w-full min-w-0 bg-bg-raised border border-border rounded px-2 py-1.5 text-sm"
                   value={starFilter}
                   onChange={(e) => setStarFilter(e.target.value)}
                 >
@@ -1096,6 +1131,7 @@ export default function Events() {
                               </div>
                               <div className="flex items-center gap-3 text-xs text-text-muted">
                                 {event.event_date_display && <span>{event.event_date_display}</span>}
+                                <span className="shrink-0">{event.format || "Constructed"}</span>
                                 {event.winner_username && <span className="truncate">Winner: {event.winner_username}</span>}
                                 {event.attendance > 0 && <span className="shrink-0">{event.attendance} players</span>}
                                 <span className="shrink-0">{event.player_count || 0} decks</span>
@@ -1284,6 +1320,24 @@ export default function Events() {
               </button>
             </div>
 
+            <label htmlFor="create-event-format" className="text-xs text-text-muted block mb-1">Format (required)</label>
+            <select
+              id="create-event-format"
+              className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-2"
+              value={createFormat}
+              onChange={(event) => setCreateFormat(event.target.value)}
+              required
+              disabled={creating}
+            >
+              <option value="" disabled>Select tournament format...</option>
+              {eventFormats.map((eventFormat) => (
+                <option key={eventFormat} value={eventFormat}>{eventFormat}</option>
+              ))}
+            </select>
+            <p className="text-xs text-text-muted/60 mb-4">
+              Choose a format for every new event. Existing tournament formats are unchanged.
+            </p>
+
             {createMode === 'import' ? (
               <>
                 <label className="text-xs text-text-muted block mb-1">sorcerytcg.com Event URL</label>
@@ -1392,7 +1446,7 @@ export default function Events() {
                 <button
                   className="text-xs bg-secondary text-black px-3 py-1.5 rounded font-semibold disabled:opacity-50"
                   onClick={handleCreate}
-                  disabled={creating || (createMode === 'import' ? !importUrl.trim() : !createForm.title.trim() || !createForm.eventUrl.trim())}
+                  disabled={creating || !createFormat || (createMode === 'import' ? !importUrl.trim() : !createForm.title.trim() || !createForm.eventUrl.trim())}
                 >
                   {creating ? (createProgress || 'Creating...') : 'Create Event'}
                 </button>
@@ -1405,7 +1459,7 @@ export default function Events() {
       {/* Edit Event Modal */}
       {editModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setEditModal(null)}>
-          <div className="bg-bg-surface border border-border rounded-lg p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-bg-surface border border-border rounded-lg p-6 w-full max-w-sm mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-display text-secondary mb-4">Edit Event</h3>
             <label className="text-xs text-text-muted block mb-1">Title</label>
             <input
@@ -1421,6 +1475,17 @@ export default function Events() {
               value={editModal.event_date || ''}
               onChange={(e) => setEditModal((m) => ({ ...m, event_date: e.target.value }))}
             />
+            <label htmlFor="edit-event-format" className="text-xs text-text-muted block mb-1">Format</label>
+            <select
+              id="edit-event-format"
+              className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4"
+              value={editModal.format || 'Constructed'}
+              onChange={(e) => setEditModal((m) => ({ ...m, format: e.target.value }))}
+            >
+              {eventFormats.map((eventFormat) => (
+                <option key={eventFormat} value={eventFormat}>{eventFormat}</option>
+              ))}
+            </select>
             <label htmlFor="edit-event-players" className="text-xs text-text-muted block mb-1">Players at the event (optional)</label>
             <input
               id="edit-event-players"

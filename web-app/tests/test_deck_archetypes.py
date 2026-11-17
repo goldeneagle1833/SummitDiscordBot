@@ -385,3 +385,81 @@ def test_recommendations_ignore_ranked_records(repo):
 
     assert not any("ranked" in label.lower() for label in labels)
     assert {"deckId": "f2", "label": "Most tournaments: 2"} in detail["recommendations"]
+
+
+def test_constructed_default_includes_untagged_imported_decks(repo):
+    """Legacy imported events default to Constructed without a manual migration."""
+    import json
+
+    incoming = fire_deck("verified_winner")
+    write_event(repo._top8_dir, "Autumn Grand Contest", top8=[incoming])
+    deck_file = repo._top8_dir / "Autumn Grand Contest" / "Autumn Grand Contesttop8.json"
+    rows = json.loads(deck_file.read_text())
+    rows[0].pop("format", None)
+    deck_file.write_text(json.dumps(rows))
+
+    from repositories.events import EventRepository
+    assert EventRepository(repo._top8_dir).get_all_events()[0]["format"] == "Constructed"
+
+    result = built(repo, "tournament")
+    assert "verified_winner" in groups_by_member(result)
+    assert groups_by_member(result)["verified_winner"]["wins"] == 1
+
+
+def test_sealed_event_does_not_enter_constructed_archetype_stats(repo):
+    """An explicit non-Constructed format vetoes even a mislabeled deck row."""
+    incoming = fire_deck("sealed_deck")
+    write_event(repo._top8_dir, "Summer Invitational", top8=[incoming])
+
+    meta_path = repo._top8_dir / "_event_metadata.json"
+    metadata = json.loads(meta_path.read_text())
+    metadata["Summer Invitational"]["format"] = "Sealed"
+    meta_path.write_text(json.dumps(metadata))
+
+    result = built(repo, "tournament")
+    assert "sealed_deck" not in groups_by_member(result)
+
+
+def test_sealed_adelaide_is_detected_without_local_production_data(repo):
+    """Known Sealed events must be filtered without requiring the live event files."""
+    from repositories.events import EventRepository
+
+    folder = "Sealed Adelaide Grand Contest October"
+    write_event(repo._top8_dir, folder, top8=[fire_deck("adelaide_winner")])
+    events = EventRepository(repo._top8_dir)
+    assert events.get_all_events()[0]["format"] == "Sealed"
+    assert "adelaide_winner" not in groups_by_member(built(repo, "tournament"))
+
+
+def test_format_default_and_explicit_unknown_are_preserved(repo):
+    from repositories.events import EventRepository
+
+    write_event(repo._top8_dir, "Autumn Cup", top8=[fire_deck("known")])
+    events = EventRepository(repo._top8_dir)
+    assert events.get_all_events()[0]["format"] == "Constructed"
+    assert not events.update_event_metadata("Autumn Cup", event_format="Unrecognized")["success"]
+    assert events.update_event_metadata("Autumn Cup", event_format="Unknown")["success"]
+    assert events.get_all_events()[0]["format"] == "Unknown"
+    assert "known" not in groups_by_member(built(repo, "tournament"))
+    assert events.update_event_metadata("Autumn Cup", event_format="Constructed")["success"]
+    assert events.get_all_events()[0]["format"] == "Constructed"
+
+
+def test_peasant_format_is_separate_from_constructed(repo):
+    """A Peasant tournament must not contribute to standard Constructed stats."""
+    from repositories.events import EventRepository
+
+    write_event(repo._top8_dir, "Peasant Cup", top8=[fire_deck("peasant_winner")])
+    events = EventRepository(repo._top8_dir)
+    assert events.get_all_events()[0]["format"] == "Peasant"
+    assert "peasant_winner" not in groups_by_member(built(repo, "tournament"))
+
+
+def test_legacy_limited_tournament_stays_outside_constructed(repo):
+    """Removing Limited from the UI must never reclassify it as Peasant."""
+    from repositories.events import EventRepository
+
+    write_event(repo._top8_dir, "Limited Invitational", top8=[fire_deck("limited_winner")])
+    events = EventRepository(repo._top8_dir)
+    assert events.get_all_events()[0]["format"] == "Unknown"
+    assert "limited_winner" not in groups_by_member(built(repo, "tournament"))

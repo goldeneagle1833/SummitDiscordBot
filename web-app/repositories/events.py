@@ -21,6 +21,34 @@ from utils.formatting import (
 
 logger = logging.getLogger(__name__)
 
+# Event format is separate from tier (stars) and type (Grand Contest, etc.).
+# Most legacy events are Constructed; explicit overrides always take precedence.
+EVENT_FORMATS = ("Constructed", "Sealed", "Draft", "Peasant", "Unknown")
+
+
+def canonical_event_format(value: str | None) -> str:
+    if isinstance(value, str):
+        for event_format in EVENT_FORMATS:
+            if value.strip().lower() == event_format.lower():
+                return event_format
+    return "Unknown"
+
+
+def resolve_event_format(overrides: dict, *event_names: str) -> str:
+    """Read the admin choice, otherwise default to Constructed except named special formats.
+
+    Existing production-only events (for example Adelaide's Sealed Grand Contest)
+    are classified from their name even when absent from the local checkout.
+    An explicit Unknown is not silently converted into Constructed.
+    """
+    if "format" in overrides:
+        return canonical_event_format(overrides["format"])
+    title = " ".join(str(name or "") for name in event_names)
+    for token, value in (("sealed", "Sealed"), ("draft", "Draft"), ("peasant", "Peasant"), ("limited", "Unknown")):
+        if re.search(r"\b" + token + r"\b", title, re.IGNORECASE):
+            return value
+    return "Constructed"
+
 # events_dir -> (file signature, deck index); rebuilt when any event JSON changes.
 _DECK_INDEX_CACHE: dict[str, tuple] = {}
 
@@ -253,7 +281,7 @@ class EventRepository:
         overrides = self._load_metadata_overrides()
         return overrides.get(folder, {}).get("description", "")
 
-    def update_event_metadata(self, folder: str, name: str | None = None, rating: int | None = None, description: str | None = None, event_date: str | None = None, tag: str | None = None, attendance: int | None = None) -> dict:
+    def update_event_metadata(self, folder: str, name: str | None = None, rating: int | None = None, description: str | None = None, event_date: str | None = None, tag: str | None = None, attendance: int | None = None, event_format: str | None = None) -> dict:
         """Update display name, rating, description, date, and/or tag for an event.
 
         Args:
@@ -264,6 +292,7 @@ class EventRepository:
             event_date: ISO date string override (or None to keep current).
             tag: Event type from EVENT_TAGS, "" to clear, or None to keep current.
             attendance: How many players the event had (0 clears it), or None to keep.
+            event_format: Constructed, Sealed, Draft, Peasant, or Unknown; None keeps current.
 
         Returns:
             dict with "success" bool and optional "error" string.
@@ -288,6 +317,11 @@ class EventRepository:
                 entry["tag"] = tag
             else:
                 return {"success": False, "error": "Tag must be one of: " + ", ".join(EVENT_TAGS)}
+
+        if event_format is not None:
+            if event_format not in EVENT_FORMATS:
+                return {"success": False, "error": "Format must be one of: " + ", ".join(EVENT_FORMATS)}
+            entry["format"] = event_format
 
         if attendance is not None:
             if not isinstance(attendance, int) or isinstance(attendance, bool) or attendance < 0 or attendance > 100000:
@@ -475,6 +509,7 @@ class EventRepository:
                                 "has_full": full_json is not None,
                                 "rating": overrides.get("rating", EVENT_RATINGS.get(folder.name, 1)),
                                 "tag": resolve_event_tag(overrides, display_name, folder.name),
+                                "format": resolve_event_format(overrides, display_name, folder.name),
                                 "event_date": event_date,
                                 "event_date_display": event_date_display,
                                 "winner_username": winner_username,
@@ -1260,17 +1295,22 @@ class EventRepository:
             "top8_card_data": top8_card_data,
         }
 
-    def create_event(self, folder_name: str, top8_decks: list[dict], bulk_decks: list[dict] | None = None) -> dict:
+    def create_event(self, folder_name: str, top8_decks: list[dict], bulk_decks: list[dict] | None = None, event_format: str | None = None) -> dict:
         """Create a new event folder with deck JSON files.
 
         Args:
             folder_name: Name for the event folder.
             top8_decks: List of deck data dicts for the top 8 JSON file.
             bulk_decks: Optional list of additional deck data for the full event JSON file.
+            event_format: Explicit admin choice, or None for legacy internal callers.
 
         Returns:
             dict with "success" bool and optional "error" string.
         """
+        # Admin publication routes require an explicit format. Other internal
+        # callers keep the legacy fallback until their workflows are updated.
+        if event_format is not None and event_format not in EVENT_FORMATS:
+            return {"success": False, "error": "Invalid event format"}
         if not folder_name or not isinstance(folder_name, str):
             return {"success": False, "error": "Folder name is required"}
 
@@ -1287,6 +1327,17 @@ class EventRepository:
         except Exception as e:
             logger.error(f"Failed to create event directory: {e}")
             return {"success": False, "error": "Failed to create event directory"}
+
+        # Save the chosen format before writing decks. A metadata error must
+        # not leave a newly published event silently marked Constructed.
+        if event_format is not None:
+            saved = self.update_event_metadata(folder_name, event_format=event_format)
+            if not saved.get("success"):
+                try:
+                    event_path.rmdir()
+                except OSError:
+                    pass
+                return {"success": False, "error": "Failed to save required event format"}
 
         # Write top8 JSON (the ranked placements)
         if top8_decks:

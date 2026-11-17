@@ -963,7 +963,7 @@ export default function EventDetail() {
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
   if (!data) return null
 
-  const { event_name, top8_decks, all_decks, card_data, top8_card_data, element_stats, element_stats_by_group, is_admin, description } = data
+  const { event_name, event_date_display, format: eventFormat, top8_decks, all_decks, card_data, top8_card_data, element_stats, element_stats_by_group, is_admin, description } = data
   const hasComparison = element_stats_by_group?.top8 && element_stats_by_group?.all
 
   const saveDescription = async () => {
@@ -1032,6 +1032,10 @@ export default function EventDetail() {
           </div>
         )}
       </div>
+      <p className="text-sm text-text-muted">
+        {event_date_display && <span>{event_date_display} · </span>}
+        {eventFormat || "Constructed"}
+      </p>
 
       {refreshResult && (
         <div className="p-3 bg-bg-surface rounded-lg border border-border">

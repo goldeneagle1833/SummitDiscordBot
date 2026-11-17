@@ -13,7 +13,7 @@ import uuid
 
 from flask import Blueprint, jsonify, request, session
 
-from repositories.events import EventRepository
+from repositories.events import EventRepository, EVENT_FORMATS
 from utils.auth import is_admin, require_admin, require_auth
 from utils.formatting import format_event_name
 from webapp_config import EVENT_TAGS
@@ -294,7 +294,7 @@ def list_top8_events():
         featured = repo.get_featured_event()
         admin = is_admin()
         payload = {
-            "events": events, "is_admin": admin, "featured_event": featured, "event_tags": EVENT_TAGS,
+            "events": events, "is_admin": admin, "featured_event": featured, "event_tags": EVENT_TAGS, "event_formats": EVENT_FORMATS,
             "logged_in": bool(session.get("user_id")),
             "local_player_threshold": LOCAL_PLAYER_THRESHOLD,
         }
@@ -351,9 +351,12 @@ def get_event_detail(event_folder: str):
         element_stats = repo.get_event_element_stats(event_folder)
         element_stats_by_group = repo.get_event_element_stats_by_group(event_folder)
         description = repo.get_event_description(event_folder)
+        event_summary = next((event for event in repo.get_all_events() if event["folder"] == event_folder), {})
 
         return jsonify({
             "event_name": format_event_name(event_folder),
+            "event_date_display": event_summary.get("event_date_display"),
+            "format": event_summary.get("format", "Constructed"),
             "event_folder": event_folder,
             "description": description,
             "top8_decks": decks["top8_decks"],
@@ -608,7 +611,7 @@ def compare_events():
 @events_bp.route("/events/<event_folder>/metadata", methods=["PUT"])
 @require_admin
 def update_event_metadata(event_folder):
-    """Update display name, star rating, date, description and/or tag for an event (admin only)."""
+    """Update event name, rating, date, type, attendance, and format (admin only)."""
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"success": False, "error": "Request body required"}), 400
@@ -618,6 +621,7 @@ def update_event_metadata(event_folder):
     description = data.get("description")
     event_date = data.get("event_date")
     tag = data.get("tag")
+    event_format = data.get("format")
     attendance = data.get("attendance")
     if attendance == "":
         attendance = 0
@@ -635,6 +639,9 @@ def update_event_metadata(event_folder):
     if tag is not None and (not isinstance(tag, str) or (tag and tag not in EVENT_TAGS)):
         return jsonify({"success": False, "error": "Tag must be one of: " + ", ".join(EVENT_TAGS)}), 400
 
+    if event_format is not None and (not isinstance(event_format, str) or event_format not in EVENT_FORMATS):
+        return jsonify({"success": False, "error": "Format must be one of: " + ", ".join(EVENT_FORMATS)}), 400
+
     if attendance is not None and (not isinstance(attendance, int) or isinstance(attendance, bool) or attendance < 0):
         return jsonify({"success": False, "error": "Players must be a whole number"}), 400
 
@@ -647,6 +654,7 @@ def update_event_metadata(event_folder):
         description=description.strip() if description else description,
         event_date=event_date.strip() if isinstance(event_date, str) else event_date,
         tag=tag,
+        event_format=event_format,
     )
 
     status = 200 if result.get("success") else 400
@@ -676,8 +684,21 @@ def reorder_event_decks(event_folder):
     return jsonify(result), status
 
 
+def _required_event_format(data):
+    """Require a conscious choice; reject null, missing and unsupported values."""
+    value = data.get("format") if isinstance(data, dict) else None
+    return value if isinstance(value, str) and value in EVENT_FORMATS else None
+
+
+def _format_required_error():
+    return jsonify({
+        "success": False,
+        "error": "Select a tournament format: " + ", ".join(EVENT_FORMATS),
+    }), 400
+
+
 @_job_worker
-def _run_event_creation(job_id, title, valid_ranked, valid_bulk, event_url=""):
+def _run_event_creation(job_id, title, valid_ranked, valid_bulk, event_url="", event_format=None):
     """Background worker for event creation — fetches from Curiosa and saves."""
     try:
         from services.curiosa import CuriosaService
@@ -723,7 +744,7 @@ def _run_event_creation(job_id, title, valid_ranked, valid_bulk, event_url=""):
             return
 
         repo = EventRepository()
-        result = repo.create_event(title, top8_decks, bulk_decks if bulk_decks else None)
+        result = repo.create_event(title, top8_decks, bulk_decks if bulk_decks else None, event_format=event_format)
 
         if result.get("success"):
             result["top8_added"] = len(top8_decks)
@@ -763,6 +784,10 @@ def create_event():
     if not data:
         return jsonify({"success": False, "error": "Request body required"}), 400
 
+    event_format = _required_event_format(data)
+    if event_format is None:
+        return _format_required_error()
+
     title = data.get("title", "").strip()
     if not title:
         return jsonify({"success": False, "error": "Title is required"}), 400
@@ -795,7 +820,7 @@ def create_event():
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting..."})
 
-    _start_job(_run_event_creation, (job_id, title, valid_ranked, valid_bulk, event_url))
+    _start_job(_run_event_creation, (job_id, title, valid_ranked, valid_bulk, event_url, event_format))
 
     return jsonify({"success": True, "job_id": job_id}), 202
 
@@ -947,7 +972,7 @@ def refresh_event(event_folder):
     return jsonify({"success": True, "job_id": job_id}), 202
 
 
-def _import_event(title, event_url, on_progress, curiosa=None, discovery=None):
+def _import_event(title, event_url, on_progress, curiosa=None, discovery=None, event_format=None):
     """Import a sorcerytcg.com event onto the Top 8 page; returns the result dict.
 
     Shared by the admin "Import from Event URL" job and the approval of a
@@ -1028,7 +1053,7 @@ def _import_event(title, event_url, on_progress, curiosa=None, discovery=None):
 
     on_progress("Creating event...")
     repo = EventRepository()
-    result = repo.create_event(title, top8_decks, bulk_decks)
+    result = repo.create_event(title, top8_decks, bulk_decks, event_format=event_format)
 
     if result.get("success"):
         _clear_import_cache(event_id)
@@ -1060,13 +1085,13 @@ def _import_event(title, event_url, on_progress, curiosa=None, discovery=None):
 
 
 @_job_worker
-def _run_event_import(job_id, title, event_url):
+def _run_event_import(job_id, title, event_url, event_format):
     """Background worker for importing an event from a sorcerytcg.com URL."""
     try:
         def on_progress(msg):
             _write_job(job_id, {"status": "processing", "progress": msg})
 
-        result = _import_event(title, event_url, on_progress)
+        result = _import_event(title, event_url, on_progress, event_format=event_format)
         _write_job(job_id, {
             "status": "completed" if result.get("success") else "failed",
             "result": result,
@@ -1090,6 +1115,10 @@ def import_event_from_url():
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"success": False, "error": "Request body required"}), 400
+
+    event_format = _required_event_format(data)
+    if event_format is None:
+        return _format_required_error()
 
     event_url = data.get("event_url", "").strip()
     if not event_url:
@@ -1117,7 +1146,7 @@ def import_event_from_url():
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting import..."})
 
-    _start_job(_run_event_import, (job_id, title, event_url))
+    _start_job(_run_event_import, (job_id, title, event_url, event_format))
 
     return jsonify({"success": True, "job_id": job_id}), 202
 
@@ -1308,7 +1337,7 @@ def _save_badges_only(event_url, discovery, set_by):
     return {"success": True, "badges_only": True, "event_name": name, "players": len(standings)}
 
 
-def _import_linked_submission(sub, deck_urls, on_progress, curiosa):
+def _import_linked_submission(sub, deck_urls, on_progress, curiosa, event_format=None):
     """Create a Top 8 event from a submission's deck links plus its event page."""
     on_progress("Reading the event page...")
     page = curiosa.fetch_event_deck_ids(sub["event_url"], with_decks=False)
@@ -1322,7 +1351,7 @@ def _import_linked_submission(sub, deck_urls, on_progress, curiosa):
     if not decks:
         return {"success": False, "error": "None of the deck links could be read.",
                 "fetch_errors": errors, "attendance": _attendance(page)}
-    result = EventRepository().create_event(title, decks, None)
+    result = EventRepository().create_event(title, decks, None, event_format=event_format)
     if not result.get("success"):
         result["folder_error"] = True
         result["attendance"] = _attendance(page)
@@ -1336,7 +1365,7 @@ def _import_linked_submission(sub, deck_urls, on_progress, curiosa):
     return result
 
 
-def approve_submission(submission_id, on_progress=lambda msg: None, curiosa=None):
+def approve_submission(submission_id, on_progress=lambda msg: None, curiosa=None, event_format=None):
     """Import an approved submission. Returns the result saved on the row."""
     from services import event_submission_notifications as notices
 
@@ -1356,7 +1385,7 @@ def approve_submission(submission_id, on_progress=lambda msg: None, curiosa=None
         if deck_urls:
             # The player gave the top decks as links (events that only collect
             # the top lists): decks from the links, size from the event page.
-            result = _import_linked_submission(sub, deck_urls, on_progress, curiosa)
+            result = _import_linked_submission(sub, deck_urls, on_progress, curiosa, event_format=event_format)
             player_count = result.get("attendance")
             if not result.get("success") and not result.get("folder_error"):
                 result = None  # no link worked: import from the event page instead
@@ -1365,13 +1394,15 @@ def approve_submission(submission_id, on_progress=lambda msg: None, curiosa=None
             player_count = _attendance(discovery)
             if discovery.get("players"):
                 result = _import_event(sub.get("title") or "", sub["event_url"], on_progress,
-                                       curiosa=curiosa, discovery=discovery)
+                                       curiosa=curiosa, discovery=discovery, event_format=event_format)
                 if not result.get("success") and str(result.get("error", "")).startswith("No decks"):
                     result = None  # every deck private: fall through to badges only
             if result is None:
                 on_progress("No deck lists, adding placings to profiles...")
                 result = _save_badges_only(sub["event_url"], discovery, sub.get("reviewed_by"))
         result["player_count"] = player_count
+        if event_format is not None:
+            result["format"] = event_format
     except Exception as e:
         logger.exception("Approving Top 8 submission %s failed: %s", submission_id, e)
         result = {"success": False, "error": f"Could not import the event: {e}"}
@@ -1385,11 +1416,11 @@ def approve_submission(submission_id, on_progress=lambda msg: None, curiosa=None
 
 
 @_job_worker
-def _run_submission_approval(job_id, submission_id):
+def _run_submission_approval(job_id, submission_id, event_format):
     def on_progress(msg):
         _write_job(job_id, {"status": "processing", "progress": msg})
 
-    result = approve_submission(submission_id, on_progress)
+    result = approve_submission(submission_id, on_progress, event_format=event_format)
     _write_job(job_id, {
         "status": "completed" if result.get("success") else "failed",
         "result": result,
@@ -1502,7 +1533,11 @@ def _reviewer_name():
 @events_bp.route("/events/submissions/<int:submission_id>/approve", methods=["POST"])
 @require_admin
 def approve_submission_route(submission_id):
-    note = ((request.get_json(silent=True) or {}).get("note") or "").strip()[:SUBMISSION_NOTE_MAX]
+    data = request.get_json(silent=True) or {}
+    event_format = _required_event_format(data)
+    if event_format is None:
+        return _format_required_error()
+    note = (data.get("note") or "").strip()[:SUBMISSION_NOTE_MAX]
     repo = _submission_repo()
     if not repo.get(submission_id):
         return jsonify({"success": False, "error": "Submission not found"}), 404
@@ -1511,7 +1546,7 @@ def approve_submission_route(submission_id):
 
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Importing event..."})
-    _start_job(_run_submission_approval, (job_id, submission_id))
+    _start_job(_run_submission_approval, (job_id, submission_id, event_format))
     return jsonify({"success": True, "job_id": job_id}), 202
 
 

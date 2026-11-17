@@ -100,6 +100,7 @@ const AdminHub = lazyPage(() => import('@/pages/admin/AdminHub'))
 const AuditLog = lazyPage(() => import('@/pages/admin/AuditLog'))
 const StoreAdmin = lazyPage(() => import('@/pages/admin/StoreAdmin'))
 const StoreOrderPrint = lazyPage(() => import('@/pages/admin/StoreOrderPrint'))
+const StoreOrderBulkPrint = lazyPage(() => import('@/pages/admin/StoreOrderBulkPrint'))
 const ActiveConnections = lazyPage(() => import('@/pages/admin/ActiveConnections'))
 const UniqueUsers = lazyPage(() => import('@/pages/admin/UniqueUsers'))
 const SessionAnalytics = lazyPage(() => import('@/pages/admin/SessionAnalytics'))
@@ -359,6 +360,14 @@ const router = createBrowserRouter([
     ],
   },
   // Print views live outside the site chrome so only the form is printed
+  {
+    path: '/admin/store/orders/print',
+    element: (
+      <AuthProvider>
+        <StoreAdminGuard><StoreOrderBulkPrint /></StoreAdminGuard>
+      </AuthProvider>
+    ),
+  },
   {
     path: '/admin/store/orders/:id/print',
     element: (

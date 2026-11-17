@@ -17,6 +17,7 @@ import re
 
 from flask import Blueprint, jsonify, request
 
+from services.archetype_trends import get_ranked_trends
 from services import deck_archetypes
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,16 @@ def list_archetypes():
     except Exception as e:
         logger.exception("Error listing deck archetypes: %s", e)
         return jsonify({"error": "Failed to load deck archetypes"}), 500
+
+
+@deck_archetypes_bp.route("/deck-archetypes/trends")
+def ranked_archetype_trends():
+    """Monthly archetype share and completeness in Sorcerers Summit ranked play."""
+    try:
+        return jsonify(get_ranked_trends())
+    except Exception:
+        logger.exception("Error loading ranked archetype trends")
+        return jsonify({"error": "Failed to load ranked archetype trends"}), 500
 
 
 @deck_archetypes_bp.route("/deck-archetypes/<group_id>")

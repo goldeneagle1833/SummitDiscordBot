@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 import { getAvatarImageFiles } from '@/api/cards'
+import RankedMetagameTrends from '@/components/deck/RankedMetagameTrends'
 import { getDeckArchetype, getDeckArchetypes } from '@/api/deckArchetypes'
 
 // Archetypes are grouped on the server from the Top 8 page's tournament decks
@@ -558,6 +559,8 @@ export default function DeckArchetypes() {
           About the Data
         </button>
       </header>
+
+      <RankedMetagameTrends tournamentGroups={data?.groups || []} />
 
       <div className="rounded-lg border border-border bg-bg-surface p-3 mb-5">
         <div className="flex flex-wrap gap-2 mb-3" role="group" aria-label="Decks to include">

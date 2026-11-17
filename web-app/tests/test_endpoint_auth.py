@@ -189,6 +189,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # -- Deck archetypes (public read-only) --
     "api.deck_archetypes.list_archetypes",
     "api.deck_archetypes.get_archetype",
+    "api.deck_archetypes.ranked_archetype_trends",  # Public aggregated ranked statistics
 
     # -- Meta Report (public read-only, plus email sign-up) --
     # Sign-up is throttled per client and only emails a confirmation link;

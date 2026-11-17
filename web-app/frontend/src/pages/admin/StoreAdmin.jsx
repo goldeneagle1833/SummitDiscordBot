@@ -1019,6 +1019,9 @@ function ProductsPanel({ storefrontId, storefronts, canSellRoles = false, season
 
 // ---------------------------------------------------------------- Orders
 
+// Keep in sync with BULK_PRINT_MAX in StoreOrderBulkPrint.jsx
+const BULK_PRINT_MAX = 100
+
 const QUEUE_FILTERS = [
   { key: 'paid', label: 'To ship' },
   { key: 'shipped', label: 'Shipped' },
@@ -1073,7 +1076,7 @@ function ShipForm({ totalCents, busy, onShip, label = 'Mark shipped' }) {
   )
 }
 
-function OrderRow({ order, onChanged, showStorefront = false, pairedWith = 0, printHref = null }) {
+function OrderRow({ order, onChanged, showStorefront = false, pairedWith = 0, printHref = null, selected, onSelect }) {
   const [expanded, setExpanded] = useState(false)
   const [detail, setDetail] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -1138,8 +1141,19 @@ function OrderRow({ order, onChanged, showStorefront = false, pairedWith = 0, pr
   }
 
   return (
-    <div className="bg-bg-surface border border-border rounded-lg">
+    <div className={`bg-bg-surface border rounded-lg ${selected ? 'border-primary' : 'border-border'}`}>
       <div className="flex items-center">
+        {onSelect && (
+          <label className="shrink-0 self-stretch flex items-center pl-3 pr-1 cursor-pointer" title="Pick for bulk print">
+            <input
+              type="checkbox"
+              className="h-5 w-5 accent-primary cursor-pointer"
+              checked={!!selected}
+              onChange={() => onSelect(order)}
+              aria-label={`Pick ${order.order_number} for bulk print`}
+            />
+          </label>
+        )}
         <button onClick={toggle} className="flex-1 flex flex-wrap items-center justify-between gap-2 p-3 text-left">
           <span className="font-mono text-sm">{order.order_number}</span>
           <span className="text-sm">{order.username}</span>
@@ -1241,7 +1255,7 @@ function addressKey(o) {
 
 // Orders that look like they're from one buyer, shown together so they can
 // be paired and sent in one package.
-function BuyerGroup({ orders, onChanged, showStorefront }) {
+function BuyerGroup({ orders, onChanged, showStorefront, selectedIds, onSelect }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -1340,6 +1354,8 @@ function BuyerGroup({ orders, onChanged, showStorefront }) {
               showStorefront={showStorefront}
               pairedWith={others}
               printHref={others && o.ship_group === pair ? printPair : null}
+              selected={selectedIds?.has(o.id)}
+              onSelect={onSelect}
             />
           )
         })}
@@ -1376,6 +1392,27 @@ function OrdersPanel({ storefrontId, showStorefront }) {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // Orders picked for bulk print; cleared whenever the list reloads
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  useEffect(() => { setSelectedIds(new Set()) }, [orders])
+
+  // Picking a paired order picks the rest of its package too, so the
+  // bulk print keeps the pair on one slip
+  const toggleSelect = useCallback((order) => {
+    setSelectedIds((prev) => {
+      const ids = order.ship_group
+        ? orders.filter((o) => o.ship_group === order.ship_group).map((o) => o.id)
+        : [order.id]
+      const next = new Set(prev)
+      const on = !prev.has(order.id)
+      ids.forEach((id) => (on ? next.add(id) : next.delete(id)))
+      return next
+    })
+  }, [orders])
+  const allSelected = orders.length > 0 && orders.every((o) => selectedIds.has(o.id))
+  const toggleAll = () => setSelectedIds(allSelected ? new Set() : new Set(orders.map((o) => o.id)))
+  const printIds = (selectedIds.size ? orders.filter((o) => selectedIds.has(o.id)) : orders).map((o) => o.id)
+  const bulkPrintHref = `/admin/store/orders/print?print=1&ids=${printIds.slice(0, BULK_PRINT_MAX).join(',')}`
 
   useEffect(() => {
     adminGetProducts(storefrontId).then((d) => setProducts(d.products || [])).catch(() => {})
@@ -1480,18 +1517,59 @@ function OrdersPanel({ storefrontId, showStorefront }) {
       ) : orders.length === 0 ? (
         <p className="text-center text-text-muted py-12">No orders here.</p>
       ) : (
-        <div className="space-y-2">
-          {groupByBuyer(orders).map((g) => (g.orders.length > 1 ? (
-            <BuyerGroup key={g.key} orders={g.orders} onChanged={load} showStorefront={showStorefront} />
-          ) : (
-            <OrderRow
-              key={g.key}
-              order={g.orders[0]}
-              onChanged={load}
-              showStorefront={showStorefront}
-            />
-          )))}
-        </div>
+        <>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-2 rounded-lg border border-border bg-bg-surface px-3 py-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                className="h-5 w-5 accent-primary cursor-pointer"
+                checked={allSelected}
+                onChange={toggleAll}
+              />
+              Select all
+            </label>
+            <span className="text-sm text-text-muted">
+              {selectedIds.size ? `${selectedIds.size} picked` : 'Pick orders to print, or print the whole list'}
+            </span>
+            <a
+              href={bulkPrintHref}
+              target="_blank"
+              rel="noopener"
+              className="ml-auto inline-flex items-center gap-1.5 rounded bg-primary hover:bg-primary-dark px-3 py-1.5 text-sm font-medium text-white transition-colors"
+              title="Open every packing slip in one tab, one per page"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M6 9V3h12v6M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" />
+                <rect x="6" y="14" width="12" height="7" />
+              </svg>
+              {selectedIds.size ? `Print ${selectedIds.size} picked` : `Print all ${orders.length}`}
+            </a>
+            {printIds.length > BULK_PRINT_MAX && (
+              <p className="w-full text-xs text-accent-red">Only the first {BULK_PRINT_MAX} orders print at once.</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            {groupByBuyer(orders).map((g) => (g.orders.length > 1 ? (
+              <BuyerGroup
+                key={g.key}
+                orders={g.orders}
+                onChanged={load}
+                showStorefront={showStorefront}
+                selectedIds={selectedIds}
+                onSelect={toggleSelect}
+              />
+            ) : (
+              <OrderRow
+                key={g.key}
+                order={g.orders[0]}
+                onChanged={load}
+                showStorefront={showStorefront}
+                selected={selectedIds.has(g.orders[0].id)}
+                onSelect={toggleSelect}
+              />
+            )))}
+          </div>
+        </>
       )}
     </div>
   )

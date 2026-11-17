@@ -17,12 +17,12 @@ from repositories.turn_order_repo import (
 from services.sorcery_online_matchmaking import provision_sorcery_online_match
 
 
-def _add(table, winner, loser, winner_first, loser_first):
+def _add(table, winner, loser, winner_first, loser_first, match_type="ranked"):
     conn = sqlite3.connect("match_records.db")
     conn.execute(
-        f"INSERT INTO {table} (winner_id, losser_id, timestamp, winner_went_first, loser_went_first) "
-        "VALUES (?, ?, '2026-10-01 12:00:00', ?, ?)",
-        (winner, loser, winner_first, loser_first),
+        f"INSERT INTO {table} (winner_id, losser_id, timestamp, winner_went_first, loser_went_first, match_type) "
+        "VALUES (?, ?, '2026-10-01 12:00:00', ?, ?, ?)",
+        (winner, loser, winner_first, loser_first, match_type),
     )
     conn.commit()
     conn.close()
@@ -33,7 +33,7 @@ def test_match_records_has_the_columns_we_read():
     conn = sqlite3.connect("match_records.db")
     cols = {r[1] for r in conn.execute("PRAGMA table_info(match_records)")}
     conn.close()
-    assert {"winner_id", "losser_id", "winner_went_first", "loser_went_first"} <= cols
+    assert {"winner_id", "losser_id", "winner_went_first", "loser_went_first", "match_type"} <= cols
 
 
 def test_counts_both_players_and_skips_unknown_rows():
@@ -51,7 +51,7 @@ def test_counts_archive_and_season_tables_when_present():
     for table in ("match_records_archive", "season_match_records"):
         conn.execute(
             f"CREATE TABLE IF NOT EXISTS {table} (winner_id INTEGER, losser_id INTEGER, "
-            "timestamp TEXT, winner_went_first TEXT, loser_went_first TEXT)"
+            "timestamp TEXT, winner_went_first TEXT, loser_went_first TEXT, match_type TEXT)"
         )
     conn.commit()
     conn.close()
@@ -131,3 +131,60 @@ async def test_pairing_still_opens_when_pick_fails(monkeypatch):
         ])
     assert len(links) == 2
     assert "firstPlayerDiscordUserId" not in session.post.call_args.kwargs["json"]
+
+
+def test_each_queue_only_counts_its_own_games():
+    _add("match_records", 1, 2, "y", "n", "ranked")
+    _add("match_records", 1, 2, "y", "n", "testing")
+    _add("match_records", 2, 1, "y", "n", "testing")
+    _add("match_records", 1, 2, "y", "n", None)  # old row with no type = ranked
+    assert going_first_counts([1], "ranked") == {1: (2, 2)}
+    assert going_first_counts([1], "testing") == {1: (1, 2)}
+    assert going_first_counts([1], "rumble") == {1: (0, 0)}
+
+
+def test_limited_reads_the_limited_tables():
+    from repositories.limited_repo import create_limited_tables
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    conn.execute(
+        "INSERT INTO limited_match_records (winner_id, loser_id, timestamp, winner_went_first, loser_went_first) "
+        "VALUES (1, 2, '2026-10-01', 'y', 'n')"
+    )
+    conn.execute(  # admin-entered: both 'n', skipped
+        "INSERT INTO limited_match_records (winner_id, loser_id, timestamp, winner_went_first, loser_went_first) "
+        "VALUES (2, 1, '2026-10-02', 'n', 'n')"
+    )
+    conn.commit()
+    conn.close()
+    _add("match_records", 2, 1, "y", "n", "ranked")
+    assert going_first_counts([1, 2], "limited") == {1: (1, 1), 2: (0, 1)}
+
+
+def test_precon_reads_the_precon_ladder_table():
+    from services.precon_ladder import ensure_schema
+    conn = sqlite3.connect("match_records.db")
+    ensure_schema(conn)
+    for removed in (0, 1):
+        conn.execute(
+            "INSERT INTO precon_match_records (winner_id, loser_id, timestamp, winner_went_first, "
+            "loser_went_first, removed) VALUES (1, 2, '2026-10-01', 'y', 'n', ?)", (removed,)
+        )
+    conn.commit()
+    conn.close()
+    _add("match_records", 2, 1, "y", "n", "precon")  # older precon game in the main table
+    assert going_first_counts([1], "precon") == {1: (1, 2)}
+
+
+@pytest.mark.asyncio
+async def test_pairing_json_uses_the_queue_history(monkeypatch):
+    monkeypatch.setenv("DRAFT_SORCERY_API_KEY", "configured-key")
+    _add("match_records", 10, 20, "y", "n", "ranked")   # in ranked, 10 went first
+    _add("match_records", 20, 10, "y", "n", "testing")  # in casual, 20 went first
+    session = _session()
+    with patch("services.sorcery_online_matchmaking.aiohttp.ClientSession", return_value=session):
+        await provision_sorcery_online_match(1, 2, "testing", [
+            {"discord_user_id": 10, "display_name": "Alice"},
+            {"discord_user_id": 20, "display_name": "Bob"},
+        ])
+    assert session.post.call_args.kwargs["json"]["firstPlayerDiscordUserId"] == "10"

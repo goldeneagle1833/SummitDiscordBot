@@ -143,8 +143,8 @@ async def provision_sorcery_online_match(
         "voiceType": VOICE if voice else NO_VOICE,
         "players": [_provision_player(player) for player in players],
     }
-    # Who goes first, balanced from each player's history (PSO used to roll)
-    first_player = pick_first_player(players)
+    # Who goes first, balanced from each player's history in this queue (PSO used to roll)
+    first_player = pick_first_player(players, queue_type)
     if first_player is not None:
         payload["firstPlayerDiscordUserId"] = str(first_player)
     timeout = aiohttp.ClientTimeout(total=5, connect=2)

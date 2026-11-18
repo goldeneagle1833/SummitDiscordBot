@@ -108,6 +108,7 @@ const ExternalMatchesAdmin = lazyPage(() => import('@/pages/admin/ExternalMatche
 const OmensMatchesAdmin = lazyPage(() => import('@/pages/admin/OmensMatches'))
 const ChartDetail = lazyPage(() => import('@/pages/admin/ChartDetail'))
 const Monitoring = lazyPage(() => import('@/pages/admin/Monitoring'))
+const BotTraffic = lazyPage(() => import('@/pages/admin/BotTraffic'))
 const BracketsAdmin = lazyPage(() => import('@/pages/admin/BracketsAdmin'))
 const UserProfiles = lazyPage(() => import('@/pages/admin/UserProfiles'))
 const ExplorerApplications = lazyPage(() => import('@/pages/admin/ExplorerApplications'))
@@ -330,6 +331,7 @@ const router = createBrowserRouter([
       { path: '/admin/omens-matches', element: <AdminGuard><OmensMatchesAdmin /></AdminGuard> },
       { path: '/admin/chart/:chartType', element: <AdminGuard><ChartDetail /></AdminGuard> },
       { path: '/admin/monitoring', element: <AdminGuard><Monitoring /></AdminGuard> },
+      { path: '/admin/bots', element: <AdminGuard><BotTraffic /></AdminGuard> },
       { path: '/admin/events', element: <AdminGuard><EventsAdmin /></AdminGuard> },
       { path: '/admin/brackets', element: <AdminGuard><BracketsAdmin /></AdminGuard> },
       { path: '/admin/users', element: <AdminGuard><UserProfiles /></AdminGuard> },

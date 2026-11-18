@@ -83,6 +83,28 @@ class TestRejectsAnonymous:
         assert leaks == [], "Routes reachable without an API key:\n" + "\n".join(leaks)
 
 
+class TestBlockedClients:
+    SCRAPER = {"User-Agent": "SorceryRec competitive archive/1.0"}
+
+    def test_blocked_agent_gets_no_site_token(self, gated):
+        resp = gated.get("/api/site-token", headers=_same_site(**self.SCRAPER))
+        assert resp.status_code == 403
+        assert resp.get_json()["code"] == "blocked_client"
+        assert COOKIE_NAME not in resp.headers.get("Set-Cookie", "")
+
+    def test_blocked_agent_is_refused_even_with_a_token(self, gated):
+        headers = {HEADER_NAME: issue_site_token(), **self.SCRAPER}
+        assert gated.get("/api/status", headers=headers).status_code == 403
+
+    def test_blocked_agent_with_an_api_key_still_passes(self, gated):
+        resp = gated.get("/api/status", headers={"X-API-Key": API_KEY, **self.SCRAPER})
+        assert resp.status_code == 200
+
+    def test_normal_browser_is_not_blocked(self, gated):
+        resp = gated.get("/api/site-token", headers=_same_site(**{"User-Agent": "Mozilla/5.0 Chrome/157.0"}))
+        assert resp.status_code == 200
+
+
 class TestApiKeyPasses:
     def test_x_api_key_header(self, gated):
         resp = gated.get("/api/status", headers={"X-API-Key": API_KEY})

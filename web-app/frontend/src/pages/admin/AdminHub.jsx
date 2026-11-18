@@ -10,6 +10,7 @@ const SECTIONS = [
     tools: [
       { to: '/admin/audit-log', label: 'Admin Log', blurb: 'Who changed what, and when.' },
       { to: '/admin/monitoring', label: 'Monitoring', blurb: 'Site health and traffic.' },
+      { to: '/admin/bots', label: 'Bot Traffic', blurb: 'Crawlers and scrapers, and block them from the site data.' },
       { to: '/admin/users', label: 'Users', blurb: 'Look up players and set roles.' },
     ],
   },

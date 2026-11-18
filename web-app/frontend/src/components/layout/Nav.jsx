@@ -721,7 +721,7 @@ export default function Nav() {
                   <UserMenu user={user} />
                 ) : (
                   <Link
-                    to={`/login?next=${encodeURIComponent(window.location.href)}`}
+                    to={loginLink()}
                     className="text-sm bg-brand-blue text-white hover:bg-brand-blue-light px-4 py-1.5 rounded-soft transition-colors"
                   >
                     Login
@@ -783,7 +783,7 @@ export default function Nav() {
               </>
             ) : (
               <Link
-                to={`/login?next=${encodeURIComponent(window.location.href)}`}
+                to={loginLink()}
                 className="block mx-4 my-3 text-center bg-brand-blue text-white hover:bg-brand-blue-light px-3 py-2 rounded-soft transition-colors font-medium"
                 onClick={close}
               >
@@ -1003,4 +1003,10 @@ function SidebarExternal({ href, label }) {
       {label}
     </a>
   )
+}
+
+// On the login page itself, keep its own next= instead of wrapping it again.
+function loginLink() {
+  if (window.location.pathname === '/login') return `/login${window.location.search}`
+  return `/login?next=${encodeURIComponent(window.location.href)}`
 }

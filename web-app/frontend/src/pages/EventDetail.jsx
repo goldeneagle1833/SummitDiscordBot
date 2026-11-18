@@ -4,6 +4,7 @@ import { getEvent, updateEventMetadata, updateEventDecks, refreshEvent, deleteEv
 import { getAvatarImageFiles } from '@/api/cards'
 import { getEventProfiles } from '@/api/paperFinishes'
 import Top8Profile from '@/components/deck/Top8Profile'
+import AwardAvatarBadgesModal from '@/components/admin/AwardAvatarBadgesModal'
 import Spinner from '@/components/ui/Spinner'
 import ShareLinkButton from '@/components/ui/ShareLinkButton'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -781,6 +782,7 @@ export default function EventDetail() {
   const [refreshing, setRefreshing] = useState(false)
   const [refreshResult, setRefreshResult] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [avatarBadgesOpen, setAvatarBadgesOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [matchHistory, setMatchHistory] = useState(null)
   const [imageFiles, setImageFiles] = useState([])
@@ -996,6 +998,10 @@ export default function EventDetail() {
     <div className="space-y-6">
       <Link to="/top-8" className="text-sm text-secondary hover:underline">&larr; Back to Events</Link>
 
+      {is_admin && avatarBadgesOpen && (
+        <AwardAvatarBadgesModal folder={folder} onClose={() => setAvatarBadgesOpen(false)} />
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-display text-text-primary">{event_name}</h1>
@@ -1022,6 +1028,12 @@ export default function EventDetail() {
               }}
             >
               {matchHistory ? 'Re-sync Match History' : 'Import Match History'}
+            </button>
+            <button
+              className="text-xs bg-secondary/15 text-secondary px-3 py-1.5 rounded border border-secondary/40 hover:bg-secondary/25"
+              onClick={() => setAvatarBadgesOpen(true)}
+            >
+              Award top avatar badges
             </button>
             <button
               className="text-xs bg-accent-red/20 text-accent-red px-3 py-1.5 rounded border border-accent-red/30 hover:bg-accent-red/30 disabled:opacity-50"

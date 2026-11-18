@@ -69,7 +69,7 @@ export function usePaperFinishes(playerId) {
   return finishes
 }
 
-export function Trophy({ label, size = 15 }) {
+export function Trophy({ label, size = 15, className }) {
   return (
     <svg
       width={size}
@@ -80,7 +80,7 @@ export function Trophy({ label, size = 15 }) {
       strokeWidth="2"
       strokeLinejoin="round"
       strokeLinecap="round"
-      className={FINISH_COLOURS[label] || 'text-text-muted'}
+      className={className || FINISH_COLOURS[label] || 'text-text-muted'}
       aria-hidden="true"
     >
       <path d="M7 4 h10 v5 a5 5 0 0 1 -10 0 Z" />

@@ -15,8 +15,11 @@ Black over a player's games:
    - Every other queue (ranked, casual "testing", rumble, points): the main
      match tables (current, Season 1-8 archive, Glicko-2 season table),
      by match_type; a missing match_type counts as ranked.
-2. Whoever went first in a smaller share of their games goes first.
-3. A tie, or neither player having any history, is a coin flip.
+2. Weighted chance (Bruce, 2026-11-18): each player's chance of going
+   first is 50% plus half the gap between the two shares, so the player who
+   has gone first less is more likely, not certain, to go first. Example:
+   A went first 40% of the time, B 60% -> A goes first 60% of the time.
+3. Equal shares, or neither player having any history, is 50/50.
 
 A game counts only when its winner/loser flags agree (one went first, the
 other didn't). Admin-entered Limited results save "n" for both players and
@@ -116,18 +119,20 @@ def _share(first, games):
     return first / games if games else 0.5
 
 
+def first_player_chance(share_a, share_b):
+    """Chance (0-1) that player A goes first: 50% plus half the share gap."""
+    return min(1.0, max(0.0, 0.5 + (share_b - share_a) / 2))
+
+
 def choose_first_player(user_a, user_b, counts=None, rng=None, queue_type="ranked"):
-    """The Discord id (int) of the player who should go first."""
+    """The Discord id (int) of the player who should go first (weighted draw)."""
     user_a, user_b = int(user_a), int(user_b)
     if counts is None:
         counts = going_first_counts([user_a, user_b], queue_type)
     share_a = _share(*counts.get(user_a, (0, 0)))
     share_b = _share(*counts.get(user_b, (0, 0)))
-    if share_a < share_b:
-        return user_a
-    if share_b < share_a:
-        return user_b
-    return (rng or random).choice([user_a, user_b])
+    chance_a = first_player_chance(share_a, share_b)
+    return user_a if (rng or random).random() < chance_a else user_b
 
 
 def pick_first_player(players, queue_type="ranked"):

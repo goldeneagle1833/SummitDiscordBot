@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getEventAvatarBadges } from '@/api/paperFinishes'
+import { getAvatarImageFiles } from '@/api/cards'
+import { getAvatarImagePath } from '@/utils/avatarBadges'
 
 /**
  * Event avatar badges: an admin awards them from an event's Top 8 page. The
@@ -89,6 +91,76 @@ export function FoilCard({ size = 16, id = 'foil' }) {
   )
 }
 
+let filesCache = null
+let filesInflight = null
+
+function loadAvatarFiles() {
+  if (filesCache) return Promise.resolve(filesCache)
+  if (!filesInflight) {
+    filesInflight = getAvatarImageFiles()
+      .then((res) => {
+        filesCache = Array.isArray(res) ? res : res?.files || []
+        return filesCache
+      })
+      .catch(() => {
+        filesCache = []
+        return filesCache
+      })
+      .finally(() => {
+        filesInflight = null
+      })
+  }
+  return filesInflight
+}
+
+/** Test hook: preload the avatar image file list. */
+export function resetAvatarFilesCache(preload = null) {
+  filesCache = preload
+  filesInflight = null
+}
+
+function useAvatarImage(avatar) {
+  const pick = (files) => {
+    const file = files && avatar ? getAvatarImagePath(avatar, files) : null
+    return file ? `/avatar-images/${file}` : null
+  }
+  const [src, setSrc] = useState(() => pick(filesCache))
+  useEffect(() => {
+    let active = true
+    loadAvatarFiles().then((files) => {
+      if (active) setSrc(pick(files))
+    })
+    return () => {
+      active = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatar])
+  return src
+}
+
+/**
+ * The avatar's portrait in a rainbow foil ring: the badge looks like the
+ * event's prize, a rainbow foil card of that avatar. Falls back to the foil
+ * card icon when the avatar has no picture on file.
+ */
+export function FoilAvatar({ avatar, size = 22, id = 'fa' }) {
+  const src = useAvatarImage(avatar)
+  if (!src) return <FoilCard size={size} id={id} />
+  return (
+    <span className="foil-ring" aria-hidden="true">
+      <img
+        src={src}
+        alt=""
+        width={size}
+        height={size}
+        loading="lazy"
+        style={{ width: size, height: size }}
+        className="object-cover object-top"
+      />
+    </span>
+  )
+}
+
 const eventPath = (folder) => `/top-8/${encodeURIComponent(folder)}`
 
 /** Hero card chips: one per badge, each opening its event's Top 8 page. */
@@ -103,7 +175,7 @@ export function EventAvatarBadgeChips({ badges = [] }) {
             title={b.title}
             className="foil-chip flex items-center gap-1.5 sm:gap-2 max-w-full px-2.5 sm:px-3 py-1 rounded-full text-xs sm:text-sm"
           >
-            <FoilCard size={16} id={`chip-${b.avatar}`} />
+            <FoilAvatar avatar={b.avatar} size={20} id={`chip-${b.avatar}`} />
             <strong className="foil-text whitespace-nowrap">{b.label}</strong>
             <span className="text-text-muted truncate">{b.event}</span>
           </Link>
@@ -128,7 +200,7 @@ export function EventAvatarBadgesSection({ badges = [] }) {
         {badges.map((b) => (
           <li key={`${b.folder}-${b.avatar}`} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3">
             <span className="foil-chip inline-flex items-center gap-2 px-2.5 py-1 rounded-full">
-              <FoilCard size={18} id={`row-${b.folder}-${b.avatar}`} />
+              <FoilAvatar avatar={b.avatar} size={26} id={`row-${b.folder}-${b.avatar}`} />
               <strong className="foil-text">{b.label}</strong>
             </span>
             <Link to={eventPath(b.folder)} className="font-semibold text-text-primary hover:text-secondary flex-1 min-w-[12rem]">

@@ -53,3 +53,6 @@ export const getFeaturedDeck = (id) => get(`/api/player/${id}/featured-deck`)
 export const setFeaturedDeck = (id, url, autoUpdate) =>
   put(`/api/player/${id}/featured-deck`, { url, auto_update: autoUpdate })
 export const clearFeaturedDeck = (id) => del(`/api/player/${id}/featured-deck`)
+
+/** Which badges each player chose to show by their name ({ prefs: { id: { shown, hidden } } }). */
+export const getProfileBadgePrefs = () => get('/api/profile-badge-prefs')

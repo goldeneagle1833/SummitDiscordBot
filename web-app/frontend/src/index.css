@@ -124,3 +124,34 @@ option {
 @media (prefers-reduced-motion: reduce) {
   .foil-chip, .foil-text { animation: none; }
 }
+
+/* An avatar portrait in a rainbow foil ring, with a faint foil sheen over it */
+.foil-ring {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  padding: 2px;
+  background: linear-gradient(110deg, #ff5f6d, #ffc371, #f9f871, #6dfba5, #47c5ff, #a77bff, #ff6fd8, #ff5f6d);
+  background-size: 200% 100%;
+  animation: foil-sheen 6s linear infinite;
+}
+
+.foil-ring > img,
+.foil-ring > span {
+  border-radius: 9999px;
+}
+
+.foil-ring::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(125deg, rgba(255, 95, 109, 0.28), rgba(249, 248, 113, 0.18) 30%, rgba(109, 251, 165, 0.22) 50%, rgba(71, 197, 255, 0.24) 70%, rgba(255, 111, 216, 0.28));
+  mix-blend-mode: color-dodge;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foil-ring { animation: none; }
+}

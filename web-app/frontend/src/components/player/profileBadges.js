@@ -15,17 +15,20 @@ const finishWeight = (label) => FINISH_WEIGHT[label] ?? (/^Top \d+/.test(label |
 export function profileBadges({ marks, honours = [], paperFinishes = [], eventBadges = [] }) {
   const out = []
   if (marks?.best_label) {
-    out.push({ key: 'postseason', group: 'Postseason', label: marks.best_label, detail: 'Best postseason finish', weight: finishWeight(marks.best_label) })
+    out.push({ kind: 'postseason', key: 'postseason', group: 'Postseason', label: marks.best_label, detail: 'Best postseason finish', weight: finishWeight(marks.best_label) })
   }
   if (marks?.limited_best_label) {
-    out.push({ key: 'postseason_limited', group: 'Postseason', label: marks.limited_best_label, detail: 'Best Limited postseason finish', weight: finishWeight(marks.limited_best_label) + 2 })
+    out.push({ kind: 'postseason', key: 'postseason_limited', group: 'Postseason', label: marks.limited_best_label, detail: 'Best Limited postseason finish', weight: finishWeight(marks.limited_best_label) + 2 })
   }
   if (marks?.underdog_best_label) {
-    out.push({ key: 'postseason_underdog', group: 'Postseason', label: marks.underdog_best_label, detail: 'Best Underdog bracket finish', weight: finishWeight(marks.underdog_best_label) + 4 })
+    out.push({ kind: 'postseason', key: 'postseason_underdog', group: 'Postseason', label: marks.underdog_best_label, detail: 'Best Underdog bracket finish', weight: finishWeight(marks.underdog_best_label) + 4 })
   }
   if (honours.length) {
     const best = honours.reduce((a, b) => (b.place < a.place ? b : a))
     out.push({
+      kind: 'honour',
+      place: best.place,
+      title: honours.map((h) => h.title).filter(Boolean).join('\n') || `${best.season} ${best.label}`,
       key: 'avatar_honours',
       group: 'Season avatar honours',
       label: best.label,
@@ -34,10 +37,10 @@ export function profileBadges({ marks, honours = [], paperFinishes = [], eventBa
     })
   }
   for (const b of eventBadges) {
-    out.push({ key: eventBadgeKey(b), group: 'Top avatar at an event', label: b.label, detail: b.event, weight: 18 })
+    out.push({ kind: 'event', avatar: b.avatar, title: b.title, key: eventBadgeKey(b), group: 'Top avatar at an event', label: b.label, detail: b.event, weight: 18 })
   }
   for (const f of paperFinishes) {
-    out.push({ key: paperBadgeKey(f), group: 'Paper tournament finishes', label: f.label, detail: f.event, weight: finishWeight(f.label) + 1 })
+    out.push({ kind: 'paper', title: f.title || `${f.label} · ${f.event}`, key: paperBadgeKey(f), group: 'Paper tournament finishes', label: f.label, detail: f.event, weight: finishWeight(f.label) + 1 })
   }
   // Best first; ties keep the order above (newest first within each kind)
   return out

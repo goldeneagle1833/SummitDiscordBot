@@ -734,6 +734,34 @@ class UserProfileRepository:
         conn.close()
         return updated
 
+    def get_all_badge_prefs(self) -> dict:
+        """{bare id: {"shown": [...] | None, "hidden": [...]}} for players who set either."""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT user_id, shown_badges, hidden_badges FROM user_profiles"
+                " WHERE shown_badges IS NOT NULL OR (hidden_badges IS NOT NULL AND hidden_badges != '[]')"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        finally:
+            conn.close()
+
+        def as_list(raw):
+            try:
+                value = json.loads(raw) if raw else None
+            except (json.JSONDecodeError, TypeError):
+                return None
+            return [str(v) for v in value] if isinstance(value, list) else None
+
+        out = {}
+        for user_id, shown, hidden in rows:
+            out[str(user_id).removeprefix("google_")] = {
+                "shown": as_list(shown),
+                "hidden": as_list(hidden) or [],
+            }
+        return out
+
     def get_featured_deck(self, user_id: str) -> dict | None:
         """The player's featured deck settings, or None if never touched.
 

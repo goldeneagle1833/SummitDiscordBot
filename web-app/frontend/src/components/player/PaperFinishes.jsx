@@ -69,7 +69,7 @@ export function usePaperFinishes(playerId) {
   return finishes
 }
 
-function Trophy({ label, size = 15 }) {
+export function Trophy({ label, size = 15 }) {
   return (
     <svg
       width={size}

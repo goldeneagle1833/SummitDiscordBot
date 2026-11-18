@@ -89,3 +89,14 @@ option {
 .article-body pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 0.9em 1em; overflow-x: auto; }
 .article-body pre code { background: none; padding: 0; }
 .article-body hr { border: 0; border-top: 1px solid #30363d; margin: 2em 0; }
+.article-body img { max-width: 100%; height: auto; border-radius: 8px; }
+.article-body figure img { margin: 0 auto; }
+.article-body figcaption { font-size: 0.875rem; color: #8b949e; text-align: center; margin-top: 0.5em; }
+.article-body table { width: 100%; border-collapse: collapse; font-size: 0.95em; display: block; overflow-x: auto; }
+.article-body th, .article-body td { border: 1px solid #30363d; padding: 0.4em 0.65em; text-align: left; vertical-align: top; }
+.article-body th { background: #161b22; color: #f0f6fc; font-weight: 700; }
+.article-body u { text-underline-offset: 2px; }
+.article-editor { caret-color: #ffd700; }
+.article-body > :first-child { margin-top: 0; }
+.article-editor a { cursor: text; }
+.article-editor img { cursor: default; }

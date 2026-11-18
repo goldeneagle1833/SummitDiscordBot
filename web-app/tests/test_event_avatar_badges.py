@@ -172,3 +172,31 @@ def test_hidden_badges_owner_only(client, match_db, monkeypatch):
     assert resp.status_code == 200
     assert resp.get_json()["hidden"] == ["avatar_honours", "paper:X"]
     assert UserProfileRepository(match_db).get_hidden_badges("77") == ["avatar_honours", "paper:X"]
+
+
+def test_shown_badges_default_pick_and_reset(client, match_db, monkeypatch):
+    import webapp_config
+    from repositories.user_profiles import UserProfileRepository
+
+    monkeypatch.setattr(webapp_config, "MATCH_RECORDS_DB_PATH", match_db)
+    conn = sqlite3.connect(str(match_db))
+    conn.execute(
+        "INSERT INTO user_profiles (user_id, provider, display_name, first_login_at, last_login_at)"
+        " VALUES ('78', 'discord', 'Ben', 'now', 'now')"
+    )
+    conn.commit()
+    conn.close()
+    repo = UserProfileRepository(match_db)
+    assert repo.get_shown_badges("78") is None  # default: best 3
+
+    assert client.put("/api/player/78/shown-badges", json={"shown": []}).status_code == 401
+    with client.session_transaction() as sess:
+        sess["user_id"] = "79"
+    assert client.put("/api/player/78/shown-badges", json={"shown": []}).status_code == 403
+    with client.session_transaction() as sess:
+        sess["user_id"] = "78"
+    assert client.put("/api/player/78/shown-badges", json={}).status_code == 400
+    resp = client.put("/api/player/78/shown-badges", json={"shown": ["paper:B", "postseason", "paper:B"]})
+    assert resp.get_json()["shown"] == ["paper:B", "postseason"]  # order kept, no repeats
+    assert client.put("/api/player/78/shown-badges", json={"shown": []}).get_json()["shown"] == []
+    assert client.put("/api/player/78/shown-badges", json={"shown": None}).get_json()["shown"] is None

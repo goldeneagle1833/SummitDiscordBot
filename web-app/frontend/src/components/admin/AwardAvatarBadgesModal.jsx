@@ -5,7 +5,7 @@ import {
   previewEventAvatarBadges,
   undoEventAvatarBadges,
 } from '@/api/paperFinishes'
-import { resetEventAvatarBadgesCache, Crown } from '@/components/player/EventAvatarBadges'
+import { resetEventAvatarBadgesCache, FoilCard } from '@/components/player/EventAvatarBadges'
 
 const NO_ACCOUNT = {
   unmatched: 'No Summit account found',
@@ -80,7 +80,7 @@ export default function AwardAvatarBadgesModal({ folder, onClose }) {
       >
         <div className="p-5 border-b border-border">
           <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
-            <Crown /> Top avatar badges
+            <FoilCard size={20} id="modal" /> Top avatar badges
           </h3>
           <p className="text-xs text-text-muted mt-1">
             The best finisher on each avatar earns <strong className="text-text-secondary">Top &lt;avatar&gt; · {data?.event || 'this event'}</strong> on

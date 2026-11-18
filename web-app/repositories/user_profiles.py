@@ -67,6 +67,8 @@ class UserProfileRepository:
             'profile_public_sections': 'TEXT',
             'nav_preferences': 'TEXT',
             'hidden_avatars': 'TEXT',
+            'hidden_badges': 'TEXT',
+            'shown_badges': 'TEXT',
             'profile_reset_at': 'TEXT',
             'manually_added_by': 'TEXT',
             'manually_added_at': 'TEXT',
@@ -663,6 +665,69 @@ class UserProfileRepository:
         cur.execute(
             "UPDATE user_profiles SET hidden_avatars = ? WHERE user_id IN (?, ?)",
             (json.dumps(sorted(set(avatars))), *self._both_ids(user_id)),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return updated
+
+    def get_hidden_badges(self, user_id: str) -> list[str]:
+        """Badge keys the player chose not to show on their profile's hero card."""
+        conn = self._get_connection()
+        row = conn.execute(
+            "SELECT hidden_badges FROM user_profiles"
+            " WHERE user_id IN (?, ?) AND hidden_badges IS NOT NULL LIMIT 1",
+            self._both_ids(user_id),
+        ).fetchone()
+        conn.close()
+        if row and row[0]:
+            try:
+                value = json.loads(row[0])
+                return [str(v) for v in value] if isinstance(value, list) else []
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return []
+
+    def set_hidden_badges(self, user_id: str, keys: list[str]) -> bool:
+        """Save the badge keys a player hides from their hero card."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_profiles SET hidden_badges = ? WHERE user_id IN (?, ?)",
+            (json.dumps(sorted(set(keys))), *self._both_ids(user_id)),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return updated
+
+    def get_shown_badges(self, user_id: str) -> list[str] | None:
+        """Badge keys the player picked for their hero card, or None for the default (their best 3)."""
+        conn = self._get_connection()
+        row = conn.execute(
+            "SELECT shown_badges FROM user_profiles"
+            " WHERE user_id IN (?, ?) AND shown_badges IS NOT NULL LIMIT 1",
+            self._both_ids(user_id),
+        ).fetchone()
+        conn.close()
+        if row and row[0]:
+            try:
+                value = json.loads(row[0])
+                return [str(v) for v in value] if isinstance(value, list) else None
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return None
+
+    def set_shown_badges(self, user_id: str, keys: list[str] | None) -> bool:
+        """Save the hero card badges a player picked, in order; None goes back to the default."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        value = None
+        if keys is not None:
+            value = json.dumps(list(dict.fromkeys(keys)))
+        cur.execute(
+            "UPDATE user_profiles SET shown_badges = ? WHERE user_id IN (?, ?)",
+            (value, *self._both_ids(user_id)),
         )
         conn.commit()
         updated = cur.rowcount > 0

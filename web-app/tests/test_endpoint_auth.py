@@ -93,6 +93,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.get_profile_visibility",
     "api.players.set_profile_visibility",
     "api.players.set_hidden_avatars",  # owner/admin, checked in the handler
+    "api.players.set_hidden_badges",  # owner/admin, checked in the handler
+    "api.players.set_shown_badges",  # owner/admin, checked in the handler
     "api.players.get_featured_deck",  # a deck the player chose to make public
     "api.players.set_featured_deck",  # owner/admin, checked in the handler
     "api.players.clear_featured_deck",  # owner/admin, checked in the handler
@@ -160,6 +162,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.season_badges.get_avatar_honours",
     "api.paper_finishes.get_paper_finishes",  # Top 8 results matched to profiles; public lists
     "api.paper_finishes.get_event_profiles",  # same, for one event's Top 8 page
+    "api.paper_finishes.get_event_avatar_badges",  # awarded event avatar badges; public profile tags
 
     # -- Events / tournaments (public read-only) --
     "api.events.list_top8_events",

@@ -196,3 +196,85 @@ def test_player_counts_only_on_their_highest_ranked_avatar(patched, elo_db, matc
     assert honours["2"][0]["label"] == "Top Seer"
     assert honours["3"][0]["label"] == "2nd Seer"
     assert honours["4"][0]["label"] == "3rd Seer"
+
+
+def test_season_top_avatars_needs_key(partner):
+    assert partner.get("/api/partner/season-top-avatars").status_code == 401
+
+
+def test_season_top_avatars_lists_each_past_season(partner, elo_db, match_db):
+    _add_event(elo_db, 7, "Gothic Season 7")
+    _add_entry(elo_db, 7, A, "Imposter", 1700, 12)
+    _add_entry(elo_db, 7, B, "Imposter", 1650, 12)
+    _add_entry(elo_db, 7, C, "Druid", 1600, 15)
+    _add_event(elo_db, 6, "Gothic Season 6", mode="player")    # no avatar ladder
+    _add_event(elo_db, 10, "Season 10", ended=False)            # still running
+    _add_entry(elo_db, 10, D, "Imposter", 1900, 30)
+
+    resp = partner.get("/api/partner/season-top-avatars", headers={"X-API-Key": "pso-key"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert [s["season"] for s in data["seasons"]] == ["Gothic Season 7"]
+    tops = {a["avatar"]: a for a in data["seasons"][0]["avatars"]}
+    assert set(tops) == {"Imposter", "Druid"}
+    assert tops["Imposter"]["user_id"] == "1"
+    assert tops["Imposter"]["name"] == "Ann"
+    assert tops["Imposter"]["title"] == "Gothic Season 7 Top Imposter"
+    assert tops["Druid"]["user_id"] == "3"
+
+    deeper = partner.get("/api/partner/season-top-avatars?places=2",
+                         headers={"X-API-Key": "pso-key"}).get_json()
+    imposters = [a["user_id"] for a in deeper["seasons"][0]["avatars"] if a["avatar"] == "Imposter"]
+    assert imposters == ["1", "2"]
+
+
+def test_season_top_avatars_one_season_and_ladder_choice(partner, elo_db, match_db):
+    _add_event(elo_db, 7, "Gothic Season 7")
+    _add_entry(elo_db, 7, A, "Imposter", 1700, 12)
+    _add_event(elo_db, 8, "Gothic Season 8")
+    _add_entry(elo_db, 8, A, "Imposter", 1800, 20)   # Ann's best entry
+    _add_entry(elo_db, 8, A, "Seer", 1750, 12)       # steps aside for honours
+    _add_entry(elo_db, 8, B, "Seer", 1600, 12)
+    key = {"X-API-Key": "pso-key"}
+
+    by_name = partner.get("/api/partner/season-top-avatars?season=gothic season 8", headers=key).get_json()
+    by_id = partner.get("/api/partner/season-top-avatars?season=8", headers=key).get_json()
+    assert by_name == by_id
+    seer = [a for a in by_id["seasons"][0]["avatars"] if a["avatar"] == "Seer"][0]
+    assert seer["user_id"] == "2"   # same person as the season badge
+
+    plain = partner.get("/api/partner/season-top-avatars?season=8&ladder=plain", headers=key).get_json()
+    seer = [a for a in plain["seasons"][0]["avatars"] if a["avatar"] == "Seer"][0]
+    assert seer["user_id"] == "1"   # raw ladder: Ann tops Seer too
+
+    assert partner.get("/api/partner/season-top-avatars?season=99", headers=key).status_code == 404
+    assert partner.get("/api/partner/season-top-avatars?places=4", headers=key).status_code == 400
+    assert partner.get("/api/partner/season-top-avatars?ladder=x", headers=key).status_code == 400
+
+
+def test_glicko2_season_wins_losses_come_from_season_table(patched, elo_db, match_db):
+    """Season 9+ games stay in season_match_records (real layout), never archived."""
+    from services import glicko2_season as g2
+    from services.avatar_honours import get_honours_by_player
+
+    conn = sqlite3.connect(str(match_db))
+    g2.create_season_match_table(conn)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(season_match_records)")}
+    assert {"event_id", "winner_avatar", "loser_avatar", "source"} <= cols
+    for i in range(4):
+        winner, loser = (A, B) if i < 3 else (B, A)
+        conn.execute(
+            "INSERT INTO season_match_records (winner_id, winner_display_name, losser_id,"
+            " losser_display_name, winner_avatar, loser_avatar, timestamp, source, event_id)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, 'Discord', 9)",
+            (winner[0], winner[1], loser[0], loser[1],
+             "Imposter" if winner == A else "Seer", "Seer" if winner == A else "Imposter",
+             f"2027-01-02T10:0{i}:00"),
+        )
+    conn.commit()
+    conn.close()
+    _add_event(elo_db, 9, "Gothic Season 9")
+    _add_entry(elo_db, 9, A, "Imposter", 1700, 12)
+
+    honour = get_honours_by_player()["1"][0]
+    assert (honour["wins"], honour["losses"]) == (3, 1)

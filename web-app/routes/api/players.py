@@ -2917,6 +2917,11 @@ def player_api(player_id):
         hidden_avatars = set(UserProfileRepository().get_hidden_avatars(player_id_normalized))
     except Exception:
         hidden_avatars = set()
+    try:
+        hidden_badges = UserProfileRepository().get_hidden_badges(player_id_normalized)
+        shown_badges = UserProfileRepository().get_shown_badges(player_id_normalized)
+    except Exception:
+        hidden_badges, shown_badges = [], None
     if hidden_avatars:
         if is_owner:
             for perf in avatar_performance:
@@ -3022,6 +3027,10 @@ def player_api(player_id):
             "recorded_games": recorded_games if _section_visible("recorded_games") else [],
             "is_owner": is_owner,
             "is_admin": is_admin(),
+            # Badge keys the player keeps off their hero card (badges are public anyway)
+            "hidden_badges": hidden_badges,
+            # The hero card badges the player picked; None = their best 3
+            "shown_badges": shown_badges,
             "has_custom_display_name": has_custom_display_name,
             "elo_vs_brackets": elo_vs_brackets if _section_visible("elo_brackets") else [],
             "profile_visibility": visibility,
@@ -3198,6 +3207,70 @@ def set_hidden_avatars(player_id):
     if not repo.set_hidden_avatars(player_id_normalized, avatars):
         return jsonify({"error": "Profile not found"}), 404
     return jsonify({"success": True, "avatars": repo.get_hidden_avatars(player_id_normalized)})
+
+
+@players_bp.route("/player/<player_id>/hidden-badges", methods=["PUT"])
+def set_hidden_badges(player_id):
+    """Choose which badges show on the profile's hero card (owner or admin).
+
+    Keys are the ones the profile builds ("postseason", "avatar_honours",
+    "paper:<event>", "event_avatar:<event>", ...). Hidden badges still show
+    in the Postseason tab.
+    """
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+    viewer = str(logged_in_user_id).removeprefix("google_")
+    player_id_normalized = str(player_id).removeprefix("google_")
+    if viewer != player_id_normalized and not is_admin():
+        return jsonify({"error": "You can only change your own profile"}), 403
+
+    data = request.get_json(silent=True) or {}
+    keys = data.get("hidden")
+    if (
+        not isinstance(keys, list)
+        or len(keys) > 500
+        or not all(isinstance(k, str) and 0 < len(k) <= 300 for k in keys)
+    ):
+        return jsonify({"error": "hidden must be a list of badge keys"}), 400
+
+    repo = UserProfileRepository()
+    if not repo.set_hidden_badges(player_id_normalized, keys):
+        return jsonify({"error": "Profile not found"}), 404
+    return jsonify({"success": True, "hidden": repo.get_hidden_badges(player_id_normalized)})
+
+
+@players_bp.route("/player/<player_id>/shown-badges", methods=["PUT"])
+def set_shown_badges(player_id):
+    """Pick the badges on the profile's hero card (owner or admin).
+
+    {"shown": [key, ...]} shows exactly those, in that order;
+    {"shown": null} goes back to the default, the player's best 3.
+    Every badge still shows in the Postseason tab.
+    """
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+    viewer = str(logged_in_user_id).removeprefix("google_")
+    player_id_normalized = str(player_id).removeprefix("google_")
+    if viewer != player_id_normalized and not is_admin():
+        return jsonify({"error": "You can only change your own profile"}), 403
+
+    data = request.get_json(silent=True) or {}
+    if "shown" not in data:
+        return jsonify({"error": "shown is required (a list of badge keys, or null)"}), 400
+    keys = data["shown"]
+    if keys is not None and (
+        not isinstance(keys, list)
+        or len(keys) > 500
+        or not all(isinstance(k, str) and 0 < len(k) <= 300 for k in keys)
+    ):
+        return jsonify({"error": "shown must be a list of badge keys, or null"}), 400
+
+    repo = UserProfileRepository()
+    if not repo.set_shown_badges(player_id_normalized, keys):
+        return jsonify({"error": "Profile not found"}), 404
+    return jsonify({"success": True, "shown": repo.get_shown_badges(player_id_normalized)})
 
 
 # ---------------------------------------------------------------------------

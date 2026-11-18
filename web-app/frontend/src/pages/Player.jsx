@@ -28,6 +28,9 @@ import AvatarEloHistory from '@/components/player/AvatarEloHistory'
 import PostseasonSection from '@/components/player/PostseasonSection'
 import { AvatarHonoursSection, useAvatarHonours } from '@/components/player/AvatarHonours'
 import { PaperFinishesSection, usePaperFinishes } from '@/components/player/PaperFinishes'
+import { EventAvatarBadgesSection, useEventAvatarBadges } from '@/components/player/EventAvatarBadges'
+import ManageBadgesModal from '@/components/player/ManageBadgesModal'
+import { profileBadges } from '@/components/player/profileBadges'
 import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
 import BlockListModal from '@/components/player/BlockListModal'
 import QueueSettingsModal from '@/components/player/QueueSettingsModal'
@@ -73,6 +76,9 @@ export default function Player() {
   const [showBlockListModal, setShowBlockListModal] = useState(false)
   const [showQueueSettingsModal, setShowQueueSettingsModal] = useState(false)
   const [showDataExportModal, setShowDataExportModal] = useState(false)
+  const [showBadgesModal, setShowBadgesModal] = useState(false)
+  // The hero card badges the player just picked; undefined = use the player data
+  const [shownBadges, setShownBadgesState] = useState(undefined)
   const [showResetModal, setShowResetModal] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [editDeck, setEditDeck] = useState(null)
@@ -92,9 +98,12 @@ export default function Player() {
   const navigate = useNavigate()
   const avatarHonours = useAvatarHonours(playerId)
   const paperFinishes = usePaperFinishes(playerId)
+  const eventAvatarBadges = useEventAvatarBadges(playerId)
   const precon = usePreconPlayer(playerId)
+  const bracketMarks = useBracketMarks(playerId)
   const hasPostseason =
-    Boolean(useBracketMarks(playerId)?.entries?.length) || avatarHonours.length > 0 || paperFinishes.length > 0
+    Boolean(bracketMarks?.entries?.length) || avatarHonours.length > 0 || paperFinishes.length > 0
+    || eventAvatarBadges.length > 0
 
   const fetchData = useCallback(
     (ev, pg, src, cpg, pp, epg) => {
@@ -105,6 +114,7 @@ export default function Player() {
       })
         .then((d) => {
           setData(d)
+          setShownBadgesState(undefined)
           setError(null)
         })
         .catch((err) => setError(err.message))
@@ -210,6 +220,7 @@ export default function Player() {
   const settingsItems = [
     { label: 'Featured deck', onClick: () => setShowFeaturedModal(true) },
     { label: 'Privacy settings', onClick: () => setShowPrivacyModal(true) },
+    { label: 'Profile badges', onClick: () => setShowBadgesModal(true) },
     { label: 'Block list', onClick: () => setShowBlockListModal(true) },
     /^\d+$/.test(String(playerId)) && { label: 'Queue settings', onClick: () => setShowQueueSettingsModal(true) },
     { label: data.profile_reset_at ? 'Undo Fresh Start' : 'Fresh Start', onClick: () => setShowResetModal(true) },
@@ -255,6 +266,8 @@ export default function Player() {
         onReport={data.is_owner ? () => setShowReportModal(true) : undefined}
         settingsItems={data.is_owner ? settingsItems : []}
         onPostseason={() => setTab('postseason')}
+        hiddenBadges={data.hidden_badges || []}
+        shownBadges={shownBadges === undefined ? (data.shown_badges ?? null) : shownBadges}
         featured={(
           <FeaturedDeck
             playerId={playerId}
@@ -431,6 +444,7 @@ export default function Player() {
         <div className="space-y-8">
           <AvatarHonoursSection honours={avatarHonours} />
           <PostseasonSection playerId={playerId} />
+          <EventAvatarBadgesSection badges={eventAvatarBadges} />
           <PaperFinishesSection finishes={paperFinishes} />
         </div>
       )}
@@ -461,6 +475,19 @@ export default function Player() {
           recentDecks={data.recent_decks || []}
           onClose={() => setShowFeaturedModal(false)}
           onSaved={() => setFeaturedKey((k) => k + 1)}
+        />
+      )}
+
+      {showBadgesModal && (
+        <ManageBadgesModal
+          playerId={playerId}
+          badges={profileBadges({
+            marks: bracketMarks, honours: avatarHonours, paperFinishes, eventBadges: eventAvatarBadges,
+          })}
+          hidden={data.hidden_badges || []}
+          shown={shownBadges === undefined ? (data.shown_badges ?? null) : shownBadges}
+          onClose={() => setShowBadgesModal(false)}
+          onSaved={setShownBadgesState}
         />
       )}
 

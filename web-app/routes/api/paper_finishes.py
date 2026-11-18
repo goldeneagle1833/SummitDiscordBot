@@ -342,7 +342,13 @@ def award_event_avatar_badges(folder):
     """Award (or re-award) this event's top avatar badges as the preview shows them."""
     from services import event_avatar_badges
 
-    result = event_avatar_badges.award(folder, admin=str(_admin()[1]))
+    body = request.get_json(silent=True) or {}
+    avatars = body.get("avatars")
+    if avatars is not None and (
+        not isinstance(avatars, list) or not all(isinstance(a, str) for a in avatars)
+    ):
+        return jsonify({"success": False, "error": "avatars must be a list of names"}), 400
+    result = event_avatar_badges.award(folder, admin=str(_admin()[1]), avatars=avatars)
     if result is None:
         return jsonify({"success": False, "error": "Event not found"}), 404
     _log("event_avatar_badges_awarded", target_name=folder, details=f"{len(result['awarded'])} badges")

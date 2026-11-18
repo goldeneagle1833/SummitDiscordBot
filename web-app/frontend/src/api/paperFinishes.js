@@ -41,7 +41,7 @@ export const deleteBadgeOnlyEvent = (eventId) =>
 export const getEventAvatarBadges = () => get('/api/event-avatar-badges')
 export const previewEventAvatarBadges = (folder) =>
   get(`/api/admin/event-avatar-badges/${encodeURIComponent(folder)}`)
-export const awardEventAvatarBadges = (folder) =>
-  post(`/api/admin/event-avatar-badges/${encodeURIComponent(folder)}`, {})
+export const awardEventAvatarBadges = (folder, avatars) =>
+  post(`/api/admin/event-avatar-badges/${encodeURIComponent(folder)}`, avatars ? { avatars } : {})
 export const undoEventAvatarBadges = (folder) =>
   del(`/api/admin/event-avatar-badges/${encodeURIComponent(folder)}`)

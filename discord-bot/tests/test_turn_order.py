@@ -217,20 +217,20 @@ async def test_pairing_json_uses_the_queue_history(monkeypatch):
     assert session.post.call_args.kwargs["json"]["firstPlayerDiscordUserId"] == "10"
 
 
-def test_only_the_last_20_games_count():
+def test_only_the_last_10_games_count():
     conn = sqlite3.connect("match_records.db")
-    # 30 old games going first, then 20 newer games going second
+    # 30 old games going first, then 10 newer games going second
     for day in range(1, 31):
         conn.execute(
             "INSERT INTO match_records (winner_id, losser_id, timestamp, winner_went_first, loser_went_first, match_type) "
             "VALUES (1, 2, ?, 'y', 'n', 'ranked')", (f"2026-09-{day:02d} 12:00:00",)
         )
-    for day in range(1, 21):
+    for day in range(1, 11):
         conn.execute(
             "INSERT INTO match_records (winner_id, losser_id, timestamp, winner_went_first, loser_went_first, match_type) "
             "VALUES (1, 2, ?, 'n', 'y', 'ranked')", (f"2026-10-{day:02d} 12:00:00",)
         )
     conn.commit()
     conn.close()
-    assert going_first_counts([1, 2]) == {1: (0, 20), 2: (20, 20)}
-    assert going_first_counts([1], recent=None) == {1: (30, 50)}
+    assert going_first_counts([1, 2]) == {1: (0, 10), 2: (10, 10)}
+    assert going_first_counts([1], recent=None) == {1: (30, 40)}

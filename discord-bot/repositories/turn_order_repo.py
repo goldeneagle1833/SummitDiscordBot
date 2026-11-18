@@ -5,7 +5,7 @@ the first player when it opens the table and sends it in the pairing JSON
 (``firstPlayerDiscordUserId``), the way online chess balances White and
 Black over a player's games:
 
-1. Count each player's last 20 games IN THE SAME QUEUE where we know who
+1. Count each player's last 10 games IN THE SAME QUEUE where we know who
    went first (Bruce's choice, 2026-11-17: going first a lot in casual
    doesn't count against you in ranked). Turn order has been recorded
    since 2026-02-07. Where each queue's games live:
@@ -37,8 +37,8 @@ MATCH_TABLES = ("match_records", "match_records_archive", "season_match_records"
 LIMITED_TABLES = ("limited_match_records", "limited_match_records_archive")
 # Only each player's most recent games count (Bruce, 2026-11-18: lifetime
 # shares moved so slowly that veterans went first, or second, game after
-# game). A short window corrects within a few games.
-RECENT_GAMES = 20
+# game; window set to 10 the same day). A short window corrects within a few games.
+RECENT_GAMES = 10
 
 
 def _flag(value):

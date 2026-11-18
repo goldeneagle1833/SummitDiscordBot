@@ -50,6 +50,13 @@ COOKIE_NAME = "summit_site"
 HEADER_NAME = "X-Site-Token"
 GATED_PREFIX = "/api/"
 
+# Clients refused outright unless they hold an API key, matched as a
+# case-insensitive substring of the User-Agent.  Each one was caught scraping
+# by forging the same-site headers to get a site token.
+#   "sorceryrec": "SorceryRec competitive archive/1.0" copied every Top 8 event
+#   and ~2,000 deck recs nightly (Nov 2026 bot report; Bruce asked to block it).
+BLOCKED_USER_AGENTS = ("sorceryrec",)
+
 # Endpoints reachable with neither an API key nor a site token.
 EXEMPT_ENDPOINTS = frozenset(
     {
@@ -189,10 +196,18 @@ def _set_cookie(response: Response, token: str) -> Response:
     return response
 
 
-def _reject(message: str, code: str):
+def is_blocked_client() -> bool:
+    """True when the User-Agent belongs to a client we have chosen to refuse."""
+    agent = (request.headers.get("User-Agent") or "").lower()
+    return any(blocked in agent for blocked in BLOCKED_USER_AGENTS)
+
+
+def _reject(message: str, code: str, status: int = 401):
     logger.warning("API gate rejected %s %s from %s (%s)", request.method, request.path, request.remote_addr, code)
     response = jsonify({"error": message, "code": code})
-    response.status_code = 401
+    response.status_code = status
+    if status != 401:
+        return response
     response.headers["WWW-Authenticate"] = 'ApiKey realm="summit"'
     return response
 
@@ -221,6 +236,8 @@ def init_site_gate(app: Flask) -> None:
             return None
         if request.method == "OPTIONS" or not request.path.startswith(GATED_PREFIX):
             return None
+        if is_blocked_client() and not has_valid_api_key():
+            return _reject("This client is blocked from the Summit API", "blocked_client", 403)
         if request.endpoint in EXEMPT_ENDPOINTS:
             return None
 

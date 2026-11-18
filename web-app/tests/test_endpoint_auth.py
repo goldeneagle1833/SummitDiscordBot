@@ -94,6 +94,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.set_profile_visibility",
     "api.players.set_hidden_avatars",  # owner/admin, checked in the handler
     "api.players.set_hidden_badges",  # owner/admin, checked in the handler
+    "api.players.set_shown_badges",  # owner/admin, checked in the handler
     "api.players.get_featured_deck",  # a deck the player chose to make public
     "api.players.set_featured_deck",  # owner/admin, checked in the handler
     "api.players.clear_featured_deck",  # owner/admin, checked in the handler

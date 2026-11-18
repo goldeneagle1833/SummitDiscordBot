@@ -77,8 +77,8 @@ export default function Player() {
   const [showQueueSettingsModal, setShowQueueSettingsModal] = useState(false)
   const [showDataExportModal, setShowDataExportModal] = useState(false)
   const [showBadgesModal, setShowBadgesModal] = useState(false)
-  // Badge keys kept off the hero card; null until the player data says
-  const [hiddenBadges, setHiddenBadgesState] = useState(null)
+  // The hero card badges the player just picked; undefined = use the player data
+  const [shownBadges, setShownBadgesState] = useState(undefined)
   const [showResetModal, setShowResetModal] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [editDeck, setEditDeck] = useState(null)
@@ -114,7 +114,7 @@ export default function Player() {
       })
         .then((d) => {
           setData(d)
-          setHiddenBadgesState(null)
+          setShownBadgesState(undefined)
           setError(null)
         })
         .catch((err) => setError(err.message))
@@ -266,7 +266,8 @@ export default function Player() {
         onReport={data.is_owner ? () => setShowReportModal(true) : undefined}
         settingsItems={data.is_owner ? settingsItems : []}
         onPostseason={() => setTab('postseason')}
-        hiddenBadges={hiddenBadges ?? data.hidden_badges ?? []}
+        hiddenBadges={data.hidden_badges || []}
+        shownBadges={shownBadges === undefined ? (data.shown_badges ?? null) : shownBadges}
         featured={(
           <FeaturedDeck
             playerId={playerId}
@@ -483,9 +484,10 @@ export default function Player() {
           badges={profileBadges({
             marks: bracketMarks, honours: avatarHonours, paperFinishes, eventBadges: eventAvatarBadges,
           })}
-          hidden={hiddenBadges ?? data.hidden_badges ?? []}
+          hidden={data.hidden_badges || []}
+          shown={shownBadges === undefined ? (data.shown_badges ?? null) : shownBadges}
           onClose={() => setShowBadgesModal(false)}
-          onSaved={setHiddenBadgesState}
+          onSaved={setShownBadgesState}
         />
       )}
 

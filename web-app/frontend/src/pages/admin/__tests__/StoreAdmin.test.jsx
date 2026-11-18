@@ -123,6 +123,43 @@ describe('StoreAdmin same-buyer orders', () => {
   })
 })
 
+describe('StoreAdmin bulk print', () => {
+  const base = { username: 'bruce', currency: 'USD', status: 'paid', total_cents: 599, buyer_group: null }
+  const ORDERS = [
+    { ...base, id: 1, order_number: 'SUM-A' },
+    { ...base, id: 2, order_number: 'SUM-B', ship_group: 'SG-1', buyer_group: 'b1' },
+    { ...base, id: 3, order_number: 'SUM-C' },
+    { ...base, id: 4, order_number: 'SUM-D', ship_group: 'SG-1', buyer_group: 'b1' },
+  ]
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    adminGetMe.mockResolvedValue(FULL_ADMIN)
+    adminGetProducts.mockResolvedValue({ products: [] })
+    adminGetOrders.mockResolvedValue({ orders: ORDERS })
+  })
+
+  it('prints the whole list when nothing is picked', async () => {
+    renderWithRouter(<StoreAdmin />)
+    const link = await screen.findByRole('link', { name: /Print all 4/ })
+    expect(link).toHaveAttribute('href', '/admin/store/orders/print?print=1&ids=1,2,3,4')
+    expect(link).toHaveAttribute('target', '_blank')
+  })
+
+  it('prints only picked orders, and picking a paired order picks its pair', async () => {
+    renderWithRouter(<StoreAdmin />)
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Pick SUM-C for bulk print' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Pick SUM-D for bulk print' }))
+    expect(screen.getByRole('checkbox', { name: 'Pick SUM-B for bulk print' })).toBeChecked()
+    const link = screen.getByRole('link', { name: /Print 3 picked/ })
+    expect(link).toHaveAttribute('href', '/admin/store/orders/print?print=1&ids=2,3,4')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select all' }))
+    expect(screen.getByRole('link', { name: /Print 4 picked/ })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select all' }))
+    expect(screen.getByRole('link', { name: /Print all 4/ })).toBeInTheDocument()
+  })
+})
+
 describe('StoreAdmin products', () => {
   beforeEach(() => {
     vi.clearAllMocks()

@@ -4,6 +4,8 @@ import {
   submitEvent, getMySubmissions, getEventSubmissions, approveSubmission, rejectSubmission, pollEventJob,
 } from '@/api/events'
 
+const EVENT_FORMAT_OPTIONS = ['Constructed', 'Sealed', 'Draft', 'Peasant', 'Unknown']
+
 const STATUS_STYLE = {
   pending: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/40',
   importing: 'bg-blue-500/15 text-blue-300 border-blue-500/40',
@@ -257,6 +259,7 @@ export function SubmitEventModal({ loggedIn, onClose, startOnMine = false, thres
 
 function ReviewRow({ s, onDone }) {
   const [note, setNote] = useState('')
+  const [eventFormat, setEventFormat] = useState('')
   const [busy, setBusy] = useState(null)
   const [progress, setProgress] = useState(null)
   const [error, setError] = useState(s.error || null)
@@ -264,7 +267,7 @@ function ReviewRow({ s, onDone }) {
   const approve = async () => {
     setBusy('approve'); setError(null); setProgress('Starting...')
     try {
-      const res = await approveSubmission(s.id, note.trim())
+      const res = await approveSubmission(s.id, note.trim(), eventFormat)
       const result = await pollEventJob(res.job_id, { onProgress: setProgress })
       if (!result?.success) setError(result?.error || 'Import failed')
       onDone()
@@ -310,6 +313,20 @@ function ReviewRow({ s, onDone }) {
       {error && <p className="text-accent-red text-xs mt-2" role="alert">{error}</p>}
       {open && (
         <div className="mt-2">
+          <label className="text-xs text-text-muted block mb-1" htmlFor={`submission-format-${s.id}`}>
+            Format (required to approve)
+          </label>
+          <select
+            id={`submission-format-${s.id}`}
+            className="w-full bg-bg-surface border border-border rounded px-3 py-1.5 text-xs mb-2"
+            value={eventFormat}
+            onChange={(event) => setEventFormat(event.target.value)}
+            disabled={!!busy}
+            required
+          >
+            <option value="" disabled>Select tournament format...</option>
+            {EVENT_FORMAT_OPTIONS.map((format) => <option key={format} value={format}>{format}</option>)}
+          </select>
           <label className="sr-only" htmlFor={`review-note-${s.id}`}>Note to the player</label>
           <input
             id={`review-note-${s.id}`}
@@ -332,7 +349,7 @@ function ReviewRow({ s, onDone }) {
             <button
               className="text-xs bg-secondary text-black px-3 py-1.5 rounded font-semibold disabled:opacity-50"
               onClick={approve}
-              disabled={!!busy}
+              disabled={!!busy || !eventFormat}
             >
               {busy === 'approve' ? (progress || 'Importing...') : s.status === 'failed' ? 'Try again' : 'Approve & publish'}
             </button>

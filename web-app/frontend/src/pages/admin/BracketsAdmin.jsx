@@ -14,6 +14,8 @@ import {
   adminDeleteBracket,
   adminPreviewBracket,
   adminUpdateBracket,
+  adminSwapBracketPlayers,
+  adminReplaceBracketPlayer,
   getBracketDecks,
   organizerSearchPlayers,
 } from '@/api/brackets'
@@ -429,7 +431,7 @@ function OrganizerCreateForm({ onCreated }) {
   )
 }
 
-function AddPlayer({ onAdd, search = searchUsers }) {
+function AddPlayer({ onAdd, search = searchUsers, placeholder = 'Add a player by name' }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
 
@@ -451,8 +453,8 @@ function AddPlayer({ onAdd, search = searchUsers }) {
           className={`${INPUT} py-1`}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Add a player by name"
-          aria-label="Add a player by name"
+          placeholder={placeholder}
+          aria-label={placeholder}
         />
         <button type="submit" className="px-3 py-1 rounded border border-border text-sm">
           Search
@@ -742,11 +744,233 @@ function HidePairingsField({ bracket, onSaved }) {
   )
 }
 
+/** Why a seat in a live bracket can't be moved or handed over. */
+function lockedReason(match, slot) {
+  if (!match[`p${slot}_seed`]) return null
+  if (match.state === 'complete') return 'played'
+  if (match.state === 'reported') return 'result waiting'
+  if (match.table_provisioned_at) return 'table open'
+  return 'already won a match'
+}
+
+/**
+ * Fix a bracket that is already live: tap two players to trade their places,
+ * or tap one and bring someone else in. Only seats nobody has played,
+ * reported or opened a Play Sorcery Online table for can change, so no
+ * result is ever touched. Tapping (not dragging) works on a phone too.
+ */
+function LiveEditor({ slug, search, onChanged }) {
+  const [detail, setDetail] = useState(null)
+  const [picked, setPicked] = useState(null) // { seed, name }
+  const [replacing, setReplacing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState(null)
+  const [error, setError] = useState(null)
+
+  const load = useCallback(async () => {
+    try {
+      setDetail(await adminGetBracket(slug))
+    } catch (e) {
+      setError(e.message || 'Could not load the bracket')
+    }
+  }, [slug])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  async function run(action, message) {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const res = await action()
+      setNotice(message(res))
+      setPicked(null)
+      setReplacing(false)
+      await load()
+      await onChanged?.()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function tapSeat(seed, name) {
+    if (busy) return
+    if (!picked) {
+      setPicked({ seed, name })
+      setReplacing(false)
+      return
+    }
+    if (picked.seed === seed) {
+      setPicked(null)
+      setReplacing(false)
+      return
+    }
+    if (!window.confirm(`Swap ${picked.name} and ${name}? Both matches are messaged again.`)) return
+    run(
+      () => adminSwapBracketPlayers(slug, picked.seed, seed),
+      (res) => `Swapped ${res.swapped.join(' and ')}.`,
+    )
+  }
+
+  function bringIn(player) {
+    if (!picked) return
+    if (
+      !window.confirm(
+        `Replace ${picked.name} with ${player.display_name}? ${picked.name}'s decklist is removed and ${player.display_name} is messaged their match.`,
+      )
+    ) {
+      return
+    }
+    run(
+      () => adminReplaceBracketPlayer(slug, picked.seed, player),
+      (res) =>
+        `${res.with} replaced ${res.replaced} as seed ${res.seed}.` +
+        (res.hold_switched_off
+          ? ' The pairings were already out, so they stay showing while their deck comes in.'
+          : '') +
+        ' They need to submit a deck.',
+    )
+  }
+
+  if (!detail && !error) return <Spinner />
+
+  const rounds = (detail?.rounds || [])
+    .map((round) => ({
+      ...round,
+      matches: round.matches.filter(
+        (m) => m.p1_movable || m.p2_movable || m.round === 1 || m.p1_from_bye || m.p2_from_bye,
+      ),
+    }))
+    .filter((round) => round.matches.some((m) => m.p1_movable || m.p2_movable) || round.round === 1)
+  const anyMovable = rounds.some((r) => r.matches.some((m) => m.p1_movable || m.p2_movable))
+
+  const seat = (match, slot) => {
+    const seed = match[`p${slot}_seed`]
+    const name = match[`p${slot}_name`]
+    if (!seed) {
+      return <span className="block px-3 py-2 text-xs text-text-muted italic">Waiting on a winner</span>
+    }
+    const movable = match[`p${slot}_movable`]
+    const isPicked = picked?.seed === seed
+    if (!movable) {
+      return (
+        <span className="flex items-center justify-between gap-2 px-3 py-2 text-sm text-text-muted">
+          <span className="truncate">
+            <span className="tabular-nums text-xs mr-2">{seed}</span>
+            {name}
+          </span>
+          <span className="text-[11px] shrink-0">{lockedReason(match, slot)}</span>
+        </span>
+      )
+    }
+    return (
+      <button
+        type="button"
+        onClick={() => tapSeat(seed, name)}
+        disabled={busy}
+        aria-pressed={isPicked}
+        className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left transition-colors ${
+          isPicked ? 'bg-secondary text-black' : 'hover:bg-bg-raised'
+        }`}
+      >
+        <span className="truncate">
+          <span className={`tabular-nums text-xs mr-2 ${isPicked ? '' : 'text-text-muted'}`}>{seed}</span>
+          {name}
+          {match[`p${slot}_from_bye`] && (
+            <span className={`ml-2 text-[11px] ${isPicked ? '' : 'text-text-muted'}`}>bye</span>
+          )}
+        </span>
+        {isPicked && <span className="text-[11px] font-semibold shrink-0">Picked</span>}
+      </button>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-text-muted">
+        Tap a player, then tap another to swap their places, or replace them with someone new.
+        Players keep their seed and decklist when swapped. Matches already played, reported or
+        given a Play Sorcery Online table are locked, so no result changes. To drop a player who
+        has already played, set their next match’s result from the bracket page instead.
+      </p>
+
+      {detail && !anyMovable && (
+        <p className="text-sm text-text-muted">
+          Every first-round match has started, so there is nothing left to move.
+        </p>
+      )}
+
+      {rounds.map((round) => (
+        <div key={round.round} className="space-y-2">
+          <p className="text-xs uppercase tracking-wider text-text-muted">{round.title}</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {round.matches.map((match) => (
+              <div
+                key={match.match_no}
+                className="bg-bg-raised/40 border border-border rounded overflow-hidden"
+              >
+                {seat(match, 1)}
+                <div className="border-t border-border" />
+                {seat(match, 2)}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {(notice || error) && !picked && (
+        <p
+          role="status"
+          className={`sticky bottom-2 z-10 bg-bg-surface shadow-lg border border-border rounded px-3 py-2 text-sm ${
+            error ? 'text-accent-red' : 'text-accent-green'
+          }`}
+        >
+          {error || notice}
+        </p>
+      )}
+
+      {picked && (
+        <div className="sticky bottom-2 z-10 bg-bg-surface shadow-lg border border-secondary border-l-4 rounded px-3 py-2 text-sm space-y-2">
+          {error && <p className="text-accent-red">{error}</p>}
+          <div className="flex flex-wrap items-center gap-2">
+            <span>
+              <strong>{picked.name}</strong> picked. Tap another player to swap, or
+            </span>
+            <button
+              type="button"
+              onClick={() => setReplacing((v) => !v)}
+              className="px-2 py-0.5 rounded border border-secondary text-xs"
+            >
+              {replacing ? 'Cancel replace' : `Replace ${picked.name}`}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPicked(null)
+                setReplacing(false)
+              }}
+              className="text-xs text-text-muted hover:text-text-primary"
+            >
+              Clear
+            </button>
+          </div>
+          {replacing && <AddPlayer onAdd={bringIn} search={search} placeholder="Who comes in?" />}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function BracketRow({ bracket, onChanged, onGraphic, sets = [], organizer = false }) {
   const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState(null)
   const [preview, setPreview] = useState(null)
   const [decksOpen, setDecksOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const [decks, setDecks] = useState(null)
   const [error, setError] = useState(null)
 
@@ -789,6 +1013,7 @@ function BracketRow({ bracket, onChanged, onGraphic, sets = [], organizer = fals
   }
 
   const isDraft = bracket.status === 'draft'
+  const isLive = bracket.status === 'published'
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg">
@@ -818,7 +1043,7 @@ function BracketRow({ bracket, onChanged, onGraphic, sets = [], organizer = fals
             <HidePairingsField bracket={bracket} onSaved={onChanged} />
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {isDraft ? (
             <button
               onClick={() => act(() => adminPublishBracket(bracket.slug))}
@@ -858,12 +1083,24 @@ function BracketRow({ bracket, onChanged, onGraphic, sets = [], organizer = fals
               {open ? 'Close' : 'Edit seeds'}
             </button>
           ) : (
-            <button
-              onClick={() => setDecksOpen((v) => !v)}
+            <>
+              {isLive && (
+                <button
+                  onClick={() => setEditOpen((v) => !v)}
+                  className={`px-3 py-1 rounded border text-xs ${
+                    editOpen ? 'bg-secondary text-black border-secondary' : 'border-border'
+                  }`}
+                >
+                  {editOpen ? 'Done editing' : 'Edit'}
+                </button>
+              )}
+              <button
+                onClick={() => setDecksOpen((v) => !v)}
               className="px-3 py-1 rounded border border-border text-xs"
             >
-              {decksOpen ? 'Close decks' : 'Decks'}
-            </button>
+                {decksOpen ? 'Close decks' : 'Decks'}
+              </button>
+            </>
           )}
           {!organizer && (
             <button
@@ -887,6 +1124,19 @@ function BracketRow({ bracket, onChanged, onGraphic, sets = [], organizer = fals
       </div>
 
       {error && <p className="px-4 pb-3 text-sm text-accent-red">{error}</p>}
+
+      {editOpen && isLive && (
+        <div className="px-4 pb-4 border-t border-border pt-4">
+          <LiveEditor
+            slug={bracket.slug}
+            search={organizer ? organizerSearchPlayers : searchUsers}
+            onChanged={async () => {
+              setDecks(null)
+              await onChanged()
+            }}
+          />
+        </div>
+      )}
 
       {decksOpen && (
         <div className="px-4 pb-4 border-t border-border pt-4">

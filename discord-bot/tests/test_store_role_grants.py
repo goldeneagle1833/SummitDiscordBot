@@ -104,3 +104,35 @@ async def test_temporary_error_retries_quietly():
     await cog._deliver_role(_row(attempts=0))
     assert cog._mark.call_args.kwargs["final"] is False
     cog._send_admin.assert_not_awaited()
+
+
+# ── Leaderboard redraw after a ticket purchase ──
+
+
+@pytest.mark.asyncio
+async def test_role_given_redraws_the_leaderboard(monkeypatch):
+    """A new ticket holder moves onto the leaderboard without waiting for a match."""
+    import cogs.store_notifications as store
+
+    monkeypatch.setattr(store, "LEADERBOARD_REFRESH_DELAY", 0)
+    role, member = MagicMock(), _member()
+    cog = _cog(member=member, role=role)
+    cog._fetch_pending = MagicMock(return_value=[_row()])
+    lfg = MagicMock(update_leaderboard=AsyncMock())
+    cog.bot.get_cog.side_effect = lambda name: lfg if name == "LFGCog" else None
+    await StoreNotificationsCog.deliver_notifications.coro(cog)
+    member.add_roles.assert_awaited_once()
+    lfg.update_leaderboard.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_failed_role_change_leaves_the_leaderboard_alone(monkeypatch):
+    import cogs.store_notifications as store
+
+    monkeypatch.setattr(store, "LEADERBOARD_REFRESH_DELAY", 0)
+    cog = _cog(member=_member(), role=None)  # no such role
+    cog._fetch_pending = MagicMock(return_value=[_row()])
+    lfg = MagicMock(update_leaderboard=AsyncMock())
+    cog.bot.get_cog.return_value = lfg
+    await StoreNotificationsCog.deliver_notifications.coro(cog)
+    lfg.update_leaderboard.assert_not_awaited()

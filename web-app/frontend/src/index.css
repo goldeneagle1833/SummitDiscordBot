@@ -89,3 +89,38 @@ option {
 .article-body pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 0.9em 1em; overflow-x: auto; }
 .article-body pre code { background: none; padding: 0; }
 .article-body hr { border: 0; border-top: 1px solid #30363d; margin: 2em 0; }
+
+/* Rainbow foil: the event avatar badge matches the event's prize, a rainbow
+   foil card of the avatar. A slow sheen moves across the border and text. */
+@keyframes foil-sheen {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.foil-chip {
+  position: relative;
+  border: 1.5px solid transparent;
+  background:
+    linear-gradient(135deg, rgba(20, 22, 30, 0.96), rgba(32, 30, 44, 0.96)) padding-box,
+    linear-gradient(110deg, #ff5f6d, #ffc371, #f9f871, #6dfba5, #47c5ff, #a77bff, #ff6fd8, #ff5f6d) border-box;
+  background-size: 100% 100%, 200% 100%;
+  animation: foil-sheen 6s linear infinite;
+  box-shadow: 0 0 10px rgba(167, 123, 255, 0.25);
+}
+
+.foil-chip:hover {
+  box-shadow: 0 0 14px rgba(71, 197, 255, 0.45);
+}
+
+.foil-text {
+  background: linear-gradient(110deg, #ff8a8a, #ffd27a, #f6f78a, #8affbc, #7fd6ff, #c3a6ff, #ff9be6, #ff8a8a);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: foil-sheen 6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foil-chip, .foil-text { animation: none; }
+}

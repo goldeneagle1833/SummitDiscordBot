@@ -4,7 +4,7 @@ import { getProfileBadgePrefs } from '@/api/players'
 import { useBracketMarks } from '@/components/player/BracketMarks'
 import { Medal, useAvatarHonours } from '@/components/player/AvatarHonours'
 import { Trophy, usePaperFinishes } from '@/components/player/PaperFinishes'
-import { FoilCard, useEventAvatarBadges } from '@/components/player/EventAvatarBadges'
+import { FoilAvatar, useEventAvatarBadges } from '@/components/player/EventAvatarBadges'
 import { heroBadgeKeys, profileBadges } from '@/components/player/profileBadges'
 
 /**
@@ -62,7 +62,7 @@ function useBadgePref(playerId) {
 }
 
 function Icon({ badge }) {
-  if (badge.kind === 'event') return <FoilCard size={16} id={`nb-${badge.key}`} />
+  if (badge.kind === 'event') return <FoilAvatar avatar={badge.avatar} size={20} id={`nb-${badge.key}`} />
   if (badge.kind === 'honour') return <Medal place={badge.place} size={15} />
   return <Trophy label={badge.label} size={14} />
 }
@@ -87,7 +87,9 @@ export default function NameBadges({ playerId, className = '' }) {
           to={`/player/${playerId}?tab=postseason`}
           title={b.title || `${b.label} · ${b.detail}`}
           aria-label={b.title || `${b.label} · ${b.detail}`}
-          className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-bg-raised border border-border hover:border-secondary transition-colors"
+          className={b.kind === 'event'
+            ? 'inline-flex items-center justify-center h-6 w-6 rounded-full hover:scale-110 transition-transform'
+            : 'inline-flex items-center justify-center h-6 w-6 rounded-full bg-bg-raised border border-border hover:border-secondary transition-colors'}
         >
           <Icon badge={b} />
         </Link>

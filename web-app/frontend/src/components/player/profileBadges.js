@@ -37,7 +37,7 @@ export function profileBadges({ marks, honours = [], paperFinishes = [], eventBa
     })
   }
   for (const b of eventBadges) {
-    out.push({ kind: 'event', title: b.title, key: eventBadgeKey(b), group: 'Top avatar at an event', label: b.label, detail: b.event, weight: 18 })
+    out.push({ kind: 'event', avatar: b.avatar, title: b.title, key: eventBadgeKey(b), group: 'Top avatar at an event', label: b.label, detail: b.event, weight: 18 })
   }
   for (const f of paperFinishes) {
     out.push({ kind: 'paper', title: f.title || `${f.label} · ${f.event}`, key: paperBadgeKey(f), group: 'Paper tournament finishes', label: f.label, detail: f.event, weight: finishWeight(f.label) + 1 })

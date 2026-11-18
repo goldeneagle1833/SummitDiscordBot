@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
-import { EventAvatarBadgeChips, EventAvatarBadgesSection } from '../EventAvatarBadges'
+import { EventAvatarBadgeChips, EventAvatarBadgesSection, resetAvatarFilesCache } from '../EventAvatarBadges'
 import ManageBadgesModal from '../ManageBadgesModal'
 import { profileBadges, heroBadgeKeys } from '../profileBadges'
 import { setShownBadges } from '@/api/players'
 
 vi.mock('@/api/paperFinishes', () => ({ getEventAvatarBadges: vi.fn() }))
 vi.mock('@/api/players', () => ({ setShownBadges: vi.fn() }))
+vi.mock('@/api/cards', () => ({ getAvatarImageFiles: vi.fn(() => Promise.resolve(['Sparkmage.png'])) }))
 
 const BADGES = [
   {
@@ -22,6 +23,16 @@ describe('Event avatar badges', () => {
     renderWithRouter(<EventAvatarBadgeChips badges={BADGES} />)
     expect(screen.getByText('Top Sparkmage')).toBeInTheDocument()
     expect(screen.getByRole('link')).toHaveAttribute('href', '/top-8/Avatar%20of%20the%20Realm%202026')
+  })
+
+  it("shows the avatar's portrait in the foil ring, or the foil card without one", () => {
+    resetAvatarFilesCache(['Sparkmage.png'])
+    const { container } = renderWithRouter(<EventAvatarBadgeChips badges={BADGES} />)
+    expect(container.querySelector('.foil-ring img')).toHaveAttribute('src', '/avatar-images/Sparkmage.png')
+    resetAvatarFilesCache([])
+    const other = renderWithRouter(<EventAvatarBadgeChips badges={BADGES} />)
+    expect(other.container.querySelector('.foil-ring')).toBeNull()
+    expect(other.container.querySelector('svg')).not.toBeNull()
   })
 
   it('lists the finish and record in the Postseason tab', () => {

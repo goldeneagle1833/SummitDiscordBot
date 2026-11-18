@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getProfileBadgePrefs } from '@/api/players'
-import { useBracketMarks } from '@/components/player/BracketMarks'
+import { FINISH_COLOURS as POSTSEASON_COLOURS, Yurt, useBracketMarks } from '@/components/player/BracketMarks'
 import { Medal, useAvatarHonours } from '@/components/player/AvatarHonours'
 import { Trophy, usePaperFinishes } from '@/components/player/PaperFinishes'
 import { FoilAvatar, useEventAvatarBadges } from '@/components/player/EventAvatarBadges'
@@ -11,8 +11,9 @@ import { heroBadgeKeys, profileBadges } from '@/components/player/profileBadges'
  * A player's achievements beside their name on the leaderboards: the same
  * badges their profile shows (their best 3, or the ones they picked), as
  * small icons. Hover (or long-press) names each one; a tap opens the
- * player's Postseason tab. Postseason finishes are left out here because the
- * name already shows them (coloured name and tent mark).
+ * player's Postseason tab. Postseason finishes are badges here too (the
+ * leaderboards no longer colour names): a champion shows the yurt, other
+ * finishes a trophy in that finish's colour.
  */
 
 let prefsCache = null
@@ -62,6 +63,10 @@ function useBadgePref(playerId) {
 }
 
 function Icon({ badge }) {
+  if (badge.kind === 'postseason') {
+    if (badge.label === 'Champion') return <Yurt size={16} />
+    return <Trophy size={14} className={POSTSEASON_COLOURS[badge.label] || 'text-text-muted'} />
+  }
   if (badge.kind === 'event') return <FoilAvatar avatar={badge.avatar} size={20} id={`nb-${badge.key}`} />
   if (badge.kind === 'honour') return <Medal place={badge.place} size={15} />
   return <Trophy label={badge.label} size={14} />
@@ -76,8 +81,15 @@ export default function NameBadges({ playerId, className = '' }) {
 
   const all = profileBadges({ marks, honours, paperFinishes, eventBadges })
   const keys = heroBadgeKeys(all, pref?.shown ?? null, pref?.hidden || [])
-  const shown = all.filter((b) => keys.has(b.key) && b.kind !== 'postseason')
+  const shown = all.filter((b) => keys.has(b.key))
   if (!shown.length) return null
+
+  // Postseason hover lists every placement, as the coloured name used to.
+  const placements = (marks?.entries || []).map((e) => `${e.label}: ${e.name}`).join('\n')
+  const titleOf = (b) => {
+    if (b.key === 'postseason' && placements) return `Postseason · ${b.label}\n${placements}`
+    return b.title || `${b.label} · ${b.detail}`
+  }
 
   return (
     <span className={`inline-flex items-center gap-1 align-middle ${className}`} aria-label="Achievements">
@@ -85,8 +97,8 @@ export default function NameBadges({ playerId, className = '' }) {
         <Link
           key={b.key}
           to={`/player/${playerId}?tab=postseason`}
-          title={b.title || `${b.label} · ${b.detail}`}
-          aria-label={b.title || `${b.label} · ${b.detail}`}
+          title={titleOf(b)}
+          aria-label={titleOf(b)}
           className={b.kind === 'event'
             ? 'inline-flex items-center justify-center h-6 w-6 rounded-full hover:scale-110 transition-transform'
             : 'inline-flex items-center justify-center h-6 w-6 rounded-full bg-bg-raised border border-border hover:border-secondary transition-colors'}

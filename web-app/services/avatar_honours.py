@@ -68,27 +68,39 @@ def _ended_avatar_seasons() -> list[dict]:
 
 
 def _season_records(event_id: int) -> dict:
-    """{(user_id, avatar): {wins, losses}} from the season's archived avatar games."""
+    """{(user_id, avatar): {wins, losses}} from the season's avatar games.
+
+    Seasons 1-8 were archived to match_records_archive at their end; Season 9
+    on (Glicko-2) stays in season_match_records, tagged with its event. Both
+    are read, so W-L shows whichever table holds the season.
+    """
     conn = sqlite3.connect(str(webapp_config.MATCH_RECORDS_DB_PATH))
     try:
         cur = conn.cursor()
-        cur.execute("PRAGMA table_info(match_records_archive)")
-        columns = {r[1] for r in cur.fetchall()}
-        if not {"event_id", "winner_avatar", "loser_avatar"} <= columns:
-            return {}
-        # Bracket games move lifetime Elo only, never the season ladder
-        not_bracket = " AND (source IS NULL OR source != 'Bracket')" if "source" in columns else ""
-        cur.execute(
-            f"""SELECT user_id, avatar, SUM(wins), SUM(losses) FROM (
-                    SELECT winner_id AS user_id, winner_avatar AS avatar, 1 AS wins, 0 AS losses
-                    FROM match_records_archive
+        parts, params = [], []
+        for table in ("match_records_archive", "season_match_records"):
+            cur.execute(f"PRAGMA table_info({table})")
+            columns = {r[1] for r in cur.fetchall()}
+            if not {"event_id", "winner_avatar", "loser_avatar"} <= columns:
+                continue
+            # Bracket games move lifetime Elo only, never the season ladder
+            not_bracket = " AND (source IS NULL OR source != 'Bracket')" if "source" in columns else ""
+            parts.append(
+                f"""SELECT winner_id AS user_id, winner_avatar AS avatar, 1 AS wins, 0 AS losses
+                    FROM {table}
                     WHERE event_id = ? AND winner_avatar IS NOT NULL {not_bracket}
                     UNION ALL
                     SELECT losser_id AS user_id, loser_avatar AS avatar, 0 AS wins, 1 AS losses
-                    FROM match_records_archive
-                    WHERE event_id = ? AND loser_avatar IS NOT NULL {not_bracket}
-                ) GROUP BY user_id, avatar""",
-            (event_id, event_id),
+                    FROM {table}
+                    WHERE event_id = ? AND loser_avatar IS NOT NULL {not_bracket}"""
+            )
+            params += [event_id, event_id]
+        if not parts:
+            return {}
+        cur.execute(
+            f"SELECT user_id, avatar, SUM(wins), SUM(losses) FROM ({' UNION ALL '.join(parts)})"
+            " GROUP BY user_id, avatar",
+            params,
         )
         return {
             (str(r[0]), r[1]): {"wins": int(r[2]), "losses": int(r[3])} for r in cur.fetchall()
@@ -106,11 +118,13 @@ def _custom_names() -> dict:
         return {}
 
 
-def _season_honours(season: dict, names: dict) -> list[dict]:
+def _season_honours(season: dict, names: dict, one_per_player: bool = True) -> list[dict]:
     """Top three per avatar on the season's ladder (event Elo, 10+ games).
 
     A player counts once per season, on their highest-ranked avatar: their
     other avatar entries step aside, so the next player on that avatar moves up.
+    With one_per_player=False every avatar keeps its own plain ladder order
+    (a player can then top more than one avatar); honours never use that.
     """
     records = _season_records(season["id"])
     ladders = {}
@@ -120,7 +134,7 @@ def _season_honours(season: dict, names: dict) -> list[dict]:
         user_id = str(entry["user_id"])
         record = records.get((user_id, entry["avatar"]))
         games = entry["games_played"]
-        if games < HONOUR_MIN_GAMES or user_id in placed:
+        if games < HONOUR_MIN_GAMES or (one_per_player and user_id in placed):
             continue
         placed.add(user_id)
         ladders.setdefault(entry["avatar"], []).append(
@@ -153,9 +167,13 @@ def _season_honours(season: dict, names: dict) -> list[dict]:
     return honours
 
 
-def get_all_honours() -> list[dict]:
-    """Every honour from every ended Avatar-mode season, newest season first."""
-    key = _db_signature()
+def get_all_honours(one_per_player: bool = True) -> list[dict]:
+    """Every honour from every ended Avatar-mode season, newest season first.
+
+    one_per_player=False is the plain per-avatar ladder (see _season_honours),
+    used only by the partner season-top-avatars API when asked for it.
+    """
+    key = (_db_signature(), one_per_player)
     with _cache_lock:
         if key in _cache:
             return _cache[key]
@@ -169,14 +187,25 @@ def get_all_honours() -> list[dict]:
     names = _custom_names() if seasons else {}
     for season in reversed(seasons):
         try:
-            honours.extend(_season_honours(season, names))
+            honours.extend(_season_honours(season, names, one_per_player))
         except sqlite3.OperationalError as e:
             logger.warning("Could not read avatar honours for %s: %s", season["name"], e)
 
     with _cache_lock:
-        _cache.clear()
+        # Keep only entries for the current data (both modes may be cached)
+        for old in [k for k in _cache if k[0] != key[0]]:
+            del _cache[old]
         _cache[key] = honours
     return honours
+
+
+def ended_avatar_seasons() -> list[dict]:
+    """Ended Avatar-mode seasons, newest first ([] if they can't be read)."""
+    try:
+        return list(reversed(_ended_avatar_seasons()))
+    except sqlite3.OperationalError as e:
+        logger.warning("Could not list seasons for avatar honours: %s", e)
+        return []
 
 
 def get_honours_by_player() -> dict:

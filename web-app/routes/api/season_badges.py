@@ -108,3 +108,79 @@ def get_partner_season_badges():
         wanted = sorted(set(brackets) | set(avatars))
     players = [_player_payload(u, brackets, avatars) for u in wanted]
     return jsonify({"success": True, "players": players}), 200
+
+
+@season_badges_bp.route("/partner/season-top-avatars", methods=["GET"])
+@require_integration_api_key
+def get_partner_season_top_avatars():
+    """The top player on each avatar, for past (ended) Avatar-mode seasons.
+
+    The season-first view of the avatar honours: one call gives PSO who was
+    "Top <avatar>" in each season, without asking about players one by one.
+
+    ?season=<id or name>  one season (e.g. 9 or "Gothic Season 9"); without
+                          it, every ended Avatar-mode season, newest first.
+    ?places=1|2|3         how deep each avatar goes (default 1 = top only).
+    ?ladder=honours|plain honours (default) = the same people as the season
+                          badges: a player counts only on their best avatar
+                          that season. plain = each avatar's own ladder order,
+                          so one player can top several avatars.
+
+    Read from saved season standings only; nothing here calls PSO.
+    """
+    try:
+        places = int(request.args.get("places", 1))
+    except ValueError:
+        places = 0
+    if not 1 <= places <= avatar_honours.HONOUR_PLACES:
+        return jsonify({"success": False,
+                        "error": f"places must be 1 to {avatar_honours.HONOUR_PLACES}"}), 400
+
+    ladder = (request.args.get("ladder") or "honours").strip().lower()
+    if ladder not in ("honours", "plain"):
+        return jsonify({"success": False, "error": "ladder must be 'honours' or 'plain'"}), 400
+
+    seasons = avatar_honours.ended_avatar_seasons()
+    wanted = (request.args.get("season") or "").strip()
+    if wanted:
+        seasons = [s for s in seasons
+                   if str(s["id"]) == wanted or (s["name"] or "").lower() == wanted.lower()]
+        if not seasons:
+            return jsonify({"success": False,
+                            "error": "No ended Avatar-mode season matches that season"}), 404
+
+    by_season = {}
+    for h in avatar_honours.get_all_honours(one_per_player=(ladder == "honours")):
+        if h["place"] <= places:
+            by_season.setdefault(h["season_id"], []).append(
+                {
+                    "avatar": h["avatar"],
+                    "place": h["place"],
+                    "user_id": h["player_id"],
+                    "name": h["name"],
+                    "elo": h["elo"],
+                    "games": h["games"],
+                    "wins": h["wins"],
+                    "losses": h["losses"],
+                    "label": h["label"],
+                    "title": h["title"],
+                }
+            )
+
+    return jsonify(
+        {
+            "success": True,
+            "ladder": ladder,
+            "places": places,
+            "min_games": avatar_honours.HONOUR_MIN_GAMES,
+            "seasons": [
+                {
+                    "season_id": s["id"],
+                    "season": s["name"],
+                    "season_ended": s["end_date"],
+                    "avatars": by_season.get(s["id"], []),
+                }
+                for s in seasons
+            ],
+        }
+    ), 200

@@ -5,7 +5,7 @@ the first player when it opens the table and sends it in the pairing JSON
 (``firstPlayerDiscordUserId``), the way online chess balances White and
 Black over a player's games:
 
-1. Count each player's past games IN THE SAME QUEUE where we know who
+1. Count each player's last 20 games IN THE SAME QUEUE where we know who
    went first (Bruce's choice, 2026-11-17: going first a lot in casual
    doesn't count against you in ranked). Turn order has been recorded
    since 2026-02-07. Where each queue's games live:
@@ -35,6 +35,10 @@ logger = logging.getLogger("discord_bot")
 DB_NAME = "match_records.db"
 MATCH_TABLES = ("match_records", "match_records_archive", "season_match_records")
 LIMITED_TABLES = ("limited_match_records", "limited_match_records_archive")
+# Only each player's most recent games count (Bruce, 2026-11-18: lifetime
+# shares moved so slowly that veterans went first, or second, game after
+# game). A short window corrects within a few games.
+RECENT_GAMES = 20
 
 
 def _flag(value):
@@ -52,7 +56,7 @@ def _flag(value):
 def _queries(queue_type, marks):
     """(sql, uses_match_type_param) for each table holding this queue's games."""
     queue_type = (queue_type or "ranked").lower()
-    cols = "winner_id, {loser} AS loser_id, winner_went_first, loser_went_first"
+    cols = "winner_id, {loser} AS loser_id, winner_went_first, loser_went_first, timestamp"
     who = "(winner_id IN ({m}) OR {loser} IN ({m}))"
     if queue_type == "limited":
         return [
@@ -75,12 +79,13 @@ def _queries(queue_type, marks):
     return main
 
 
-def going_first_counts(user_ids, queue_type="ranked", db_name=None):
-    """{user_id: (games_went_first, games_with_known_turn_order)} in one queue."""
+def going_first_counts(user_ids, queue_type="ranked", db_name=None, recent=RECENT_GAMES):
+    """{user_id: (games_went_first, games_counted)} over each player's last
+    ``recent`` games in one queue where turn order is known."""
     ids = [int(u) for u in user_ids]
     if not ids:
         return {}
-    counts = {u: [0, 0] for u in ids}
+    history = {u: [] for u in ids}  # (timestamp, went_first)
     marks = ",".join("?" * len(ids))
     queue = (queue_type or "ranked").lower()
     conn = sqlite3.connect(db_name or DB_NAME)
@@ -92,7 +97,7 @@ def going_first_counts(user_ids, queue_type="ranked", db_name=None):
                 rows = cur.execute(sql, params).fetchall()
             except sqlite3.OperationalError:
                 continue  # table (or a column) missing on an old database
-            for winner_id, loser_id, winner_flag, loser_flag in rows:
+            for winner_id, loser_id, winner_flag, loser_flag, timestamp in rows:
                 winner_first = _flag(winner_flag)
                 loser_first = _flag(loser_flag)
                 if winner_first is None:
@@ -104,13 +109,17 @@ def going_first_counts(user_ids, queue_type="ranked", db_name=None):
                         user_id = int(user_id)
                     except (TypeError, ValueError):
                         continue
-                    if user_id in counts:
-                        counts[user_id][1] += 1
-                        if went_first:
-                            counts[user_id][0] += 1
+                    if user_id in history:
+                        history[user_id].append((str(timestamp or ""), went_first))
     finally:
         conn.close()
-    return {u: (c[0], c[1]) for u, c in counts.items()}
+    counts = {}
+    for user_id, games in history.items():
+        games.sort(key=lambda g: g[0], reverse=True)
+        if recent:
+            games = games[:recent]
+        counts[user_id] = (sum(1 for _, first in games if first), len(games))
+    return counts
 
 
 def _share(first, games):

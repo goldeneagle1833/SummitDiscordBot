@@ -307,3 +307,54 @@ def delete_badge_only_event(event_id):
         return jsonify({"success": False, "error": "That event is not here any more"}), 404
     _log("paper_badge_only_removed", target_name=event_id)
     return jsonify({"success": True}), 200
+
+
+# -- Top avatar badges for one event (see services/event_avatar_badges.py) --
+
+@paper_finishes_bp.route("/event-avatar-badges", methods=["GET"])
+def get_event_avatar_badges():
+    """Every awarded event avatar badge ("Top Sparkmage · <event>"), keyed by player id."""
+    from services import event_avatar_badges
+
+    try:
+        return jsonify({"success": True, "badges": event_avatar_badges.get_badges_by_player()}), 200
+    except Exception as e:
+        logger.error("Failed to load event avatar badges: %s", e, exc_info=True)
+        # Profiles should still render without their decorations.
+        return jsonify({"success": True, "badges": {}}), 200
+
+
+@paper_finishes_bp.route("/admin/event-avatar-badges/<path:folder>", methods=["GET"])
+@require_admin
+def preview_event_avatar_badges(folder):
+    """Who would earn each avatar's badge at this event, and what is awarded now."""
+    from services import event_avatar_badges
+
+    result = event_avatar_badges.preview(folder)
+    if result is None:
+        return jsonify({"success": False, "error": "Event not found"}), 404
+    return jsonify({"success": True, **result}), 200
+
+
+@paper_finishes_bp.route("/admin/event-avatar-badges/<path:folder>", methods=["POST"])
+@require_admin
+def award_event_avatar_badges(folder):
+    """Award (or re-award) this event's top avatar badges as the preview shows them."""
+    from services import event_avatar_badges
+
+    result = event_avatar_badges.award(folder, admin=str(_admin()[1]))
+    if result is None:
+        return jsonify({"success": False, "error": "Event not found"}), 404
+    _log("event_avatar_badges_awarded", target_name=folder, details=f"{len(result['awarded'])} badges")
+    return jsonify({"success": True, **result}), 200
+
+
+@paper_finishes_bp.route("/admin/event-avatar-badges/<path:folder>", methods=["DELETE"])
+@require_admin
+def undo_event_avatar_badges(folder):
+    """Take back every top avatar badge this event gave."""
+    from services import event_avatar_badges
+
+    removed = event_avatar_badges.undo(folder)
+    _log("event_avatar_badges_removed", target_name=folder, details=f"{removed} badges")
+    return jsonify({"success": True, "removed": removed}), 200

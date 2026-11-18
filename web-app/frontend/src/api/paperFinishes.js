@@ -35,3 +35,13 @@ export const updateBadgeOnlyEvent = (eventId, body) =>
   put(`/api/admin/paper-finishes/badge-only/${encodeURIComponent(eventId)}`, body)
 export const deleteBadgeOnlyEvent = (eventId) =>
   del(`/api/admin/paper-finishes/badge-only/${encodeURIComponent(eventId)}`)
+
+// Top avatar badges for one event: the best finisher on each avatar in the
+// whole field earns "Top <avatar> · <event>" (admin preview, award, undo)
+export const getEventAvatarBadges = () => get('/api/event-avatar-badges')
+export const previewEventAvatarBadges = (folder) =>
+  get(`/api/admin/event-avatar-badges/${encodeURIComponent(folder)}`)
+export const awardEventAvatarBadges = (folder) =>
+  post(`/api/admin/event-avatar-badges/${encodeURIComponent(folder)}`, {})
+export const undoEventAvatarBadges = (folder) =>
+  del(`/api/admin/event-avatar-badges/${encodeURIComponent(folder)}`)

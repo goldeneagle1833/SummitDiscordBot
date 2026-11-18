@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import PostseasonName, { useBracketMarks } from '@/components/player/BracketMarks'
 import { AvatarHonourBadge, useAvatarHonours } from '@/components/player/AvatarHonours'
 import { PaperFinishChips, usePaperFinishes } from '@/components/player/PaperFinishes'
+import { EventAvatarBadgeChips, useEventAvatarBadges } from '@/components/player/EventAvatarBadges'
+import { eventBadgeKey, paperBadgeKey } from '@/components/player/profileBadges'
 import { ProvisionalTag } from '@/components/common/Provisional'
 import { provisionalOf } from '@/utils/provisional'
 
@@ -119,11 +121,17 @@ function PostseasonBadge({ label, entries = [], onClick }) {
  */
 export default function PlayerHeader({
   data, playerId, headline = {}, avatarEntries = [], eventFilter, pastEvents, onEventChange,
-  canSeeLifetime, onReport, settingsItems = [], onPostseason, featured = null,
+  canSeeLifetime, onReport, settingsItems = [], onPostseason, featured = null, hiddenBadges = [],
 }) {
   const marks = useBracketMarks(playerId)
   const honours = useAvatarHonours(playerId)
-  const paperFinishes = usePaperFinishes(playerId)
+  const allPaperFinishes = usePaperFinishes(playerId)
+  const allEventBadges = useEventAvatarBadges(playerId)
+  // Badges the player switched off in "Profile badges" (still in the Postseason tab)
+  const hidden = new Set(hiddenBadges)
+  const shows = (key) => !hidden.has(key)
+  const paperFinishes = allPaperFinishes.filter((f) => shows(paperBadgeKey(f)))
+  const eventBadges = allEventBadges.filter((b) => shows(eventBadgeKey(b)))
   const wins = data.wins ?? 0
   const losses = data.losses ?? 0
 
@@ -141,27 +149,33 @@ export default function PlayerHeader({
             </PostseasonName>
           </h1>
           <div className="flex flex-wrap gap-2">
-            {marks?.best_label && (
+            {marks?.best_label && shows('postseason') && (
               <PostseasonBadge label={marks.best_label} entries={marks.entries} onClick={onPostseason} />
             )}
-            {marks?.limited_best_label && (
+            {marks?.limited_best_label && shows('postseason_limited') && (
               <PostseasonBadge
                 label={marks.limited_best_label}
                 entries={marks.entries}
                 onClick={onPostseason}
               />
             )}
-            {marks?.underdog_best_label && (
+            {marks?.underdog_best_label && shows('postseason_underdog') && (
               <PostseasonBadge
                 label={marks.underdog_best_label}
                 entries={marks.entries}
                 onClick={onPostseason}
               />
             )}
-            <AvatarHonourBadge honours={honours} onClick={onPostseason} />
+            {shows('avatar_honours') && <AvatarHonourBadge honours={honours} onClick={onPostseason} />}
           </div>
         </div>
       </div>
+
+      {eventBadges.length > 0 && (
+        <div className="basis-full -mt-2 lg:order-last">
+          <EventAvatarBadgeChips badges={eventBadges} />
+        </div>
+      )}
 
       {paperFinishes.length > 0 && (
         <div className="basis-full -mt-2 lg:order-last">

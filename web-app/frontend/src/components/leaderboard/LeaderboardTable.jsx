@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import PostseasonName, { PostseasonLegend } from '@/components/player/BracketMarks'
+import NameBadges from '@/components/player/NameBadges'
 import { VoiceGamesCell } from '@/components/leaderboard/VoiceGames'
 import { ProvisionalTag } from '@/components/common/Provisional'
 import { provisionalOf } from '@/utils/provisional'
@@ -109,6 +110,7 @@ export default function LeaderboardTable({
                         {entry.name || entry.display_name}
                       </Link>
                     </PostseasonName>
+                    <NameBadges playerId={playerId} className="ml-2" />
                   </td>
                   {showAvatar && (
                     <td className="px-3 py-2 text-sm text-text-muted">{entry.avatar}</td>

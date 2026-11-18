@@ -3240,6 +3240,21 @@ def set_hidden_badges(player_id):
     return jsonify({"success": True, "hidden": repo.get_hidden_badges(player_id_normalized)})
 
 
+@players_bp.route("/profile-badge-prefs", methods=["GET"])
+def get_profile_badge_prefs():
+    """Which badges each player chose for their name (leaderboards show the same).
+
+    Only players who changed the default (their best 3) are listed. The
+    badges themselves are public; this is just each player's pick.
+    """
+    try:
+        prefs = UserProfileRepository().get_all_badge_prefs()
+    except Exception as e:
+        logger.warning("Could not load badge preferences: %s", e)
+        prefs = {}
+    return jsonify({"success": True, "prefs": prefs})
+
+
 @players_bp.route("/player/<player_id>/shown-badges", methods=["PUT"])
 def set_shown_badges(player_id):
     """Pick the badges on the profile's hero card (owner or admin).

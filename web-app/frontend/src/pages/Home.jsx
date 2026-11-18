@@ -6,6 +6,7 @@ import { getEventLeaderboard, getLimitedLeaderboard, getPreconStandings } from '
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
 import { PreconLadder, preconSeasonText } from '@/components/leaderboard/PreconLadderContent'
 import PostseasonName, { PostseasonLegend } from '@/components/player/BracketMarks'
+import NameBadges from '@/components/player/NameBadges'
 import AvatarBadges, { AvatarCell } from '@/components/leaderboard/AvatarBadges'
 import { getAvatarImageFiles, getSeasonAvatarBadges } from '@/api/cards'
 import { badgesByPlayer, getAvatarImagePath } from '@/utils/avatarBadges'
@@ -674,6 +675,7 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
                 {player.name}
               </Link>
             </PostseasonName>
+            <NameBadges playerId={player.id} />
             {isPinned && (
               <span className="text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full bg-secondary text-bg-dark">YOU</span>
             )}

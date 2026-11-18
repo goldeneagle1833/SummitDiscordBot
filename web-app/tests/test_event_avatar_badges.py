@@ -200,3 +200,27 @@ def test_shown_badges_default_pick_and_reset(client, match_db, monkeypatch):
     assert resp.get_json()["shown"] == ["paper:B", "postseason"]  # order kept, no repeats
     assert client.put("/api/player/78/shown-badges", json={"shown": []}).get_json()["shown"] == []
     assert client.put("/api/player/78/shown-badges", json={"shown": None}).get_json()["shown"] is None
+
+
+def test_badge_prefs_list_only_players_who_chose(client, match_db, monkeypatch):
+    import webapp_config
+    from repositories.user_profiles import UserProfileRepository
+
+    monkeypatch.setattr(webapp_config, "MATCH_RECORDS_DB_PATH", match_db)
+    conn = sqlite3.connect(str(match_db))
+    for uid in ("81", "google_82", "83"):
+        conn.execute(
+            "INSERT INTO user_profiles (user_id, provider, display_name, first_login_at, last_login_at)"
+            " VALUES (?, 'discord', 'X', 'now', 'now')", (uid,)
+        )
+    conn.commit()
+    conn.close()
+    repo = UserProfileRepository(match_db)
+    repo.set_shown_badges("81", ["paper:A"])
+    repo.set_hidden_badges("82", ["avatar_honours"])
+
+    prefs = client.get("/api/profile-badge-prefs").get_json()["prefs"]
+    assert prefs == {
+        "81": {"shown": ["paper:A"], "hidden": []},
+        "82": {"shown": None, "hidden": ["avatar_honours"]},
+    }

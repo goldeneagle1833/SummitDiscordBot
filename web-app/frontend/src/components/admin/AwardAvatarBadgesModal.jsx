@@ -15,6 +15,9 @@ const NO_ACCOUNT = {
   nobody: 'Set to nobody',
 }
 
+// One tickable row: an avatar plus the player holding it there.
+const rowKey = (a) => `${a.avatar}|${a.player?.user_id ?? ''}`
+
 function record(a) {
   if (a.wins == null) return null
   return `${a.wins}-${a.losses}${a.draws ? `-${a.draws}` : ''}`
@@ -35,12 +38,15 @@ export default function AwardAvatarBadgesModal({ folder, onClose }) {
   const [picked, setPicked] = useState(new Set())
 
   const resetPicked = (res) => {
-    const eligible = (res?.avatars || []).filter((a) => a.player)
+    const best = (res?.avatars || []).filter((a) => a.player)
+    const everyone = [...best, ...(res?.others || []).filter((a) => a.player)]
     const current = res?.awarded || []
     setPicked(new Set(
       current.length
-        ? eligible.filter((a) => current.some((b) => b.avatar === a.avatar)).map((a) => a.avatar)
-        : eligible.map((a) => a.avatar),
+        ? everyone
+          .filter((a) => current.some((b) => b.avatar === a.avatar && String(b.user_id) === String(a.player.user_id)))
+          .map(rowKey)
+        : best.map(rowKey),
     ))
   }
 
@@ -64,7 +70,10 @@ export default function AwardAvatarBadgesModal({ folder, onClose }) {
     setError(null)
     try {
       if (action === 'award') {
-        const res = await awardEventAvatarBadges(folder, [...picked])
+        const res = await awardEventAvatarBadges(
+          folder,
+          eligible.filter((a) => picked.has(rowKey(a))).map((a) => ({ avatar: a.avatar, user_id: a.player.user_id })),
+        )
         setData(res)
         resetPicked(res)
         setDone(`${res.awarded.length} badge${res.awarded.length === 1 ? '' : 's'} awarded.`)
@@ -83,14 +92,51 @@ export default function AwardAvatarBadgesModal({ folder, onClose }) {
 
   const winners = data?.avatars?.filter((a) => a.player) || []
   const awarded = data?.awarded || []
-  const chosen = winners.filter((a) => picked.has(a.avatar))
-  const toggle = (avatar) => setPicked((prev) => {
+  const others = data?.others || []
+  const eligible = [...winners, ...others.filter((a) => a.player)]
+  const chosen = eligible.filter((a) => picked.has(rowKey(a)))
+  const toggle = (key) => setPicked((prev) => {
     const next = new Set(prev)
-    if (next.has(avatar)) next.delete(avatar)
-    else next.add(avatar)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
     return next
   })
-  const allPicked = winners.length > 0 && chosen.length === winners.length
+  const allPicked = eligible.length > 0 && chosen.length === eligible.length
+
+  const renderRow = (a, label) => {
+    const isAwarded = awarded.some((b) => b.avatar === a.avatar && String(b.user_id) === String(a.player?.user_id))
+    const key = rowKey(a)
+    return (
+      <li key={`${key}|${a.place}`} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2 text-sm">
+        <label className={`flex items-center gap-2 min-w-[8rem] ${a.player ? 'cursor-pointer' : 'opacity-60'}`}>
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-secondary"
+            checked={!!a.player && picked.has(key)}
+            disabled={!a.player || busy}
+            onChange={() => toggle(key)}
+            aria-label={label}
+          />
+          <strong className="text-text-primary">{a.avatar}</strong>
+        </label>
+        <span className="flex-1 min-w-[10rem]">
+          {a.player ? (
+            <Link to={`/player/${a.player.user_id}`} className="text-secondary hover:underline">
+              {a.player.name}
+            </Link>
+          ) : (
+            <span className="text-text-muted">
+              {a.paper_name || 'Unknown'} · {NO_ACCOUNT[a.status] || 'No Summit account'}
+            </span>
+          )}
+          {isAwarded && <span className="ml-2 text-xs text-green-400">awarded</span>}
+        </span>
+        <span className="text-xs text-text-muted tabular-nums">
+          {[`#${a.place}`, a.finish, record(a), `${a.avatar_players} on it`].filter(Boolean).join(' · ')}
+        </span>
+      </li>
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
@@ -123,12 +169,12 @@ export default function AwardAvatarBadgesModal({ folder, onClose }) {
                   : 'No match history imported, so only the Top 8 decks count. Import Match History first to include the whole field.'}
                 {awarded.length > 0 && ` ${awarded.length} badge${awarded.length === 1 ? ' is' : 's are'} awarded now.`}
               </p>
-              {winners.length > 1 && (
+              {eligible.length > 1 && (
                 <div className="flex items-center justify-between text-xs text-text-muted">
-                  <span>Tick the avatars that get a badge at this event. Unticked ones get none.</span>
+                  <span>Tick who gets a badge at this event. Unticked players get none.</span>
                   <button
                     type="button"
-                    onClick={() => setPicked(new Set(allPicked ? [] : winners.map((a) => a.avatar)))}
+                    onClick={() => setPicked(new Set(allPicked ? [] : eligible.map(rowKey)))}
                     className="text-secondary hover:underline"
                   >
                     {allPicked ? 'Untick all' : 'Tick all'}
@@ -139,42 +185,20 @@ export default function AwardAvatarBadgesModal({ folder, onClose }) {
                 <p className="text-sm text-text-muted">No decks with an avatar in this event.</p>
               ) : (
                 <ul className="divide-y divide-border border border-border rounded-lg">
-                  {data.avatars.map((a) => {
-                    const isAwarded = awarded.some((b) => b.avatar === a.avatar && b.user_id === a.player?.user_id)
-                    return (
-                      <li key={a.avatar} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2 text-sm">
-                        <label className={`flex items-center gap-2 min-w-[8rem] ${a.player ? 'cursor-pointer' : 'opacity-60'}`}>
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 accent-secondary"
-                            checked={!!a.player && picked.has(a.avatar)}
-                            disabled={!a.player || busy}
-                            onChange={() => toggle(a.avatar)}
-                            aria-label={`Give the ${a.avatar} badge`}
-                          />
-                          <strong className="text-text-primary">{a.avatar}</strong>
-                        </label>
-                        <span className="flex-1 min-w-[10rem]">
-                          {a.player ? (
-                            <Link to={`/player/${a.player.user_id}`} className="text-secondary hover:underline">
-                              {a.player.name}
-                            </Link>
-                          ) : (
-                            <span className="text-text-muted">
-                              {a.paper_name || 'Unknown'} · {NO_ACCOUNT[a.status] || 'No Summit account'}
-                            </span>
-                          )}
-                          {isAwarded && <span className="ml-2 text-xs text-green-400">awarded</span>}
-                        </span>
-                        <span className="text-xs text-text-muted tabular-nums">
-                          {[`#${a.place}`, a.finish, record(a), `${a.avatar_players} on it`].filter(Boolean).join(' · ')}
-                        </span>
-                      </li>
-                    )
-                  })}
+                  {data.avatars.map((a) => renderRow(a, `Give the ${a.avatar} badge`))}
                 </ul>
               )}
-              {data.avatars.some((a) => !a.player) && (
+              {others.length > 0 && (
+                <>
+                  <p className="text-xs text-text-muted pt-1">
+                    Rest of the Top 8: tick these when the event gave the prize to more than one player per avatar (for example the whole Top 4).
+                  </p>
+                  <ul className="divide-y divide-border border border-border rounded-lg">
+                    {others.map((a) => renderRow(a, `Give ${a.player?.name || a.paper_name || 'this player'} a ${a.avatar} badge`))}
+                  </ul>
+                </>
+              )}
+              {[...data.avatars, ...others].some((a) => !a.player) && (
                 <p className="text-xs text-text-muted">
                   To give a badge to someone listed without an account, link their name to their profile (Admin &gt; Paper Tournament Badges, or Set profile on a Top 8 row), then award again.
                 </p>

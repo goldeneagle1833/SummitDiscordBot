@@ -30,11 +30,24 @@ export default function AwardAvatarBadgesModal({ folder, onClose }) {
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(null)
+  // Avatars ticked to receive a badge. Events have different prize rules, so
+  // the admin picks; starts as what is awarded now, or every eligible avatar.
+  const [picked, setPicked] = useState(new Set())
+
+  const resetPicked = (res) => {
+    const eligible = (res?.avatars || []).filter((a) => a.player)
+    const current = res?.awarded || []
+    setPicked(new Set(
+      current.length
+        ? eligible.filter((a) => current.some((b) => b.avatar === a.avatar)).map((a) => a.avatar)
+        : eligible.map((a) => a.avatar),
+    ))
+  }
 
   const load = () => {
     setError(null)
     previewEventAvatarBadges(folder)
-      .then(setData)
+      .then((res) => { setData(res); resetPicked(res) })
       .catch((err) => setError(err.message || 'Could not load the event'))
   }
 
@@ -51,8 +64,9 @@ export default function AwardAvatarBadgesModal({ folder, onClose }) {
     setError(null)
     try {
       if (action === 'award') {
-        const res = await awardEventAvatarBadges(folder)
+        const res = await awardEventAvatarBadges(folder, [...picked])
         setData(res)
+        resetPicked(res)
         setDone(`${res.awarded.length} badge${res.awarded.length === 1 ? '' : 's'} awarded.`)
       } else {
         const res = await undoEventAvatarBadges(folder)
@@ -69,6 +83,14 @@ export default function AwardAvatarBadgesModal({ folder, onClose }) {
 
   const winners = data?.avatars?.filter((a) => a.player) || []
   const awarded = data?.awarded || []
+  const chosen = winners.filter((a) => picked.has(a.avatar))
+  const toggle = (avatar) => setPicked((prev) => {
+    const next = new Set(prev)
+    if (next.has(avatar)) next.delete(avatar)
+    else next.add(avatar)
+    return next
+  })
+  const allPicked = winners.length > 0 && chosen.length === winners.length
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
@@ -101,6 +123,18 @@ export default function AwardAvatarBadgesModal({ folder, onClose }) {
                   : 'No match history imported, so only the Top 8 decks count. Import Match History first to include the whole field.'}
                 {awarded.length > 0 && ` ${awarded.length} badge${awarded.length === 1 ? ' is' : 's are'} awarded now.`}
               </p>
+              {winners.length > 1 && (
+                <div className="flex items-center justify-between text-xs text-text-muted">
+                  <span>Tick the avatars that get a badge at this event. Unticked ones get none.</span>
+                  <button
+                    type="button"
+                    onClick={() => setPicked(new Set(allPicked ? [] : winners.map((a) => a.avatar)))}
+                    className="text-secondary hover:underline"
+                  >
+                    {allPicked ? 'Untick all' : 'Tick all'}
+                  </button>
+                </div>
+              )}
               {data.avatars.length === 0 ? (
                 <p className="text-sm text-text-muted">No decks with an avatar in this event.</p>
               ) : (
@@ -109,7 +143,17 @@ export default function AwardAvatarBadgesModal({ folder, onClose }) {
                     const isAwarded = awarded.some((b) => b.avatar === a.avatar && b.user_id === a.player?.user_id)
                     return (
                       <li key={a.avatar} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2 text-sm">
-                        <strong className="text-text-primary min-w-[8rem]">{a.avatar}</strong>
+                        <label className={`flex items-center gap-2 min-w-[8rem] ${a.player ? 'cursor-pointer' : 'opacity-60'}`}>
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-secondary"
+                            checked={!!a.player && picked.has(a.avatar)}
+                            disabled={!a.player || busy}
+                            onChange={() => toggle(a.avatar)}
+                            aria-label={`Give the ${a.avatar} badge`}
+                          />
+                          <strong className="text-text-primary">{a.avatar}</strong>
+                        </label>
                         <span className="flex-1 min-w-[10rem]">
                           {a.player ? (
                             <Link to={`/player/${a.player.user_id}`} className="text-secondary hover:underline">
@@ -157,10 +201,10 @@ export default function AwardAvatarBadgesModal({ folder, onClose }) {
           </button>
           <button
             onClick={() => run('award')}
-            disabled={busy || !winners.length}
+            disabled={busy || !chosen.length}
             className="px-4 py-2 text-sm rounded bg-secondary text-black font-semibold hover:opacity-90 disabled:opacity-50"
           >
-            {busy ? 'Working...' : `${awarded.length ? 'Award again' : 'Award'} ${winners.length} badge${winners.length === 1 ? '' : 's'}`}
+            {busy ? 'Working...' : `${awarded.length ? 'Award again' : 'Award'} ${chosen.length} badge${chosen.length === 1 ? '' : 's'}`}
           </button>
         </div>
       </div>

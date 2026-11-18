@@ -202,12 +202,19 @@ def preview(folder: str) -> dict | None:
     }
 
 
-def award(folder: str, admin: str) -> dict | None:
-    """Save this event's badges as the preview shows them (replacing earlier ones)."""
+def award(folder: str, admin: str, avatars: list[str] | None = None) -> dict | None:
+    """Save this event's badges as the preview shows them (replacing earlier ones).
+
+    ``avatars`` limits the award to the avatars the admin ticked (events have
+    different prize rules); None awards every avatar with a Summit account.
+    """
     result = preview(folder)
     if result is None:
         return None
     winners = [a for a in result["avatars"] if a["player"]]
+    if avatars is not None:
+        picked = set(avatars)
+        winners = [a for a in winners if a["avatar"] in picked]
     with _lock:
         conn = _conn()
         try:

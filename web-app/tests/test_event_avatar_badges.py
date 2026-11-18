@@ -112,6 +112,23 @@ def test_award_stores_badges_and_undo_removes_them(setup, elo_db):
     assert get_badges_by_player() == {}
 
 
+def test_award_only_ticked_avatars(setup, elo_db):
+    from services.event_avatar_badges import award, get_badges_by_player
+
+    _player(elo_db, "1", "Annabel")
+    _player(elo_db, "3", "Catherine")
+    _realm(setup)
+
+    result = award(EVENT, admin="AdminUser", avatars=["Seer"])
+    assert [b["avatar"] for b in result["awarded"]] == ["Seer"]
+    assert "1" not in get_badges_by_player()
+
+    # Ticking a different set replaces the earlier pick; nothing ticked = none
+    award(EVENT, admin="AdminUser", avatars=["Sparkmage"])
+    assert set(get_badges_by_player()) == {"1"}
+    assert award(EVENT, admin="AdminUser", avatars=[])["awarded"] == []
+
+
 def test_event_without_match_history_uses_top_cut_only(setup, elo_db):
     from services.event_avatar_badges import preview
 
@@ -136,6 +153,8 @@ def test_admin_routes(setup, elo_db, admin_session, monkeypatch):
         pytest.skip("admin session fixture is not an admin in this config")
     assert resp.status_code == 200
     assert resp.get_json()["avatars"]
+    assert admin_session.post(url, json={"avatars": "Sparkmage"}).status_code == 400
+    assert admin_session.post(url, json={"avatars": []}).get_json()["awarded"] == []
     assert admin_session.post(url).get_json()["awarded"][0]["avatar"] == "Sparkmage"
     public = admin_session.get("/api/event-avatar-badges").get_json()
     assert public["badges"]["1"][0]["label"] == "Top Sparkmage"

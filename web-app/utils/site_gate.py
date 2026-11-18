@@ -50,13 +50,6 @@ COOKIE_NAME = "summit_site"
 HEADER_NAME = "X-Site-Token"
 GATED_PREFIX = "/api/"
 
-# Clients refused outright unless they hold an API key, matched as a
-# case-insensitive substring of the User-Agent.  Each one was caught scraping
-# by forging the same-site headers to get a site token.
-#   "sorceryrec": "SorceryRec competitive archive/1.0" copied every Top 8 event
-#   and ~2,000 deck recs nightly (Nov 2026 bot report; Bruce asked to block it).
-BLOCKED_USER_AGENTS = ("sorceryrec",)
-
 # Endpoints reachable with neither an API key nor a site token.
 EXEMPT_ENDPOINTS = frozenset(
     {
@@ -197,9 +190,19 @@ def _set_cookie(response: Response, token: str) -> Response:
 
 
 def is_blocked_client() -> bool:
-    """True when the User-Agent belongs to a client we have chosen to refuse."""
-    agent = (request.headers.get("User-Agent") or "").lower()
-    return any(blocked in agent for blocked in BLOCKED_USER_AGENTS)
+    """True when the User-Agent or IP is on the admin Bot Traffic block list.
+
+    Rules live in the monitoring DB (``services.bot_monitor``); the first one,
+    "sorceryrec", is seeded by code.  A lookup failure never blocks anyone.
+    """
+    from services.bot_monitor import match_block
+    from utils.monitoring import client_ip
+
+    try:
+        return match_block(request.headers.get("User-Agent", ""), client_ip())
+    except Exception:
+        logger.warning("Block list lookup failed", exc_info=True)
+        return False
 
 
 def _reject(message: str, code: str, status: int = 401):
@@ -237,6 +240,7 @@ def init_site_gate(app: Flask) -> None:
         if request.method == "OPTIONS" or not request.path.startswith(GATED_PREFIX):
             return None
         if is_blocked_client() and not has_valid_api_key():
+            g.blocked_client = True
             return _reject("This client is blocked from the Summit API", "blocked_client", 403)
         if request.endpoint in EXEMPT_ENDPOINTS:
             return None

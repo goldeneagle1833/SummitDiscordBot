@@ -5,7 +5,8 @@ import logging
 from flask import Blueprint, jsonify, request, session
 
 from repositories.nav_seen import NavSeenRepository
-from services.new_content import PAGE_SOURCES, get_new_content
+from services.new_content import PAGE_SOURCES
+from services.new_content import get_new_content as load_new_content
 
 nav_bp = Blueprint("nav", __name__)
 logger = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ def get_new_content():
     """Latest content time per menu page (cached site-wide) plus, when logged in,
     when this person last opened each page. Logged-out visitors track "seen"
     in their browser."""
-    data = get_new_content()
+    data = load_new_content()
     latest = data["latest"]
     seen = None
     user_id = session.get("user_id")

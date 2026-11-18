@@ -425,6 +425,12 @@ class TestFartRepositoryReset:
                     PRIMARY KEY (gifter_id, recipient_id)
                 )
             """,
+            "fart_court_filing": """
+                CREATE TABLE fart_court_filing (
+                    user_id INTEGER PRIMARY KEY,
+                    filed_at TEXT NOT NULL
+                )
+            """,
             "protection_status": """
                 CREATE TABLE protection_status (
                     user_id INTEGER PRIMARY KEY,
@@ -550,6 +556,9 @@ class TestFartRepositoryReset:
             "INSERT INTO fart_gift_usage VALUES (1, 2, '2026-08-01T00:00:00')"
         )
         conn.execute(
+            "INSERT INTO fart_court_filing VALUES (1, '2026-08-01T00:00:00')"
+        )
+        conn.execute(
             "INSERT INTO protection_status VALUES (1, '2099-01-01T00:00:00')"
         )
         conn.execute(
@@ -667,6 +676,7 @@ class TestFartRepositoryReset:
             "evil_star_usage",
             "fart_donation_usage",
             "fart_gift_usage",
+            "fart_court_filing",
             "protection_status",
             "shop_blocks",
             "gas_shields",
@@ -700,6 +710,7 @@ class TestFartRepositoryReset:
             "evil_star_usage",
             "fart_donation_usage",
             "fart_gift_usage",
+            "fart_court_filing",
             "protection_status",
             "shop_blocks",
             "gas_shields",
@@ -847,6 +858,42 @@ class TestFartRepositoryReset:
         assert "Once per season" in abundance["description"]
         assert abundance["effect"]["effect"] == "double_points"
         assert abundance["effect"]["charges"] == 7
+
+    def test_stale_weekly_fart_court_row_becomes_a_season_fee(self, tmp_path):
+        from repositories.fart import FartRepository
+
+        db_path = tmp_path / "fart_scores.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE fart_shop_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                label TEXT NOT NULL,
+                description TEXT,
+                cost INTEGER NOT NULL DEFAULT 0,
+                damage INTEGER NOT NULL DEFAULT 0,
+                cooldown TEXT NOT NULL DEFAULT 'none',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                effect TEXT
+            )
+        """)
+        conn.execute(
+            "INSERT INTO fart_shop_items (name, label, description, cost, cooldown, effect) "
+            "VALUES ('fart_court', 'Fart Court', '50% chance they pay you the amount, 50% chance you pay them', 0, 'weekly', ?)",
+            ('{"action": "court", "win_chance": 50}',),
+        )
+        conn.commit()
+        conn.close()
+
+        repo = FartRepository(db_path=db_path)
+        court = {item["name"]: item for item in repo.get_shop_items()}["fart_court"]
+        assert court["cost"] == 100
+        assert court["cooldown"] == "once_per_season"
+        assert "Supreme Court" in court["description"]
+        assert court["effect"]["action"] == "filing_fee"
+        assert court["effect"]["fee"] == 100
+        assert court["effect"]["once_per_season"] is True
 
 
 def _make_event(tmp_path, decks):

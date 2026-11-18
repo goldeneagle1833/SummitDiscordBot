@@ -61,7 +61,14 @@ _SHOP_EFFECTS = {
     "fart_leech": {"action": "steal", "target": "random", "formula": "2d20/2"},
     "fart_donation": {"action": "donate", "target": "specified", "cost_type": "custom",
                       "max_amount": 100, "once_per_recipient_per_season": True},
-    "fart_court": {"action": "court", "target": "specified", "win_chance": 50, "cost_type": "custom"},
+    # Stake case (50/50, custom amount) is suspended. Restore that effect to
+    # bring the old court back with the commented command in shop.py.
+    "fart_court": {
+        "action": "filing_fee",
+        "fee": 100,
+        "once_per_season": True,
+        "superseded_by": "supreme_court",
+    },
 }
 
 
@@ -92,7 +99,7 @@ class FartRepository:
         ("gas_gamble", "Gas Gamble", "40% chance to double your bet, 60% to lose it all", 0, 0, "none"),
         ("fart_leech", "Fart Leech", "Steal 2d20/2 points from a random player", 5, 0, "daily"),
         ("fart_donation", "Fart Donation", "Donate points to another player (max 100, once per player per season)", 0, 0, "once_per_season"),
-        ("fart_court", "Fart Court", "50% chance they pay you the amount, 50% chance you pay them", 0, 0, "weekly"),
+        ("fart_court", "Fart Court", "The Supreme Court overturned it. The first filing each season costs 100 points. After that, the ban stands.", 100, 0, "once_per_season"),
     ]
 
     _DEFAULT_COMMANDS = [
@@ -343,13 +350,21 @@ class FartRepository:
                 )
             conn.commit()
         self._sync_fartabundance_item(conn)
+        self._sync_fart_court_item(conn)
         conn.commit()
 
     def _sync_fartabundance_item(self, conn):
         """Keep the built-in Abundance card matched to the bot (charges, season lock)."""
-        effect_json = json.dumps(_SHOP_EFFECTS.get("fartabundance", {}))
+        self._sync_builtin_shop_item(conn, "fartabundance")
+
+    def _sync_fart_court_item(self, conn):
+        """Keep the Fart Court card on the Supreme Court order (fee, season lock)."""
+        self._sync_builtin_shop_item(conn, "fart_court")
+
+    def _sync_builtin_shop_item(self, conn, item_name: str):
+        effect_json = json.dumps(_SHOP_EFFECTS.get(item_name, {}))
         for name, label, desc, cost, damage, cooldown in self._DEFAULT_SHOP_ITEMS:
-            if name != "fartabundance":
+            if name != item_name:
                 continue
             conn.execute(
                 """UPDATE fart_shop_items
@@ -442,7 +457,7 @@ class FartRepository:
     _KNOWN_TRACKING_TABLES = frozenset({
         "fart_scores",
         "fart_history",
-        "command_usage",          # !bullfart (own weekly timer), shop daily/weekly items, !fart_court, etc.
+        "command_usage",          # !bullfart (own weekly timer), shop daily/weekly items
         "lucky_charms",           # active !mushroom buff
         "abundance_buff",         # !fartabundance charges, once per season
         "uber_rare_hits",         # Lavashart / Frostshart / Yourt hit counts
@@ -451,6 +466,7 @@ class FartRepository:
         "evil_star_usage",        # once/season + star locks
         "fart_donation_usage",    # once/recipient/season
         "fart_gift_usage",        # once/recipient/season
+        "fart_court_filing",      # !fart_court Supreme Court fee, once per season
         "protection_status",      # !star 72h
         "shop_blocks",            # !stink_cloud 24h
         "gas_shields",

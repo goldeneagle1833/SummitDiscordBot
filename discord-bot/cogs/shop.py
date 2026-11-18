@@ -30,6 +30,8 @@ class ShopCog(commands.Cog):
     # !fartabundance: pay this much, then immediately refund the amount below.
     FART_ABUNDANCE_COST = 500
     FART_ABUNDANCE_REFUND = 400
+    # !fart_court filing fee while the Supreme Court order stands. Once per season.
+    FART_COURT_FEE = 100
     # Browse catalog freely; gas_gamble is intentionally unrestricted
     RATE_LIMIT_EXEMPT = frozenset({"fart_shop", "gas_gamble"})
     # Point transfers / wagers / pacts are not "loot the floor" shop toys
@@ -264,10 +266,6 @@ class ShopCog(commands.Cog):
             return
 
         if isinstance(error, commands.BadArgument):
-            if ctx.command and ctx.command.name == "fart_court":
-                await ctx.send(
-                    f"{ctx.author.mention}, usage: `!fart_court @user <amount>`"
-                )
             return
 
         # Only handle CommandNotFound typos below
@@ -743,6 +741,49 @@ class ShopCog(commands.Cog):
                 PRIMARY KEY (donor_id, recipient_id)
             )
         """)
+
+    def _ensure_fart_court_filing_table(self, cur):
+        """Once-per-season record that this player already paid the court fee.
+
+        Wiped with the rest of the season by Reset Fart Game.
+        """
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS fart_court_filing (
+                user_id INTEGER PRIMARY KEY,
+                filed_at TEXT NOT NULL
+            )
+        """)
+
+    def _fart_court_order_message(self, mention: str) -> str:
+        fee = self.FART_COURT_FEE
+        return (
+            f"⚖️ {mention} approaches the bench, and the Supreme Court "
+            f"**overturns** Fart Court on sight.\n"
+            f"\n"
+            f"Superseded. Vacated. Struck from the books as unfun. "
+            f"The clerk assesses **{fee} points** in filing fees, taken from your score.\n"
+            f"\n"
+            f"*Order of the Court. This ruling holds until the season resets.*"
+        )
+
+    def _fart_court_overruled_message(self, mention: str) -> str:
+        return (
+            f"⚖️ {mention}, the Supreme Court has already ruled. "
+            f"Fart Court stays **overruled** and banned. "
+            f"It was not fun, and it is not coming back.\n"
+            f"\n"
+            f"*Appeals are closed. The gavel stays down.*"
+        )
+
+    def _fart_court_fee_short_message(self, mention: str, score: int) -> str:
+        fee = self.FART_COURT_FEE
+        return (
+            f"⚖️ {mention}, Fart Court has been overturned, but the clerk "
+            f"will not open the file until the **{fee} point** fee is covered. "
+            f"You have {score}.\n"
+            f"\n"
+            f"*Come back when you can pay the court.*"
+        )
 
     async def has_used_evil_star(self, user_id: int) -> bool:
         """True if the user sealed the Evil Star pact this season."""
@@ -1951,128 +1992,212 @@ class ShopCog(commands.Cog):
         )
 
     @commands.command(name="fart_court", aliases=["fartcourt", "court_fart", "courtfart"])
-    async def fart_court(self, ctx, target: discord.Member = None, amount: int = None):
-        """Take another specific player to court! 50% chance they pay you the specified amount, 50% chance you pay them. Once per week. Usage: !fart_court @user <amount>"""
+    async def fart_court(self, ctx, *args):
+        """The Supreme Court overturned Fart Court.
+
+        First filing each season costs 100 points. Later filings are refused.
+        Extra words (the old @user and stake) are ignored.
+
+        The previous 50/50 stake case is commented out below so it can be restored.
+        """
+        # args is the old "!fart_court @user <amount>" tail. Ignored while the order stands.
+        del args
         if ctx.channel.id != self.fart_channel_id:
             await ctx.send(
                 f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
             )
             return
 
-        if target is None or amount is None:
-            return await ctx.send(
-                f"{ctx.author.mention}, usage: `!fart_court @user <amount>`"
-            )
-
-        if amount <= 0:
-            return await ctx.send("You must stake at least 1 point!")
-
-        if target.id == ctx.author.id:
-            return await ctx.send("You can't take yourself to court!")
-
-        if target.bot:
-            return await ctx.send("You can't take a bot to court!")
-
-        # Weekly cooldown — same command_usage table as !big_banana.
-        # Only blocks if already used successfully; failed attempts never write here.
+        mention = ctx.author.mention
+        fee = self.FART_COURT_FEE
+        outcome = "error"
+        score = 0
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
         try:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS command_usage
-                (user_id INTEGER,
-                 command_name TEXT,
-                 last_used TEXT,
-                 PRIMARY KEY (user_id, command_name))
-            """)
+            self._ensure_fart_court_filing_table(cur)
             cur.execute(
-                "SELECT last_used FROM command_usage WHERE user_id=? AND command_name='fart_court'",
+                "SELECT 1 FROM fart_court_filing WHERE user_id = ?",
                 (ctx.author.id,),
             )
-            row = cur.fetchone()
-            if row:
-                parsed = safe_parse_datetime(row[0])
-                if parsed:
-                    last_used_date = parsed.date()
-                    next_available = last_used_date + datetime.timedelta(weeks=1)
-                    if next_available > datetime.datetime.now().date():
-                        days_remaining = (next_available - datetime.datetime.now().date()).days
-                        if days_remaining < 1:
-                            days_remaining = 1
-                        return await ctx.send(
-                            f"{ctx.author.mention}, you've already used Fart Court this week! "
-                            f"Try again in {days_remaining} day{'s' if days_remaining != 1 else ''}."
+            if cur.fetchone():
+                outcome = "overruled"
+            else:
+                cur.execute(
+                    "SELECT score FROM fart_scores WHERE user_id = ?",
+                    (ctx.author.id,),
+                )
+                row = cur.fetchone()
+                score = row[0] if row else 0
+                if score < fee:
+                    outcome = "short"
+                else:
+                    cur.execute(
+                        "UPDATE fart_scores SET score = score - ? "
+                        "WHERE user_id = ? AND score >= ?",
+                        (fee, ctx.author.id, fee),
+                    )
+                    if cur.rowcount != 1:
+                        conn.rollback()
+                        cur.execute(
+                            "SELECT 1 FROM fart_court_filing WHERE user_id = ?",
+                            (ctx.author.id,),
                         )
-        finally:
-            conn.close()
-
-        # Star protects the defendant — failed attempts do not consume weekly usage
-        if await self.is_protected(target.id):
-            return await ctx.send(f"<@{target.id}> is protected by a Star!")
-
-        author_score = await self.get_user_score(ctx.author.id)
-        target_score = await self.get_user_score(target.id)
-
-        if author_score < amount:
-            return await ctx.send(
-                f"You don't have enough points! You have {author_score} but tried to stake {amount}."
-            )
-        if target_score < amount:
-            return await ctx.send(
-                f"<@{target.id}> doesn't have enough points! They have {target_score} but need {amount}."
-            )
-
-        if random.random() < 0.5:
-            # Target pays author
-            payer_id, payee_id = target.id, ctx.author.id
-            result_msg = (
-                f"<@{ctx.author.id}> took <@{target.id}> to court and **WON**! "
-                f"<@{target.id}> pays {amount} points!"
-            )
-        else:
-            # Author pays target
-            payer_id, payee_id = ctx.author.id, target.id
-            result_msg = (
-                f"<@{ctx.author.id}> took <@{target.id}> to court and **LOST**! "
-                f"<@{ctx.author.id}> pays {amount} points!"
-            )
-
-        # Only a successful court case records weekly usage (same transaction as transfer)
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
-                (amount, payer_id),
-            )
-            if cur.rowcount != 1:
-                return await ctx.send(
-                    f"{ctx.author.mention}, court fell through — couldn't update the payer's score. Weekly usage not spent."
-                )
-            cur.execute(
-                "UPDATE fart_scores SET score = score + ? WHERE user_id = ?",
-                (amount, payee_id),
-            )
-            if cur.rowcount != 1:
-                conn.rollback()
-                return await ctx.send(
-                    f"{ctx.author.mention}, court fell through — couldn't update the payee's score. Weekly usage not spent."
-                )
-            cur.execute(
-                "INSERT OR REPLACE INTO command_usage (user_id, command_name, last_used) VALUES (?, 'fart_court', ?)",
-                (ctx.author.id, datetime.datetime.now().isoformat()),
-            )
-            conn.commit()
+                        if cur.fetchone():
+                            outcome = "overruled"
+                        else:
+                            cur.execute(
+                                "SELECT score FROM fart_scores WHERE user_id = ?",
+                                (ctx.author.id,),
+                            )
+                            row = cur.fetchone()
+                            score = row[0] if row else 0
+                            outcome = "short"
+                    else:
+                        cur.execute(
+                            "INSERT INTO fart_court_filing (user_id, filed_at) VALUES (?, ?)",
+                            (ctx.author.id, datetime.datetime.now().isoformat()),
+                        )
+                        conn.commit()
+                        outcome = "order"
+        except sqlite3.IntegrityError:
+            # Another filing landed first. The score update rolls back with it.
+            conn.rollback()
+            outcome = "overruled"
         except Exception:
             conn.rollback()
-            logger.exception("fart_court failed during score transfer")
-            return await ctx.send(
-                f"{ctx.author.mention}, court fell through due to an error. Weekly usage not spent."
-            )
+            logger.exception("fart_court filing fee failed")
+            outcome = "error"
         finally:
             conn.close()
 
-        await ctx.send(result_msg)
+        if outcome == "order":
+            await ctx.send(self._fart_court_order_message(mention))
+        elif outcome == "overruled":
+            await ctx.send(self._fart_court_overruled_message(mention))
+        elif outcome == "short":
+            await ctx.send(self._fart_court_fee_short_message(mention, score))
+        else:
+            await ctx.send(f"{mention}, the clerk dropped the file. No fee was taken.")
+
+        # Previous Fart Court, disabled. To restore the 50/50 stake case, replace
+        # this method's body with the block below and change the signature back to
+        # (self, ctx, target: discord.Member = None, amount: int = None).
+        #
+        # if target is None or amount is None:
+        #     return await ctx.send(
+        #         f"{ctx.author.mention}, usage: `!fart_court @user <amount>`"
+        #     )
+        #
+        # if amount <= 0:
+        #     return await ctx.send("You must stake at least 1 point!")
+        #
+        # if target.id == ctx.author.id:
+        #     return await ctx.send("You can't take yourself to court!")
+        #
+        # if target.bot:
+        #     return await ctx.send("You can't take a bot to court!")
+        #
+        # # Weekly cooldown — same command_usage table as !big_banana.
+        # # Only blocks if already used successfully; failed attempts never write here.
+        # conn = sqlite3.connect("fart_scores.db")
+        # cur = conn.cursor()
+        # try:
+        #     cur.execute("""
+        #         CREATE TABLE IF NOT EXISTS command_usage
+        #         (user_id INTEGER,
+        #          command_name TEXT,
+        #          last_used TEXT,
+        #          PRIMARY KEY (user_id, command_name))
+        #     """)
+        #     cur.execute(
+        #         "SELECT last_used FROM command_usage WHERE user_id=? AND command_name='fart_court'",
+        #         (ctx.author.id,),
+        #     )
+        #     row = cur.fetchone()
+        #     if row:
+        #         parsed = safe_parse_datetime(row[0])
+        #         if parsed:
+        #             last_used_date = parsed.date()
+        #             next_available = last_used_date + datetime.timedelta(weeks=1)
+        #             if next_available > datetime.datetime.now().date():
+        #                 days_remaining = (next_available - datetime.datetime.now().date()).days
+        #                 if days_remaining < 1:
+        #                     days_remaining = 1
+        #                 return await ctx.send(
+        #                     f"{ctx.author.mention}, you've already used Fart Court this week! "
+        #                     f"Try again in {days_remaining} day{'s' if days_remaining != 1 else ''}."
+        #                 )
+        # finally:
+        #     conn.close()
+        #
+        # # Star protects the defendant — failed attempts do not consume weekly usage
+        # if await self.is_protected(target.id):
+        #     return await ctx.send(f"<@{target.id}> is protected by a Star!")
+        #
+        # author_score = await self.get_user_score(ctx.author.id)
+        # target_score = await self.get_user_score(target.id)
+        #
+        # if author_score < amount:
+        #     return await ctx.send(
+        #         f"You don't have enough points! You have {author_score} but tried to stake {amount}."
+        #     )
+        # if target_score < amount:
+        #     return await ctx.send(
+        #         f"<@{target.id}> doesn't have enough points! They have {target_score} but need {amount}."
+        #     )
+        #
+        # if random.random() < 0.5:
+        #     # Target pays author
+        #     payer_id, payee_id = target.id, ctx.author.id
+        #     result_msg = (
+        #         f"<@{ctx.author.id}> took <@{target.id}> to court and **WON**! "
+        #         f"<@{target.id}> pays {amount} points!"
+        #     )
+        # else:
+        #     # Author pays target
+        #     payer_id, payee_id = ctx.author.id, target.id
+        #     result_msg = (
+        #         f"<@{ctx.author.id}> took <@{target.id}> to court and **LOST**! "
+        #         f"<@{ctx.author.id}> pays {amount} points!"
+        #     )
+        #
+        # # Only a successful court case records weekly usage (same transaction as transfer)
+        # conn = sqlite3.connect("fart_scores.db")
+        # cur = conn.cursor()
+        # try:
+        #     cur.execute(
+        #         "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
+        #         (amount, payer_id),
+        #     )
+        #     if cur.rowcount != 1:
+        #         return await ctx.send(
+        #             f"{ctx.author.mention}, court fell through — couldn't update the payer's score. Weekly usage not spent."
+        #         )
+        #     cur.execute(
+        #         "UPDATE fart_scores SET score = score + ? WHERE user_id = ?",
+        #         (amount, payee_id),
+        #     )
+        #     if cur.rowcount != 1:
+        #         conn.rollback()
+        #         return await ctx.send(
+        #             f"{ctx.author.mention}, court fell through — couldn't update the payee's score. Weekly usage not spent."
+        #         )
+        #     cur.execute(
+        #         "INSERT OR REPLACE INTO command_usage (user_id, command_name, last_used) VALUES (?, 'fart_court', ?)",
+        #         (ctx.author.id, datetime.datetime.now().isoformat()),
+        #     )
+        #     conn.commit()
+        # except Exception:
+        #     conn.rollback()
+        #     logger.exception("fart_court failed during score transfer")
+        #     return await ctx.send(
+        #         f"{ctx.author.mention}, court fell through due to an error. Weekly usage not spent."
+        #     )
+        # finally:
+        #     conn.close()
+        #
+        # await ctx.send(result_msg)
 
     @commands.command(name="fart_leech", aliases=["fartleech", "leech_fart", "leechfart"])
     @commands.cooldown(1, 45, commands.BucketType.user)
@@ -2469,14 +2594,16 @@ class ShopCog(commands.Cog):
                 "Max 100",
             ),
             (
-                "Fart Court (!fart_court / !fartcourt @user <amount>)",
-                "Take another player to court! 50% they pay you, 50% you pay them. Blocked by Star. (Once per week)\n*Justice is blind... and gaseous.*",
-                "Custom",
+                "Fart Court (!fart_court / !fartcourt)",
+                "The Supreme Court overturned it. The first filing each season costs 100 points. After that, the ban stands.\n*Justice read the record and found it unfun.*",
+                "100 points",
             ),
         ]
 
         for name, description, cost in items:
-            if yourt_free and cost not in ("Custom", "Max 100", "FREE"):
+            # Numbered prices are free during Yourt. Flat labels (the court
+            # fee, custom stakes, the donation cap) stay on the card.
+            if yourt_free and isinstance(cost, (int, float)):
                 cost_display = "FREE"
             elif isinstance(cost, str):
                 cost_display = cost

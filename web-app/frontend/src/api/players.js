@@ -44,6 +44,7 @@ export const getPlayerCardStats = (id, { event, queue } = {}) => {
 
 /** Hide avatars from the player's own profile. Their games are kept. */
 export const setHiddenAvatars = (id, avatars) => put(`/api/player/${id}/hidden-avatars`, { avatars })
+export const setHiddenBadges = (id, hidden) => put(`/api/player/${id}/hidden-badges`, { hidden })
 
 /** The deck a player chose to feature on their profile: { deck } (null when none). */
 export const getFeaturedDeck = (id) => get(`/api/player/${id}/featured-deck`)

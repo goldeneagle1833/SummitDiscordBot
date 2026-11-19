@@ -199,6 +199,10 @@ def _settled_lifetime(rows):
     return [row for row in rows if not provisional.is_provisional(games.get(row[0]))]
 
 
+# Line between ranked rows and provisional (unranked) ones on the leaderboard
+PROVISIONAL_SUBHEADING = "*Provisional, not ranked yet (under 8 games):*"
+
+
 class LFGCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -558,6 +562,15 @@ class LFGCog(commands.Cog):
                     return f"{rank}. **{name}**{avatar} — {p['elo']} ({p['games']}g)"
 
                 def section(title, rows, empty):
+                    # Discord carries a numbered list on through "- " rows right
+                    # under it (provisional players showed as 9., 10., ...), so
+                    # a plain line goes before the first provisional row
+                    rows = list(rows)
+                    first = next(
+                        (i for i, r in enumerate(rows) if r.startswith("- ")), None
+                    )
+                    if first is not None:
+                        rows.insert(first, PROVISIONAL_SUBHEADING)
                     return f"**{title}**\n" + ("\n".join(rows) if rows else empty)
 
                 ordered = [p for _, p in ranked(player_data, None)]

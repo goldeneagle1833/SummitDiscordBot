@@ -272,7 +272,8 @@ async def test_leaderboard_channel_embed_ranks_settled_players_only():
     overall = description.split("\n\n")[0].splitlines()
     assert overall[1].startswith(f"1. **P{A}** — {_event_elo(A)} (9g)")
     assert overall[2].startswith(f"2. **P{B}** — ")
-    assert overall[3] == f"- **P{C}** — Provisional (1/8)"
+    assert overall[3] == "*Provisional, not ranked yet (under 8 games):*"
+    assert overall[4] == f"- **P{C}** — Provisional (1/8)"
 
 
 @pytest.mark.asyncio

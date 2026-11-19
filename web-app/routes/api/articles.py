@@ -162,7 +162,10 @@ def _read_form():
     title = content.clean_text(form.get("title"))
     summary = content.clean_text(form.get("summary"))
     category = content.clean_text(form.get("category"))
+    body_format = "html" if str(form.get("body_format") or "") == "html" else "md"
     body = content.clean_text(form.get("body"), multiline=True)
+    if body_format == "html":
+        body = content.sanitize_html(body)
     tags = content.clean_tags(form.get("tags") or "")
     remove_pdf = str(form.get("remove_pdf") or "") in ("1", "true")
     external_url, error = content.clean_external_url(form.get("external_url"))
@@ -190,7 +193,7 @@ def _read_form():
             return None, None, (error, 400)
 
     fields = dict(title=title, summary=summary, category=category, body=body,
-                  tags=tags, remove_pdf=remove_pdf, pdf_name=pdf_name,
+                  body_format=body_format, tags=tags, remove_pdf=remove_pdf, pdf_name=pdf_name,
                   external_url=external_url, header_card=header_card)
     return fields, pdf_bytes, None
 
@@ -298,12 +301,16 @@ def _delete_pdf(stored_name: str | None):
 
 
 def _rendered(fields: dict) -> dict:
+    """Columns to save.  ``body_md`` keeps what the author wrote (Markdown, or
+    the cleaned HTML from the visual editor); ``body_html`` is what readers get."""
     body = fields["body"]
+    fmt = fields.get("body_format", "md")
+    body_html = body if fmt == "html" else content.render_markdown(body)
     return dict(
         title=fields["title"], summary=fields["summary"], category=fields["category"],
-        tags=fields["tags"], body_md=body, body_html=content.render_markdown(body),
-        word_count=content.word_count(body),
-        reading_minutes=content.reading_minutes(body),
+        tags=fields["tags"], body_md=body, body_html=body_html, body_format=fmt,
+        word_count=content.word_count(body, fmt),
+        reading_minutes=content.reading_minutes(body, fmt),
         slug=content.slugify(fields["title"]),
     )
 
@@ -356,6 +363,7 @@ def get_article(article_id):
     if is_author or reviewer:
         out.update(
             status=article["status"], body_md=article["body_md"],
+            body_format=article.get("body_format") or "md",
             submitted_at=article["submitted_at"], created_at=article["created_at"],
             pdf_original_name=article["pdf_original_name"],
             comments=repo.comments(article_id),
@@ -399,6 +407,15 @@ def get_article_pdf(article_id):
 @require_login
 def preview_article():
     data = request.get_json(silent=True) or {}
+    if data.get("format") == "html":
+        body = content.sanitize_html(
+            content.clean_text(data.get("body"), multiline=True)[: content.HTML_MAX * 2])
+        return jsonify({
+            "html": body,
+            "text_length": len(content.html_to_text(body)),
+            "word_count": content.word_count(body, "html"),
+            "reading_minutes": content.reading_minutes(body, "html"),
+        })
     body = content.clean_text(data.get("body"), multiline=True)[: content.BODY_MAX]
     return jsonify({
         "html": content.render_markdown(body),
@@ -476,7 +493,8 @@ def submit_article():
         return jsonify({"error": error[0]}), error[1]
     error = content.validate_article(fields["title"], fields["summary"], fields["body"],
                                      fields["category"], has_pdf=pdf_bytes is not None,
-                                     has_link=bool(fields["external_url"]))
+                                     has_link=bool(fields["external_url"]),
+                                     body_format=fields["body_format"])
     if error:
         return jsonify({"error": error}), 400
 
@@ -522,7 +540,8 @@ def edit_article(article_id):
         return jsonify({"error": "Remove the PDF to link an article on another site instead."}), 400
     error = content.validate_article(fields["title"], fields["summary"], fields["body"],
                                      fields["category"], has_pdf=pdf_bytes is not None or keeps_pdf,
-                                     has_link=bool(fields["external_url"]))
+                                     has_link=bool(fields["external_url"]),
+                                     body_format=fields["body_format"])
     if error:
         return jsonify({"error": error}), 400
 

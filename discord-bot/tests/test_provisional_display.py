@@ -272,15 +272,15 @@ async def test_leaderboard_channel_embed_ranks_settled_players_only():
     overall = description.split("\n\n")[0].splitlines()
     assert overall[1].startswith(f"1. **P{A}** — {_event_elo(A)} (9g)")
     assert overall[2].startswith(f"2. **P{B}** — ")
-    assert overall[3] == f"- **P{C}** — Provisional (1/8)"
+    assert overall[3] == "*Provisional, not ranked yet (under 8 games):*"
+    assert overall[4] == f"- **P{C}** — Provisional (1/8)"
 
 
 @pytest.mark.asyncio
-async def test_leaderboard_lists_provisional_ticket_holders_after_the_cut():
-    """A ticket buyer under 8 games shows as Provisional under Ticket Holders.
+async def test_ticket_holders_section_is_the_settled_top_cut_only():
+    """Ticket Holders lists the top 32 settled ticket holders, no provisional ones.
 
-    Before, the top cut filter dropped them, and having a ticket kept them out
-    of Free Play, so they were on neither list.
+    A provisional ticket holder isn't in Free Play either (Bruce's call).
     """
     from cogs.lfg.cog import LFGCog
 
@@ -310,8 +310,8 @@ async def test_leaderboard_lists_provisional_ticket_holders_after_the_cut():
     sections = description.split("\n\n")
     ticket = sections[1].splitlines()
     assert ticket[2].startswith(f"1. **P{A}** — ")
-    assert ticket[3] == f"- **P{C}** — Provisional (1/8)"
-    assert len(ticket) == 4
+    assert len(ticket) == 3
+    assert "Provisional" not in sections[1]
     free = sections[2]
     assert f"P{B}" in free and f"P{C}" not in free
 

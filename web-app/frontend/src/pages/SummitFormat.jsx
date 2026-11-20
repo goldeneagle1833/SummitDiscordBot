@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { getProducts, formatMoney } from '@/api/store'
 import usePageTitle from '@/hooks/usePageTitle'
 import PageTabs from '@/components/ui/PageTabs'
 import { HELP_TABS } from '@/utils/pageTabs'
@@ -27,6 +29,66 @@ function Section({ id, title, children }) {
   )
 }
 
+// The season ticket is the Summit Store listing set to give "Current season
+// ticket" (its Discord role is the placeholder "season_ticket", so one listing
+// works every season). Listings named like "Season 9 Ticket" that give a
+// fixed role still count, as before. A "current season ticket" listing wins;
+// among the rest the highest season number wins.
+const CURRENT_SEASON_TICKET = 'season_ticket'
+const TICKET_NAME = /season\s*(\d+)\s*ticket/i
+
+export function findSeasonTicket(products) {
+  let best = null
+  for (const p of products || []) {
+    const current = p?.discord_role_id === CURRENT_SEASON_TICKET
+    const m = TICKET_NAME.exec(p?.name || '')
+    if (!current && !m) continue
+    const season = m ? Number(m[1]) : null
+    const rank = [current ? 1 : 0, season ?? 0]
+    if (!best || rank[0] > best.rank[0] || (rank[0] === best.rank[0] && rank[1] > best.rank[1])) {
+      best = { season, product: p, rank }
+    }
+  }
+  if (!best) return null
+  const { rank, ...found } = best
+  return found
+}
+
+function useSeasonTicket() {
+  const [ticket, setTicket] = useState(null)
+  useEffect(() => {
+    let alive = true
+    getProducts()
+      .then((data) => { if (alive) setTicket(findSeasonTicket(data?.products)) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+  return ticket
+}
+
+function TicketCard({ ticket }) {
+  const p = ticket.product
+  const soldOut = p.stock_quantity != null && p.stock_quantity <= 0
+  return (
+    <div className="rounded-soft border border-primary/40 bg-primary/5 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold">{p.name}</p>
+        <p className="text-secondary font-semibold">{formatMoney(p.price_cents, p.currency)}</p>
+      </div>
+      {soldOut ? (
+        <span className="text-text-muted text-sm">Sold out</span>
+      ) : (
+        <Link
+          to="/store"
+          className="inline-flex justify-center rounded-soft bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+        >
+          Get a ticket
+        </Link>
+      )}
+    </div>
+  )
+}
+
 const STEPS = [
   { n: 1, title: 'Get a ticket', text: 'Ticket holders play for a top cut spot. Everyone else can still play ranked as Free Play.' },
   { n: 2, title: 'Climb the ladder', text: 'Play ranked games all season. Every game moves your season rating.' },
@@ -43,6 +105,7 @@ const PRIZE_ROWS = [
 ]
 
 const JUMP_LINKS = [
+  { href: '#schedule', label: 'Schedule' },
   { href: '#tickets', label: 'Tickets' },
   { href: '#top-cut', label: 'Top cut' },
   { href: '#prizes', label: 'Prizes' },
@@ -51,6 +114,8 @@ const JUMP_LINKS = [
 
 export default function SummitFormat() {
   usePageTitle('Summit Format')
+  const ticket = useSeasonTicket()
+  const ticketProduct = ticket?.product
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -89,20 +154,50 @@ export default function SummitFormat() {
         ))}
       </ol>
 
+      <Section id="schedule" title="Season schedule">
+        <ul className="list-disc pl-5 space-y-1">
+          <li>Seasons run about 43 days and start on the 1st or the 16th of a month.</li>
+          <li>Each season ends at 11:59 PM Eastern on its last day.</li>
+          <li>
+            There's a 3-day break between seasons for the top cut bracket. No ELO moves during the break, but
+            Casual and Limited stay open.
+          </li>
+        </ul>
+        <p className="text-text-muted">
+          The exact dates for upcoming seasons are posted in the leaderboard channel on Discord.
+        </p>
+      </Section>
+
       <Section id="tickets" title="Tickets">
         <p>
           A season ticket is what puts you in the running for the top cut. Without one you can still play every
           ranked game, and you'll show up in the Free Play section of the leaderboard.
         </p>
+        {ticket && <TicketCard ticket={ticket} />}
+        {ticketProduct?.description && (
+          <p className="whitespace-pre-line text-text-muted">{ticketProduct.description}</p>
+        )}
         <dl className="grid grid-cols-1 sm:grid-cols-[10rem_1fr] gap-x-4 gap-y-2">
           <dt className="font-medium">Price</dt>
-          <dd><Tbc /></dd>
+          <dd>
+            {ticketProduct ? formatMoney(ticketProduct.price_cents, ticketProduct.currency) : <Tbc />}
+          </dd>
           <dt className="font-medium">Where to buy</dt>
-          <dd><Tbc /></dd>
+          <dd>
+            {ticketProduct ? (
+              <Link to="/store" className="text-primary hover:underline">The Summit Store</Link>
+            ) : (
+              <Tbc />
+            )}
+          </dd>
           <dt className="font-medium">When sales close</dt>
-          <dd><Tbc /></dd>
+          <dd>Tickets stay on sale for the whole season, until it ends at 11:59 PM Eastern on its last day.</dd>
           <dt className="font-medium">Buying mid-season</dt>
-          <dd><Tbc /></dd>
+          <dd>
+            Buy in the first week of the season and nothing changes. After that, any avatar rated above 1500
+            is reset to 1500 when you get your ticket, and anything at or below 1500 stays where it is. If
+            you've played 2 or fewer games this season, nothing is reset.
+          </dd>
         </dl>
       </Section>
 
@@ -122,8 +217,8 @@ export default function SummitFormat() {
           <dd><Tbc /></dd>
           <dt className="font-medium">Where it's played</dt>
           <dd><Tbc /></dd>
-          <dt className="font-medium">Round deadlines</dt>
-          <dd><Tbc /></dd>
+          <dt className="font-medium">When it's played</dt>
+          <dd>During the 3-day break before the next season starts.</dd>
         </dl>
         <p>
           The bracket goes up on the <Link to="/brackets" className="text-primary hover:underline">Season Top Cut</Link> page

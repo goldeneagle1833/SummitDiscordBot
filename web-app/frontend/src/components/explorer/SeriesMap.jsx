@@ -50,13 +50,13 @@ export const DEFAULT_STYLE = 'dark'
 const DEFAULT_CENTER = [39.5, -98.35]
 const DEFAULT_ZOOM = 3
 
-function readStoredStyle(storageKey) {
-  if (!storageKey) return DEFAULT_STYLE
+function readStoredStyle(storageKey, fallback = DEFAULT_STYLE) {
+  if (!storageKey) return fallback
   try {
     const stored = localStorage.getItem(storageKey)
-    return stored && MAP_STYLES[stored] ? stored : DEFAULT_STYLE
+    return stored && MAP_STYLES[stored] ? stored : fallback
   } catch {
-    return DEFAULT_STYLE
+    return fallback
   }
 }
 
@@ -88,8 +88,9 @@ export default function SeriesMap({
   center = DEFAULT_CENTER,
   zoom = DEFAULT_ZOOM,
   fitToPoints = false,
+  defaultStyle = DEFAULT_STYLE,
 }) {
-  const [style, setStyle] = useState(() => readStoredStyle(storageKey))
+  const [style, setStyle] = useState(() => readStoredStyle(storageKey, MAP_STYLES[defaultStyle] ? defaultStyle : DEFAULT_STYLE))
 
   const pickStyle = (next) => {
     setStyle(next)

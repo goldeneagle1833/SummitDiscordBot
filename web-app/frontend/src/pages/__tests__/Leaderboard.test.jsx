@@ -7,6 +7,7 @@ vi.mock('@/api/leaderboard', () => ({
   getLimitedLeaderboard: vi.fn(),
   getEvents: vi.fn(),
   getArchivedLeaderboard: vi.fn(),
+  getPreconStandings: vi.fn(),
 }))
 
 vi.mock('@/api/brackets', () => ({
@@ -18,6 +19,7 @@ import {
   getLimitedLeaderboard,
   getEvents,
   getArchivedLeaderboard,
+  getPreconStandings,
 } from '@/api/leaderboard'
 import Leaderboard from '../Leaderboard'
 
@@ -44,7 +46,7 @@ const GOTHIC = {
 }
 
 const ARCHIVED = {
-  event_info: { ...SEASON_7, value_label: 'Event ELO' },
+  event_info: { ...SEASON_7, value_label: 'Event Rating' },
   total_matches: 312,
   leaderboard: [
     { user_id: 1, display_name: 'duckworthy_', event_elo: 1773, rank: 1, wins: 21, losses: 6 },
@@ -84,6 +86,7 @@ describe('Leaderboard page', () => {
     getLimitedLeaderboard.mockRejectedValue(new Error('no limited season'))
     getEvents.mockResolvedValue({ events: [SEASON_8, SEASON_7, GOTHIC], active_event: SEASON_8 })
     getArchivedLeaderboard.mockResolvedValue(ARCHIVED)
+    getPreconStandings.mockResolvedValue({ season: null, seasons: [], standings: [] })
   })
 
   it('opens on the live event with every board in the sidebar', async () => {
@@ -95,7 +98,7 @@ describe('Leaderboard page', () => {
 
     const nav = sidebar()
     expect(nav.getByRole('button', { name: /Season 8/ })).toHaveAttribute('aria-current', 'true')
-    expect(nav.getByRole('button', { name: /Lifetime ELO/ })).toBeInTheDocument()
+    expect(nav.getByRole('button', { name: /Lifetime Rating/ })).toBeInTheDocument()
     expect(nav.queryByRole('button', { name: /Limited format/ })).not.toBeInTheDocument()
     expect(nav.getByRole('button', { name: /Season 7/ })).toHaveTextContent('48 players · 312 matches')
     expect(nav.getByRole('button', { name: /Season 7/ })).toHaveTextContent('duckworthy_')
@@ -103,14 +106,14 @@ describe('Leaderboard page', () => {
     expect(nav.queryByRole('button', { name: /Season leaderboards/ })).not.toBeInTheDocument()
   })
 
-  it('shows a past event with its summary, records and ELO when picked', async () => {
+  it('shows a past event with its summary, records and Rating when picked', async () => {
     await renderPage()
     await userEvent.click(sidebar().getByRole('button', { name: /Season 7/ }))
 
     expect(getArchivedLeaderboard).toHaveBeenCalledWith(7)
     expect(await screen.findByText('8/30/2026 - 9/28/2026 · 2 players · 312 matches')).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Season 7' })).toBeInTheDocument()
-    expect(screen.getByText('Event ELO')).toBeInTheDocument()
+    expect(screen.getByText('Event Rating')).toBeInTheDocument()
 
     const seamoose = screen.getByRole('link', { name: 'Seamoose' }).closest('tr')
     expect(seamoose).toHaveTextContent('9-11')
@@ -122,8 +125,8 @@ describe('Leaderboard page', () => {
   it('opens the board named in the URL', async () => {
     await renderPage('/elo?board=lifetime')
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Lifetime ELO Leaderboard' })).toBeInTheDocument()
-    expect(screen.getByText('ELO Distribution')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Lifetime Rating Leaderboard' })).toBeInTheDocument()
+    expect(screen.getByText('Rating Distribution')).toBeInTheDocument()
     expect(screen.getByText('1812')).toBeInTheDocument()
   })
 
@@ -137,7 +140,7 @@ describe('Leaderboard page', () => {
     await renderPage()
     await userEvent.selectOptions(screen.getByLabelText('Leaderboard'), 'lifetime')
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Lifetime ELO Leaderboard' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Lifetime Rating Leaderboard' })).toBeInTheDocument()
   })
 
   it('labels a wins-ranked season and keeps it in the sidebar', async () => {
@@ -151,7 +154,7 @@ describe('Leaderboard page', () => {
 
     expect(await screen.findByText('Wins')).toBeInTheDocument()
     expect(getArchivedLeaderboard).toHaveBeenCalledWith('season_gothic_1')
-    expect(screen.queryByText('Event ELO')).not.toBeInTheDocument()
+    expect(screen.queryByText('Event Rating')).not.toBeInTheDocument()
   })
 
   it('says so when an event has no archived standings', async () => {
@@ -189,5 +192,27 @@ describe('Leaderboard page', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Limited Format Leaderboard' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Full limited page' })).toHaveAttribute('href', '/elo/limited')
     expect(sidebar().getByRole('button', { name: /Limited format/ })).toHaveTextContent('12 players')
+  })
+
+  it('lists each LM / FM precon ladder and shows its standings', async () => {
+    const season = {
+      season_id: 3, name: 'LM vs FM 1', starts_at: '2026-11-12T18:00:00',
+      ends_at: '2026-12-10T18:00:00', last_day: '2026-12-10T18:00:00', is_open: false,
+    }
+    getPreconStandings.mockImplementation((id) => Promise.resolve({
+      season, seasons: [season], min_ranked_games: 5,
+      standings: id ? [{
+        user_id: '1', name: 'Alice', rating: 1612, rd: 90, games: 9, wins: 7, losses: 2,
+        lm_wins: 5, lm_losses: 1, fm_wins: 2, fm_losses: 1, ranked: true, rank: 1,
+      }] : [],
+      stats: { players: 1, games: 9, lm_vs_fm: { lm_wins: 4, fm_wins: 2 } },
+      recent: [],
+    }))
+    await renderPage('/elo?board=precon:3')
+
+    expect(sidebar().getByRole('button', { name: /LM vs FM 1/ })).toHaveAttribute('aria-current', 'true')
+    expect(await screen.findByRole('link', { name: 'Alice' })).toBeInTheDocument()
+    expect(screen.getByText('1612')).toBeInTheDocument()
+    expect(getPreconStandings).toHaveBeenCalledWith(3)
   })
 })

@@ -27,6 +27,7 @@ from utils.database import (
     save_pairing_announcement,
 )
 from cogs.lfg.voice import voice_match_tag, voice_match_text
+from repositories.tag_me_repo import pairing_mentions
 
 logger = logging.getLogger("discord_bot")
 
@@ -258,7 +259,11 @@ async def _send_reporter(
                 match_card_view.add_item(
                     PrivateSeatLinkButton(reporter.user_id, game_url)
                 )
-            fb_msg = await dm_channel.send(fallback + voice_text, view=match_card_view)
+            fb_msg = await dm_channel.send(
+                fallback + voice_text,
+                view=match_card_view,
+                allowed_mentions=pairing_mentions(reporter.user_id, other.user_id),
+            )
             _remember_card_message(match_card_view, fb_msg)
     except Exception as e:
         logger.error(
@@ -329,6 +334,7 @@ async def _send_other(
                     self_mention=other.user.mention,
                 )
             )
+            mentions = pairing_mentions(other.user_id, reporter.user_id)
             if game_url:
                 await dm_channel.send(
                     fallback + voice_text,
@@ -336,11 +342,13 @@ async def _send_other(
                         other, reporter, pairing_id, match_type,
                         view=PrivateSeatLinkView(other.user_id, game_url),
                     ),
+                    allowed_mentions=mentions,
                 )
             else:
                 await dm_channel.send(
                     fallback + voice_text,
                     view=_report_player_view(other, reporter, pairing_id, match_type),
+                    allowed_mentions=mentions,
                 )
     except Exception as e:
         logger.error(
@@ -461,7 +469,25 @@ def ladder_stakes_note(challenger_id, opponent_id, challenger_avatar=None, oppon
         return (
             " 🏆 **Ladder Challenge!** Top 16 player — special stakes (2x/0.5x ELO)!"
         )
+    if _either_provisional(challenger_id, opponent_id, challenger_avatar, opponent_avatar):
+        # A provisional (Glicko-2) rating isn't shown, so neither is the gap to it
+        return " 🏆 **Ladder Challenge!** Top 16 player (normal stakes)."
     return " 🏆 **Ladder Challenge!** Top 16 player (normal stakes — ELO diff < 100)."
+
+
+def _either_provisional(challenger_id, opponent_id, challenger_avatar, opponent_avatar) -> bool:
+    from services.avatar_mode import is_avatar_mode
+    from services.provisional import entry_provisional
+
+    try:
+        per_avatar = is_avatar_mode()
+        return any(
+            entry_provisional(uid, avatar if per_avatar else None)
+            for uid, avatar in ((challenger_id, challenger_avatar), (opponent_id, opponent_avatar))
+        )
+    except Exception as e:
+        logger.error("Could not read provisional status for the announcement note: %s", e)
+        return True
 
 
 async def announce_pairing(
@@ -485,8 +511,12 @@ async def announce_pairing(
     emoji, label = match_type_presentation(match_type)
     title = f"{emoji} **{headline or f'{label} Match Found!'}**"
     try:
+        # Both players are always named; only those with "Tag me" on are pinged.
         message = await channel.send(
-            f"{title} {player_a.mention} matched with {player_b.mention}!{note}"
+            f"{title} {player_a.mention} matched with {player_b.mention}!{note}",
+            allowed_mentions=pairing_mentions(
+                getattr(player_a, "id", None), getattr(player_b, "id", None)
+            ),
         )
     except Exception as e:
         logger.error(

@@ -462,11 +462,11 @@ export function VoiceStatsCard({ days = null }) {
             {[['voice', 'Voice', 'rgba(63,185,80,1)'], ['no_voice', 'No voice', 'rgba(255,255,255,0.75)']].map(([side, label, color]) => (
               <div key={side} className="bg-bg-base border border-border rounded-lg p-2 text-center">
                 <div className="text-xl font-bold" style={{ color }}>{avgElo(selected, side)}</div>
-                <div className="text-xs text-text-muted mt-0.5 leading-tight">Avg Lifetime ELO, {label}</div>
+                <div className="text-xs text-text-muted mt-0.5 leading-tight">Avg Lifetime Rating, {label}</div>
               </div>
             ))}
             <p className="col-span-2 text-[11px] text-text-muted leading-snug">
-              {filterLabel} queue games in range, each player's lifetime ELO going into the game.
+              {filterLabel} queue games in range, each player's lifetime rating going into the game.
             </p>
           </div>
           <table className="w-full text-sm">
@@ -651,7 +651,7 @@ function MatchesTab({ days, stats }) {
 
       <TileGroup title={`Pairings (${rangeLabel(days)})`}>
         <StatTile
-          label={`Avg ELO Gap per Game (${eloGap.games.toLocaleString()} online games)`}
+          label={`Avg Rating Gap per Game (${eloGap.games.toLocaleString()} online games)`}
           value={eloGap.avg?.toLocaleString()}
           color="text-orange-400"
         />

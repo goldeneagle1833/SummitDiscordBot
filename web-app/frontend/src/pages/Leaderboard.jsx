@@ -2,14 +2,17 @@ import { useState, useEffect, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import LeaderboardTable from '@/components/leaderboard/LeaderboardTable'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
+import { PreconLadder, preconSeasonText } from '@/components/leaderboard/PreconLadderContent'
 import Spinner from '@/components/ui/Spinner'
 import {
   getCombinedLeaderboard,
   getLimitedLeaderboard,
   getEvents,
   getArchivedLeaderboard,
+  getPreconStandings,
 } from '@/api/leaderboard'
 import usePageTitle from '@/hooks/usePageTitle'
+import { isNum } from '@/utils/provisional'
 
 // The page shows one board at a time, picked from the sidebar (a select on
 // phones). The pick lives in the URL (?board=...) so a board can be linked.
@@ -17,6 +20,7 @@ const CURRENT = 'current'
 const LIFETIME = 'lifetime'
 const LIMITED = 'limited'
 const eventKey = (eventId) => `event:${eventId}`
+const preconKey = (seasonId) => `precon:${seasonId}`
 
 function formatDate(value) {
   return value ? new Date(value).toLocaleDateString() : 'N/A'
@@ -63,7 +67,7 @@ function EloDistribution({ elos }) {
 
   return (
     <section className="mt-8">
-      <h3 className="text-lg font-display text-secondary mb-2">ELO Distribution</h3>
+      <h3 className="text-lg font-display text-secondary mb-2">Rating Distribution</h3>
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <label className="text-sm text-text-muted">Grouping:</label>
         <select
@@ -88,7 +92,7 @@ function EloDistribution({ elos }) {
         <table className="w-full">
           <thead className="border-b border-border">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">ELO Range</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Rating Range</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Players (of {elos.length})</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">% of players</th>
             </tr>
@@ -198,7 +202,7 @@ function CurrentEventBoard({ eventData }) {
   if (!info) {
     return (
       <section>
-        <BoardHeader title="No Active Event" meta="ELO tracking is paused between events" />
+        <BoardHeader title="No Active Event" meta="Rating tracking is paused between events" />
         <p className="text-text-muted text-center py-8">The next event's standings will appear here once it starts.</p>
       </section>
     )
@@ -213,7 +217,11 @@ function CurrentEventBoard({ eventData }) {
         meta={`Started ${formatDate(info.start_date)} · ${plural(players, 'player')} · ${plural(matches, 'match', 'matches')}`}
       />
       {rows.length > 0 ? (
-        <LeaderboardTable data={rows} columns="event" voiceRequirement={eventData?.voice_requirement} />
+        <LeaderboardTable
+          data={rows}
+          columns="event"
+          topCutMinGames={eventData?.top_cut_min_games || 0}
+        />
       ) : (
         <p className="text-text-muted text-center py-8">No matches played yet</p>
       )}
@@ -224,7 +232,7 @@ function CurrentEventBoard({ eventData }) {
 function LifetimeBoard({ lifetimeData, elos }) {
   return (
     <section>
-      <BoardHeader title="Lifetime ELO Leaderboard" meta="Cumulative rankings across all events" />
+      <BoardHeader title="Lifetime Rating Leaderboard" meta="Cumulative rankings across all events" />
       <LeaderboardTable data={lifetimeData} columns="lifetime" />
       <EloDistribution elos={elos} />
     </section>
@@ -237,7 +245,7 @@ function LimitedBoard({ limitedData }) {
   const stats = limitedData.stats || {}
   return (
     <section>
-      <BoardHeader title="Limited Format Leaderboard" meta="Arena draft rankings - lifetime ELO">
+      <BoardHeader title="Limited Format Leaderboard" meta="Arena draft rankings - lifetime rating">
         <Link to="/elo/limited" className="text-sm text-primary hover:text-primary-light transition-colors">Full limited page</Link>
       </BoardHeader>
       {stats.unique_players > 0 && (
@@ -250,6 +258,31 @@ function LimitedBoard({ limitedData }) {
       )}
       <LimitedLeaderboardTable data={Array.isArray(leaderboard) ? leaderboard : []} />
       <TrophyRuns runs={trophyRuns} />
+    </section>
+  )
+}
+
+function PreconSeasonBoard({ season }) {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState(false)
+  const seasonId = season.season_id
+
+  useEffect(() => {
+    let active = true
+    setData(null)
+    setError(false)
+    getPreconStandings(seasonId)
+      .then((d) => { if (active) setData(d) })
+      .catch(() => { if (active) setError(true) })
+    return () => { active = false }
+  }, [seasonId])
+
+  return (
+    <section>
+      <BoardHeader title={season.name} meta={`Lavamancer vs Frostmage · ${preconSeasonText(season)}`} />
+      {!data && !error && <Spinner className="py-8" />}
+      {error && <p className="text-text-muted text-center py-8">Couldn't load this precon ladder.</p>}
+      {data && <PreconLadder data={data} />}
     </section>
   )
 }
@@ -290,7 +323,7 @@ function ArchivedEventBoard({ event }) {
       )}
       {archivedData && !loading && (
         rows.length > 0 ? (
-          <LeaderboardTable data={rows} columns="event" eloLabel={info.value_label || 'Event ELO'} />
+          <LeaderboardTable data={rows} columns="event" eloLabel={info.value_label || 'Event Rating'} />
         ) : (
           <p className="text-text-muted text-center py-8">No standings were archived for this event.</p>
         )
@@ -310,22 +343,25 @@ function pastEventSummary(ev) {
 }
 
 export default function Leaderboard() {
-  usePageTitle('ELO Leaderboards')
+  usePageTitle('Rating Leaderboards')
   const [searchParams, setSearchParams] = useSearchParams()
   const [lifetimeData, setLifetimeData] = useState([])
   const [eloValues, setEloValues] = useState([])
   const [eventData, setEventData] = useState(null)
   const [limitedData, setLimitedData] = useState(null)
   const [pastEvents, setPastEvents] = useState([])
+  const [preconSeasons, setPreconSeasons] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchAll = async () => {
-      const [combined, limited, events] = await Promise.allSettled([
+      const [combined, limited, events, precon] = await Promise.allSettled([
         getCombinedLeaderboard(),
         getLimitedLeaderboard(),
         getEvents(),
+        getPreconStandings(),
       ])
+      if (precon.status === 'fulfilled') setPreconSeasons(precon.value.seasons || [])
       if (combined.status === 'fulfilled') {
         const data = combined.value
         setLifetimeData(data.lifetime || [])
@@ -341,7 +377,8 @@ export default function Leaderboard() {
     fetchAll().finally(() => setLoading(false))
   }, [])
 
-  const elos = eloValues.length > 0 ? eloValues : lifetimeData.map((p) => p.elo)
+  // Provisional players have no rating (null): keep them out of the distribution
+  const elos = (eloValues.length > 0 ? eloValues : lifetimeData.map((p) => p.elo)).filter(isNum)
   const eventInfo = eventData?.info
   const eventLeaderboard = eventData?.leaderboard || []
 
@@ -363,10 +400,10 @@ export default function Leaderboard() {
     } else {
       result.push({
         label: 'Now',
-        items: [{ key: CURRENT, title: 'No active event', meta: 'ELO tracking is paused between events' }],
+        items: [{ key: CURRENT, title: 'No active event', meta: 'Rating tracking is paused between events' }],
       })
     }
-    const allTime = [{ key: LIFETIME, title: 'Lifetime ELO', meta: `${plural(lifetimeData.length, 'player')} · every event` }]
+    const allTime = [{ key: LIFETIME, title: 'Lifetime Rating', meta: `${plural(lifetimeData.length, 'player')} · every event` }]
     if (limitedData) {
       const stats = limitedData.stats || {}
       allTime.push({
@@ -376,6 +413,17 @@ export default function Leaderboard() {
       })
     }
     result.push({ label: 'All time', items: allTime })
+    if (preconSeasons.length > 0) {
+      result.push({
+        label: 'LM / FM precon ladder',
+        items: preconSeasons.map((season) => ({
+          key: preconKey(season.season_id),
+          title: season.name,
+          badge: season.is_open ? 'Live' : undefined,
+          meta: preconSeasonText(season),
+        })),
+      })
+    }
     if (pastEvents.length > 0) {
       result.push({
         label: 'Past events',
@@ -389,7 +437,7 @@ export default function Leaderboard() {
       })
     }
     return result
-  }, [eventInfo, eventLeaderboard, lifetimeData, limitedData, pastEvents])
+  }, [eventInfo, eventLeaderboard, lifetimeData, limitedData, pastEvents, preconSeasons])
 
   const keys = useMemo(() => groups.flatMap((g) => g.items.map((i) => i.key)), [groups])
   const requested = searchParams.get('board') || CURRENT
@@ -404,6 +452,9 @@ export default function Leaderboard() {
 
   if (loading) return <Spinner className="py-20" />
 
+  const selectedPrecon = selected.startsWith('precon:')
+    ? preconSeasons.find((season) => preconKey(season.season_id) === selected)
+    : null
   const selectedEvent = selected.startsWith('event:')
     ? pastEvents.find((ev) => eventKey(ev.event_id) === selected)
     : null
@@ -411,7 +462,7 @@ export default function Leaderboard() {
   return (
     <div>
       <section className="mb-6">
-        <h1 className="text-2xl font-display text-secondary">ELO Leaderboards</h1>
+        <h1 className="text-2xl font-display text-secondary">Rating Leaderboards</h1>
         <p className="text-sm text-text-muted">Track player rankings across events</p>
       </section>
 
@@ -422,6 +473,7 @@ export default function Leaderboard() {
           {selected === LIFETIME && <LifetimeBoard lifetimeData={lifetimeData} elos={elos} />}
           {selected === LIMITED && limitedData && <LimitedBoard limitedData={limitedData} />}
           {selectedEvent && <ArchivedEventBoard key={selectedEvent.event_id} event={selectedEvent} />}
+          {selectedPrecon && <PreconSeasonBoard key={selectedPrecon.season_id} season={selectedPrecon} />}
         </div>
       </div>
     </div>

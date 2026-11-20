@@ -418,7 +418,7 @@ class SeasonsService:
         )
 
         if is_repeat:
-            msg = "Match recorded. Repeat matchup — ELO not updated."
+            msg = "Match recorded. Repeat matchup — rating not updated."
         else:
             msg = f"Match reported: {winner_name} beat {loser_name}."
 

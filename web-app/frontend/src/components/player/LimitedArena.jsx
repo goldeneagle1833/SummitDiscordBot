@@ -81,7 +81,7 @@ export default function LimitedArena({ limited, playerId, open, onToggle }) {
   return (
     <CollapsibleSection title="Limited Arena" open={open} onToggle={onToggle}>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
-        <StatCard label="Limited ELO" value={limited.elo ?? '-'} />
+        <StatCard label="Limited Rating" value={limited.elo ?? '-'} />
         <StatCard label="Wins" value={limited.total_wins ?? '-'} />
         <StatCard label="Losses" value={limited.total_losses ?? '-'} />
         <StatCard label="Win Rate" value={limited.win_rate != null ? `${limited.win_rate}%` : '-'} />
@@ -98,7 +98,7 @@ export default function LimitedArena({ limited, playerId, open, onToggle }) {
                   <th className="py-2 px-3 text-text-muted font-semibold">Record</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Status</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Deck</th>
-                  <th className="py-2 px-3 text-text-muted font-semibold">Starting ELO</th>
+                  <th className="py-2 px-3 text-text-muted font-semibold">Starting Rating</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Date</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Details</th>
                 </tr>
@@ -147,7 +147,7 @@ export default function LimitedArena({ limited, playerId, open, onToggle }) {
                   <th className="py-2 px-3 text-text-muted font-semibold">Match ID</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Result</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Opponent</th>
-                  <th className="py-2 px-3 text-text-muted font-semibold">ELO</th>
+                  <th className="py-2 px-3 text-text-muted font-semibold">Rating</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Time</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Date</th>
                 </tr>

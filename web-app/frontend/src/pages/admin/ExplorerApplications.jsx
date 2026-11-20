@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { ES_PATHS } from '@/utils/explorerSite'
 import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
@@ -692,7 +693,7 @@ function AddCandidateForm({ onAdded }) {
 }
 
 export default function ExplorerApplications() {
-  usePageTitle('Explorer Applications')
+  usePageTitle('Review Explorer Series Applications')
 
   const { user } = useAuth()
   const [applications, setApplications] = useState([])
@@ -739,7 +740,7 @@ export default function ExplorerApplications() {
     <div className="max-w-content mx-auto px-4 py-8 space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display text-secondary">Explorer Applications</h1>
+          <h1 className="text-2xl font-display text-secondary">Review Explorer Series Applications</h1>
           <p className="text-sm text-text-muted">
             Review, score and approve applications to host Explorer Series events.
           </p>
@@ -757,7 +758,7 @@ export default function ExplorerApplications() {
             ))}
           </select>
           <Link
-            to="/admin/explorer-calendar"
+            to={ES_PATHS.calendar}
             className="px-3 py-1.5 text-sm bg-bg-elevated border border-border rounded hover:border-secondary text-text-primary transition-colors"
           >
             Events calendar

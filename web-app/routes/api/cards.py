@@ -1,5 +1,6 @@
 """Card and element statistics API routes."""
 
+from utils.match_tables import live_matches
 import fcntl
 import itertools
 import json
@@ -20,6 +21,7 @@ from repositories.card_catalog import CardCatalogRepository
 from utils.card_images import card_image_key, get_card_image_map
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS
 from utils.auth import is_admin
+from services.shared_stats_cache import SharedStatsCache, StatsBuilding
 
 logger = logging.getLogger(__name__)
 
@@ -66,20 +68,20 @@ def get_cards():
 
         # Query current match_records
         try:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT json_deck_data_winner, json_deck_data_loser
-                FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                FROM {live_matches()}
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT
                     CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
                     json_deck_data
-                FROM match_records
-                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                FROM {live_matches()}
+                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
             """)
             all_rows.extend(cur.fetchall())
             use_new_columns = False
@@ -246,7 +248,7 @@ def get_live_popular_cards():
     try:
         cur.execute(f"""
             SELECT json_deck_data_winner, json_deck_data_loser
-            FROM match_records
+            FROM {live_matches()}
             WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
                OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
             {where_clause}
@@ -258,7 +260,7 @@ def get_live_popular_cards():
         use_new_columns = False
         cur.execute(f"""
             SELECT json_deck_data
-            FROM match_records
+            FROM {live_matches()}
             WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
             {where_clause}
         """)
@@ -438,7 +440,7 @@ def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False
             try:
                 run(f"""
                     SELECT json_deck_data_winner, json_deck_data_loser{ts}
-                    FROM match_records
+                    FROM {live_matches()}
                     WHERE {deck_where} {source_clause}
                 """)
             except sqlite3.OperationalError:
@@ -447,7 +449,7 @@ def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False
                         SELECT
                             CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
                             json_deck_data{ts}
-                        FROM match_records
+                        FROM {live_matches()}
                         WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
                     """)
                     use_new_columns = False
@@ -472,7 +474,7 @@ def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False
                     try:
                         run(f"""
                             SELECT json_deck_data_winner, json_deck_data_loser{ts}
-                            FROM match_records
+                            FROM {live_matches()}
                             WHERE {deck_where} {source_clause}
                               AND timestamp >= ? AND timestamp <= ?
                         """, (start_date, end_date))
@@ -518,7 +520,7 @@ def _collect_element_rows(cur, source_filter, event_filter, with_timestamp=False
             params.append(event_end)
 
         try:
-            query = f"SELECT json_deck_data_winner, json_deck_data_loser{ts} FROM match_records WHERE {' AND '.join(where_parts)}"
+            query = f"SELECT json_deck_data_winner, json_deck_data_loser{ts} FROM {live_matches()} WHERE {' AND '.join(where_parts)}"
             run(query, params)
         except sqlite3.OperationalError:
             pass
@@ -778,45 +780,14 @@ def get_card_stats(card_name):
     except Exception as e:
         logger.warning(f"Could not load card metadata for {card_name}: {e}")
 
-    # Gather match stats
-    card_stats = {"wins": 0, "losses": 0}
-    sections = ["spellbook", "atlas", "sideboard"]
-
-    def process_deck(deck_str, is_winner):
-        if not deck_str or deck_str in ("", "{}"):
-            return
-        try:
-            deck_data = json.loads(deck_str)
-            deck = deck_data[0] if isinstance(deck_data, list) else deck_data
-            for sec in sections:
-                for card in deck.get(sec, []) or []:
-                    if card.get("name") == card_name:
-                        if is_winner:
-                            card_stats["wins"] += 1
-                        else:
-                            card_stats["losses"] += 1
-                        return
-        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-            pass
-
+    # Wins/losses come from one tally of every card, built in the background
+    # and shared by all workers, instead of parsing every deck per visit.
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
-        cur = conn.cursor()
-        deck_where = ("(json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
-                      " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')")
-        for table in ("match_records", "match_records_archive"):
-            try:
-                cur.execute(f"SELECT json_deck_data_winner, json_deck_data_loser FROM {table} WHERE {deck_where}")
-                # Stream: each row holds two full decks (~38 KB), so fetchall()
-                # held a whole table of them in memory at once.
-                for row in cur:
-                    process_deck(row[0], is_winner=True)
-                    process_deck(row[1], is_winner=False)
-            except sqlite3.OperationalError:
-                pass
-        conn.close()
-    except sqlite3.OperationalError:
-        pass
+        tally = card_match_tally()
+    except StatsBuilding:
+        return jsonify({"error": "Card stats are still being prepared, try again shortly."}), 503
+    wins, losses = (tally or {}).get(card_name, (0, 0))
+    card_stats = {"wins": wins, "losses": losses}
 
     total = card_stats["wins"] + card_stats["losses"]
     image = _find_card_image(card_name, card_image_lookup)
@@ -844,6 +815,66 @@ def get_card_stats(card_name):
         "total_matches": total if total > 0 else None,
         "win_rate": round(card_stats["wins"] / total * 100, 1) if total > 0 else None,
     })
+
+
+# Every card's ranked-match tally for the card page's Match Stats:
+# {card name: [decks that won, decks that lost]}. Same rules as the old
+# per-request scan: every reported deck in match_records, the archive and
+# season_match_records, each card counted once per deck (spellbook, atlas or
+# sideboard). Live data, so it is refreshed every few minutes.
+_CARD_TALLY_SECTIONS = ("spellbook", "atlas", "sideboard")
+_card_tally_cache = SharedStatsCache("card-match-tally", version=1, ttl=600)
+
+
+def _build_card_match_tally():
+    tally = {}
+
+    def add(deck_str, idx):
+        if not deck_str or deck_str in ("", "{}"):
+            return
+        names = set()
+        try:
+            deck_data = json.loads(deck_str)
+            deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+            for sec in _CARD_TALLY_SECTIONS:
+                for card in deck.get(sec, []) or []:
+                    name = card.get("name")
+                    if isinstance(name, str):
+                        names.add(name)
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+            pass  # cards read before the bad entry still count, as before
+        for name in names:
+            tally.setdefault(name, [0, 0])[idx] += 1
+
+    deck_where = ("(json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
+                  " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')")
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    except sqlite3.OperationalError:
+        return tally
+    try:
+        cur = conn.cursor()
+        for table in ("match_records", "match_records_archive", "season_match_records"):
+            try:
+                cur.execute(f"SELECT json_deck_data_winner, json_deck_data_loser FROM {table} WHERE {deck_where}")
+                # Streamed: each row holds two full decks (~38 KB).
+                for winner, loser in cur:
+                    add(winner, 0)
+                    add(loser, 1)
+            except sqlite3.OperationalError:
+                pass
+    finally:
+        conn.close()
+    return tally
+
+
+def card_match_tally():
+    return _card_tally_cache.get(("all",), _build_card_match_tally)
+
+
+def warm_card_match_tally():
+    """Load or build the card tally in the background (called when a worker starts)."""
+    _card_tally_cache.warm(("all",), _build_card_match_tally)
 
 
 @cards_bp.route("/card/<card_name>/popularity")
@@ -879,20 +910,20 @@ def get_card_popularity(card_name):
 
         # Query current match_records with timestamps
         try:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT json_deck_data_winner, json_deck_data_loser, timestamp
-                FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                FROM {live_matches()}
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError as e:
             logger.warning(f"Failed to query new columns format: {e}")
             try:
-                cur.execute("""
+                cur.execute(f"""
                     SELECT json_deck_data, '', timestamp
-                    FROM match_records
-                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                    FROM {live_matches()}
+                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
                 """)
                 all_rows.extend(cur.fetchall())
                 use_new_columns = False
@@ -1076,7 +1107,7 @@ def get_all_cards_popularity():
         try:
             cur.execute(f"""
                 SELECT json_deck_data_winner, json_deck_data_loser, timestamp
-                FROM match_records
+                FROM {live_matches()}
                 WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
                    OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
                 {where_clause}
@@ -1086,7 +1117,7 @@ def get_all_cards_popularity():
             try:
                 cur.execute(f"""
                     SELECT json_deck_data, '', timestamp
-                    FROM match_records
+                    FROM {live_matches()}
                     WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
                     {where_clause}
                 """)
@@ -1724,16 +1755,16 @@ def get_played_winrate_season_stats():
         for season in _get_all_seasons_for_played():
             if season["end_date"]:
                 cur.execute(
-                    """SELECT COUNT(*) FROM sorcery_online_match_callbacks c
-                       JOIN match_records m ON c.match_id = m.match_id
+                    f"""SELECT COUNT(*) FROM sorcery_online_match_callbacks c
+                       JOIN {live_matches()} m ON c.match_id = m.match_id
                        WHERE c.outcome = 'decided' AND c.played_cards IS NOT NULL
                          AND m.timestamp >= ? AND m.timestamp < ?""",
                     (season["start_date"], season["end_date"]),
                 )
             else:
                 cur.execute(
-                    """SELECT COUNT(*) FROM sorcery_online_match_callbacks c
-                       JOIN match_records m ON c.match_id = m.match_id
+                    f"""SELECT COUNT(*) FROM sorcery_online_match_callbacks c
+                       JOIN {live_matches()} m ON c.match_id = m.match_id
                        WHERE c.outcome = 'decided' AND c.played_cards IS NOT NULL
                          AND m.timestamp >= ?""",
                     (season["start_date"],),

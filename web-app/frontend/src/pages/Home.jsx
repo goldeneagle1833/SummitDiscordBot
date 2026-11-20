@@ -2,17 +2,21 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { get } from '@/api/client'
-import { getEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
+import { getEventLeaderboard, getLimitedLeaderboard, getPreconStandings } from '@/api/leaderboard'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
-import PostseasonName, { PostseasonLegend } from '@/components/player/BracketMarks'
+import { PreconLadder, preconSeasonText } from '@/components/leaderboard/PreconLadderContent'
+import NameBadges from '@/components/player/NameBadges'
 import AvatarBadges, { AvatarCell } from '@/components/leaderboard/AvatarBadges'
 import { getAvatarImageFiles, getSeasonAvatarBadges } from '@/api/cards'
 import { badgesByPlayer, getAvatarImagePath } from '@/utils/avatarBadges'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import { STORE_LIVE } from '@/utils/store'
-import { getProducts } from '@/api/store'
+import { getProducts, getStorefronts } from '@/api/store'
+import { DEFAULT_STOREFRONT } from '@/hooks/useStoreCart'
 import { articleImage, articlePath, listArticles } from '@/api/articles'
+import { ProvisionalTag } from '@/components/common/Provisional'
+import { isProvisional, provisionalOf } from '@/utils/provisional'
 
 // A player article published this recently gets a slide in the carousel
 const NEW_ARTICLE_DAYS = 14
@@ -465,12 +469,14 @@ function StatBar({ leaderboard, totalGames, eloKey = 'event_elo' }) {
   const total = leaderboard.length
   // Avatar-mode seasons list one row per player and avatar; count people once
   const players = new Set(leaderboard.map((p) => String(p.id))).size
-  const top = leaderboard[0][eloKey]
-  const avg = Math.round(leaderboard.reduce((s, p) => s + (p[eloKey] || 0), 0) / total)
+  // Provisional (Glicko-2, < 8 games) entries have no rating yet: leave them out
+  const rated = leaderboard.filter((p) => !isProvisional(p) && p[eloKey] != null)
+  const top = rated.length ? rated[0][eloKey] : '\u2014'
+  const avg = rated.length ? Math.round(rated.reduce((s, p) => s + (p[eloKey] || 0), 0) / rated.length) : '\u2014'
   const stats = [['Players', players]]
   if (typeof totalGames === 'number') stats.push(['Ranked Games', totalGames])
   if (total !== players) stats.push(['Avatar Entries', total])
-  stats.push(['Top ELO', top], ['Avg ELO', avg])
+  stats.push(['Top Rating', top], ['Avg Rating', avg])
   return (
     <div className="grid grid-cols-3 gap-x-6 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-9">
       {stats.map(([label, val]) => (
@@ -527,16 +533,18 @@ function YouTubeVideos() {
 const STORAGE_KEY = 'home_elo_source_preference'
 
 // Paper is hidden: nobody plays on the paper ladder
-const SOURCE_LABELS = { online: 'Online', limited: 'Limited' }
+const SOURCE_LABELS = { online: 'Online', limited: 'Limited', precon: 'LM / FM' }
+const SOURCES = Object.keys(SOURCE_LABELS)
 
 function EloToggle({ source, onChange }) {
   return (
     <div className="inline-flex bg-bg-surface border border-border rounded-soft overflow-hidden">
-      {['online', 'limited'].map((s) => (
+      {SOURCES.map((s) => (
         <button
           key={s}
           onClick={() => onChange(s)}
-          className={`px-4 py-1.5 text-sm font-medium transition-colors capitalize ${
+          title={s === 'precon' ? 'Lavamancer vs Frostmage precon ladder' : undefined}
+          className={`px-4 py-1.5 text-sm font-medium transition-colors ${
             source === s
               ? 'bg-brand-blue text-white'
               : 'text-text-muted hover:bg-bg-elevated hover:text-primary'
@@ -585,10 +593,12 @@ export function bestEntryPerPlayer(rows) {
 
 /** Each row's position among the rows on the same avatar ({ place, of }), in ladder order. */
 function rankWithinAvatar(leaderboard) {
+  // Provisional entries take no place and do not count towards "of m"
   const totals = {}
-  for (const row of leaderboard) totals[row.avatar] = (totals[row.avatar] || 0) + 1
+  for (const row of leaderboard) if (!isProvisional(row)) totals[row.avatar] = (totals[row.avatar] || 0) + 1
   const seen = {}
   return leaderboard.map((row) => {
+    if (isProvisional(row)) return null
     seen[row.avatar] = (seen[row.avatar] || 0) + 1
     return { place: seen[row.avatar], of: totals[row.avatar] }
   })
@@ -617,7 +627,7 @@ function RankCell({ rank, pinned }) {
   return <span className="text-text-muted">{rank}</span>
 }
 
-function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges = {}, avatarMode = false, avatarImageFiles = [], userId = null, bestOnly = false }) {
+function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges = {}, avatarMode = false, avatarImageFiles = [], userId = null, bestOnly = false, topCutMinGames = 0 }) {
   if (!leaderboard.length) {
     return <p className="text-center text-text-muted py-8">No matches played yet</p>
   }
@@ -638,8 +648,13 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
     .map((row, index) => ({ ...row, index }))
     .filter(({ player }) => isMine(player))
 
+  // Rank among settled rows only: provisional rows show no rank
+  let settled = 0
+  const ranks = rows.map(({ player }) => (isProvisional(player) ? null : ++settled))
+
   const renderRow = ({ player, avatarRank }, index, isPinned) => {
-    const rank = index + 1
+    const rank = ranks[index]
+    const prov = provisionalOf(player)
     const mine = isMine(player)
     const rowClass = isPinned
       ? 'bg-brand-panel border-b border-brand-line'
@@ -647,18 +662,17 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
     return (
       <tr
         key={`${isPinned ? 'pinned' : 'row'}-${player.entry_id || player.id}`}
-        className={`${rowClass} ${rank <= 3 || isPinned ? 'font-semibold' : ''}`}
+        className={`${rowClass} ${(rank != null && rank <= 3) || isPinned ? 'font-semibold' : ''}`}
       >
         <td className="py-2.5 px-4">
-          <RankCell rank={isPinned ? `#${rank}` : rank} pinned={isPinned} />
+          {rank != null && <RankCell rank={isPinned ? `#${rank}` : rank} pinned={isPinned} />}
         </td>
         <td className="py-2.5 px-4">
           <span className="inline-flex items-center gap-2">
-            <PostseasonName playerId={player.id}>
-              <Link to={`/player/${player.id}`} className="hover:text-secondary transition-colors">
-                {player.name}
-              </Link>
-            </PostseasonName>
+            <Link to={`/player/${player.id}`} className="hover:text-secondary transition-colors">
+              {player.name}
+            </Link>
+            <NameBadges playerId={player.id} />
             {isPinned && (
               <span className="text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full bg-secondary text-bg-dark">YOU</span>
             )}
@@ -678,14 +692,23 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
             />
           </td>
         )}
-        <td className="py-2.5 px-4 text-right">{player[eloKey]}</td>
+        <td className="py-2.5 px-4 text-right whitespace-nowrap">
+          {topCutMinGames > 0 && player.top_cut_eligible === false && !prov && (
+            <span
+              className="mr-2 text-xs text-text-muted"
+              title={`Needs ${topCutMinGames} ranked games to count for top cut`}
+            >
+              not yet eligible
+            </span>
+          )}
+          {prov ? <ProvisionalTag games={prov.games} /> : player[eloKey]}
+        </td>
       </tr>
     )
   }
 
   return (
     <div>
-      <PostseasonLegend className="mb-2 px-1" />
       <div className="overflow-x-auto bg-bg-surface border border-border rounded-[10px]">
         <table className="w-full text-sm">
           <thead>
@@ -694,7 +717,7 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
               <th className="py-3 px-4 text-text-muted font-semibold">Player</th>
               {showBadges && <th className="py-3 px-4 text-text-muted font-semibold">Badge</th>}
               {avatarMode && <th className="py-3 px-4 text-text-muted font-semibold">Avatar</th>}
-              <th className="py-3 px-4 text-right text-text-muted font-semibold">ELO</th>
+              <th className="py-3 px-4 text-right text-text-muted font-semibold">Rating</th>
             </tr>
           </thead>
           <tbody>
@@ -709,16 +732,22 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', avatarBadges
 
 // ── Store Card ────────────────────────────────────────────────
 
-// Once the store is live, the tile's background is a photo from a random listing
+// Once the store is live, the tile's background is a photo from a random
+// Summit Store listing (never another storefront's, e.g. the Explorer Series)
 export function StoreCard({ live = STORE_LIVE }) {
   const [bgImage, setBgImage] = useState(null)
 
   useEffect(() => {
     if (!live) return
     let cancelled = false
-    getProducts()
-      .then((data) => {
-        const images = (data?.products || []).map((p) => p.images?.[0] || p.image_url).filter(Boolean)
+    Promise.all([getProducts(), getStorefronts()])
+      .then(([data, sfData]) => {
+        const summit = (sfData?.storefronts || []).find((s) => s.slug === DEFAULT_STOREFRONT)
+        if (!summit) return // can't tell which listings are Summit's, so show no photo
+        const images = (data?.products || [])
+          .filter((p) => p.storefront_id === summit.id || p.storefront_id == null)
+          .map((p) => p.images?.[0] || p.image_url)
+          .filter(Boolean)
         if (!cancelled && images.length) setBgImage(images[Math.floor(Math.random() * images.length)])
       })
       .catch(() => {})
@@ -779,8 +808,16 @@ export default function Home() {
   usePageTitle('Sorcerers Summit')
   const { user } = useAuth()
   const [source, setSource] = useState(() => {
+    // Discord links to the precon ladder with ?ladder=precon
     try {
-      return localStorage.getItem(STORAGE_KEY) === 'limited' ? 'limited' : 'online'
+      const fromLink = new URLSearchParams(window.location.search).get('ladder')
+      if (SOURCES.includes(fromLink)) return fromLink
+    } catch {
+      // fall through to the saved choice
+    }
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      return SOURCES.includes(saved) ? saved : 'online'
     } catch {
       return 'online'
     }
@@ -802,7 +839,10 @@ export default function Home() {
   const fetchLeaderboard = useCallback(async (src) => {
     setLoading(true)
     try {
-      if (src === 'limited') {
+      if (src === 'precon') {
+        const data = await getPreconStandings()
+        setEventData({ precon: true, ...data })
+      } else if (src === 'limited') {
         const data = await getLimitedLeaderboard()
         const lb = data.leaderboard || data
         const stats = data.stats || {}
@@ -875,12 +915,13 @@ export default function Home() {
   }
 
   const isLimited = eventData?.limited === true
-  const hasEvent = isLimited || eventData?.event != null
+  const isPrecon = eventData?.precon === true
+  const hasEvent = isLimited || isPrecon || eventData?.event != null
   const leaderboard = eventData?.leaderboard || []
   const avatarMode = eventData?.event?.elo_mode === 'avatar'
   const endsText = eventEndsText(eventData?.event?.scheduled_end_at)
   // Limited already lists each player once, so Filtered only applies to avatar seasons
-  const canFilter = !isLimited && avatarMode
+  const canFilter = !isLimited && !isPrecon && avatarMode
   const filtered = canFilter && bestOnly
 
   return (
@@ -939,7 +980,21 @@ export default function Home() {
       ) : hasEvent ? (
         <section id={LEADERBOARD_ANCHOR} className="scroll-mt-20">
           <div className="flex flex-wrap justify-between items-end gap-4 mb-5">
-            {isLimited ? (
+            {isPrecon ? (
+              <div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h2 className="text-3xl font-display text-white">
+                    {eventData.season?.name || 'Lavamancer vs Frostmage Ladder'}
+                  </h2>
+                  <span className="text-[11px] font-bold tracking-[0.12em] uppercase px-2.5 py-1 rounded-full bg-brand-panel border border-brand-line">
+                    <span className="text-orange-300">LM</span> <span className="text-text-muted">vs</span> <span className="text-sky-300">FM</span>
+                  </span>
+                </div>
+                <p className="text-sm text-text-muted mt-1">
+                  Lavamancer vs Frostmage precon ladder{eventData.season ? ` · ${preconSeasonText(eventData.season)}` : ''}
+                </p>
+              </div>
+            ) : isLimited ? (
               <div>
                 <h2 className="text-3xl font-display text-white">Limited Format Leaderboard</h2>
                 <p className="text-sm text-text-muted mt-1">Rankings for limited format matches</p>
@@ -959,7 +1014,9 @@ export default function Home() {
               {canFilter && <FilterToggle active={bestOnly} onChange={handleBestOnlyChange} />}
             </div>
           </div>
-          {isLimited ? (
+          {isPrecon ? (
+            <PreconLadder data={eventData} />
+          ) : isLimited ? (
             <>
               {eventData.stats?.unique_players > 0 && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -976,11 +1033,13 @@ export default function Home() {
             <>
               <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
                 <StatBar leaderboard={leaderboard} totalGames={eventData.total_games} />
-                {(avatarMode || endsText) && (
+                {(avatarMode || endsText || eventData.top_cut_min_games > 0) && (
                   <p className="max-w-lg text-[13px] leading-relaxed text-text-muted md:text-right">
                     {avatarMode && (filtered
                       ? 'Filtered: each player appears once, on their best avatar. Top cut still gives each player one invite. '
                       : 'Each avatar is rated separately, so a player can appear once per avatar. Top cut still gives each player one invite. ')}
+                    {eventData.top_cut_min_games > 0 && source === 'online' &&
+                      `An entry needs ${eventData.top_cut_min_games} ranked games to count for top cut. `}
                     {endsText && <span className="text-text font-semibold">{endsText}</span>}
                   </p>
                 )}
@@ -992,6 +1051,7 @@ export default function Home() {
                 avatarMode={avatarMode}
                 userId={user ? user.user_id : null}
                 bestOnly={filtered}
+                topCutMinGames={source === 'online' ? eventData.top_cut_min_games || 0 : 0}
               />
             </>
           )}

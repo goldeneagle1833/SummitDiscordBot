@@ -64,6 +64,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.leaderboard.get_archived_event_leaderboard",
     "api.leaderboard.get_season_leaderboard",
     "api.leaderboard.get_limited_leaderboard",
+    "api.precon.get_precon_standings",
+    "api.precon.get_precon_player",  # a player's precon ladder results (public, like the ladder)  # precon ladder standings (public, like the other ladders)
     "api.leaderboard.get_archived_limited_events",
     "api.leaderboard.get_archived_limited_leaderboard",
 
@@ -91,9 +93,15 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.get_profile_visibility",
     "api.players.set_profile_visibility",
     "api.players.set_hidden_avatars",  # owner/admin, checked in the handler
+    "api.players.set_hidden_badges",  # owner/admin, checked in the handler
+    "api.players.set_shown_badges",  # owner/admin, checked in the handler
+    "api.players.get_profile_badge_prefs",  # which public badges players chose to show
     "api.players.get_featured_deck",  # a deck the player chose to make public
     "api.players.set_featured_deck",  # owner/admin, checked in the handler
     "api.players.clear_featured_deck",  # owner/admin, checked in the handler
+    "api.players.get_showcase",  # bio / favorite card / rival the player chose to show
+    "api.players.set_showcase",  # owner/admin, checked in the handler
+    "api.players.get_rival_options",  # owner/admin, checked in the handler
     "api.misc.deck_link_previews",  # deck-site links only
     "api.players.reset_own_profile",
     "api.players.undo_profile_reset",
@@ -101,6 +109,11 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.get_nav_prefs",
     "api.nav.get_new_content",
     "api.nav.mark_seen",
+    # Find a player at an event: a person's page by private link, and the
+    # opt-in list of people at an event (spots hidden outside event hours)
+    "api.event_finder.list_maps",
+    "api.event_finder.map_people",
+    "api.event_finder.person",
     "api.players.set_nav_prefs",
     "api.players.player_avatar_stats",
     "api.players.player_card_stats",  # owner/admin, or public when the player opts in
@@ -144,6 +157,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
 
     # -- Brackets (public read-only; reporting/confirming require auth) --
     "api.brackets.list_brackets",
+    "api.standings_hub.get_standings_hub",  # own place shown only to that player
     "api.brackets.get_bracket",
     "api.brackets.get_bracket_marks",
     "api.brackets.get_player_postseason",
@@ -152,6 +166,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.season_badges.get_avatar_honours",
     "api.paper_finishes.get_paper_finishes",  # Top 8 results matched to profiles; public lists
     "api.paper_finishes.get_event_profiles",  # same, for one event's Top 8 page
+    "api.paper_finishes.get_event_avatar_badges",  # awarded event avatar badges; public profile tags
 
     # -- Events / tournaments (public read-only) --
     "api.events.list_top8_events",
@@ -181,6 +196,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # -- Deck archetypes (public read-only) --
     "api.deck_archetypes.list_archetypes",
     "api.deck_archetypes.get_archetype",
+    "api.deck_archetypes.ranked_archetype_trends",  # Public aggregated ranked statistics
 
     # -- Meta Report (public read-only, plus email sign-up) --
     # Sign-up is throttled per client and only emails a confirmation link;
@@ -252,6 +268,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.explorer.get_leaderboard",
     "api.explorer.get_settings",
     "api.explorer.events_map",
+    "api.explorer.get_site_content",
 
     # -- Rumble (public read-only) --
     "api.rumble.get_rumble",

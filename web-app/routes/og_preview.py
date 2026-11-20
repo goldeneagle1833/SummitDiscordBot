@@ -6,6 +6,7 @@ paths to Flask. Flask checks the user agent: bot crawlers get minimal HTML
 with dynamic OG meta tags, regular users get the React SPA index.html.
 """
 
+from utils.match_tables import live_matches
 import logging
 import re
 import os
@@ -16,6 +17,7 @@ from flask import Blueprint, request, send_from_directory
 from repositories.events import EventRepository
 from repositories.deck_rec_repo import DeckRecRepository
 from repositories.elo import EloRepository
+from services import provisional
 from repositories.card_catalog import CardCatalogRepository
 from services.player import PlayerService
 from utils.formatting import format_event_name, normalize_card_name
@@ -296,7 +298,7 @@ def _get_avatar_stats(avatar_name: str) -> dict | None:
         # Current event Discord matches
         try:
             cur.execute(
-                f"SELECT json_deck_data_winner, json_deck_data_loser FROM match_records "
+                f"SELECT json_deck_data_winner, json_deck_data_loser FROM {live_matches()} "
                 f"WHERE {_DECK_NOT_EMPTY} AND (source = 'Discord' OR source IS NULL)"
             )
             _tally(cur.fetchall())
@@ -316,7 +318,7 @@ def _get_avatar_stats(avatar_name: str) -> dict | None:
         # External / non-Discord matches stored in match_records
         try:
             cur.execute(
-                f"SELECT json_deck_data_winner, json_deck_data_loser FROM match_records "
+                f"SELECT json_deck_data_winner, json_deck_data_loser FROM {live_matches()} "
                 f"WHERE {_DECK_NOT_EMPTY} AND source != 'Discord' AND source IS NOT NULL"
             )
             _tally(cur.fetchall())
@@ -359,13 +361,18 @@ def og_player(player_id: str):
 
         name = player_row["display_name"] if player_row else "Player"
         elo = player_row["online_elo"] if player_row else 1500
+        if provisional.lifetime_is_glicko2():
+            # A provisional Glicko-2 lifetime rating is never shown as a number
+            games = provisional.standings_games().get(str(player_id), (0, 0))[1]
+            if provisional.is_provisional(games):
+                elo = provisional.g2.provisional_label(games)
 
         stats = player_service.get_player_stats(player_id)
         wins = stats["wins"] if stats else 0
         losses = stats["losses"] if stats else 0
         win_rate = stats["win_rate"] if stats else None
 
-        parts = [f"ELO: {elo}", f"{wins}W – {losses}L"]
+        parts = [f"Rating: {elo}", f"{wins}W – {losses}L"]
         if win_rate is not None and (wins + losses) > 0:
             parts.append(f"{win_rate:.1f}% win rate")
 
@@ -390,19 +397,26 @@ def og_elo():
     try:
         elo_repo = EloRepository()
         standings = elo_repo.get_all_standings()
+        if provisional.lifetime_is_glicko2():
+            # Only settled Glicko-2 players count as ranked (and can be #1)
+            games = provisional.standings_games()
+            standings = [
+                p for p in standings
+                if not provisional.is_provisional(games.get(str(p["user_id"]), (0, 0))[1])
+            ]
         count = len(standings) if standings else 0
         if standings:
             top = standings[0]
             top_name = top.get("display_name", "")
             top_elo = top.get("online_elo", 0)
-            description = f"{count} ranked players | #1: {top_name} ({top_elo} ELO)"
+            description = f"{count} ranked players | #1: {top_name} ({top_elo} Rating)"
         else:
             description = f"{count} ranked players on the Sorcery: Contested Realm leaderboard"
     except Exception:
-        description = "ELO leaderboard for Sorcery: Contested Realm — see top ranked players"
+        description = "Rating leaderboard for Sorcery: Contested Realm — see top ranked players"
 
     return _og_html(
-        title="ELO Leaderboard — Sorcerers Summit",
+        title="Rating Leaderboard — Sorcerers Summit",
         description=description,
         url=f"{SITE_URL}/elo",
     )

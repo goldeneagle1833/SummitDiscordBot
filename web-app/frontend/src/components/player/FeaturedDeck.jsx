@@ -6,8 +6,8 @@ import { getAvatarImageFiles } from '@/api/cards'
 import { getDeckSourceLabel } from '@/utils/deckLinks'
 import { getWinRateColor } from '@/utils/winRateColor'
 
-// Sizes the tile as one item of the header's wrapping row
-const SLOT = 'w-full sm:flex-[1_1_300px] sm:max-w-md'
+// Fills one cell of the header's showcase row
+const SLOT = 'w-full'
 
 /** The full list, opened from the tile. */
 function DeckListModal({ deck, onClose }) {

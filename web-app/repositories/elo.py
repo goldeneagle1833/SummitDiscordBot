@@ -105,8 +105,9 @@ class EloRepository:
         columns = {r[1] for r in cur.fetchall()}
         mode_column = "elo_mode" if "elo_mode" in columns else "'player'"
         end_column = "scheduled_end_at" if "scheduled_end_at" in columns else "NULL"
+        system_column = "rating_system" if "rating_system" in columns else "'elo'"
         cur.execute(f"""
-            SELECT event_id, event_name, start_date, {mode_column}, {end_column}
+            SELECT event_id, event_name, start_date, {mode_column}, {end_column}, {system_column}
             FROM events
             WHERE is_active = 1
             LIMIT 1
@@ -123,6 +124,8 @@ class EloRepository:
                 "elo_mode": row[3] or "player",
                 # Unix seconds the bot will end the event at, or None when unscheduled
                 "scheduled_end_at": row[4],
+                # "elo" (through Season 8) or "glicko2" (Season 9 on)
+                "rating_system": row[5] or "elo",
             }
         return None
 
@@ -187,6 +190,14 @@ class EloRepository:
         elos = [row[0] for row in cur.fetchall()]
         conn.close()
         return elos
+
+    def get_all_elos_by_user(self) -> list[tuple]:
+        """(user_id, lifetime ELO) for every player."""
+        conn = self._get_connection()
+        try:
+            return conn.execute("SELECT user_id, online_elo FROM overall_standings").fetchall()
+        finally:
+            conn.close()
 
     def get_user_elo(self, user_id: int | str) -> int | None:
         """Get ELO for a specific user (handles both int and str to support large Google IDs)."""
@@ -468,17 +479,41 @@ class EloRepository:
         return deleted
 
     def reset_player_elo(self, user_id: int, default_elo: int = 1500) -> bool:
-        """Reset a player's online ELO to default. Returns True if updated."""
+        """Reset a player's online ELO to default. Returns True if updated.
+
+        In a Glicko-2 season the season rating is set through a stored
+        adjustment, so a later season rebuild applies it again.
+        """
+        from services import glicko2_season  # services imports this module
+
         conn = self._get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE overall_standings SET online_elo = ?, online_event_elo = ? WHERE user_id = ?",
-            (default_elo, default_elo, user_id),
-        )
-        updated = cur.rowcount > 0
-        conn.commit()
-        conn.close()
-        return updated
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT user_display_name FROM overall_standings WHERE user_id = ?", (user_id,)
+            )
+            row = cur.fetchone()
+            if not row:
+                return False
+            event = glicko2_season.get_event(conn)
+            if glicko2_season.lifetime_is_glicko2(conn):
+                glicko2_season.add_lifetime_adjustment(conn, user_id, row[0], default_elo)
+            else:
+                cur.execute(
+                    "UPDATE overall_standings SET online_elo = ? WHERE user_id = ?",
+                    (default_elo, user_id),
+                )
+            if glicko2_season.is_glicko2(event):
+                glicko2_season.add_adjustment(conn, event, user_id, row[0], default_elo)
+            else:
+                cur.execute(
+                    "UPDATE overall_standings SET online_event_elo = ? WHERE user_id = ?",
+                    (default_elo, user_id),
+                )
+            conn.commit()
+            return True
+        finally:
+            conn.close()
 
     def rename_player(self, user_id: int, new_name: str) -> bool:
         """Update a player's display name. Returns True if updated."""

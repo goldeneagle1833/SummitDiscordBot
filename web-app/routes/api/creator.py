@@ -4,11 +4,10 @@ Public. The running season is offered too: like every season, its games only
 show up to the latest batch release (see services/data_release.py).
 """
 
+from utils.match_tables import live_matches
 import json
 import logging
 import sqlite3
-import threading
-import time
 from collections import defaultdict
 from datetime import datetime
 
@@ -17,31 +16,34 @@ from flask import Blueprint, jsonify, request
 from repositories.card_catalog import CardCatalogRepository
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS
 from services.data_release import cutoff_timestamp, released_connection
+from services.shared_stats_cache import SharedStatsCache, StatsBuilding
 from routes.api.cards import _build_card_image_lookup, _find_card_image, _get_event_date_range
 
 logger = logging.getLogger(__name__)
 
 creator_bp = Blueprint("creator", __name__)
 
-# Both endpoints read every reported decklist, so results are cached per worker
-# for a few minutes; the lock keeps a burst of visitors from each starting the
-# same build.
-_CACHE_TTL_SECONDS = 600
-_cache = {}  # key -> (built_at, data)
-_cache_lock = threading.Lock()
+# Both endpoints read every reported decklist, which takes many seconds, so
+# results are saved to a shared cache file (all workers, survives worker
+# restarts) and refreshed in the background while the old copy keeps being
+# served. Keys include the batch release cutoff, so a new batch shows at once.
+_CACHE_TTL_SECONDS = 1800
+_cache = SharedStatsCache("creator-cards", version=1, ttl=_CACHE_TTL_SECONDS)
 
 
 def _cached(key, build):
-    hit = _cache.get(key)
-    if hit and time.time() - hit[0] < _CACHE_TTL_SECONDS:
-        return hit[1]
-    with _cache_lock:
-        hit = _cache.get(key)
-        if hit and time.time() - hit[0] < _CACHE_TTL_SECONDS:
-            return hit[1]
-        data = build()
-        _cache[key] = (time.time(), data)
-        return data
+    return _cache.get(key, build)
+
+
+def warm_popular_cards():
+    """Load or build the default Card Stats list in the background (worker start)."""
+    _cache.warm(("popular", "all", "all", cutoff_timestamp()),
+                lambda: _build_popular_cards("all", "all"))
+
+
+@creator_bp.errorhandler(StatsBuilding)
+def _stats_building(_e):
+    return jsonify({"error": "Card stats are still being prepared, try again shortly."}), 503
 
 
 def _active_event_ids():
@@ -103,7 +105,7 @@ def get_creator_filters():
 
 @creator_bp.route("/popular-cards")
 def get_creator_popular_cards():
-    """Card popularity stats from match_records (same source as live-popular-cards).
+    f"""Card popularity stats from {live_matches()} (same source as live-popular-cards).
 
     Query params:
     - event: event_id or season filter ID (e.g. "season_gothic_1"). Omit for all data.
@@ -239,7 +241,7 @@ def _build_popular_cards(event_filter, source_filter, date_range=None):
         try:
             cur.execute(f"""
                 SELECT json_deck_data_winner, json_deck_data_loser
-                FROM match_records
+                FROM {live_matches()}
                 WHERE {deck_where} {source_clause}
             """)
             _parse_deck_rows(cur)
@@ -280,7 +282,7 @@ def _build_popular_cards(event_filter, source_filter, date_range=None):
             try:
                 cur.execute(f"""
                     SELECT json_deck_data_winner, json_deck_data_loser
-                    FROM match_records
+                    FROM {live_matches()}
                     WHERE {deck_where} {source_clause}
                       AND timestamp >= ? AND timestamp <= ?
                 """, (start_date, end_date))
@@ -464,7 +466,7 @@ def _build_card_history(source_filter):
     try:
         cur.execute(f"""
             SELECT json_deck_data_winner, json_deck_data_loser, timestamp
-            FROM match_records
+            FROM {live_matches()}
             WHERE {deck_where} {source_clause}
         """)
         _process_rows(cur)

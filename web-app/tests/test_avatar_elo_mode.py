@@ -233,7 +233,7 @@ def test_start_event_passes_the_mode_to_the_bot(admin_session):
         bad = admin_session.post("/api/admin/start-event", json={"event_name": "S9", "elo_mode": "deck"})
 
     assert resp.status_code == 200
-    bot_db.start_new_event.assert_called_once_with("S9", elo_mode="avatar")
+    bot_db.start_new_event.assert_called_once_with("S9", elo_mode="avatar", rating_system="elo")
     assert bad.status_code == 400
 
 

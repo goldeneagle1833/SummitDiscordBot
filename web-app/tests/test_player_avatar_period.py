@@ -34,7 +34,8 @@ def avatar_matches(match_db, elo_db, monkeypatch, client):
 
     conn = sqlite3.connect(str(match_db))
     conn.execute("CREATE TABLE match_records_archive AS SELECT * FROM match_records WHERE 0")
-    conn.execute("ALTER TABLE match_records_archive ADD COLUMN event_id INTEGER")
+    if "event_id" not in {r[1] for r in conn.execute("PRAGMA table_info(match_records_archive)")}:
+        conn.execute("ALTER TABLE match_records_archive ADD COLUMN event_id INTEGER")
     cols = ("winner_id, winner_display_name, losser_id, losser_display_name, timestamp, "
             "json_deck_data_winner, json_deck_data_loser")
     # Current event: two Pathfinder wins

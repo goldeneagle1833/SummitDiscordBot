@@ -22,6 +22,7 @@ from services.meta_report import Period, latest_due_period, report_today
 RELEASED_TABLES = {
     "match_records": "timestamp",
     "match_records_archive": "timestamp",
+    "season_match_records": "timestamp",  # Season 9 onward
     "external_matches": "timestamp",
     "solo_match_reports": "report_date",
 }

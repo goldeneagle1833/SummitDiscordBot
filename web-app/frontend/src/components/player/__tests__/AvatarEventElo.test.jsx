@@ -33,7 +33,7 @@ describe('profile in Avatar mode', () => {
   const baseHeader = {
     data: { name: 'Alice' },
     playerId: '1',
-    eloText: 'Event ELO per avatar:',
+    eloText: 'Event Rating per avatar:',
     rankText: '',
     eventFilter: 'current',
     pastEvents: [],
@@ -41,7 +41,7 @@ describe('profile in Avatar mode', () => {
     canSeeLifetime: false,
   }
 
-  it('lists every avatar entry with its ELO and rank', () => {
+  it('lists every avatar entry with its Rating and rank', () => {
     renderWithRouter(
       <PlayerHeader
         {...baseHeader}
@@ -51,7 +51,7 @@ describe('profile in Avatar mode', () => {
         ]}
       />,
     )
-    const list = screen.getByRole('list', { name: /event elo per avatar/i })
+    const list = screen.getByRole('list', { name: /event rating per avatar/i })
     expect(within(list).getAllByRole('listitem')).toHaveLength(2)
     expect(within(list).getByText(/1530 · #3/)).toBeInTheDocument()
   })
@@ -61,7 +61,7 @@ describe('profile in Avatar mode', () => {
     expect(screen.queryByRole('button', { name: 'Paper' })).not.toBeInTheDocument()
   })
 
-  it('adds event ELO and rank to Avatar Performance', () => {
+  it('adds event rating and rank to Avatar Performance', () => {
     renderWithRouter(
       <AvatarPerformance
         open
@@ -74,7 +74,7 @@ describe('profile in Avatar mode', () => {
       />,
     )
     expect(screen.getAllByText('1600')).toHaveLength(2) // card and table
-    expect(screen.getByRole('columnheader', { name: /event elo/i })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /event rating/i })).toBeInTheDocument()
     expect(screen.getAllByText('#1').length).toBeGreaterThan(0)
   })
 })

@@ -10,12 +10,14 @@ const SECTIONS = [
     tools: [
       { to: '/admin/audit-log', label: 'Admin Log', blurb: 'Who changed what, and when.' },
       { to: '/admin/monitoring', label: 'Monitoring', blurb: 'Site health and traffic.' },
+      { to: '/admin/bots', label: 'Bot Traffic', blurb: 'Crawlers and scrapers, and block them from the site data.' },
       { to: '/admin/users', label: 'Users', blurb: 'Look up players and set roles.' },
     ],
   },
   {
     heading: 'Events and content',
     tools: [
+      { to: '/admin/events', label: 'Events', blurb: 'Start, change and end the LM / FM precon ladder and its queue.' },
       { to: '/admin/brackets', label: 'Manage Top Cut', blurb: 'Create and run the season top cut bracket.' },
       { to: '/admin/meta-reports', label: 'Meta Reports', blurb: 'Build and publish reports.' },
       { to: '/admin/paper-badges', label: 'Paper Tournament Badges', blurb: 'Match Top 8 finishes to player profiles.' },

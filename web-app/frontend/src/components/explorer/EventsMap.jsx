@@ -10,7 +10,8 @@ function radiusFor(players) {
   return 7
 }
 
-const EVENT_COLOR = '#f5c451'
+// Rust ink, to match the Explorer Series site's parchment look
+const EVENT_COLOR = '#a0521d'
 
 export default function EventsMap({ events }) {
   const points = events
@@ -29,5 +30,5 @@ export default function EventsMap({ events }) {
       ],
     }))
 
-  return <SeriesMap points={points} height="h-96" storageKey="explorer-events-map-style" />
+  return <SeriesMap points={points} height="h-96" storageKey="explorer-site-map-style" defaultStyle="street" />
 }

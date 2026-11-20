@@ -1,5 +1,6 @@
 """Avatar API routes."""
 
+from utils.match_tables import live_matches
 import json
 import logging
 import math
@@ -13,7 +14,8 @@ from flask import Blueprint, jsonify, request
 
 from repositories.card_catalog import CardCatalogRepository
 from services.data_release import released_connection
-from services.elo_gap import pre_match_sql
+from services.elo_gap import current_ratings, pre_match_select, ratings_then
+from services import provisional
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS, AVATAR_IMAGES_DIR
 from utils.formatting import generate_pseudonym
 from utils.auth import is_admin
@@ -113,7 +115,7 @@ def get_avatar_filters():
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
         cur.execute(
-            "SELECT DISTINCT source FROM match_records WHERE source IS NOT NULL ORDER BY source"
+            f"SELECT DISTINCT source FROM {live_matches()} WHERE source IS NOT NULL ORDER BY source"
         )
         sources = [row[0] for row in cur.fetchall()]
         conn.close()
@@ -187,7 +189,7 @@ def get_season_stats():
         cur = conn.cursor()
         for season in _get_all_seasons():
             total = 0
-            for table in ("match_records", "match_records_archive"):
+            for table in ("match_records", "match_records_archive", "season_match_records"):
                 try:
                     if season["end_date"]:
                         cur.execute(
@@ -276,7 +278,7 @@ def _collect_discord_rows(cur, event_filter):
         try:
             cur.execute(f"""
                 SELECT {AVATAR_DECKS}
-                FROM match_records
+                FROM {live_matches()}
                 WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
                    OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
                   AND (source = 'Discord' OR source IS NULL)
@@ -285,12 +287,12 @@ def _collect_discord_rows(cur, event_filter):
         except sqlite3.OperationalError as e:
             logger.warning(f"Failed to query new columns format: {e}")
             try:
-                cur.execute("""
+                cur.execute(f"""
                     SELECT
                         CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
                         json_deck_data
-                    FROM match_records
-                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                    FROM {live_matches()}
+                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
                 """)
                 all_rows.extend(cur.fetchall())
                 use_new_columns = False
@@ -319,7 +321,7 @@ def _collect_discord_rows(cur, event_filter):
                 try:
                     cur.execute(f"""
                         SELECT {AVATAR_DECKS}
-                        FROM match_records
+                        FROM {live_matches()}
                         WHERE {deck_where}
                           AND (source = 'Discord' OR source IS NULL)
                           AND timestamp >= ? AND timestamp <= ?
@@ -355,7 +357,7 @@ def _collect_discord_rows(cur, event_filter):
 
 
 def _collect_external_rows(cur, source_filter, event_start=None, event_end=None):
-    """Collect deck data rows from match_records and external_matches for non-Discord sources.
+    f"""Collect deck data rows from {live_matches()} and external_matches for non-Discord sources.
 
     Returns rows as tuples of (winner_deck_json, loser_deck_json).
     """
@@ -380,7 +382,7 @@ def _collect_external_rows(cur, source_filter, event_start=None, event_end=None)
             where_parts.append("timestamp <= ?")
             params.append(event_end)
 
-        query = f"SELECT {AVATAR_DECKS} FROM match_records WHERE {' AND '.join(where_parts)}"
+        query = f"SELECT {AVATAR_DECKS} FROM {live_matches()} WHERE {' AND '.join(where_parts)}"
         cur.execute(query, params)
         rows = cur.fetchall()
     except sqlite3.OperationalError as e:
@@ -487,6 +489,33 @@ def _collect_discord_rows_with_players(cur, event_filter, play_draw=False, pre_e
                         lambda: _query_discord_rows_with_players(cur, event_filter, play_draw, pre_elo))
 
 
+def _load_current_ratings(source):
+    """Today's ratings ({user_id: rating}), the fallback for games that stored none; None on error."""
+    try:
+        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
+        try:
+            return current_ratings(elo_conn, paper=source == "web")
+        finally:
+            elo_conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not load ELO standings: {e}")
+        return None
+
+
+def _row_ratings_then(row, lookup):
+    """(winner, loser) rating at game time for a row from the *_rows_with_players collectors.
+
+    Rows collected with pre_elo=True carry the stored pre-game ratings; others
+    (and older games that stored none) use today's ratings. A side is None when
+    its rating was provisional at the time or is unknown.
+    """
+    w_now = lookup.get(str(row[2])) if row[2] else None
+    l_now = lookup.get(str(row[4])) if row[4] else None
+    if len(row) > 9:
+        return ratings_then(row[7], row[8], row[9], w_now, l_now)
+    return ratings_then(None, None, 0, w_now, l_now)
+
+
 def _query_discord_rows_with_players(cur, event_filter, play_draw=False, pre_elo=False):
     """Like _collect_discord_rows but also includes player IDs and names.
 
@@ -498,7 +527,8 @@ def _query_discord_rows_with_players(cur, event_filter, play_draw=False, pre_elo
     first ('y'/'n'), or NULL when unknown or before PLAY_DRAW_CUTOFF.
 
     With pre_elo=True (needs play_draw=True) each row gains the winner's and
-    loser's rating before the game, or NULL where the record doesn't store it.
+    loser's rating before the game (NULL where the record doesn't say) and
+    whether the record stored pre-game standings (see elo_gap.pre_match_select).
     """
     all_rows = []
     use_new_columns = True
@@ -511,8 +541,7 @@ def _query_discord_rows_with_players(cur, event_filter, play_draw=False, pre_elo
     def cols_for(table):
         if not pre_elo:
             return base_cols
-        pre = pre_match_sql({r[1] for r in cur.execute(f"PRAGMA table_info({table})")})
-        return base_cols + (f", {pre[0]}, {pre[1]}" if pre else ", NULL, NULL")
+        return base_cols + ", " + pre_match_select({r[1] for r in cur.execute(f"PRAGMA table_info({table})")})
 
     deck_where = ("((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
                   " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))")
@@ -520,8 +549,8 @@ def _query_discord_rows_with_players(cur, event_filter, play_draw=False, pre_elo
     if event_filter in ("all", "current"):
         try:
             cur.execute(f"""
-                SELECT {cols_for("match_records")}
-                FROM match_records
+                SELECT {cols_for(live_matches())}
+                FROM {live_matches()}
                 WHERE {deck_where}
                   AND (source = 'Discord' OR source IS NULL)
             """)
@@ -544,7 +573,7 @@ def _query_discord_rows_with_players(cur, event_filter, play_draw=False, pre_elo
         if isinstance(event_filter, str) and event_filter.startswith("season_"):
             start_date, end_date = _get_event_date_range(event_filter)
             if start_date and end_date:
-                for table in ("match_records", "match_records_archive"):
+                for table in ("match_records", "match_records_archive", "season_match_records"):
                     try:
                         cur.execute(f"""
                             SELECT {cols_for(table)}
@@ -600,7 +629,7 @@ def _query_external_rows_with_players(cur, source_filter, event_start=None, even
 
         query = f"""SELECT {_deck_avatar_columns(cur)},
                            winner_id, winner_display_name, losser_id, losser_display_name
-                    FROM match_records WHERE {' AND '.join(where_parts)}"""
+                    FROM {live_matches()} WHERE {' AND '.join(where_parts)}"""
         cur.execute(query, params)
         rows = cur.fetchall()
     except sqlite3.OperationalError as e:
@@ -1022,6 +1051,9 @@ def get_avatar(avatar_name):
         # Source filter clause for Discord matches
         discord_source_clause = "AND (source = 'Discord' OR source IS NULL)"
 
+        # Season game counts after each live match (Glicko-2), to hide provisional changes
+        live_games = provisional.event_games_select(cur, live_matches())
+
         # Query current match_records (Discord matches)
         if source_filter in ("all", "discord"):
             if event_filter in ("all", "current"):
@@ -1042,15 +1074,16 @@ def get_avatar(avatar_name):
                             curiosa_url_loser,
                             rowid as match_id,
                             winner_went_first,
-                            loser_went_first
-                        FROM match_records
+                            loser_went_first,
+                            {live_games}
+                        FROM {live_matches()}
                         WHERE (json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL)
                           {discord_source_clause}
                         ORDER BY timestamp DESC
                     """)
                     all_rows.extend(cur.fetchall())
                 except sqlite3.OperationalError:
-                    cur.execute("""
+                    cur.execute(f"""
                         SELECT
                             winner_id,
                             winner_display_name,
@@ -1064,7 +1097,7 @@ def get_avatar(avatar_name):
                             json_deck_data,
                             curiosa_url,
                             rowid as match_id
-                        FROM match_records
+                        FROM {live_matches()}
                         WHERE json_deck_data IS NOT NULL
                         ORDER BY timestamp DESC
                     """)
@@ -1122,12 +1155,13 @@ def get_avatar(avatar_name):
                                 curiosa_url_loser,
                                 rowid as match_id,
                                 winner_went_first,
-                                loser_went_first
+                                loser_went_first,
+                                {live_games}
                             """
                             try:
                                 cur.execute(f"""
                                     SELECT {select_cols}
-                                    FROM match_records
+                                    FROM {live_matches()}
                                     WHERE (json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL)
                                       {discord_source_clause}
                                       AND timestamp >= ? AND timestamp <= ?
@@ -1234,8 +1268,9 @@ def get_avatar(avatar_name):
                         curiosa_url_loser,
                         rowid as match_id,
                         winner_went_first,
-                        loser_went_first
-                    FROM match_records
+                        loser_went_first,
+                        {live_games}
+                    FROM {live_matches()}
                     WHERE {' AND '.join(where_parts)}
                     ORDER BY timestamp DESC
                 """, params)
@@ -1302,6 +1337,9 @@ def get_avatar(avatar_name):
                 "winner_deck_url": row[11] if len(row) > 11 else None,
                 "loser_deck_url": row[12] if len(row) > 12 else None,
             }
+            # Live rows end with each side's season games: hide provisional changes
+            if len(row) > 17:
+                provisional.mask_pair(match_obj, row[16], row[17])
 
             if avatar_in_winner:
                 total_wins += 1
@@ -1506,7 +1544,7 @@ def get_avatar_popularity(avatar_name):
         try:
             cur.execute(f"""
                 SELECT {AVATAR_DECKS}, timestamp
-                FROM match_records
+                FROM {live_matches()}
                 WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
                    OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
             """)
@@ -1514,10 +1552,10 @@ def get_avatar_popularity(avatar_name):
         except sqlite3.OperationalError as e:
             logger.warning(f"Failed to query new columns format: {e}")
             try:
-                cur.execute("""
+                cur.execute(f"""
                     SELECT json_deck_data, '', timestamp
-                    FROM match_records
-                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                    FROM {live_matches()}
+                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
                 """)
                 all_rows.extend(cur.fetchall())
                 use_new_columns = False
@@ -1646,17 +1684,17 @@ def get_all_avatars_popularity():
         try:
             cur.execute(f"""
                 SELECT {AVATAR_DECKS}, timestamp
-                FROM match_records
+                FROM {live_matches()}
                 WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
                    OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
             try:
-                cur.execute("""
+                cur.execute(f"""
                     SELECT json_deck_data, '', timestamp
-                    FROM match_records
-                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                    FROM {live_matches()}
+                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
                 """)
                 all_rows.extend(cur.fetchall())
                 use_new_columns = False
@@ -1782,30 +1820,19 @@ def get_avatar_elo_matrix(avatar_name):
     if not MATCH_RECORDS_DB_PATH.exists() or not ELO_DB_PATH.exists():
         return jsonify({"avatar_name": avatar_name, "brackets": [], "matrix": []})
 
-    # 1) Load player ELOs from the appropriate standings table
-    elo_lookup = {}
-    try:
-        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
-        elo_cur = elo_conn.cursor()
-        if source == "web":
-            elo_cur.execute("SELECT user_id, paper_elo FROM paper_standings")
-        else:
-            elo_cur.execute("SELECT user_id, elo FROM overall_standings")
-        for row in elo_cur.fetchall():
-            elo_lookup[str(row[0])] = row[1] or 1500
-        elo_conn.close()
-    except sqlite3.OperationalError as e:
-        logger.warning(f"Could not load ELO standings: {e}")
+    # 1) Today's ratings: the fallback for older games that stored no pre-game rating
+    elo_lookup = _load_current_ratings(source)
+    if elo_lookup is None:
         return jsonify({"avatar_name": avatar_name, "brackets": [], "matrix": []})
 
-    # 2) Collect match rows with player IDs and deck data
+    # 2) Collect match rows with player IDs, deck data and pre-game ratings
     try:
         conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
 
         event_filter = request.args.get("event", "all")
         if source in ("all", "discord"):
-            rows, use_new = _collect_discord_rows_with_players(cur, event_filter)
+            rows, use_new = _collect_discord_rows_with_players(cur, event_filter, play_draw=True, pre_elo=True)
         else:
             event_start, event_end = None, None
             if event_filter not in ("all", "current"):
@@ -1831,14 +1858,11 @@ def get_avatar_elo_matrix(avatar_name):
 
     for row in rows:
         winner_deck_str, loser_deck_str = row[0], row[1]
-        winner_id = str(row[2]) if row[2] else None
-        loser_id = str(row[4]) if row[4] else None
-
-        if not winner_id or not loser_id:
+        if not row[2] or not row[4]:
             continue
 
-        winner_elo = elo_lookup.get(winner_id)
-        loser_elo = elo_lookup.get(loser_id)
+        # Each side's rating at game time (today's for older games)
+        winner_elo, loser_elo = _row_ratings_then(row, elo_lookup)
         if winner_elo is None or loser_elo is None:
             continue
 
@@ -1913,28 +1937,17 @@ def get_avatars_elo_breakdown():
     if not MATCH_RECORDS_DB_PATH.exists() or not ELO_DB_PATH.exists():
         return jsonify({"brackets": [], "avatars": []})
 
-    # 1) Load player ELOs
-    elo_lookup = {}
-    try:
-        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
-        elo_cur = elo_conn.cursor()
-        if source == "web":
-            elo_cur.execute("SELECT user_id, paper_elo FROM paper_standings")
-        else:
-            elo_cur.execute("SELECT user_id, elo FROM overall_standings")
-        for row in elo_cur.fetchall():
-            elo_lookup[str(row[0])] = row[1] or 1500
-        elo_conn.close()
-    except sqlite3.OperationalError as e:
-        logger.warning(f"Could not load ELO standings: {e}")
+    # 1) Today's ratings: the fallback for older games that stored no pre-game rating
+    elo_lookup = _load_current_ratings(source)
+    if elo_lookup is None:
         return jsonify({"brackets": [], "avatars": []})
 
-    # 2) Collect all match rows with player IDs and deck data
+    # 2) Collect all match rows with player IDs, deck data and pre-game ratings
     try:
         conn = released_connection(MATCH_RECORDS_DB_PATH)
         cur = conn.cursor()
         if source in ("all", "discord"):
-            rows, use_new = _collect_discord_rows_with_players(cur, "all")
+            rows, use_new = _collect_discord_rows_with_players(cur, "all", play_draw=True, pre_elo=True)
         else:
             rows = _collect_external_rows_with_players(cur, source)
             use_new = True
@@ -1954,30 +1967,23 @@ def get_avatars_elo_breakdown():
 
     for row in rows:
         winner_deck_str, loser_deck_str = row[0], row[1]
-        winner_id = str(row[2]) if row[2] else None
-        loser_id = str(row[4]) if row[4] else None
-
-        if not winner_id or not loser_id:
+        if not row[2] or not row[4]:
             continue
 
-        winner_elo = elo_lookup.get(winner_id)
-        loser_elo = elo_lookup.get(loser_id)
-        if winner_elo is None or loser_elo is None:
-            continue
-
-        winner_bracket = elo_bracket(winner_elo)
-        loser_bracket = elo_bracket(loser_elo)
+        # Each side's rating at game time (today's for older games); a side
+        # whose rating was still provisional then is left out
+        winner_elo, loser_elo = _row_ratings_then(row, elo_lookup)
 
         winner_avatar = _extract_avatar_from_deck(winner_deck_str)
-        if winner_avatar:
+        if winner_avatar and winner_elo is not None:
             abd = avatar_bracket_data.setdefault(winner_avatar, {})
-            b = abd.setdefault(winner_bracket, {"wins": 0, "losses": 0})
+            b = abd.setdefault(elo_bracket(winner_elo), {"wins": 0, "losses": 0})
             b["wins"] += 1
 
         loser_avatar = _extract_avatar_from_deck(loser_deck_str)
-        if loser_avatar:
+        if loser_avatar and loser_elo is not None:
             abd = avatar_bracket_data.setdefault(loser_avatar, {})
-            b = abd.setdefault(loser_bracket, {"wins": 0, "losses": 0})
+            b = abd.setdefault(elo_bracket(loser_elo), {"wins": 0, "losses": 0})
             b["losses"] += 1
 
     if not avatar_bracket_data:
@@ -2028,6 +2034,18 @@ def get_avatars_elo_breakdown():
     })
 
 
+def _rank_then_sql(side, columns):
+    """SQL for a side's season rank just before the game, NULL when not stored.
+
+    The avatar entry's rank in Avatar mode, else the player's. NULL for older
+    games and for a side that was unranked (provisional) at the time.
+    """
+    ranks = [c for c in (f"{side}_avatar_rank", f"{side}_event_rank") if c in columns]
+    if not ranks:
+        return f"NULL AS {side}_rank_then"
+    return f"COALESCE({', '.join(ranks)}, NULL) AS {side}_rank_then"
+
+
 @avatars_bp.route("/avatars/elo-breakdown/matches")
 def get_elo_breakdown_matches():
     """Return detailed match list for a specific avatar + player ELO bracket cell.
@@ -2052,19 +2070,9 @@ def get_elo_breakdown_matches():
     if not MATCH_RECORDS_DB_PATH.exists() or not ELO_DB_PATH.exists():
         return jsonify({"matches": []})
 
-    # 1) Load player ELOs
-    elo_lookup = {}
-    try:
-        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
-        elo_cur = elo_conn.cursor()
-        if source == "web":
-            elo_cur.execute("SELECT user_id, paper_elo FROM paper_standings")
-        else:
-            elo_cur.execute("SELECT user_id, elo FROM overall_standings")
-        for row in elo_cur.fetchall():
-            elo_lookup[str(row[0])] = row[1] or 1500
-        elo_conn.close()
-    except sqlite3.OperationalError:
+    # 1) Today's ratings: the fallback for older games that stored no pre-game rating
+    elo_lookup = _load_current_ratings(source)
+    if elo_lookup is None:
         return jsonify({"matches": []})
 
     def elo_bracket(elo):
@@ -2083,7 +2091,7 @@ def get_elo_breakdown_matches():
         source_filter = "(source = 'Discord' OR source IS NULL)" if source in ("all", "discord") else "source = ?"
         params = [] if source in ("all", "discord") else [source]
 
-        for table in ("match_records", "match_records_archive"):
+        for table in ("match_records", "match_records_archive", "season_match_records"):
             try:
                 # Detect available columns for this table
                 cur.execute(f"PRAGMA table_info({table})")
@@ -2103,11 +2111,17 @@ def get_elo_breakdown_matches():
                     ("match_time", "NULL"),
                     ("winner_elo_change", "NULL"),
                     ("loser_elo_change", "NULL"),
+                    ("winner_event_games", "NULL"),
+                    ("loser_event_games", "NULL"),
                 ]
                 extra_cols = ", ".join(
                     col if col in table_cols else f"{fallback} as {col}"
                     for col, fallback in optional
                 )
+                # Each side's rating and season rank just before the game
+                # (the avatar entry's in Avatar mode); see _rank_then_sql
+                extra_cols += ", " + pre_match_select(table_cols)
+                extra_cols += ", " + ", ".join(_rank_then_sql(side, table_cols) for side in ("winner", "loser"))
 
                 # Build source filter - handle tables without source column
                 if "source" not in table_cols:
@@ -2141,21 +2155,34 @@ def get_elo_breakdown_matches():
         (match_id, winner_id, loser_id, winner_name, loser_name,
          w_deck_json, l_deck_json, w_url, l_url,
          timestamp, _life1, _life2, w_first, l_first, match_time,
-         w_elo_change, l_elo_change) = row
+         w_elo_change, l_elo_change, w_games, l_games,
+         w_pre, l_pre, has_snapshot, w_rank, l_rank) = row
+        # Glicko-2: a change made while that side was provisional stays hidden
+        w_hidden, l_hidden = provisional.change_hidden(w_games), provisional.change_hidden(l_games)
+        if w_hidden:
+            w_elo_change = None
+        if l_hidden:
+            l_elo_change = None
 
         w_id_str = str(winner_id) if winner_id else None
         l_id_str = str(loser_id) if loser_id else None
         if not w_id_str or not l_id_str:
             continue
 
-        w_elo = elo_lookup.get(w_id_str)
-        l_elo = elo_lookup.get(l_id_str)
-        if w_elo is None or l_elo is None:
-            continue
+        # Ratings at game time (today's for older games that stored none). A
+        # side still provisional then has no rating: it shows without one and
+        # falls in no bracket.
+        w_elo, l_elo = ratings_then(w_pre, l_pre, has_snapshot,
+                                    elo_lookup.get(w_id_str), elo_lookup.get(l_id_str))
+        if w_elo is None and not has_snapshot:
+            continue  # an older game with a player no longer on the ladder
+
+        def in_bracket(elo):
+            return bracket is None or (elo is not None and elo_bracket(elo) == bracket)
 
         # Check winner side
         w_avatar = _extract_avatar_from_deck(w_deck_json)
-        if w_avatar and w_avatar.lower() == avatar_name.lower() and (bracket is None or elo_bracket(w_elo) == bracket):
+        if w_avatar and w_avatar.lower() == avatar_name.lower() and in_bracket(w_elo):
             l_avatar = _extract_avatar_from_deck(l_deck_json)
             matches.append({
                 "match_id": match_id,
@@ -2163,12 +2190,14 @@ def get_elo_breakdown_matches():
                 "player_name": winner_name,
                 "player_id": w_id_str,
                 "player_elo": w_elo,
+                "player_rank_then": w_rank,
                 "player_avatar": w_avatar,
                 "player_deck_url": w_url,
                 "player_deck_json": w_deck_json or None,
                 "opponent_name": loser_name,
                 "opponent_id": l_id_str,
                 "opponent_elo": l_elo,
+                "opponent_rank_then": l_rank,
                 "opponent_avatar": l_avatar,
                 "opponent_deck_url": l_url,
                 "opponent_deck_json": l_deck_json or None,
@@ -2176,11 +2205,12 @@ def get_elo_breakdown_matches():
                 "went_first": w_first == "y" if w_first else None,
                 "match_time": match_time,
                 "elo_change": w_elo_change,
+                **({"elo_change_hidden": True} if w_hidden else {}),
             })
 
         # Check loser side
         l_avatar = _extract_avatar_from_deck(l_deck_json)
-        if l_avatar and l_avatar.lower() == avatar_name.lower() and (bracket is None or elo_bracket(l_elo) == bracket):
+        if l_avatar and l_avatar.lower() == avatar_name.lower() and in_bracket(l_elo):
             if not w_avatar:
                 w_avatar = _extract_avatar_from_deck(w_deck_json)
             matches.append({
@@ -2189,12 +2219,14 @@ def get_elo_breakdown_matches():
                 "player_name": loser_name,
                 "player_id": l_id_str,
                 "player_elo": l_elo,
+                "player_rank_then": l_rank,
                 "player_avatar": l_avatar,
                 "player_deck_url": l_url,
                 "player_deck_json": l_deck_json or None,
                 "opponent_name": winner_name,
                 "opponent_id": w_id_str,
                 "opponent_elo": w_elo,
+                "opponent_rank_then": w_rank,
                 "opponent_avatar": w_avatar,
                 "opponent_deck_url": w_url,
                 "opponent_deck_json": w_deck_json or None,
@@ -2202,6 +2234,7 @@ def get_elo_breakdown_matches():
                 "went_first": l_first == "y" if l_first else None,
                 "match_time": match_time,
                 "elo_change": l_elo_change,
+                **({"elo_change_hidden": True} if l_hidden else {}),
             })
 
     # Sort by timestamp descending
@@ -2250,13 +2283,13 @@ def get_avatar_deck_composition(avatar_name):
 
         # Query current match_records
         try:
-            cur.execute(avatar_decks_sql.format(table="match_records"), {"avatar": avatar_name})
+            cur.execute(avatar_decks_sql.format(table=live_matches()), {"avatar": avatar_name})
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT json_deck_data
-                FROM match_records
-                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                FROM {live_matches()}
+                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
             """)
             all_rows.extend(cur.fetchall())
             use_new_columns = False
@@ -2396,7 +2429,7 @@ def get_play_draw_stats():
                         loser_went_first,
                         first_player,
                         timestamp
-                    FROM match_records
+                    FROM {live_matches()}
                     WHERE timestamp >= ?{current_where}
                 """, (cutoff_date, *current_params))
                 all_rows.extend(cur.fetchall())
@@ -2409,7 +2442,7 @@ def get_play_draw_stats():
                             NULL as loser_went_first,
                             first_player,
                             timestamp
-                        FROM match_records
+                        FROM {live_matches()}
                         WHERE timestamp >= ?{current_where}
                     """, (cutoff_date, *current_params))
                     all_rows.extend(cur.fetchall())
@@ -2627,16 +2660,16 @@ def list_all_avatars():
         try:
             cur.execute(f"""
                 SELECT {AVATAR_DECKS}
-                FROM match_records
+                FROM {live_matches()}
                 WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
                    OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}')
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT json_deck_data
-                FROM match_records
-                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                FROM {live_matches()}
+                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
             """)
             all_rows.extend(cur.fetchall())
             use_new_columns = False
@@ -2708,20 +2741,9 @@ def get_elo_bracket_matrix():
     if not MATCH_RECORDS_DB_PATH.exists() or not ELO_DB_PATH.exists():
         return jsonify({"brackets": [], "rows": []})
 
-    # 1) Load player ELOs
-    elo_lookup = {}
-    try:
-        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
-        elo_cur = elo_conn.cursor()
-        if source == "web":
-            elo_cur.execute("SELECT user_id, paper_elo FROM paper_standings")
-        else:
-            elo_cur.execute("SELECT user_id, elo FROM overall_standings")
-        for row in elo_cur.fetchall():
-            elo_lookup[str(row[0])] = row[1] or 1500
-        elo_conn.close()
-    except sqlite3.OperationalError as e:
-        logger.warning(f"Could not load ELO standings for bracket matrix: {e}")
+    # 1) Today's ratings: the fallback for older games that stored no pre-game rating
+    elo_lookup = _load_current_ratings(source)
+    if elo_lookup is None:
         return jsonify({"brackets": [], "rows": []})
 
     # 2) Collect match rows with player IDs
@@ -2766,22 +2788,16 @@ def get_elo_bracket_matrix():
     counted_games = 0
 
     for row in rows:
-        winner_id = str(row[2]) if row[2] else None
-        loser_id = str(row[4]) if row[4] else None
-
-        if not winner_id or not loser_id:
+        if not row[2] or not row[4]:
             continue
 
-        # Rating before the game when the record stores it, else today's rating
-        winner_pre, loser_pre = (row[7], row[8]) if len(row) > 8 else (None, None)
-        if winner_pre is not None and loser_pre is not None:
-            winner_elo, loser_elo = winner_pre, loser_pre
+        # Rating before the game when the record stores it, else today's rating;
+        # games where either side was still provisional are left out
+        winner_elo, loser_elo = _row_ratings_then(row, elo_lookup)
+        if winner_elo is None or loser_elo is None:
+            continue
+        if len(row) > 8 and row[7] is not None and row[8] is not None:
             pre_match_games += 1
-        else:
-            winner_elo = elo_lookup.get(winner_id)
-            loser_elo = elo_lookup.get(loser_id)
-            if winner_elo is None or loser_elo is None:
-                continue
         counted_games += 1
 
         w_bracket = elo_bracket(winner_elo)

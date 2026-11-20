@@ -150,7 +150,7 @@ def latest_explorer_event() -> dict | None:
     if not row:
         return None
     # sqlite datetime('now') is UTC
-    return _item(parse_time(row[0], naive_is_utc=True), f"New Community Series event: {row[1]}", "/explorer")
+    return _item(parse_time(row[0], naive_is_utc=True), f"New Explorer Series event: {row[1]}", "/explorer-series")
 
 
 def latest_store_product() -> dict | None:

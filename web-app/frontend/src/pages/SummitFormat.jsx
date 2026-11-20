@@ -81,7 +81,7 @@ function TicketCard({ ticket }) {
 
 const STEPS = [
   { n: 1, title: 'Get a ticket', text: 'Ticket holders play for a top cut spot. Everyone else can still play ranked as Free Play.' },
-  { n: 2, title: 'Climb the ladder', text: 'Play ranked games all season. Every game moves your season ELO.' },
+  { n: 2, title: 'Climb the ladder', text: 'Play ranked games all season. Every game moves your season rating.' },
   { n: 3, title: `Make the top ${TOP_CUT_SIZE}`, text: `When the season ends, the top ${TOP_CUT_SIZE} ticket holders on the ladder qualify.` },
   { n: 4, title: 'Win the bracket', text: 'Qualifiers play a single bracket for the season prizes.' },
 ]

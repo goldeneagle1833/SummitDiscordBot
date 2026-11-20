@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ES_PATHS } from '@/utils/explorerSite'
 import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 import { getApplications } from '@/api/explorerApplications'
@@ -154,8 +155,8 @@ export default function ExplorerCalendar() {
   return (
     <div className="max-w-content mx-auto px-4 py-8 space-y-6">
       <div className="space-y-1">
-        <Link to="/admin/explorer-applications" className="text-xs text-text-muted hover:text-secondary">
-          ← Explorer Applications
+        <Link to={ES_PATHS.applications} className="text-xs text-text-muted hover:text-secondary">
+          ← Review Explorer Series Applications
         </Link>
         <h1 className="text-2xl font-display text-secondary">Explorer Events Calendar</h1>
         <p className="text-sm text-text-muted">

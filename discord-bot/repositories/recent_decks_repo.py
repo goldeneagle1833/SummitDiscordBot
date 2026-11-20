@@ -43,7 +43,7 @@ def get_recent_decks(user_id: int, limit: int = RECENT_DECKS_LIMIT) -> list[dict
     conn = sqlite3.connect("match_records.db")
     try:
         cur = conn.cursor()
-        for table in ("match_records", "match_records_archive"):
+        for table in ("match_records", "match_records_archive", "season_match_records"):
             try:
                 cur.execute(
                     f"""

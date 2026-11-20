@@ -9,6 +9,7 @@ Same table as web-app/repositories/player_kudos_repo.py, which also serves
 the partner API, the admin list and the homepage Player of the Day.
 """
 
+from utils.match_tables import live_matches
 import json
 import logging
 import sqlite3
@@ -94,7 +95,7 @@ def create_player_kudos_table():
 
 
 def _matches_sql(conn, pairing_id):
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(match_records)")}
+    cols = {r[1] for r in conn.execute(f"PRAGMA table_info({live_matches()})")}
     if not cols:
         return None, None
     since = (datetime.now(timezone.utc) - timedelta(days=KUDOS_WINDOW_DAYS)).strftime("%Y-%m-%d")
@@ -144,7 +145,7 @@ def _find_kudos_match(giver_id, receiver_id, pairing_id=None):
         row = conn.execute(
             f"""
             SELECT m.rowid AS match_id, {pairing_col} AS pairing_id, m.match_type
-            FROM match_records m
+            FROM {live_matches()} m
             WHERE {where}
               AND NOT EXISTS (SELECT 1 FROM player_kudos k
                               WHERE k.giver_id = :giver AND k.match_id = m.rowid)
@@ -155,7 +156,7 @@ def _find_kudos_match(giver_id, receiver_id, pairing_id=None):
         if row:
             return dict(row)
         played = conn.execute(
-            f"SELECT 1 FROM match_records m WHERE {where} LIMIT 1", params
+            f"SELECT 1 FROM {live_matches()} m WHERE {where} LIMIT 1", params
         ).fetchone()
         if played:
             raise KudosError("already_given", "Kudos were already given for this match")

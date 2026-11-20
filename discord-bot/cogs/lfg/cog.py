@@ -1,3 +1,4 @@
+from utils.match_tables import live_matches
 import discord
 from discord.ext import commands, tasks
 import datetime
@@ -66,6 +67,7 @@ from utils.database import (
     get_user_elo,
     get_user_event_elo,
     update_elo_db_lifetime_only,
+    rate_top_cut_lifetime,
     log_admin_action,
     cleanup_old_pairings,
     cancel_pairing,
@@ -110,6 +112,8 @@ from services.postseason import (
     select_top_cut,
 )
 from utils.checks import is_bot_admin
+from services.glicko2_season import TOP_CUT_MIN_GAMES, is_glicko2
+from services import provisional
 from services.pilots_service import is_pilot_active
 from services.limited_service import limited_winner_report, limited_elo_only_report, get_run_summary, forfeit_arena_run, close_arena_run, start_arena_run
 from repositories.limited_repo import get_active_arena_run, get_limited_elo, upsert_limited_elo, get_all_limited_standings, get_limited_wins_count, get_limited_losses_count
@@ -155,15 +159,48 @@ def _avatar_suffix(avatar):
 
 def _new_ranks_text(winner_id, winner_name, winner_avatar, winner_event_elo,
                     loser_id, loser_name, loser_avatar, loser_event_elo):
-    """The admin report's "New Ranks" block, per avatar in Avatar mode."""
-    if winner_avatar and loser_avatar and is_avatar_mode():
+    """The admin report's "New Ranks" block, per avatar in Avatar mode.
+
+    Posted in the channel, so a provisional Glicko-2 rating shows as
+    "Provisional (n/8)" instead of its number.
+    """
+    per_avatar = bool(winner_avatar and loser_avatar and is_avatar_mode())
+    if per_avatar:
         winner_event_elo = ladder_elo(winner_id, winner_avatar)
         loser_event_elo = ladder_elo(loser_id, loser_avatar)
+    winner_text = provisional.season_rating_text(
+        winner_id, winner_event_elo, winner_avatar if per_avatar else None
+    )
+    loser_text = provisional.season_rating_text(
+        loser_id, loser_event_elo, loser_avatar if per_avatar else None
+    )
     return (
         f"\n\n**New Ranks:**\n"
-        f"{winner_name}{_avatar_suffix(winner_avatar)}: **{winner_event_elo}** event\n"
-        f"{loser_name}{_avatar_suffix(loser_avatar)}: **{loser_event_elo}** event"
+        f"{winner_name}{_avatar_suffix(winner_avatar)}: **{winner_text}** event\n"
+        f"{loser_name}{_avatar_suffix(loser_avatar)}: **{loser_text}** event"
     )
+
+
+def _lifetime_result_text(rating, change, games) -> str:
+    """"**1612** lifetime (+14)"; ``games`` is the Glicko-2 lifetime count (None on Elo)."""
+    glicko2 = games is not None
+    shown = provisional.change_text(change, games) if glicko2 else f"{change:+d}"
+    return f"**{provisional.rating_text(rating, games, glicko2)}** lifetime" + (f" ({shown})" if shown else "")
+
+
+def _settled_lifetime(rows):
+    """(user_id, name, elo) lifetime rows without provisional Glicko-2 players.
+
+    A provisional lifetime rating isn't shown and can't take a top 16 place.
+    """
+    if not provisional.lifetime_is_glicko2():
+        return rows
+    games = provisional.lifetime_games()
+    return [row for row in rows if not provisional.is_provisional(games.get(row[0]))]
+
+
+# Line between ranked rows and provisional (unranked) ones on the leaderboard
+PROVISIONAL_SUBHEADING = "*Provisional, not ranked yet (under 8 games):*"
 
 
 class LFGCog(commands.Cog):
@@ -299,6 +336,55 @@ class LFGCog(commands.Cog):
     async def before_cleanup_old_limited_leaderboard_messages(self):
         await self.bot.wait_until_ready()
 
+    async def _post_or_edit_board(self, channel, embeds, state_attr, is_board_embed):
+        """Show a leaderboard as one message that is edited, not reposted.
+
+        Uses the message id kept in lfg_state, else the newest board message
+        this bot already has in the channel (after a restart), and only posts
+        a new message when neither exists. Any other copies are deleted.
+        """
+        def is_board(message):
+            return (
+                message.author.id == self.bot.user.id
+                and message.embeds
+                and any(is_board_embed(e) for e in message.embeds)
+            )
+
+        message = None
+        message_id = getattr(lfg_state, state_attr)
+        if message_id:
+            try:
+                message = await channel.fetch_message(message_id)
+            except Exception:
+                message = None
+        others = []
+        try:
+            async for m in channel.history(limit=50):
+                if not is_board(m):
+                    continue
+                if message is None:
+                    message = m  # newest copy
+                elif m.id != message.id:
+                    others.append(m)
+        except Exception as e:
+            logger.warning(f"Could not read leaderboard channel history: {e}")
+
+        if message is not None:
+            try:
+                await message.edit(embeds=embeds)
+            except discord.NotFound:
+                message = None
+        if message is None:
+            message = await channel.send(embeds=embeds)
+        setattr(lfg_state, state_attr, message.id)
+
+        for m in others:
+            try:
+                await m.delete()
+                logger.info(f"Cleaned up duplicate leaderboard message: {m.id}")
+            except Exception as e:
+                logger.warning(f"Could not clean up duplicate leaderboard: {e}")
+
     async def update_leaderboard(self):
         """Update the leaderboard in the designated channel"""
         import sqlite3
@@ -312,7 +398,10 @@ class LFGCog(commands.Cog):
             logger.warning(f"Leaderboard channel {leaderboard_channel_id} not found")
             return
 
-        TICKET_HOLDER_ROLE_IDS = config.TICKET_HOLDER_ROLE_IDS
+        from repositories.ticket_roles_repo import (
+            ticket_holder_role_ids, ticket_holders_heading, ticket_store_link,
+        )
+        TICKET_HOLDER_ROLE_IDS = ticket_holder_role_ids(config.TICKET_HOLDER_ROLE_IDS)
 
         try:
             # Get active event info for filtering matches
@@ -355,13 +444,13 @@ class LFGCog(commands.Cog):
             if event_start_str:
                 cursor_matches.execute(
                     f"""
-                    SELECT COUNT(*) FROM match_records
+                    SELECT COUNT(*) FROM {live_matches()}
                     WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
                     """,
                     (event_start_str,),
                 )
             else:
-                cursor_matches.execute("SELECT COUNT(*) FROM match_records")
+                cursor_matches.execute(f"SELECT COUNT(*) FROM {live_matches()}")
             total_games_played = cursor_matches.fetchone()[0]
 
             # Create leaderboard embed with event name and game count
@@ -403,7 +492,7 @@ class LFGCog(commands.Cog):
                     elif event_start_str:
                         cursor_matches.execute(
                             f"""
-                            SELECT COUNT(*) FROM match_records
+                            SELECT COUNT(*) FROM {live_matches()}
                             WHERE (winner_id = ? OR losser_id = ?)
                               AND timestamp >= ?
                               AND {ELO_COUNTING_MATCH_FILTER}
@@ -413,8 +502,8 @@ class LFGCog(commands.Cog):
                         total_games = cursor_matches.fetchone()[0]
                     else:
                         cursor_matches.execute(
-                            """
-                            SELECT COUNT(*) FROM match_records
+                            f"""
+                            SELECT COUNT(*) FROM {live_matches()}
                             WHERE winner_id = ? OR losser_id = ?
                             """,
                             (user_id, user_id),
@@ -444,36 +533,80 @@ class LFGCog(commands.Cog):
 
                 conn_matches.close()
 
-                def format_row(idx, p):
+                # Glicko-2 ladders (the season's, or lifetime with no season running):
+                # settled entries take the rank numbers, provisional ones follow
+                # without a number or rating
+                if active_event:
+                    glicko2 = is_glicko2(active_event)
+
+                    def rating_games(p):
+                        return p["games"]
+                else:
+                    glicko2 = provisional.lifetime_is_glicko2()
+                    life_games = provisional.lifetime_games() if glicko2 else {}
+
+                    def rating_games(p):
+                        return life_games.get(p["user_id"], 0)
+
+                def ranked(players, limit):
+                    return provisional.settled_first(
+                        players, glicko2, rating_games, lambda p: p["display_name"]
+                    )[:limit]
+
+                def format_row(rank, p):
                     # rank. **name** *avatar* — elo (games) so each part reads apart
                     name = discord.utils.escape_markdown(str(p["display_name"]))
                     avatar = f" *{discord.utils.escape_markdown(p['avatar'])}*" if p["avatar"] else ""
-                    return f"{idx}. **{name}**{avatar} — {p['elo']} ({p['games']}g)"
+                    if rank is None:
+                        return f"- **{name}**{avatar} — {provisional.provisional_label(rating_games(p))}"
+                    return f"{rank}. **{name}**{avatar} — {p['elo']} ({p['games']}g)"
 
                 def section(title, rows, empty):
+                    # Discord carries a numbered list on through "- " rows right
+                    # under it (provisional players showed as 9., 10., ...), so
+                    # a plain line goes before the first provisional row
+                    rows = list(rows)
+                    first = next(
+                        (i for i, r in enumerate(rows) if r.startswith("- ")), None
+                    )
+                    if first is not None:
+                        rows.insert(first, PROVISIONAL_SUBHEADING)
                     return f"**{title}**\n" + ("\n".join(rows) if rows else empty)
 
+                ordered = [p for _, p in ranked(player_data, None)]
+
                 # Overall Rankings (top 8 of all players)
-                overall_text = [format_row(idx, p) for idx, p in enumerate(player_data[:8], 1)]
+                overall_text = [format_row(rank, p) for rank, p in ranked(ordered, 8)]
 
                 # Ticket Holders section (the top cut: top TOP_CUT_SIZE players with
                 # the ticket holder role).
                 # Top cut belongs to the player: each player appears once, at their
                 # best avatar entry, so a second entry never takes someone's slot.
-                from services.avatar_mode import unique_players
+                from services.avatar_mode import top_cut_eligible, unique_players
 
-                ticket_players = unique_players([p for p in player_data if p["has_ticket"]])
-                ticket_text = [format_row(idx, p) for idx, p in enumerate(ticket_players[:TOP_CUT_SIZE], 1)]
+                # Glicko-2 seasons: an entry needs enough games to hold a top cut
+                # spot, so the section is the top TOP_CUT_SIZE settled ticket
+                # holders only. Provisional ticket holders aren't listed here
+                # (or in Free Play) until they reach that many games.
+                ticket_players = unique_players(
+                    top_cut_eligible([p for p in ordered if p["has_ticket"]], active_event or {})
+                )
+                ticket_text = [format_row(rank, p) for rank, p in ranked(ticket_players, TOP_CUT_SIZE)]
 
                 # Free Play section (top 8 from non-ticket holders)
-                free_players = unique_players([p for p in player_data if not p["has_ticket"]])
-                free_text = [format_row(idx, p) for idx, p in enumerate(free_players[:8], 1)]
+                free_players = unique_players([p for p in ordered if not p["has_ticket"]])
+                free_text = [format_row(rank, p) for rank, p in ranked(free_players, 8)]
 
                 # One description instead of fields: the 4096-char description
                 # limit fits all 32 ticket rows without splitting them up.
                 embed.description = "\n\n".join([
                     section("Overall Rankings", overall_text, "No players ranked yet."),
-                    section("Ticket Holders", ticket_text, "No ticket holders ranked yet."),
+                    section(
+                        ticket_holders_heading(),
+                        [ticket_store_link()]
+                        + (ticket_text or ["No ticket holders ranked yet."]),
+                        "No ticket holders ranked yet.",
+                    ),
                     section("Free Play", free_text, "No free play players ranked yet."),
                 ])[:4096]
             else:
@@ -496,38 +629,13 @@ class LFGCog(commands.Cog):
             if underdog:
                 embeds.append(underdog)
 
-            # Send new leaderboard message first (before deleting old one)
-            new_message = await leaderboard_channel.send(embeds=embeds)
-            old_message_id = lfg_state.leaderboard_message_id
-            lfg_state.leaderboard_message_id = new_message.id
-
-            # Delete old leaderboard message
-            if old_message_id:
-                try:
-                    old_message = await leaderboard_channel.fetch_message(old_message_id)
-                    await old_message.delete()
-                except discord.NotFound:
-                    pass
-                except Exception as e:
-                    logger.warning(f"Could not delete old leaderboard message: {e}")
-
-            # Ensure only one constructed leaderboard message exists in the channel
-            async for message in leaderboard_channel.history(limit=50):
-                if (
-                    message.id != new_message.id
-                    and message.author.id == self.bot.user.id
-                    and message.embeds
-                    and any(
-                        "Leaderboard" in str(embed.title)
-                        and "Limited Leaderboard" not in str(embed.title)
-                        for embed in message.embeds
-                    )
-                ):
-                    try:
-                        await message.delete()
-                        logger.info(f"Cleaned up duplicate leaderboard message: {message.id}")
-                    except Exception as e:
-                        logger.warning(f"Could not clean up duplicate leaderboard: {e}")
+            # Edit the one leaderboard message in place (new posts each match
+            # would notify the channel); post only when there isn't one yet
+            await self._post_or_edit_board(
+                leaderboard_channel, embeds, "leaderboard_message_id",
+                lambda e: "Leaderboard" in str(e.title)
+                and "Limited Leaderboard" not in str(e.title),
+            )
 
             logger.info("Leaderboard updated successfully")
 
@@ -608,35 +716,11 @@ class LFGCog(commands.Cog):
 
             embed.set_footer(text="Season ELO | LT = Lifetime ELO \u2022 Updates after each match")
 
-            # Send new message, delete old one
-            new_message = await channel.send(embed=embed)
-            old_message_id = lfg_state.limited_leaderboard_message_id
-            lfg_state.limited_leaderboard_message_id = new_message.id
-
-            if old_message_id:
-                try:
-                    old_message = await channel.fetch_message(old_message_id)
-                    await old_message.delete()
-                except discord.NotFound:
-                    pass
-                except Exception as e:
-                    logger.warning(f"Could not delete old limited leaderboard message: {e}")
-
-            # Clean up any other limited leaderboard messages from this bot
-            async for message in channel.history(limit=50):
-                if (
-                    message.id != new_message.id
-                    and message.author.id == self.bot.user.id
-                    and message.embeds
-                    and any(
-                        "Limited Leaderboard" in str(e.title)
-                        for e in message.embeds
-                    )
-                ):
-                    try:
-                        await message.delete()
-                    except Exception:
-                        pass
+            # Edit the one Limited leaderboard message in place
+            await self._post_or_edit_board(
+                channel, [embed], "limited_leaderboard_message_id",
+                lambda e: "Limited Leaderboard" in str(e.title),
+            )
 
             logger.info("Limited leaderboard updated successfully")
 
@@ -743,9 +827,11 @@ class LFGCog(commands.Cog):
 
     async def _ticket_holder_ids(self, user_ids) -> set:
         """Which of these players hold a ticket role right now."""
+        from repositories.ticket_roles_repo import ticket_holder_role_ids
         guild = self.bot.get_guild(config.GUILD_ID)
         if not guild:
             return set()
+        ticket_roles = ticket_holder_role_ids(config.TICKET_HOLDER_ROLE_IDS)
         holders = set()
         for user_id in user_ids:
             member = guild.get_member(user_id)
@@ -754,7 +840,7 @@ class LFGCog(commands.Cog):
                     member = await guild.fetch_member(user_id)
                 except (discord.NotFound, discord.HTTPException):
                     continue
-            if any(role.id in config.TICKET_HOLDER_ROLE_IDS for role in member.roles):
+            if any(role.id in ticket_roles for role in member.roles):
                 holders.add(user_id)
         return holders
 
@@ -822,7 +908,7 @@ class LFGCog(commands.Cog):
         # The ladder has to be read before the event is archived
         ladder = final_ladder(active_event)
         holders = await self._ticket_holder_ids({entry.user_id for entry in ladder})
-        qualifiers = select_top_cut(ladder, holders)
+        qualifiers = select_top_cut(ladder, holders, event=active_event)
 
         summary = end_current_event()
         if not summary:
@@ -1184,7 +1270,7 @@ class LFGCog(commands.Cog):
         try:
             # Get player1's last match
             cur.execute(
-                """SELECT winner_id, losser_id FROM match_records
+                f"""SELECT winner_id, losser_id FROM {live_matches()}
                 WHERE (winner_id = ? OR losser_id = ?)
                 ORDER BY timestamp DESC LIMIT 1""",
                 (player1_id, player1_id),
@@ -1193,7 +1279,7 @@ class LFGCog(commands.Cog):
 
             # Get player2's last match
             cur.execute(
-                """SELECT winner_id, losser_id FROM match_records
+                f"""SELECT winner_id, losser_id FROM {live_matches()}
                 WHERE (winner_id = ? OR losser_id = ?)
                 ORDER BY timestamp DESC LIMIT 1""",
                 (player2_id, player2_id),
@@ -1246,6 +1332,8 @@ class LFGCog(commands.Cog):
             return "points"
         if type_a == "rumble" or type_b == "rumble":
             return "rumble"
+        if type_a == "precon" or type_b == "precon":
+            return "precon"
         if type_a == "testing" or type_b == "testing":
             return "testing"
         return "ranked"
@@ -1269,7 +1357,7 @@ class LFGCog(commands.Cog):
         joiner_holding = voice_hold and holding_for_voice(voice, voice_flexible, now, now)
 
         # Casual (testing), rumble, limited, and omens (points) have no pairing restrictions
-        is_casual = queue_type in ("testing", "rumble", "limited", "points")
+        is_casual = queue_type in ("testing", "rumble", "limited", "points", "precon")
 
         for user_id, user_data in lfg_queue.items():
             if user_id == ctx.author.id:
@@ -1316,8 +1404,17 @@ class LFGCog(commands.Cog):
                 ):
                     continue
 
+            # Precon ladder: same anti-rematch rule as ranked, on precon games
+            if queue_type == "precon":
+                from services.precon_service import played_last_game_together
+
+                if played_last_game_together(ctx.author.id, user_id):
+                    logger.info(
+                        f"Skipping {user_id} - played {ctx.author.id} in their last precon game"
+                    )
+                    continue
             # Ranked/Limited: skip if they played each other in their last match
-            if not is_casual and self.check_last_match_opponent(ctx.author.id, user_id):
+            elif not is_casual and self.check_last_match_opponent(ctx.author.id, user_id):
                 logger.info(
                     f"Skipping {user_id} - played against {ctx.author.id} in last match"
                 )
@@ -1341,7 +1438,7 @@ class LFGCog(commands.Cog):
     def add_to_lfg_queue(
         self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None, run_id=None,
         origin="discord", voice=DEFAULT_VOICE, avatar=None, alert_avatar=False, deck_avatar=None,
-        voice_flexible=False,
+        voice_flexible=False, precon=None,
     ):
         queue_entry = {
             "timestamp": datetime.datetime.now(),
@@ -1364,6 +1461,9 @@ class LFGCog(commands.Cog):
             queue_entry["ladder_info"] = ladder_info
         if run_id is not None:
             queue_entry["run_id"] = run_id
+        if precon:
+            # Precon queue: "lavamancer" or "frostmage"
+            queue_entry["precon"] = precon
 
         if ctx.author.id not in lfg_queue:
             lfg_queue[ctx.author.id] = {"queues": {}}
@@ -1448,6 +1548,26 @@ class LFGCog(commands.Cog):
         else:
             current = await asyncio.to_thread(is_voice_only, ctx.author.id)
         await ctx.send(voice_only_text(current), view=VoiceOnlyToggleView(ctx.author.id, current))
+
+    @commands.command(aliases=["tagme"])
+    async def tag_me(self, ctx, setting: str = None):
+        """Choose whether the match announcement pings you.
+
+        Usage: !tag_me (shows your setting), !tag_me on, !tag_me off
+        """
+        from repositories.tag_me_repo import set_tag_me, wants_tag
+
+        choice = (setting or "").strip().lower()
+        if choice in ("on", "yes", "true"):
+            current = await asyncio.to_thread(set_tag_me, ctx.author.id, True, "command")
+        elif choice in ("off", "no", "false"):
+            current = await asyncio.to_thread(set_tag_me, ctx.author.id, False, "command")
+        elif choice:
+            await ctx.send("Use `!tag_me on`, `!tag_me off`, or just `!tag_me` to see your setting.")
+            return
+        else:
+            current = await asyncio.to_thread(wants_tag, ctx.author.id)
+        await ctx.send(tag_me_text(current))
 
     @commands.command()
     async def challenge(self, ctx, opponent: discord.Member = None):
@@ -1986,6 +2106,8 @@ class LFGCog(commands.Cog):
                 "**When to use:** Before joining, to see if someone is already waiting.\n\n"
                 "`!voice_only on` / `!voice_only off` or `/voice-only` - Voice-only players never get "
                 "\"want to play a no-voice game?\" DMs\n\n"
+                "`!tag_me on` / `!tag_me off` or `/tag-me` - Choose whether the match "
+                "announcement in the LFG channel pings you (on by default)\n\n"
                 "**Tip:** Use the **Join Queue** button in the LFG channel to enter your deck URL and join the matchmaking queue!"
             ),
             inline=False,
@@ -2107,6 +2229,20 @@ class LFGCog(commands.Cog):
             inline=False,
         )
 
+        embed.add_field(
+            name="Precon Ladder (Lavamancer vs Frostmage)",
+            value=(
+                "Easier: Admin page > Precon Ladder does all of this\n"
+                "`!start_precon_season <name>` - Start an LM/FM ladder (Glicko-2)\n"
+                "`!precon_queue on|off` - Switch the precon queue (shows only while a ladder runs)\n"
+                "`!end_precon_season` - End the ladder early & post final standings\n"
+                "`!admin_precon_report @winner LM|FM @loser LM|FM` - Report a precon game by hand\n"
+                "`!remove_precon_match <precon match id>` - Remove a precon game & re-rate the ladder\n"
+                "`!precon [@player]` - Ladder top 10 and a player's standing (anyone can use it)"
+            ),
+            inline=False,
+        )
+
         # Event Management
         embed.add_field(
             name="Event Management",
@@ -2216,7 +2352,7 @@ class LFGCog(commands.Cog):
             _audit_conn.close()
             _audit_conn2 = sqlite3.connect("match_records.db")
             _audit_cur2 = _audit_conn2.cursor()
-            _audit_cur2.execute("SELECT COUNT(*) FROM match_records")
+            _audit_cur2.execute(f"SELECT COUNT(*) FROM {live_matches()}")
             _total_matches = _audit_cur2.fetchone()[0]
             _audit_conn2.close()
 
@@ -2243,6 +2379,7 @@ class LFGCog(commands.Cog):
 
             # Drop and recreate match_records table
             cur_matches.execute("DROP TABLE IF EXISTS match_records")
+            cur_matches.execute("DROP TABLE IF EXISTS season_match_records")
             cur_matches.execute("""CREATE TABLE match_records
                                    (reporter_id INTEGER,
                                     winner_id INTEGER,
@@ -2474,19 +2611,23 @@ class LFGCog(commands.Cog):
             )
 
             # Update only lifetime ELO for both players
-            new_winner_elo, winner_change = update_elo_db_lifetime_only(
-                winner.id, winner_name, True, loser.id
-            )
-            new_loser_elo, loser_change = update_elo_db_lifetime_only(
-                loser.id, loser_name, False, winner.id
+            new_winner_elo, winner_change, new_loser_elo, loser_change = rate_top_cut_lifetime(
+                match_id, winner.id, winner_name, loser.id, loser_name
             )
 
             # Update leaderboard
             await self.update_leaderboard()
 
-            # Get event ELOs (unchanged) for display
-            winner_event_elo = get_user_event_elo(winner.id)
-            loser_event_elo = get_user_event_elo(loser.id)
+            # Get event ELOs (unchanged) for display; provisional Glicko-2
+            # ratings and changes made while provisional aren't shown
+            winner_event_elo = provisional.season_rating_text(winner.id, get_user_event_elo(winner.id))
+            loser_event_elo = provisional.season_rating_text(loser.id, get_user_event_elo(loser.id))
+            life_games = (
+                provisional.lifetime_games([winner.id, loser.id])
+                if provisional.lifetime_is_glicko2() else {}
+            )
+            winner_lifetime = _lifetime_result_text(new_winner_elo, winner_change, life_games.get(winner.id))
+            loser_lifetime = _lifetime_result_text(new_loser_elo, loser_change, life_games.get(loser.id))
 
             description = (
                 f"**Match ID:** #{match_id}\n"
@@ -2494,8 +2635,8 @@ class LFGCog(commands.Cog):
                 f"**Loser:** {loser.mention} ({loser_name})\n"
                 f"**Type:** Top Cut (lifetime ELO only)\n\n"
                 f"**Updated Ranks:**\n"
-                f"{winner_name}: **{new_winner_elo}** lifetime ({winner_change:+d}) / **{winner_event_elo}** event (unchanged)\n"
-                f"{loser_name}: **{new_loser_elo}** lifetime ({loser_change:+d}) / **{loser_event_elo}** event (unchanged)"
+                f"{winner_name}: {winner_lifetime} / **{winner_event_elo}** event (unchanged)\n"
+                f"{loser_name}: {loser_lifetime} / **{loser_event_elo}** event (unchanged)"
             )
             success_embed = discord.Embed(
                 title="Top Cut Match Reported",
@@ -2878,6 +3019,12 @@ class LFGCog(commands.Cog):
                 elo_multiplier_winner = 2.0
                 elo_multiplier_loser = 0.5
                 stakes_label = f"Special stakes (ELO diff {elo_diff} >= 100)"
+            if any(
+                provisional.entry_provisional(uid, avatars.get(uid) if is_avatar_mode() else None)
+                for uid in (top16_player.id, opponent_id)
+            ):
+                # A provisional rating isn't shown, so neither is the gap to it
+                stakes_label = stakes_label.split(" (")[0]
 
             guild_id = ctx.guild.id if ctx.guild else None
 
@@ -3104,12 +3251,15 @@ class LFGCog(commands.Cog):
     async def start_event(self, ctx, *, event_name: str = None):
         """
         Start a new event/season. Archives current event and resets event ELO.
-        Usage: !start_event [player|avatar] Event Name Here [<t:unix:F>]
+        Usage: !start_event [player|avatar] [elo|glicko2] Event Name Here [<t:unix:F>]
 
         The first word picks the ELO mode (Player mode when left out):
         - player: one event ELO per player
         - avatar: one event ELO per player and avatar (ranked needs a deck link)
-        The mode is locked once the event starts.
+        The next word picks the rating system (Elo when left out):
+        - elo: the K-factor Elo used through Season 8
+        - glicko2: Glicko-2 (new entries move fast, 8 games to count for top cut)
+        Both are locked once the event starts.
 
         Add a Discord timestamp (e.g. <t:1794805140:F>) to end the season by
         itself at that time. When it ends, the top 32 ticket holders make top
@@ -3123,17 +3273,26 @@ class LFGCog(commands.Cog):
         )
 
         usage = (
-            "Usage: `!start_event [player|avatar] Event Name Here [<t:unix:F>]` "
-            "(Player mode when the mode is left out; it can't change after the event starts. "
+            "Usage: `!start_event [player|avatar] [elo|glicko2] Event Name Here [<t:unix:F>]` "
+            "(Player mode and Elo when left out; neither can change after the event starts. "
             "The optional Discord timestamp ends the season automatically.)"
         )
         scheduled_end_at, event_name = extract_end_time(event_name or "")
         elo_mode = "player"
-        if event_name:
+        rating_system = "elo"
+        # Up to two leading option words, in either order
+        for _ in range(2):
+            if not event_name:
+                break
             first, _, rest = event_name.partition(" ")
-            if first.lower() in ("player", "avatar"):
-                elo_mode = first.lower()
-                event_name = rest.strip()
+            word = first.lower()
+            if word in ("player", "avatar"):
+                elo_mode = word
+            elif word in ("elo", "glicko2", "glicko-2", "glicko"):
+                rating_system = "elo" if word == "elo" else "glicko2"
+            else:
+                break
+            event_name = rest.strip()
 
         if not event_name:
             await ctx.send(f"Please provide an event name. {usage}")
@@ -3147,7 +3306,19 @@ class LFGCog(commands.Cog):
 
         try:
             # Start the new event
-            result = start_new_event(event_name, elo_mode=elo_mode, scheduled_end_at=scheduled_end_at)
+            result = start_new_event(
+                event_name, elo_mode=elo_mode, scheduled_end_at=scheduled_end_at,
+                rating_system=rating_system,
+            )
+
+            # The ticket role on sale for this season now counts; last
+            # season's stops counting
+            from repositories.ticket_roles_repo import activate_on_sale_role
+            try:
+                ticket_role = activate_on_sale_role(result["event_id"])
+            except Exception as e:
+                logger.error(f"Could not switch the season ticket role: {e}")
+                ticket_role = None
 
             # Build response embed
             embed = discord.Embed(
@@ -3161,8 +3332,13 @@ class LFGCog(commands.Cog):
                 value=(
                     f"**Event ID:** {result['event_id']}\n"
                     f"**Started:** {result['start_date'].strftime('%Y-%m-%d %H:%M')}\n"
-                    f"**K-Value:** each player starts at 16 and gains 2 per game, up to 32\n"
-                    f"**All event ELO reset to:** 1500"
+                    + (
+                        "**Rating:** Glicko-2 (start 1500, new entries move fast; "
+                        f"{TOP_CUT_MIN_GAMES} games to count for top cut)\n"
+                        if rating_system == "glicko2" else
+                        "**K-Value:** each player starts at 16 and gains 2 per game, up to 32\n"
+                    )
+                    + "**All event ELO reset to:** 1500"
                 ),
                 inline=False,
             )
@@ -3178,6 +3354,16 @@ class LFGCog(commands.Cog):
                 name="ELO Mode (locked for this event)", value=mode_text, inline=False,
             )
             embed.add_field(name="Season End", value=_season_end_text(scheduled_end_at), inline=False)
+            embed.add_field(
+                name="Ticket Holders",
+                value=(
+                    f"<@&{ticket_role['role_id']}> holders are this season's ticket holders."
+                    if ticket_role else
+                    "No ticket role was on sale (`!ticket_role`), so the ticket roles "
+                    "from the bot config still count."
+                ),
+                inline=False,
+            )
 
             # Add previous event summary if there was one
             if result.get("previous_event"):
@@ -3237,6 +3423,102 @@ class LFGCog(commands.Cog):
             )
             await ctx.send(embed=error_embed)
             logger.error(f"Failed to start event: {e}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def ticket_role(self, ctx, *, name_or_role: str = None):
+        """
+        Create next season's ticket role and put it on sale.
+        Usage: !ticket_role Season 10 Ticket     (the bot creates the role)
+               !ticket_role @ExistingRole        (use a role you made)
+               !ticket_role now Season 9 Ticket  (counts for the season running now)
+               !ticket_role                      (show the ticket roles)
+
+        Summit Store listings set to "current season ticket" give this role
+        from now on. It starts counting on the leaderboard and for top cut
+        when the next !start_event runs, or straight away with "now".
+        """
+        from repositories.ticket_roles_repo import (
+            activate_role_now, get_role, put_role_on_sale,
+        )
+
+        now_mode = False
+        if name_or_role:
+            first, _, rest = name_or_role.strip().partition(" ")
+            if first.lower() == "now":
+                now_mode = True
+                name_or_role = rest.strip()
+                if not name_or_role and not ctx.message.role_mentions:
+                    await ctx.send("Usage: `!ticket_role now Season 9 Ticket` or `!ticket_role now @Role`")
+                    return
+
+        if not name_or_role:
+            active, on_sale = get_role("active"), get_role("on_sale")
+            lines = [
+                f"**This season:** <@&{active['role_id']}>" if active
+                else "**This season:** the ticket roles in the bot config",
+                f"**On sale for next season:** <@&{on_sale['role_id']}>" if on_sale
+                else "**On sale for next season:** none (use `!ticket_role Season N Ticket`)",
+            ]
+            await ctx.send("\n".join(lines), allowed_mentions=discord.AllowedMentions.none())
+            return
+
+        guild = ctx.guild or self.bot.get_guild(config.GUILD_ID)
+        if ctx.message.role_mentions:
+            role = ctx.message.role_mentions[0]
+            if role >= guild.me.top_role:
+                await ctx.send(
+                    f"{role.mention} is above the bot's own role, so the bot can't give it out. "
+                    "Move the bot's role higher in Server Settings > Roles first.",
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                return
+            created = False
+        else:
+            try:
+                role = await guild.create_role(
+                    name=name_or_role.strip()[:100],
+                    reason=f"Season ticket role, by {ctx.author}",
+                )
+            except discord.Forbidden:
+                await ctx.send("The bot needs the Manage Roles permission to create roles.")
+                return
+            created = True
+
+        if now_mode:
+            from utils.database import get_active_event
+            active_event = get_active_event()
+            activate_role_now(
+                role.id, role.name,
+                event_id=active_event.get("event_id") if active_event else None,
+                created_by=ctx.author.id,
+            )
+            await ctx.send(
+                f"{'Created' if created else 'Using'} {role.mention} (ID `{role.id}`) as this season's ticket. "
+                "It counts for the leaderboard and top cut right away (Patreon still counts too), "
+                "and store listings set to \"current season ticket\" give it.",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            log_admin_action(
+                ctx.author.id, ctx.author.display_name, "ticket_role",
+                new_state={"role_id": str(role.id), "name": role.name,
+                           "created": created, "active_now": True},
+                details=f"Made {role.name} this season's ticket",
+            )
+            return
+
+        put_role_on_sale(role.id, role.name, created_by=ctx.author.id)
+        await ctx.send(
+            f"{'Created' if created else 'Using'} {role.mention} (ID `{role.id}`) as next season's ticket. "
+            "Store listings set to \"current season ticket\" now give it. "
+            "It counts for the leaderboard and top cut once the next `!start_event` runs.",
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        log_admin_action(
+            ctx.author.id, ctx.author.display_name, "ticket_role",
+            new_state={"role_id": str(role.id), "name": role.name, "created": created},
+            details=f"Put {role.name} on sale as next season's ticket",
+        )
 
     @start_event.error
     async def start_event_error(self, ctx, error):
@@ -3462,9 +3744,16 @@ class LFGCog(commands.Cog):
 
         conn = sqlite3.connect("match_records.db")
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM match_records")
+        # Glicko-2 seasons keep their matches in match_records after they end,
+        # so count only this event's rows plus untagged (Elo-era) rows
+        cur.execute(
+            f"SELECT COUNT(*) FROM {live_matches()} "
+            "WHERE COALESCE(rating_system, 'elo') != 'glicko2' OR event_id = ?",
+            (active_event["event_id"],),
+        )
         match_count = cur.fetchone()[0]
         conn.close()
+        glicko = active_event.get("rating_system") == "glicko2"
 
         embed = discord.Embed(
             title=f"Current Event: {active_event['event_name']}",
@@ -3479,10 +3768,27 @@ class LFGCog(commands.Cog):
                 f"**Days Elapsed:** {days_elapsed}\n"
                 f"**Matches Played:** {match_count}\n"
                 f"**ELO Mode:** {'Avatar (one event ELO per player and avatar)' if active_event.get('elo_mode') == 'avatar' else 'Player'}\n"
+                f"**Rating System:** {'Glicko-2' if glicko else 'Elo'}\n"
                 f"**Season End:** {_season_end_text(active_event.get('scheduled_end_at'))}"
             ),
             inline=False,
         )
+
+        if glicko:
+            need = 0 if active_event.get("elo_mode") == "avatar" else max(TOP_CUT_MIN_GAMES - your_games, 0)
+            embed.add_field(
+                name="Glicko-2 Info",
+                value=(
+                    "Ratings start at 1500 and move fastest over your first games, "
+                    "then settle but never lock.\n"
+                    f"**Top cut:** an entry needs {TOP_CUT_MIN_GAMES} ranked games to count\n"
+                    f"**You:** {your_games} ranked game{'s' if your_games != 1 else ''} this season"
+                    + (f" ({need} more to count for top cut)" if need else "")
+                ),
+                inline=False,
+            )
+            await ctx.send(embed=embed)
+            return
 
         embed.add_field(
             name="K-Value Info",
@@ -3858,8 +4164,8 @@ class LFGCog(commands.Cog):
                         f"~~Winner: {result['original_winner_name']}~~\n"
                         f"~~Loser: {result['original_loser_name']}~~\n\n"
                         f"**Corrected Result:**\n"
-                        f"Winner: **{result['new_winner_name']}** ({result['new_winner_elo_change']:+d} ELO)\n"
-                        f"Loser: **{result['new_loser_name']}** ({result['new_loser_elo_change']:+d} ELO)"
+                        f"Winner: {provisional.corrected_side_text(result, 'winner')}\n"
+                        f"Loser: {provisional.corrected_side_text(result, 'loser')}"
                     ),
                     color=discord.Color.green(),
                 )
@@ -4780,7 +5086,7 @@ class LFGCog(commands.Cog):
             cur.execute(
                 "SELECT user_id, user_display_name, online_elo FROM overall_standings ORDER BY online_elo DESC"
             )
-            rows = cur.fetchall()
+            rows = _settled_lifetime(cur.fetchall())
             conn.close()
 
             eligible = []
@@ -4832,7 +5138,7 @@ class LFGCog(commands.Cog):
             cur.execute(
                 "SELECT user_id, user_display_name, online_elo FROM overall_standings ORDER BY online_elo DESC"
             )
-            rows = cur.fetchall()
+            rows = _settled_lifetime(cur.fetchall())
             conn.close()
 
             if not rows:
@@ -4981,3 +5287,17 @@ class LFGCog(commands.Cog):
         except Exception as e:
             await ctx.send("An error occurred while forfeiting your run.")
             logger.error(f"Forfeit command failed for {ctx.author} ({user_id}): {e}")
+
+
+def tag_me_text(tag_me):
+    """What the bot says about a player's "Tag me" setting."""
+    if tag_me:
+        return (
+            "🔔 Tag me is **on**. When you're matched, the announcement in the LFG "
+            "channel pings you. Turn it off with `!tag_me off`."
+        )
+    return (
+        "🔕 Tag me is **off**. When you're matched, the LFG channel announcement still "
+        "names you but won't ping you. Your match DM still comes as usual. "
+        "Turn it back on with `!tag_me on`."
+    )

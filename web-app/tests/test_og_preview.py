@@ -186,7 +186,7 @@ class TestOGPreviewRoutes:
         assert resp.status_code == 200
         html = resp.data.decode()
         assert 'og:title' in html
-        assert 'ELO Leaderboard' in html
+        assert 'Rating Leaderboard' in html
 
     @patch("routes.og_preview.EloRepository")
     def test_elo_leaderboard_with_standings(self, mock_repo_cls, client):

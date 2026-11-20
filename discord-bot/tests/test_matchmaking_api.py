@@ -699,6 +699,6 @@ async def test_sorcery_online_payload_carries_voice_type(monkeypatch, voice, voi
 def test_queue_notes_text_lists_rules_for_enabled_queues():
     with patch("cogs.lfg.queue_definitions.is_pilot_active", side_effect=lambda pilot: pilot in {"RankedQueue", "CasualQueue"}):
         text = queue_notes_text()
-    assert text == "\n\n⚔️ **Ranked:** no Seer/Scry\n🧪 **Casual:** Spoiled cards are legal"
+    assert text == "\n\n⚔️ **Ranked:** Seer/Scry is back, LM and FM legal\n🧪 **Casual:** Spoiled cards are legal"
     with patch("cogs.lfg.queue_definitions.is_pilot_active", return_value=False):
         assert queue_notes_text() == ""

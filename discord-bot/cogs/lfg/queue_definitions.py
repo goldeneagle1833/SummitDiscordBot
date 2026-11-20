@@ -11,7 +11,7 @@ QUEUE_DEFINITIONS = (
         "emoji": "⚔️",
         "pilot": "RankedQueue",
         "deck_mode": "required",
-        "status_note": "no Seer/Scry",
+        "status_note": "Seer/Scry is back, LM and FM legal",
     },
     {
         "type": "testing",
@@ -24,11 +24,30 @@ QUEUE_DEFINITIONS = (
     },
     {"type": "limited", "label": "Limited", "emoji": "🎲", "pilot": "GrewWolves", "deck_mode": "active_run"},
     {"type": "rumble", "label": "Rumble", "emoji": "💥", "pilot": "RumbleQueue", "deck_mode": "required"},
+    {
+        "type": "precon",
+        "label": "Precon (LM/FM)",
+        "emoji": "🧙",
+        "pilot": None,  # switched by precon_settings.queue_enabled, not a pilot
+        # No deck link: one player gets Lavamancer, the other Frostmage, at random
+        "deck_mode": "precon",
+        "status_note": "Lavamancer vs Frostmage, assigned at random",
+    },
 )
 
 
+def _definition_enabled(definition):
+    if definition["type"] == "precon":
+        # Its own switch (Admin > Precon Ladder or !precon_queue), and only
+        # while a precon ladder season is running
+        from services.precon_service import queue_is_open
+
+        return queue_is_open()
+    return is_pilot_active(definition["pilot"])
+
+
 def enabled_queue_definitions():
-    return [definition for definition in QUEUE_DEFINITIONS if is_pilot_active(definition["pilot"])]
+    return [definition for definition in QUEUE_DEFINITIONS if _definition_enabled(definition)]
 
 
 def queue_definition(queue_type):
@@ -37,7 +56,7 @@ def queue_definition(queue_type):
 
 def queue_is_enabled(queue_type):
     definition = queue_definition(queue_type)
-    return bool(definition and is_pilot_active(definition["pilot"]))
+    return bool(definition and _definition_enabled(definition))
 
 
 def queue_notes_text():

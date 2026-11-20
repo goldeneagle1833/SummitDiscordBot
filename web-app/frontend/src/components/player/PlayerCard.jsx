@@ -10,7 +10,7 @@ export default function PlayerCard({ player, linkTo = true }) {
         <h3 className="text-lg font-semibold truncate">{player.display_name}</h3>
         <div className="flex flex-wrap items-center gap-2 mt-1">
           {player.rank && <Badge variant="secondary">#{player.rank}</Badge>}
-          <span className="text-sm text-text-muted">ELO: {player.elo}</span>
+          <span className="text-sm text-text-muted">Rating: {player.elo}</span>
         </div>
         <div className="flex items-center gap-3 mt-1 text-sm">
           <span className="text-accent-green">{player.wins}W</span>

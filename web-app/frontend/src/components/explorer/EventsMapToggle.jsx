@@ -7,7 +7,7 @@ import {
 } from '@/api/explorer'
 
 /**
- * Controls whether the Community Series page shows its events map, and lets
+ * Controls whether the Explorer Series site shows its events map, and lets
  * an admin place any events that failed to geocode on import.
  */
 export default function EventsMapToggle() {
@@ -65,9 +65,9 @@ export default function EventsMapToggle() {
     <section className="bg-bg-raised border border-border rounded-lg p-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-text-primary">Community Series events map</h2>
+          <h2 className="text-sm font-semibold text-text-primary">Explorer Series events map</h2>
           <p className="text-xs text-text-muted">
-            Shows a map of past events at the top of the public Community Series page.
+            Shows a map of past events at the Explorer Series home and Events pages.
           </p>
         </div>
         <button
@@ -75,7 +75,7 @@ export default function EventsMapToggle() {
           disabled={loading || saving}
           role="switch"
           aria-checked={enabled}
-          aria-label="Show events map on the Community Series page"
+          aria-label="Show events map on the Explorer Series site"
           className={`px-3 py-1.5 text-sm rounded border transition-colors disabled:opacity-40 ${
             enabled
               ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-300'

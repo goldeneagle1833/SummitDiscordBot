@@ -126,3 +126,69 @@ def summarize(games: list[tuple[bool, list[str]]]) -> dict:
         "avg_cards_per_game": round(sum(len(c) for _, c in games) / total, 1) if total else None,
         "cards": cards,
     }
+
+
+def played_cards_by_match(db_path, player_id) -> dict[tuple[int, str, str], list[str]]:
+    """The cards this player played in each recorded PSO game, from saved callbacks.
+
+    Keyed by ``(match_id, winner_id, loser_id)`` so a match id from one match
+    table can never pick up another table's game between different players.
+    Limited games keep their own ids, so they are left out. Only the given
+    player's own cards are returned, never the opponent's.
+    """
+    pid = _bare(player_id)
+    try:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='sorcery_online_match_callbacks'"
+            )
+            if not cur.fetchone():
+                return {}
+            cur.execute(
+                "SELECT match_id, winner_id, loser_id, played_cards FROM sorcery_online_match_callbacks"
+                " WHERE outcome = 'decided' AND played_cards IS NOT NULL AND match_id IS NOT NULL"
+                " AND COALESCE(queue_type, '') != 'limited'"
+                " AND (CAST(winner_id AS TEXT) = ? OR CAST(loser_id AS TEXT) = ?)",
+                (pid, pid),
+            )
+            rows = cur.fetchall()
+        finally:
+            conn.close()
+    except sqlite3.OperationalError as e:
+        logger.error("Database error loading played cards by match: %s", e)
+        return {}
+
+    out = {}
+    for match_id, winner_id, loser_id, played_json in rows:
+        try:
+            played = json.loads(played_json)
+            key = (int(match_id), _bare(winner_id), _bare(loser_id))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            continue
+        if not isinstance(played, dict):
+            continue
+        cards = next((v for k, v in played.items() if _bare(k) == pid), None)
+        if cards:
+            out[key] = list(dict.fromkeys(c for c in cards if isinstance(c, str) and c))
+    return out
+
+
+def archive_original_ids(db_path, player_id) -> dict[int, int]:
+    """{archive rowid: original match id} for this player's archived games."""
+    pid = _bare(player_id)
+    try:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            rows = conn.execute(
+                "SELECT rowid, original_match_id FROM match_records_archive"
+                " WHERE original_match_id IS NOT NULL"
+                " AND (CAST(winner_id AS TEXT) = ? OR CAST(losser_id AS TEXT) = ?)",
+                (pid, pid),
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        return {}  # No archive yet
+    return {int(r): int(o) for r, o in rows}

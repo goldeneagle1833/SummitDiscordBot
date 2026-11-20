@@ -54,3 +54,49 @@ def test_monthly_shares_ignore_missing_data_and_deduplicate_archives(tmp_path):
     assert february["counts"]["imposter-earth-fire"] == 2
     assert january["coverage"] == 75.0
     assert february["coverage"] == 100.0
+
+
+def _one_table(path, rows):
+    with sqlite3.connect(path) as connection:
+        connection.execute("""CREATE TABLE match_records (
+            match_id TEXT, timestamp TEXT, match_type TEXT,
+            json_deck_data_winner TEXT, json_deck_data_loser TEXT
+        )""")
+        connection.executemany("INSERT INTO match_records VALUES (?, ?, ?, ?, ?)", rows)
+
+
+def test_games_after_the_released_day_are_left_out(tmp_path):
+    path = tmp_path / "matches.db"
+    _one_table(path, [
+        ("m1", "2026-01-10 12:00:00", "ranked", deck("Pathfinder", "Fire"), deck("Pathfinder", "Fire")),
+        ("m2", "2026-01-20 12:00:00", "ranked", deck("Imposter", "Earth"), deck("Imposter", "Earth")),
+    ])
+    result = monthly_ranked_trends(path, through="2026-01-15")
+    assert result["through"] == "2026-01-15"
+    assert result["totalMatches"] == 1
+    assert result["months"][-1]["month"] == "2026-01"
+    assert "imposter-earth" not in result["months"][-1]["counts"]
+
+
+def test_public_trends_stop_at_the_release_and_are_shared(tmp_path, monkeypatch):
+    import services.archetype_trends as trends
+
+    path = tmp_path / "matches.db"
+    _one_table(path, [
+        ("m1", "2026-01-10 12:00:00", "ranked", deck("Pathfinder", "Fire"), deck("Pathfinder", "Fire")),
+        ("m2", "2026-01-20 12:00:00", "ranked", deck("Imposter", "Earth"), deck("Imposter", "Earth")),
+    ])
+    monkeypatch.setattr(trends, "MATCH_RECORDS_DB_PATH", str(path))
+    monkeypatch.setattr(trends, "release_info", lambda: {
+        "through": "2026-01-15", "period": "2026-01-a", "next_release": "2026-01-15"})
+    builds = []
+    real = trends.monthly_ranked_trends
+    monkeypatch.setattr(trends, "monthly_ranked_trends",
+                        lambda *a, **k: builds.append(k) or real(*a, **k))
+
+    first = trends.get_ranked_trends()
+    assert first["totalMatches"] == 1
+    assert first["nextRelease"] == "2026-01-15"
+    trends._trends_cache.clear()  # a restarted worker reads the saved file
+    assert trends.get_ranked_trends() == first
+    assert len(builds) == 1

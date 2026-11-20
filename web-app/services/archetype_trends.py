@@ -6,18 +6,24 @@ missing information is reported separately as coverage. Counts come directly
 from the match-time deck snapshots, never from merged/clustering deck records.
 
 The public API contains aggregated totals only, without player names or decks.
+
+Like the other public stats pages it follows the batch data release
+(services/data_release.py): games show up only once their half-month period
+is released at 00:01 UTC on the 1st and 15th, never live. Because the numbers
+only change on release days, the result is built once per released period,
+saved to a shared cache file and reused by every worker.
 """
 
 import json
 import logging
 import sqlite3
-import threading
-import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 from repositories.archetype_decks import element_label
+from services.data_release import release_info
+from services.shared_stats_cache import SharedStatsCache
 from services.tournament_normalization import GOTHIC_START
 from webapp_config import MATCH_RECORDS_DB_PATH
 
@@ -28,10 +34,10 @@ MATCH_TABLES = (
     ("match_records_archive", "original_match_id"),
     ("season_match_records", "match_id"),
 )
-CACHE_SECONDS = 600
-_cache_lock = threading.Lock()
-_cached_at = 0.0
-_cached_data = None
+# Data only changes on release days; the key is the released period, so a
+# new release builds a fresh copy. The TTL just bounds how stale a copy of the
+# same period can get (late-confirmed matches, admin fixes).
+_trends_cache = SharedStatsCache("ranked-archetype-trends", version=1, ttl=6 * 3600)
 
 
 def classify_deck(raw_json):
@@ -77,8 +83,12 @@ def _utc_day(stamp):
         return str(stamp)[:10]
 
 
-def monthly_ranked_trends(db_path=None):
-    """Aggregate a read-only match archive into dated archetype appearances."""
+def monthly_ranked_trends(db_path=None, through=None):
+    """Aggregate a read-only match archive into dated archetype appearances.
+
+    through: last UTC day (YYYY-MM-DD) to include; defaults to today. The
+    public endpoint passes the end of the latest released period.
+    """
     db_path = Path(db_path or MATCH_RECORDS_DB_PATH)
     if not db_path.exists():
         return {"months": [], "archetypes": [], "totalMatches": 0,
@@ -92,7 +102,7 @@ def monthly_ranked_trends(db_path=None):
     seen_ids = set()
     # Include the previous day for time-zone offsets around midnight.
     earliest_scan = "2025-12-04" if GOTHIC_START == "2025-12-05" else GOTHIC_START
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = through or datetime.now(timezone.utc).date().isoformat()
 
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
     try:
@@ -138,7 +148,7 @@ def monthly_ranked_trends(db_path=None):
 
     # Preserve months with no recorded matches as gaps rather than connecting
     # adjacent lines across an unknown stretch of time.
-    end_month = datetime.now(timezone.utc).date().strftime("%Y-%m")
+    end_month = today[:7]
     year, month_number = map(int, GOTHIC_START[:7].split("-"))
     months_in_range = []
     while f"{year:04d}-{month_number:02d}" <= end_month:
@@ -167,6 +177,7 @@ def monthly_ranked_trends(db_path=None):
     known_total = sum(classified.values())
     return {
         "start": GOTHIC_START,
+        "through": today,
         "months": month_rows,
         "archetypes": sorted(
             [{**info, "totalAppearances": total_counts[key]}
@@ -180,19 +191,27 @@ def monthly_ranked_trends(db_path=None):
     }
 
 
-def get_ranked_trends():
-    """Cache the complete series, including monthly data completeness."""
-    global _cached_data, _cached_at
-    now = time.monotonic()
-    if _cached_data is not None and now - _cached_at < CACHE_SECONDS:
-        return _cached_data
-    with _cache_lock:
-        now = time.monotonic()
-        if _cached_data is not None and now - _cached_at < CACHE_SECONDS:
-            return _cached_data
-        result = monthly_ranked_trends()
-        _cached_data = result
-        _cached_at = time.monotonic()
-        logger.info("Ranked archetype trends: %s matches, %.1f%% classified",
-                    result["totalMatches"], result["coverage"])
+def _released_build(info):
+    def build():
+        result = monthly_ranked_trends(through=info["through"])
+        result["nextRelease"] = info["next_release"]
+        logger.info("Ranked archetype trends through %s: %s matches, %.1f%% classified",
+                    info["through"], result["totalMatches"], result["coverage"])
         return result
+    return build
+
+
+def get_ranked_trends():
+    """Released ranked trends, shared across workers (see module docstring).
+
+    Raises services.shared_stats_cache.StatsBuilding if the first build of a
+    new period is still running after the wait.
+    """
+    info = release_info()
+    return _trends_cache.get(info["period"], _released_build(info))
+
+
+def warm_ranked_trends():
+    """Start loading or building the released trends (worker start)."""
+    info = release_info()
+    _trends_cache.warm(info["period"], _released_build(info))

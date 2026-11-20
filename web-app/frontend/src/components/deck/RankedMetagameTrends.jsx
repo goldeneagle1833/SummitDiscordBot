@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { get } from '@/api/client'
+import DataReleaseNote from '@/components/ui/DataReleaseNote'
 
 // Monthly percentages are based on classified match-time deck appearances, not
 // the merged deck list shown on the archetype cards. Missing deck data is
@@ -187,6 +188,7 @@ export default function RankedMetagameTrends({ tournamentGroups = [] }) {
                 Tournament stars indicate historical results in the page's current tournament data.
               </p>
               <div className="mt-3 border-t border-border pt-3 text-xs text-text-muted">
+                <DataReleaseNote className="mb-2" />
                 <p>
                   <strong className="text-text-primary">Data coverage:</strong>{' '}
                   {report.classifiedAppearances.toLocaleString()} of {report.possibleAppearances.toLocaleString()} possible ranked deck appearances classified ({report.coverage}%).

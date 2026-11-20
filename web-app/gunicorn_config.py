@@ -95,6 +95,12 @@ def post_worker_init(worker):
     except Exception as e:
         worker.log.warning("Could not warm card stats caches: %s", e)
     try:
+        from services.archetype_trends import warm_ranked_trends
+
+        warm_ranked_trends()
+    except Exception as e:
+        worker.log.warning("Could not warm metagame chart cache: %s", e)
+    try:
         from services.meta_report import start_scheduler
 
         start_scheduler()

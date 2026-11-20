@@ -77,6 +77,7 @@ class UserProfileRepository:
             'featured_deck_auto_update': 'INTEGER',
             'featured_deck_checked_at': 'TEXT',
             'featured_deck_source': 'TEXT',
+            'profile_showcase': 'TEXT',
         }
 
         # Add missing columns
@@ -850,6 +851,39 @@ class UserProfileRepository:
             " featured_deck_source = NULL"
             " WHERE user_id IN (?, ?)",
             self._both_ids(user_id),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return updated
+
+    def get_showcase(self, user_id: str) -> dict:
+        """The player's own profile boxes: {"bio", "favorite_card", "home_store"}; {} when unset."""
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT profile_showcase FROM user_profiles"
+                " WHERE user_id IN (?, ?) AND profile_showcase IS NOT NULL LIMIT 1",
+                self._both_ids(user_id),
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row or not row[0]:
+            return {}
+        try:
+            value = json.loads(row[0])
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def set_showcase(self, user_id: str, showcase: dict) -> bool:
+        """Save the player's profile boxes; empty fields are dropped."""
+        clean = {k: v for k, v in (showcase or {}).items() if v}
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_profiles SET profile_showcase = ? WHERE user_id IN (?, ?)",
+            (json.dumps(clean) if clean else None, *self._both_ids(user_id)),
         )
         conn.commit()
         updated = cur.rowcount > 0

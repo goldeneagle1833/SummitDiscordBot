@@ -54,5 +54,12 @@ export const setFeaturedDeck = (id, url, autoUpdate) =>
   put(`/api/player/${id}/featured-deck`, { url, auto_update: autoUpdate })
 export const clearFeaturedDeck = (id) => del(`/api/player/${id}/featured-deck`)
 
+/** The player's own profile boxes: { bio, favorite_card, rival } (each null when not set). */
+export const getShowcase = (id) => get(`/api/player/${id}/showcase`)
+/** Change any of bio / favorite_card (a card name) / rival (a player id); empty clears. */
+export const setShowcase = (id, fields) => put(`/api/player/${id}/showcase`, fields)
+/** Players this player has played, most games first: { players: [{ id, name, wins, losses }] }. */
+export const getRivalOptions = (id) => get(`/api/player/${id}/rival-options`)
+
 /** Which badges each player chose to show by their name ({ prefs: { id: { shown, hidden } } }). */
 export const getProfileBadgePrefs = () => get('/api/profile-badge-prefs')

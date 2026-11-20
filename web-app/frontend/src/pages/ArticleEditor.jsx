@@ -5,11 +5,14 @@ import {
 } from '@/api/articles'
 import { ArticleBody, LinkedArticleTile, StatusBadge } from '@/components/articles/ArticleBits'
 import CardHeaderPicker from '@/components/articles/CardHeaderPicker'
+import RichTextEditor from '@/components/articles/RichTextEditor'
+import { cleanHtml, htmlTextLength } from '@/utils/articleHtml'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const PDF_MAX = 10 * 1024 * 1024
-const TEXT_FILE_MAX = 200 * 1024
+const TEXT_FILE_MAX = 500 * 1024
+const BODY_MAX = 40000
 const inputCls = 'w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm focus:border-secondary/70 outline-none'
 
 export default function ArticleEditor() {
@@ -24,7 +27,10 @@ export default function ArticleEditor() {
   const [category, setCategory] = useState('')
   const [tags, setTags] = useState('')
   const [summary, setSummary] = useState('')
+  // body: HTML from the visual editor ('Write it here').
+  // note: the short Markdown note on a linked article.
   const [body, setBody] = useState('')
+  const [note, setNote] = useState('')
   const [pdf, setPdf] = useState(null)
   const [removePdf, setRemovePdf] = useState(false)
   // 'write' = written here; 'link' = an article hosted on another site
@@ -34,7 +40,7 @@ export default function ArticleEditor() {
   const [linkBusy, setLinkBusy] = useState(false)
   const [linkMsg, setLinkMsg] = useState(null)
   const [headerCard, setHeaderCard] = useState(null)
-  const [tab, setTab] = useState('write')
+  const [tab, setTab] = useState('visual')
   const [preview, setPreview] = useState(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -51,7 +57,10 @@ export default function ArticleEditor() {
         setCategory(a.category)
         setTags((a.tags || []).join(', '))
         setSummary(a.summary)
-        setBody(a.body_md || '')
+        if (a.external_url) setNote(a.body_md || '')
+        // Articles written before the visual editor were Markdown: edit the
+        // HTML it was turned into, which keeps every bit of formatting.
+        else setBody(a.body_format === 'html' ? a.body_md || '' : a.body_html || '')
         if (a.header_card && a.header_image) setHeaderCard({ name: a.header_card, image: a.header_image })
         if (a.external_url) {
           setMode('link')
@@ -66,26 +75,35 @@ export default function ArticleEditor() {
   useEffect(() => {
     if (tab !== 'preview') return
     setPreview(null)
-    previewArticle(body).then(setPreview).catch((e) => setPreview({ html: '', error: e.message }))
+    previewArticle(body, 'html').then(setPreview).catch((e) => setPreview({ html: '', error: e.message }))
   }, [tab, body])
 
   const loadTextFile = (e) => {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    if (!/\.(txt|md|markdown)$/i.test(file.name)) {
-      setError('Pick a .txt or .md file. For Word or Google Docs, copy and paste the text in.')
+    if (!/\.(txt|md|markdown|html?)$/i.test(file.name)) {
+      setError('Pick a .txt, .md or .html file. For Word or Google Docs, copy and paste the text in (formatting comes along).')
       return
     }
     if (file.size > TEXT_FILE_MAX) {
-      setError('That text file is too big (200 KB max).')
+      setError('That file is too big (500 KB max).')
       return
     }
     const reader = new FileReader()
-    reader.onload = () => {
-      setBody(String(reader.result || ''))
-      if (!title) setTitle(file.name.replace(/\.(txt|md|markdown)$/i, '').replace(/[-_]+/g, ' '))
-      setError(null)
+    reader.onload = async () => {
+      const text = String(reader.result || '')
+      try {
+        // Markdown and plain text go through the same converter articles
+        // always used, so headings, lists and [[Card]] links come out right.
+        const html = /\.html?$/i.test(file.name) ? cleanHtml(text) : (await previewArticle(text, 'md')).html
+        setBody(html)
+        setTab('visual')
+        if (!title) setTitle(file.name.replace(/\.(txt|md|markdown|html?)$/i, '').replace(/[-_]+/g, ' '))
+        setError(null)
+      } catch (err) {
+        setError(err.message)
+      }
     }
     reader.readAsText(file)
   }
@@ -145,7 +163,9 @@ export default function ArticleEditor() {
     setError(null)
     const linking = mode === 'link'
     const fields = {
-      title, category, tags, summary, body,
+      title, category, tags, summary,
+      body: linking ? note : body,
+      body_format: linking ? 'md' : 'html',
       external_url: linking ? linkUrl.trim() : '',
       header_card: !linking && headerCard ? headerCard.name : '',
       pdf: !linking && pdf ? pdf : undefined,
@@ -173,6 +193,7 @@ export default function ArticleEditor() {
   }
 
   const hasPdf = Boolean(pdf) || (existing?.has_pdf && !removePdf)
+  const textLength = htmlTextLength(body)
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -295,51 +316,49 @@ export default function ArticleEditor() {
             <div>
               <label htmlFor="a-note" className="flex justify-between text-xs text-text-muted mb-1">
                 <span>Note (optional): why it's worth a read</span>
-                <span>{body.length.toLocaleString()}/40,000</span>
+                <span>{note.length.toLocaleString()}/40,000</span>
               </label>
-              <textarea id="a-note" value={body} onChange={(e) => setBody(e.target.value)} maxLength={40000} rows={5} className={inputCls} />
+              <textarea id="a-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={40000} rows={5} className={inputCls} />
             </div>
           ) : (
           <div>
             <div className="flex flex-wrap items-end justify-between gap-2 mb-1">
               <div className="inline-flex gap-1 bg-bg-surface border border-border rounded-full p-1" role="tablist">
-                {['write', 'preview'].map((t) => (
+                {[['visual', 'Write'], ['html', 'HTML'], ['preview', 'Preview']].map(([t, label]) => (
                   <button
                     key={t}
                     type="button"
                     role="tab"
                     aria-selected={tab === t}
                     onClick={() => setTab(t)}
-                    className={`px-3 py-1 rounded-full text-sm font-semibold capitalize ${tab === t ? 'bg-bg-elevated text-secondary' : 'text-text-muted hover:text-text'}`}
+                    className={`px-3 py-1 rounded-full text-sm font-semibold ${tab === t ? 'bg-bg-elevated text-secondary' : 'text-text-muted hover:text-text'}`}
                   >
-                    {t}
+                    {label}
                   </button>
                 ))}
               </div>
               <div className="flex items-center gap-3 text-xs">
-                <span className="text-text-muted">{body.length.toLocaleString()}/40,000</span>
                 <button type="button" onClick={() => textFileRef.current?.click()} className="text-secondary hover:underline">
-                  Load a .txt / .md file
+                  Load a .txt / .md / .html file
                 </button>
-                <input ref={textFileRef} type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" className="hidden" onChange={loadTextFile} />
+                <input ref={textFileRef} type="file" accept=".txt,.md,.markdown,.html,.htm,text/plain,text/markdown,text/html" className="hidden" onChange={loadTextFile} />
               </div>
             </div>
-            {tab === 'write' ? (
-              <textarea
-                aria-label="Article text"
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                maxLength={40000}
-                rows={18}
-                className={`${inputCls} font-mono leading-relaxed`}
-                placeholder={'## Intro\nWrite your article here. Use **bold**, *italics*, lists, links and [[Card Name]] for card links.'}
-              />
-            ) : (
+            {tab === 'preview' ? (
               <div className="min-h-[20rem] bg-bg-surface border border-border rounded p-4">
                 {preview === null ? <Spinner className="py-10" /> : preview.html ? <ArticleBody html={preview.html} /> : (
                   <p className="text-sm text-text-muted">{preview.error || 'Nothing to preview yet.'}</p>
                 )}
               </div>
+            ) : (
+              <RichTextEditor
+                value={body}
+                onChange={setBody}
+                view={tab}
+                textLength={textLength}
+                maxChars={BODY_MAX}
+                placeholder="Write your article here. Paste from Google Docs, Word or a web page and the formatting comes along."
+              />
             )}
           </div>
 
@@ -393,15 +412,13 @@ export default function ArticleEditor() {
           </div>
           <div className="bg-bg-surface border border-border rounded-lg p-4 hidden lg:block">
             <h2 className="font-semibold text-text-primary mb-2">Formatting</h2>
-            <dl className="space-y-1 text-text-muted font-mono text-xs">
-              <div><dt className="inline">## Heading</dt></div>
-              <div><dt className="inline">**bold**  *italic*</dt></div>
-              <div><dt className="inline">- list item</dt></div>
-              <div><dt className="inline">1. numbered item</dt></div>
-              <div><dt className="inline">&gt; quote</dt></div>
-              <div><dt className="inline">[text](https://…)</dt></div>
-              <div><dt className="inline">[[Card Name]]</dt> <dd className="inline font-sans">links the card</dd></div>
-            </dl>
+            <ul className="list-disc pl-4 space-y-1 text-text-muted">
+              <li>Use the toolbar, or Ctrl+B, Ctrl+I, Ctrl+U and Ctrl+K for a link.</li>
+              <li>Paste from Google Docs, Word or a web page and the formatting comes along.</li>
+              <li>The HTML tab shows the code. You can paste or edit HTML there too.</li>
+              <li>Card link (or type <span className="font-mono text-xs">[[Card Name]]</span>) links to the card's page.</li>
+              <li>Images need a link that starts with https://.</li>
+            </ul>
           </div>
         </aside>
       </div>

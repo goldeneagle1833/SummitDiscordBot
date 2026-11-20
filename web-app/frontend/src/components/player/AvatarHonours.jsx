@@ -67,7 +67,7 @@ export function useAvatarHonours(playerId) {
   return honours
 }
 
-function Medal({ place, size = 15 }) {
+export function Medal({ place, size = 15 }) {
   return (
     <svg
       width={size}

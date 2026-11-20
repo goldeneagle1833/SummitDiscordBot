@@ -75,7 +75,9 @@ def get_precon_standings():
 @precon_bp.route("/precon/players/<player_id>")
 def get_precon_player(player_id):
     """A player's LM / FM ladder standings and latest precon games (public, like the ladder)."""
-    if not str(player_id).isdigit():
+    # Ids that are not digits, or too big for SQLite (Discord ids fit in 64 bits),
+    # can never match a player.
+    if not str(player_id).isdigit() or int(player_id) > 2**63 - 1:
         return jsonify({"seasons": [], "games": [], "min_ranked_games": precon_ladder.MIN_RANKED_GAMES})
     try:
         conn = sqlite3.connect(str(webapp_config.MATCH_RECORDS_DB_PATH), timeout=10)

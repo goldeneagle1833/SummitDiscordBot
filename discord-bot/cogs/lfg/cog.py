@@ -199,10 +199,8 @@ def _settled_lifetime(rows):
     return [row for row in rows if not provisional.is_provisional(games.get(row[0]))]
 
 
-# Ticket holders still provisional (Glicko-2, under 8 games) listed under the
-# top cut rows on the leaderboard; the rest are summed up in one line so the
-# message stays inside Discord's 4096-character limit.
-TICKET_PENDING_ROWS = 12
+# Line between ranked rows and provisional (unranked) ones on the leaderboard
+PROVISIONAL_SUBHEADING = "*Provisional, not ranked yet (under 8 games):*"
 
 
 class LFGCog(commands.Cog):
@@ -564,6 +562,15 @@ class LFGCog(commands.Cog):
                     return f"{rank}. **{name}**{avatar} — {p['elo']} ({p['games']}g)"
 
                 def section(title, rows, empty):
+                    # Discord carries a numbered list on through "- " rows right
+                    # under it (provisional players showed as 9., 10., ...), so
+                    # a plain line goes before the first provisional row
+                    rows = list(rows)
+                    first = next(
+                        (i for i, r in enumerate(rows) if r.startswith("- ")), None
+                    )
+                    if first is not None:
+                        rows.insert(first, PROVISIONAL_SUBHEADING)
                     return f"**{title}**\n" + ("\n".join(rows) if rows else empty)
 
                 ordered = [p for _, p in ranked(player_data, None)]
@@ -578,29 +585,13 @@ class LFGCog(commands.Cog):
                 from services.avatar_mode import top_cut_eligible, unique_players
 
                 # Glicko-2 seasons: an entry needs enough games to hold a top cut
-                # spot, so the numbered rows are the settled entries only. Ticket
-                # holders still under that count are listed after them as
-                # Provisional (n/8), so a new ticket buyer shows up from their
-                # first game instead of vanishing from the board.
-                ticket_entries = [p for p in ordered if p["has_ticket"]]
-                cut_players = unique_players(
-                    top_cut_eligible(ticket_entries, active_event or {})
+                # spot, so the section is the top TOP_CUT_SIZE settled ticket
+                # holders only. Provisional ticket holders aren't listed here
+                # (or in Free Play) until they reach that many games.
+                ticket_players = unique_players(
+                    top_cut_eligible([p for p in ordered if p["has_ticket"]], active_event or {})
                 )
-                in_cut = {p["user_id"] for p in cut_players}
-                pending_players = unique_players([
-                    p for p in ticket_entries
-                    if p["user_id"] not in in_cut
-                ])
-                ticket_rows = [
-                    format_row(rank, p) for rank, p in ranked(cut_players, TOP_CUT_SIZE)
-                ]
-                pending_rows = [format_row(None, p) for _, p in ranked(pending_players, None)]
-                ticket_text = ticket_rows + pending_rows[:TICKET_PENDING_ROWS]
-                if len(pending_rows) > TICKET_PENDING_ROWS:
-                    ticket_text.append(
-                        f"*+{len(pending_rows) - TICKET_PENDING_ROWS} more ticket holders "
-                        f"still provisional*"
-                    )
+                ticket_text = [format_row(rank, p) for rank, p in ranked(ticket_players, TOP_CUT_SIZE)]
 
                 # Free Play section (top 8 from non-ticket holders)
                 free_players = unique_players([p for p in ordered if not p["has_ticket"]])

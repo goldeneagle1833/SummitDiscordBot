@@ -5,7 +5,7 @@ the first player when it opens the table and sends it in the pairing JSON
 (``firstPlayerDiscordUserId``), the way online chess balances White and
 Black over a player's games:
 
-1. Count each player's past games IN THE SAME QUEUE where we know who
+1. Count each player's last 10 games IN THE SAME QUEUE where we know who
    went first (Bruce's choice, 2026-11-17: going first a lot in casual
    doesn't count against you in ranked). Turn order has been recorded
    since 2026-02-07. Where each queue's games live:
@@ -15,8 +15,13 @@ Black over a player's games:
    - Every other queue (ranked, casual "testing", rumble, points): the main
      match tables (current, Season 1-8 archive, Glicko-2 season table),
      by match_type; a missing match_type counts as ranked.
-2. Whoever went first in a smaller share of their games goes first.
-3. A tie, or neither player having any history, is a coin flip.
+2. Weighted chance (Bruce, 2026-11-18): each player's chance of going
+   first is 50% plus half the gap between the two shares, so the player who
+   has gone first less is more likely, not certain, to go first. Example:
+   A went first 40% of the time, B 60% -> A goes first 60% of the time.
+3. Equal shares, or neither player having any history, is 50/50.
+4. Streak cap (2026-11-20): 3 in a row going first -> go second next, and
+   3 in a row going second -> go first next (STREAK_CAP).
 
 A game counts only when its winner/loser flags agree (one went first, the
 other didn't). Admin-entered Limited results save "n" for both players and
@@ -32,6 +37,15 @@ logger = logging.getLogger("discord_bot")
 DB_NAME = "match_records.db"
 MATCH_TABLES = ("match_records", "match_records_archive", "season_match_records")
 LIMITED_TABLES = ("limited_match_records", "limited_match_records_archive")
+# Only each player's most recent games count (Bruce, 2026-11-18: lifetime
+# shares moved so slowly that veterans went first, or second, game after
+# game; window set to 10 the same day). A short window corrects within a few games.
+RECENT_GAMES = 10
+# Hard streak cap (Bruce, 2026-11-20): after this many games in a row going
+# first, a player goes second next (and the other way round). Only when the
+# two players' caps disagree (e.g. both on 3 firsts in a row) does the
+# weighted chance decide.
+STREAK_CAP = 3
 
 
 def _flag(value):
@@ -49,7 +63,7 @@ def _flag(value):
 def _queries(queue_type, marks):
     """(sql, uses_match_type_param) for each table holding this queue's games."""
     queue_type = (queue_type or "ranked").lower()
-    cols = "winner_id, {loser} AS loser_id, winner_went_first, loser_went_first"
+    cols = "winner_id, {loser} AS loser_id, winner_went_first, loser_went_first, timestamp"
     who = "(winner_id IN ({m}) OR {loser} IN ({m}))"
     if queue_type == "limited":
         return [
@@ -72,12 +86,18 @@ def _queries(queue_type, marks):
     return main
 
 
-def going_first_counts(user_ids, queue_type="ranked", db_name=None):
-    """{user_id: (games_went_first, games_with_known_turn_order)} in one queue."""
+def going_first_counts(user_ids, queue_type="ranked", db_name=None, recent=RECENT_GAMES):
+    """{user_id: (games_went_first, games_counted)} over each player's last
+    ``recent`` games in one queue where turn order is known."""
+    return _counts(_recent_history(user_ids, queue_type, db_name), recent)
+
+
+def _recent_history(user_ids, queue_type="ranked", db_name=None):
+    """{user_id: [went_first, ...]} newest first, games with known turn order."""
     ids = [int(u) for u in user_ids]
     if not ids:
         return {}
-    counts = {u: [0, 0] for u in ids}
+    history = {u: [] for u in ids}  # (timestamp, went_first)
     marks = ",".join("?" * len(ids))
     queue = (queue_type or "ranked").lower()
     conn = sqlite3.connect(db_name or DB_NAME)
@@ -89,7 +109,7 @@ def going_first_counts(user_ids, queue_type="ranked", db_name=None):
                 rows = cur.execute(sql, params).fetchall()
             except sqlite3.OperationalError:
                 continue  # table (or a column) missing on an old database
-            for winner_id, loser_id, winner_flag, loser_flag in rows:
+            for winner_id, loser_id, winner_flag, loser_flag, timestamp in rows:
                 winner_first = _flag(winner_flag)
                 loser_first = _flag(loser_flag)
                 if winner_first is None:
@@ -101,13 +121,49 @@ def going_first_counts(user_ids, queue_type="ranked", db_name=None):
                         user_id = int(user_id)
                     except (TypeError, ValueError):
                         continue
-                    if user_id in counts:
-                        counts[user_id][1] += 1
-                        if went_first:
-                            counts[user_id][0] += 1
+                    if user_id in history:
+                        history[user_id].append((str(timestamp or ""), went_first))
     finally:
         conn.close()
-    return {u: (c[0], c[1]) for u, c in counts.items()}
+    for games in history.values():
+        games.sort(key=lambda g: g[0], reverse=True)
+    return {u: [first for _, first in games] for u, games in history.items()}
+
+
+def _counts(history, recent=RECENT_GAMES):
+    counts = {}
+    for user_id, flags in history.items():
+        flags = flags[:recent] if recent else flags
+        counts[user_id] = (sum(1 for first in flags if first), len(flags))
+    return counts
+
+
+def _streaks(history):
+    """{user_id: (went_first, run_length)} for each player's current run."""
+    streaks = {}
+    for user_id, flags in history.items():
+        if not flags:
+            streaks[user_id] = (None, 0)
+            continue
+        side, length = flags[0], 0
+        for first in flags:
+            if first != side:
+                break
+            length += 1
+        streaks[user_id] = (side, length)
+    return streaks
+
+
+def _forced_first(user_a, user_b, streaks, cap=STREAK_CAP):
+    """Who must go first because of the streak cap, or None to use the chance."""
+    if not streaks or not cap:
+        return None
+    wants = set()
+    for user, other in ((user_a, user_b), (user_b, user_a)):
+        side, length = streaks.get(user, (None, 0))
+        if side is not None and length >= cap:
+            wants.add(other if side else user)  # long run first -> other goes first
+    return wants.pop() if len(wants) == 1 else None
 
 
 def _share(first, games):
@@ -116,18 +172,30 @@ def _share(first, games):
     return first / games if games else 0.5
 
 
-def choose_first_player(user_a, user_b, counts=None, rng=None, queue_type="ranked"):
-    """The Discord id (int) of the player who should go first."""
+def first_player_chance(share_a, share_b):
+    """Chance (0-1) that player A goes first: 50% plus half the share gap."""
+    return min(1.0, max(0.0, 0.5 + (share_b - share_a) / 2))
+
+
+def choose_first_player(user_a, user_b, counts=None, rng=None, queue_type="ranked", streaks=None):
+    """The Discord id (int) of the player who should go first.
+
+    A player on a run of STREAK_CAP or more (first or second) is switched;
+    otherwise it's a weighted draw from the last-10 shares.
+    """
     user_a, user_b = int(user_a), int(user_b)
     if counts is None:
-        counts = going_first_counts([user_a, user_b], queue_type)
+        history = _recent_history([user_a, user_b], queue_type)
+        counts = _counts(history)
+        if streaks is None:
+            streaks = _streaks(history)
+    forced = _forced_first(user_a, user_b, streaks)
+    if forced is not None:
+        return forced
     share_a = _share(*counts.get(user_a, (0, 0)))
     share_b = _share(*counts.get(user_b, (0, 0)))
-    if share_a < share_b:
-        return user_a
-    if share_b < share_a:
-        return user_b
-    return (rng or random).choice([user_a, user_b])
+    chance_a = first_player_chance(share_a, share_b)
+    return user_a if (rng or random).random() < chance_a else user_b
 
 
 def pick_first_player(players, queue_type="ranked"):

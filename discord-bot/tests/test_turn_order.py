@@ -60,18 +60,45 @@ def test_counts_archive_and_season_tables_when_present():
     assert going_first_counts([1]) == {1: (2, 2)}
 
 
-def test_lower_share_goes_first():
+def test_chance_is_half_plus_half_the_gap():
+    from repositories.turn_order_repo import first_player_chance
+    assert first_player_chance(0.4, 0.6) == pytest.approx(0.6)
+    assert first_player_chance(0.6, 0.4) == pytest.approx(0.4)
+    assert first_player_chance(0.5, 0.5) == pytest.approx(0.5)
+    assert first_player_chance(0.3, 0.7) == pytest.approx(0.7)
+    assert first_player_chance(0.0, 1.0) == pytest.approx(1.0)
+
+
+class _Roll:
+    def __init__(self, value):
+        self.value = value
+
+    def random(self):
+        return self.value
+
+
+def test_lower_share_is_more_likely_not_certain():
+    counts = {1: (6, 10), 2: (4, 10)}  # player 2 gets a 60% chance
+    assert choose_first_player(1, 2, counts, rng=_Roll(0.59)) == 2  # 1 has 40%
+    assert choose_first_player(1, 2, counts, rng=_Roll(0.39)) == 1
+    assert choose_first_player(2, 1, counts, rng=_Roll(0.59)) == 2
+    assert choose_first_player(2, 1, counts, rng=_Roll(0.61)) == 1
+
+
+def test_weighted_draw_matches_the_chance():
+    rng = random.Random(7)
     counts = {1: (6, 10), 2: (4, 10)}
-    assert choose_first_player(1, 2, counts) == 2
-    assert choose_first_player(2, 1, counts) == 2
+    picks = [choose_first_player(1, 2, counts, rng=rng) for _ in range(20000)]
+    assert picks.count(2) / len(picks) == pytest.approx(0.6, abs=0.02)
 
 
 def test_no_history_counts_as_half():
-    assert choose_first_player(1, 2, {1: (0, 0), 2: (3, 10)}) == 2
-    assert choose_first_player(1, 2, {1: (0, 0), 2: (7, 10)}) == 1
+    # newcomer (50%) vs 30% -> newcomer has 40%
+    assert choose_first_player(1, 2, {1: (0, 0), 2: (3, 10)}, rng=_Roll(0.41)) == 2
+    assert choose_first_player(1, 2, {1: (0, 0), 2: (3, 10)}, rng=_Roll(0.39)) == 1
 
 
-def test_tie_is_a_coin_flip():
+def test_even_history_is_a_coin_flip():
     seen = {choose_first_player(1, 2, {1: (5, 10), 2: (1, 2)}, rng=random.Random(s)) for s in range(30)}
     assert seen == {1, 2}
 
@@ -84,7 +111,7 @@ def test_pick_first_player_reads_history_from_db():
 def test_pick_first_player_never_raises():
     assert pick_first_player([{"discord_user_id": 10}]) is None
     assert pick_first_player([{"discord_user_id": 10}, {"discord_user_id": 10}]) is None
-    with patch("repositories.turn_order_repo.going_first_counts", side_effect=RuntimeError("db down")):
+    with patch("repositories.turn_order_repo._recent_history", side_effect=RuntimeError("db down")):
         assert pick_first_player([{"discord_user_id": 10}, {"discord_user_id": 20}]) is None
 
 
@@ -123,7 +150,7 @@ async def test_pairing_still_opens_when_pick_fails(monkeypatch):
     session = _session()
     with (
         patch("services.sorcery_online_matchmaking.aiohttp.ClientSession", return_value=session),
-        patch("repositories.turn_order_repo.going_first_counts", side_effect=RuntimeError("db down")),
+        patch("repositories.turn_order_repo._recent_history", side_effect=RuntimeError("db down")),
     ):
         links = await provision_sorcery_online_match(1, 2, "ranked", [
             {"discord_user_id": 10, "display_name": "Alice"},
@@ -188,3 +215,70 @@ async def test_pairing_json_uses_the_queue_history(monkeypatch):
             {"discord_user_id": 20, "display_name": "Bob"},
         ])
     assert session.post.call_args.kwargs["json"]["firstPlayerDiscordUserId"] == "10"
+
+
+def test_only_the_last_10_games_count():
+    conn = sqlite3.connect("match_records.db")
+    # 30 old games going first, then 10 newer games going second
+    for day in range(1, 31):
+        conn.execute(
+            "INSERT INTO match_records (winner_id, losser_id, timestamp, winner_went_first, loser_went_first, match_type) "
+            "VALUES (1, 2, ?, 'y', 'n', 'ranked')", (f"2026-09-{day:02d} 12:00:00",)
+        )
+    for day in range(1, 11):
+        conn.execute(
+            "INSERT INTO match_records (winner_id, losser_id, timestamp, winner_went_first, loser_went_first, match_type) "
+            "VALUES (1, 2, ?, 'n', 'y', 'ranked')", (f"2026-10-{day:02d} 12:00:00",)
+        )
+    conn.commit()
+    conn.close()
+    assert going_first_counts([1, 2]) == {1: (0, 10), 2: (10, 10)}
+    assert going_first_counts([1], recent=None) == {1: (30, 40)}
+
+
+def test_three_firsts_in_a_row_means_going_second():
+    # Player 1 went first in their last 3; shares would favour them anyway
+    counts = {1: (3, 10), 2: (7, 10)}
+    streaks = {1: (True, 3), 2: (False, 1)}
+    assert choose_first_player(1, 2, counts, rng=_Roll(0.0), streaks=streaks) == 2
+
+
+def test_three_seconds_in_a_row_means_going_first():
+    counts = {1: (8, 10), 2: (2, 10)}
+    streaks = {1: (False, 3), 2: (True, 1)}
+    assert choose_first_player(1, 2, counts, rng=_Roll(0.99), streaks=streaks) == 1
+
+
+def test_caps_that_agree_and_caps_that_clash():
+    counts = {1: (5, 10), 2: (5, 10)}
+    # 1 on 3 firsts, 2 on 3 seconds: both say player 2 goes first
+    assert choose_first_player(1, 2, counts, rng=_Roll(0.0), streaks={1: (True, 3), 2: (False, 4)}) == 2
+    # both on 3 firsts: one of them has to extend, so the weighted chance decides
+    assert choose_first_player(1, 2, counts, rng=_Roll(0.0), streaks={1: (True, 3), 2: (True, 3)}) == 1
+    assert choose_first_player(1, 2, counts, rng=_Roll(0.99), streaks={1: (True, 3), 2: (True, 3)}) == 2
+
+
+def test_short_runs_use_the_weighted_chance():
+    counts = {1: (5, 10), 2: (5, 10)}
+    streaks = {1: (True, 2), 2: (False, 2)}
+    assert choose_first_player(1, 2, counts, rng=_Roll(0.0), streaks=streaks) == 1
+    assert choose_first_player(1, 2, counts, rng=_Roll(0.99), streaks=streaks) == 2
+
+
+def test_streak_read_from_the_database():
+    conn = sqlite3.connect("match_records.db")
+    # Player 1: older second, then 3 newest games going first
+    rows = [("2026-10-01", 2, 1, "y", "n"), ("2026-10-02", 1, 3, "y", "n"),
+            ("2026-10-03", 4, 1, "n", "y"), ("2026-10-04", 1, 5, "y", "n")]
+    for when, w, l, wf, lf in rows:
+        conn.execute(
+            "INSERT INTO match_records (winner_id, losser_id, timestamp, winner_went_first, loser_went_first, match_type) "
+            "VALUES (?, ?, ?, ?, ?, 'ranked')", (w, l, when, wf, lf)
+        )
+    conn.commit()
+    conn.close()
+    # Player 6 has no history; 1's shares (3 of 4) already lean to 6, but even
+    # a roll that would hand 1 the first turn can't: the cap decides
+    assert pick_first_player([{"discord_user_id": 1}, {"discord_user_id": 6}]) == 6
+    with patch("repositories.turn_order_repo.random.random", return_value=0.0):
+        assert pick_first_player([{"discord_user_id": 1}, {"discord_user_id": 6}]) == 6

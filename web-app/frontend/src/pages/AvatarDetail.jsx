@@ -523,12 +523,14 @@ export default function AvatarDetail() {
           <EloMatrix avatarName={name} source={source} eventFilter={eventFilter} />
         </div>
 
-        {/* Deck Composition */}
-        <div className="p-6 border-t border-border">
-          <h3 className="text-lg font-semibold mb-1">Deck Element Composition</h3>
-          <p className="text-xs text-text-muted mb-3">Element breakdown across all decks played with this avatar</p>
-          <DeckComposition avatarName={name} />
-        </div>
+        {/* Deck Composition (admin-only endpoint, so only admins ask for it) */}
+        {isAdmin && (
+          <div className="p-6 border-t border-border">
+            <h3 className="text-lg font-semibold mb-1">Deck Element Composition</h3>
+            <p className="text-xs text-text-muted mb-3">Element breakdown across all decks played with this avatar</p>
+            <DeckComposition avatarName={name} />
+          </div>
+        )}
 
         {/* Wins History */}
         <div className="p-6 border-t border-border">

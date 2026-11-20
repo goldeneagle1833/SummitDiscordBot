@@ -34,6 +34,7 @@ export default function MatchFilters({ filters = {}, data, onChange }) {
   if (!active && !(options.opponents || []).length) return null
   const ranked = data?.ranked || { wins: 0, losses: 0 }
   const casual = data?.casual || { wins: 0, losses: 0 }
+  const precon = data?.precon
   const record = (r) => {
     const total = r.wins + r.losses
     const rate = total ? Math.round((r.wins / total) * 1000) / 10 : 0
@@ -102,6 +103,9 @@ export default function MatchFilters({ filters = {}, data, onChange }) {
             <span className="text-text-muted">Ranked:</span> {record(ranked)}
             {casual.wins + casual.losses > 0 && (
               <><span className="text-text-muted ml-3">Casual:</span> {record(casual)}</>
+            )}
+            {precon && precon.wins + precon.losses > 0 && (
+              <><span className="text-text-muted ml-3">Precon:</span> {record(precon)}</>
             )}
           </p>
           <button

@@ -94,6 +94,7 @@ def test_player_with_no_precon_games_gets_empty_lists(client):
     data = client.get("/api/precon/players/999").get_json()
     assert data["seasons"] == [] and data["games"] == []
     assert client.get("/api/precon/players/google-abc").get_json()["seasons"] == []
+    assert client.get("/api/precon/players/" + "9" * 30).get_json()["seasons"] == []
 
 
 def _seed_with_replay(db_path):

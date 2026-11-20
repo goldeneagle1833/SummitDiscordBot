@@ -87,6 +87,14 @@ def post_worker_init(worker):
     except Exception as e:
         worker.log.warning("Could not warm Elements timeline cache: %s", e)
     try:
+        from routes.api.cards import warm_card_match_tally
+        from routes.api.creator import warm_popular_cards
+
+        warm_card_match_tally()
+        warm_popular_cards()
+    except Exception as e:
+        worker.log.warning("Could not warm card stats caches: %s", e)
+    try:
         from services.meta_report import start_scheduler
 
         start_scheduler()

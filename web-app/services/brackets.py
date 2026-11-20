@@ -525,6 +525,90 @@ class BracketService:
             "matches": [a["match"]["match_no"], b["match"]["match_no"]],
         }
 
+    def replace_player(self, slug: str, seed: int, user_id, display_name: str) -> dict:
+        """Admin: put a new player in someone's place in a published bracket.
+
+        For a player who drops before their first match. The newcomer takes
+        over the seat (and its seed) exactly as it stands, so only a seat that
+        :meth:`swap_players` could move can be handed over: nothing played,
+        reported or given a table. The old player's decklist leaves with them.
+        """
+        bracket = self._repo.get_bracket(slug=slug)
+        if not bracket:
+            raise BracketError("Bracket not found")
+        if bracket["status"] == "draft":
+            raise BracketError("Drafts are changed from the seeding list")
+        if bracket["status"] == "complete":
+            raise BracketError("This bracket is finished")
+
+        seed = int(seed)
+        user_id = str(user_id).strip() if user_id else ""
+        display_name = (display_name or "").strip()
+        if not user_id or not display_name:
+            raise BracketError("Pick the player to bring in")
+
+        bracket_id = bracket["bracket_id"]
+        entrants = self._repo.get_entrants(bracket_id)
+        if any(str(e.get("user_id") or "") == user_id for e in entrants):
+            raise BracketError(f"{display_name} is already in this bracket")
+        outgoing = next((e for e in entrants if e["seed"] == seed), None)
+        if not outgoing:
+            raise BracketError(f"Seed {seed} is not in this bracket")
+
+        matches = {m["match_no"]: m for m in self._repo.get_matches(bracket_id)}
+        side = _entry_slot(matches, seed)
+        match, slot, bye = side["match"], side["slot"], side["bye"]
+
+        # Pairings already out stay out: the newcomer has no decklist yet,
+        # which would otherwise pull the whole bracket back behind the hold.
+        was_hidden = self.pairings_hidden(bracket)
+
+        holders = {str(h["user_id"]) for h in self._repo.get_ticket_holders()}
+        self._repo.update_entrant(
+            bracket_id,
+            seed,
+            {
+                "user_id": user_id,
+                "display_name": display_name,
+                "elo": None,
+                "games": None,
+                "is_ticket_holder": 1 if user_id in holders else 0,
+            },
+        )
+        self._repo.update_match(
+            bracket_id,
+            match["match_no"],
+            {f"p{slot}_user_id": user_id, f"p{slot}_name": display_name},
+        )
+        if bye:
+            bye_slot = 1 if bye["p1_seed"] == seed else 2
+            self._repo.update_match(
+                bracket_id,
+                bye["match_no"],
+                {
+                    f"p{bye_slot}_user_id": user_id,
+                    f"p{bye_slot}_name": display_name,
+                    "winner_user_id": user_id,
+                },
+            )
+        deck_removed = self._repo.delete_deck(bracket_id, seed)
+
+        kept_showing = False
+        if not was_hidden and self.pairings_hidden(self._repo.get_bracket(bracket_id=bracket_id)):
+            self._repo.update_bracket(bracket_id, {"hide_pairings": 0})
+            kept_showing = True
+
+        self._announce_open_matches(bracket_id, {match["match_no"]})
+
+        return {
+            "replaced": outgoing["display_name"],
+            "with": display_name,
+            "seed": seed,
+            "match": match["match_no"],
+            "deck_removed": deck_removed,
+            "hold_switched_off": kept_showing,
+        }
+
     def unpublish(self, bracket_id: int) -> bool:
         """Send a bracket back to draft, discarding its match tree."""
         bracket = self._repo.get_bracket(bracket_id=bracket_id)
@@ -1762,6 +1846,8 @@ class BracketService:
         """Announce every match (or just `match_nos`) waiting to be played, together."""
         try:
             bracket = self._repo.get_bracket(bracket_id=bracket_id)
+            if self.pairings_hidden(bracket):
+                return  # Sent with the rest once the last decklist is in
             claimed = [
                 self._claim_pairing(bracket, match)
                 for match in self._repo.get_matches(bracket_id)

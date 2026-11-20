@@ -189,10 +189,28 @@ def _set_cookie(response: Response, token: str) -> Response:
     return response
 
 
-def _reject(message: str, code: str):
+def is_blocked_client() -> bool:
+    """True when the User-Agent or IP is on the admin Bot Traffic block list.
+
+    Rules live in the monitoring DB (``services.bot_monitor``); the first one,
+    "sorceryrec", is seeded by code.  A lookup failure never blocks anyone.
+    """
+    from services.bot_monitor import match_block
+    from utils.monitoring import client_ip
+
+    try:
+        return match_block(request.headers.get("User-Agent", ""), client_ip())
+    except Exception:
+        logger.warning("Block list lookup failed", exc_info=True)
+        return False
+
+
+def _reject(message: str, code: str, status: int = 401):
     logger.warning("API gate rejected %s %s from %s (%s)", request.method, request.path, request.remote_addr, code)
     response = jsonify({"error": message, "code": code})
-    response.status_code = 401
+    response.status_code = status
+    if status != 401:
+        return response
     response.headers["WWW-Authenticate"] = 'ApiKey realm="summit"'
     return response
 
@@ -221,6 +239,9 @@ def init_site_gate(app: Flask) -> None:
             return None
         if request.method == "OPTIONS" or not request.path.startswith(GATED_PREFIX):
             return None
+        if is_blocked_client() and not has_valid_api_key():
+            g.blocked_client = True
+            return _reject("This client is blocked from the Summit API", "blocked_client", 403)
         if request.endpoint in EXEMPT_ENDPOINTS:
             return None
 

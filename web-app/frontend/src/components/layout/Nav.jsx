@@ -18,7 +18,10 @@ import WhatsNewBar from '@/components/layout/WhatsNewBar'
 // Always first on the top bar, in this order; links a user adds follow them.
 // Deck Archetypes and Top 8 Decks came off the top bar (Bruce, 2026-11-10);
 // they stay in the menu and can still be added back through Customize.
-const PERMANENT_LINKS = ['Avatars']
+const PERMANENT_LINKS = ['Avatars', 'Feedback']
+// Locked links that sit at the end of the top bar (just before Store) instead
+// of first. Feedback came back on the top bar for everyone (Bruce, 2026-11-20).
+const TRAILING_LINKS = ['Feedback']
 const DROPPED_FROM_TOP_BAR = ['Deck Archetypes', 'Top 8 Decks']
 // Marks saved prefs made after that change, so the two links are dropped
 // from older saves only once and a person can add them back
@@ -581,11 +584,13 @@ export default function Nav() {
   }, [user])
 
   // Permanent links always come first, even if missing from saved prefs
+  const findLink = (label) => ALL_NAV_OPTIONS.find((opt) => opt.label === label)
   const activeNavLinks = [
-    ...PERMANENT_LINKS.map((label) => ALL_NAV_OPTIONS.find((opt) => opt.label === label)),
+    ...PERMANENT_LINKS.filter((label) => !TRAILING_LINKS.includes(label)).map(findLink),
     ...ALL_NAV_OPTIONS.filter((opt) =>
       navLabels.includes(opt.label) && !PERMANENT_LINKS.includes(opt.label)
     ),
+    ...TRAILING_LINKS.map(findLink),
   ]
 
   const handleSavePrefs = (picked) => {
@@ -855,10 +860,12 @@ export default function Nav() {
 
           <SidebarHeading label="Tools" />
           <SidebarLink to="/life-counter" dot={isNew('/life-counter')} label="Life Counter" location={location} onClick={close} />
-          <SidebarLink to="/help" dot={isNew('/help')} label="Help" location={location} onClick={close} match={['/help', '/about', '/summit-format', '/feedback']} />
+          <SidebarLink to="/help" dot={isNew('/help')} label="Help" location={location} onClick={close} match={['/help', '/about', '/summit-format']} />
 
           <SidebarHeading label="Community" />
           <SidebarLink to="/community" dot={isNew('/community')} label="Community Links" location={location} onClick={close} />
+          {/* Own link again (lost when it was folded into Help on 2026-10-15) */}
+          <SidebarLink to="/feedback" dot={isNew('/feedback')} label="Feedback" location={location} onClick={close} />
           {/* Phones only: from md up Store is on the top bar */}
           {(STORE_LIVE || user?.is_store_admin) && (
             <div className="md:hidden">

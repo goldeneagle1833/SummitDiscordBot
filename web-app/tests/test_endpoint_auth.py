@@ -99,6 +99,9 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.get_featured_deck",  # a deck the player chose to make public
     "api.players.set_featured_deck",  # owner/admin, checked in the handler
     "api.players.clear_featured_deck",  # owner/admin, checked in the handler
+    "api.players.get_showcase",  # bio / favorite card / rival the player chose to show
+    "api.players.set_showcase",  # owner/admin, checked in the handler
+    "api.players.get_rival_options",  # owner/admin, checked in the handler
     "api.misc.deck_link_previews",  # deck-site links only
     "api.players.reset_own_profile",
     "api.players.undo_profile_reset",

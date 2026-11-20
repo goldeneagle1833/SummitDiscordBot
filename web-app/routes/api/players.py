@@ -3435,6 +3435,220 @@ def clear_featured_deck(player_id):
     return jsonify({"success": True})
 
 
+# The player's own boxes on their profile card. Player-written text is
+# public, so it is short, plain and link-free; admins can edit or clear it
+# from the profile like the owner (logged in the Audit Log).
+SHOWCASE_BIO_MAX = 160
+RIVAL_OPTIONS_MAX = 300
+_LINK_RE = re.compile(
+    r"(https?://|www\.|discord\.gg|\b[a-z0-9-]+\.(com|net|org|gg|io|co|ly|me|tv|xyz|app)\b)",
+    re.IGNORECASE,
+)
+
+
+def _showcase_text(raw, limit, label):
+    """(cleaned text, error) for one player-written field."""
+    from services.article_content import clean_text
+    text = clean_text(str(raw or ""))
+    if len(text) > limit:
+        return None, f"{label} can be at most {limit} characters"
+    if _LINK_RE.search(text):
+        return None, f"{label} can't include links"
+    return text, None
+
+
+def _showcase_card(raw):
+    """({"name", "image"} or None, error). Only cards we serve art for."""
+    from services.article_content import clean_text
+    from repositories.card_catalog import CardCatalogRepository
+    name = clean_text(str(raw or ""))[:80]
+    if not name:
+        return None, None
+    try:
+        names = CardCatalogRepository().get_all_card_names()
+    except Exception:
+        names = []
+    lower = name.lower()
+    match = next((n for n in names if n.lower() == lower), None)
+    image = resolve_card_image(match) if match else None
+    if not image:
+        return None, "Pick a card from the list"
+    return {"name": match, "image": image}, None
+
+
+def _opponent_records(player_id, opponent_id=None):
+    """{opponent id: {"name", "wins", "losses"}} from the player's lifetime bot matches.
+
+    Lifetime = the live match table plus the archive, like the profile's
+    Lifetime period. With opponent_id, only games against that player.
+    """
+    out = {}
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    except sqlite3.OperationalError:
+        return out
+    try:
+        for table in dict.fromkeys([live_matches(), "match_records_archive"]):
+            sql = (
+                f"SELECT winner_id, winner_display_name, losser_id, losser_display_name"
+                f" FROM {table} WHERE (winner_id = ? OR losser_id = ?)"
+            )
+            params = [player_id, player_id]
+            if opponent_id is not None:
+                sql += " AND (winner_id = ? OR losser_id = ?)"
+                params += [opponent_id, opponent_id]
+            try:
+                rows = conn.execute(sql + " ORDER BY timestamp", params).fetchall()
+            except sqlite3.OperationalError:
+                continue
+            for winner_id, winner_name, loser_id, loser_name in rows:
+                won = str(winner_id) == str(player_id)
+                opp_id, opp_name = (loser_id, loser_name) if won else (winner_id, winner_name)
+                if not opp_id or str(opp_id) == str(player_id):
+                    continue
+                rec = out.setdefault(str(opp_id), {"name": opp_name, "wins": 0, "losses": 0})
+                rec["name"] = opp_name or rec["name"]  # newest name wins
+                rec["wins" if won else "losses"] += 1
+    finally:
+        conn.close()
+    return out
+
+
+def _rival_payload(player_id, rival_id):
+    """The rival box: who, their picture, and the head-to-head record. None when hidden."""
+    if not rival_id:
+        return None
+    rival_id = str(rival_id)
+    # A rival who blocked this player is never shown on their profile
+    try:
+        blocked = {
+            str(b.get("blocked_user_id")).removeprefix("google_")
+            for b in BlockedUsersRepository().get_blocked_users(rival_id)
+        }
+        if str(player_id) in blocked:
+            return None
+    except Exception as e:
+        logger.warning("Could not check blocks for rival %s: %s", rival_id, e)
+    record = _opponent_records(player_id, rival_id).get(rival_id, {"name": None, "wins": 0, "losses": 0})
+    repo = UserProfileRepository()
+    name = repo.get_custom_display_names([rival_id]).get(rival_id) or record["name"]
+    profile = None
+    try:
+        profile = repo.get_by_user_id(rival_id)
+    except Exception:
+        pass
+    if not name and profile:
+        name = profile.get("custom_display_name") or profile.get("display_name")
+    return {
+        "id": rival_id,
+        "name": name or "Unknown player",
+        "avatar_url": _profile_picture_url(profile),
+        "wins": record["wins"],
+        "losses": record["losses"],
+    }
+
+
+def _showcase_payload(player_id, showcase):
+    card = showcase.get("favorite_card")
+    if isinstance(card, dict) and card.get("name"):
+        # The image file can change when card art is updated on the server
+        card = {"name": card["name"], "image": resolve_card_image(card["name"]) or card.get("image")}
+    else:
+        card = None
+    return {
+        "bio": showcase.get("bio") or None,
+        "favorite_card": card,
+        "rival": _rival_payload(player_id, showcase.get("rival")),
+    }
+
+
+@players_bp.route("/player/<player_id>/showcase", methods=["GET"])
+def get_showcase(player_id):
+    """The player's short bio, favorite card and rival (each null when not set)."""
+    player_id_normalized = str(player_id).removeprefix("google_")
+    try:
+        showcase = UserProfileRepository().get_showcase(player_id_normalized)
+    except Exception as e:
+        logger.warning("Could not load profile showcase for %s: %s", player_id_normalized, e)
+        showcase = {}
+    return jsonify(_showcase_payload(player_id_normalized, showcase))
+
+
+@players_bp.route("/player/<player_id>/rival-options", methods=["GET"])
+def get_rival_options(player_id):
+    """Players this player has played (most games first), to pick a rival from. Owner or admin."""
+    player_id_normalized, error = _owner_or_admin(player_id)
+    if error:
+        return error
+    records = _opponent_records(player_id_normalized)
+    names = UserProfileRepository().get_custom_display_names(list(records))
+    options = [
+        {
+            "id": opp_id,
+            "name": names.get(opp_id) or rec["name"] or "Unknown player",
+            "wins": rec["wins"],
+            "losses": rec["losses"],
+        }
+        for opp_id, rec in records.items()
+    ]
+    options.sort(key=lambda o: (-(o["wins"] + o["losses"]), o["name"].lower()))
+    return jsonify({"players": options[:RIVAL_OPTIONS_MAX]})
+
+
+@players_bp.route("/player/<player_id>/showcase", methods=["PUT"])
+def set_showcase(player_id):
+    """Change any of bio / favorite_card / rival (owner or admin).
+
+    Body fields are optional; a field that is sent replaces the old value,
+    and an empty value clears it. favorite_card is a card name; rival is
+    the id of a player they have played.
+    """
+    player_id_normalized, error = _owner_or_admin(player_id)
+    if error:
+        return error
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Send the fields to change"}), 400
+
+    repo = UserProfileRepository()
+    before = repo.get_showcase(player_id_normalized)
+    showcase = dict(before)
+
+    if "bio" in data:
+        bio, err = _showcase_text(data["bio"], SHOWCASE_BIO_MAX, "Your description")
+        if err:
+            return jsonify({"error": err}), 400
+        showcase["bio"] = bio
+    if "favorite_card" in data:
+        card, err = _showcase_card(data["favorite_card"])
+        if err:
+            return jsonify({"error": err}), 400
+        showcase["favorite_card"] = card
+    if "rival" in data:
+        rival = str(data["rival"] or "").removeprefix("google_")
+        if rival and rival not in _opponent_records(player_id_normalized, rival):
+            return jsonify({"error": "Pick a player you have played"}), 400
+        showcase["rival"] = rival or None
+
+    if not repo.set_showcase(player_id_normalized, showcase):
+        return jsonify({"error": "Profile not found"}), 404
+
+    viewer = str(session.get("user_id") or "").removeprefix("google_")
+    if viewer != player_id_normalized:
+        try:
+            from repositories.audit import AuditRepository
+            AuditRepository().log_action(
+                viewer, session.get("username") or viewer,
+                "edit_profile_showcase", target_id=player_id_normalized,
+                previous_state=before or None, new_state=showcase or None,
+            )
+        except Exception as e:
+            logger.warning("Could not audit-log showcase edit: %s", e)
+
+    return jsonify({"success": True, **_showcase_payload(
+        player_id_normalized, repo.get_showcase(player_id_normalized))})
+
+
 @players_bp.route("/player/<player_id>/card-stats")
 def player_card_stats(player_id):
     """One player's played-card stats from Play Sorcery Online games.

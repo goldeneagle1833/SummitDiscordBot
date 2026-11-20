@@ -12,6 +12,8 @@ import AvatarMatchups from '@/components/player/AvatarMatchups'
 import RecentDecks from '@/components/player/RecentDecks'
 import FeaturedDeck from '@/components/player/FeaturedDeck'
 import FeaturedDeckModal from '@/components/player/FeaturedDeckModal'
+import ShowcaseModal from '@/components/player/ShowcaseModal'
+import { FavoriteCardBox, ProfileBio, RivalBox, useShowcase } from '@/components/player/ProfileShowcase'
 import LimitedArena from '@/components/player/LimitedArena'
 import { PreconMatchHistory, PreconStandings, usePreconPlayer, withPreconFilters } from '@/components/player/PlayerPrecon'
 import MatchHistoryTable from '@/components/player/MatchHistoryTable'
@@ -85,6 +87,10 @@ export default function Player() {
   const [showFeaturedModal, setShowFeaturedModal] = useState(false)
   const [featuredDeck, setFeaturedDeckState] = useState(null)
   const [featuredKey, setFeaturedKey] = useState(0)
+  // Profile showcase editor: null when closed, else the box it opens on
+  const [showcaseFocus, setShowcaseFocus] = useState(null)
+  const [showcaseKey, setShowcaseKey] = useState(0)
+  const showcase = useShowcase(playerId, showcaseKey)
 
   // Profile tab, kept in the URL so a tab can be linked to
   const [searchParams, setSearchParams] = useSearchParams()
@@ -228,6 +234,7 @@ export default function Player() {
 
   const settingsItems = [
     { label: 'Featured deck', onClick: () => setShowFeaturedModal(true) },
+    { label: 'Profile showcase', onClick: () => setShowcaseFocus('bio') },
     { label: 'Privacy settings', onClick: () => setShowPrivacyModal(true) },
     { label: 'Profile badges', onClick: () => setShowBadgesModal(true) },
     { label: 'Block list', onClick: () => setShowBlockListModal(true) },
@@ -277,15 +284,34 @@ export default function Player() {
         onPostseason={() => setTab('postseason')}
         hiddenBadges={data.hidden_badges || []}
         shownBadges={shownBadges === undefined ? (data.shown_badges ?? null) : shownBadges}
+        bio={showcase && (
+          <ProfileBio bio={showcase.bio} isOwner={Boolean(data.is_owner)} onEdit={() => setShowcaseFocus('bio')} />
+        )}
         featured={(
-          <FeaturedDeck
-            playerId={playerId}
-            isOwner={Boolean(data.is_owner)}
-            onEdit={() => setShowFeaturedModal(true)}
-            recentDecks={data.recent_decks || []}
-            refreshKey={featuredKey}
-            onLoaded={setFeaturedDeckState}
-          />
+          <>
+            <FeaturedDeck
+              playerId={playerId}
+              isOwner={Boolean(data.is_owner)}
+              onEdit={() => setShowFeaturedModal(true)}
+              recentDecks={data.recent_decks || []}
+              refreshKey={featuredKey}
+              onLoaded={setFeaturedDeckState}
+            />
+            {showcase && (
+              <>
+                <FavoriteCardBox
+                  card={showcase.favorite_card}
+                  isOwner={Boolean(data.is_owner)}
+                  onEdit={() => setShowcaseFocus('card')}
+                />
+                <RivalBox
+                  rival={showcase.rival}
+                  isOwner={Boolean(data.is_owner)}
+                  onEdit={() => setShowcaseFocus('rival')}
+                />
+              </>
+            )}
+          </>
         )}
       />
 
@@ -484,6 +510,16 @@ export default function Player() {
           recentDecks={data.recent_decks || []}
           onClose={() => setShowFeaturedModal(false)}
           onSaved={() => setFeaturedKey((k) => k + 1)}
+        />
+      )}
+
+      {showcaseFocus && (
+        <ShowcaseModal
+          playerId={playerId}
+          current={showcase}
+          focus={showcaseFocus}
+          onClose={() => setShowcaseFocus(null)}
+          onSaved={() => setShowcaseKey((k) => k + 1)}
         />
       )}
 

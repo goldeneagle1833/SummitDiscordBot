@@ -117,11 +117,11 @@ function PostseasonBadge({ label, entries = [], onClick }) {
 /**
  * The profile's hero card: name, avatar ratings, postseason badge, the
  * headline ELO / rank / record, the period picker, the owner's actions and
- * the featured deck tile.
+ * the showcase row (featured deck, favorite card, home store) and bio.
  */
 export default function PlayerHeader({
   data, playerId, headline = {}, avatarEntries = [], eventFilter, pastEvents, onEventChange,
-  canSeeLifetime, onReport, settingsItems = [], onPostseason, featured = null, hiddenBadges = [], shownBadges = null,
+  canSeeLifetime, onReport, settingsItems = [], onPostseason, featured = null, bio = null, hiddenBadges = [], shownBadges = null,
 }) {
   const marks = useBracketMarks(playerId)
   const honours = useAvatarHonours(playerId)
@@ -186,6 +186,7 @@ export default function PlayerHeader({
             {shows('avatar_honours') && <AvatarHonourBadge honours={honours} onClick={onPostseason} />}
             {moreCount > 0 && !chipRows && moreButton}
           </div>
+          {bio}
         </div>
       </div>
 
@@ -276,7 +277,13 @@ export default function PlayerHeader({
         )}
       </div>
 
-      {featured}
+      {/* Featured deck, favorite card, home store: only the filled ones for
+          visitors, so the row disappears when a player has none */}
+      {featured && (
+        <div className="basis-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 empty:hidden">
+          {featured}
+        </div>
+      )}
     </section>
   )
 }

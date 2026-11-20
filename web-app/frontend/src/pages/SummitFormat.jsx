@@ -29,19 +29,29 @@ function Section({ id, title, children }) {
   )
 }
 
-// The season ticket is a Summit Store listing named like "Season 9 Ticket".
-// The page shows the newest one (highest season number) that's on sale.
+// The season ticket is the Summit Store listing set to give "Current season
+// ticket" (its Discord role is the placeholder "season_ticket", so one listing
+// works every season). Listings named like "Season 9 Ticket" that give a
+// fixed role still count, as before. A "current season ticket" listing wins;
+// among the rest the highest season number wins.
+const CURRENT_SEASON_TICKET = 'season_ticket'
 const TICKET_NAME = /season\s*(\d+)\s*ticket/i
 
 export function findSeasonTicket(products) {
   let best = null
   for (const p of products || []) {
+    const current = p?.discord_role_id === CURRENT_SEASON_TICKET
     const m = TICKET_NAME.exec(p?.name || '')
-    if (!m) continue
-    const season = Number(m[1])
-    if (!best || season > best.season) best = { season, product: p }
+    if (!current && !m) continue
+    const season = m ? Number(m[1]) : null
+    const rank = [current ? 1 : 0, season ?? 0]
+    if (!best || rank[0] > best.rank[0] || (rank[0] === best.rank[0] && rank[1] > best.rank[1])) {
+      best = { season, product: p, rank }
+    }
   }
-  return best
+  if (!best) return null
+  const { rank, ...found } = best
+  return found
 }
 
 function useSeasonTicket() {

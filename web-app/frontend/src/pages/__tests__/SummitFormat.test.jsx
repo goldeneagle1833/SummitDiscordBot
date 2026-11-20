@@ -66,4 +66,11 @@ describe('Summit format page', () => {
     expect(found.product.id).toBe(2)
     expect(findSeasonTicket([product(3, 'T-shirt', 1500)])).toBeNull()
   })
+
+  it('finds the listing set to "current season ticket" whatever its name', () => {
+    const current = product(4, 'Gothic Season Pass', 2500, { discord_role_id: 'season_ticket', product_type: 'discord_role' })
+    const found = findSeasonTicket([product(1, 'Season 8 Ticket', 2000), current, product(3, 'T-shirt', 1500)])
+    expect(found.product.id).toBe(4)
+    expect(found.season).toBeNull()
+  })
 })

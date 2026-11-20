@@ -162,6 +162,14 @@ async def _apply_ladder_elo(bot, ladder_info, winner_id, winner_global, loser_id
         winner_mult = ladder_info.get("elo_multiplier_winner", 1.0)
         if winner_mult != 1.0:
             stakes_msg = "\n**Ladder Bonus:** Winner gained 2x ELO! Top 16 player lost only 0.5x ELO."
+            from utils.database import get_active_event
+            from services.glicko2_season import is_glicko2
+            if is_glicko2(get_active_event()):
+                # Glicko-2 season ratings don't take ladder stakes; lifetime ELO does
+                stakes_msg = (
+                    "\n**Ladder Bonus:** Winner gained 2x lifetime ELO! "
+                    "Top 16 player lost only 0.5x lifetime ELO."
+                )
 
     return stakes_msg
 
@@ -959,7 +967,7 @@ class LFGReportButtons(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         # Check if reporter needs to provide a deck URL (skip for testing matches)
-        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble"):
+        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble", "precon"):
             # Show modal to collect deck URL before proceeding
             modal = ReporterDeckURLModal(self, interaction, is_win=True)
             await interaction.response.send_modal(modal)
@@ -1131,7 +1139,7 @@ class LFGReportButtons(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         # Check if reporter needs to provide a deck URL (skip for testing matches)
-        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble"):
+        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble", "precon"):
             # Show modal to collect deck URL before proceeding
             modal = ReporterDeckURLModal(self, interaction, is_win=False)
             await interaction.response.send_modal(modal)
@@ -1454,7 +1462,7 @@ class ReportResultSelectView(discord.ui.View):
             return
 
         self._submit_interaction = interaction
-        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble"):
+        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble", "precon"):
             modal = MatchReportDeckModal(self)
             await interaction.response.send_modal(modal)
         else:

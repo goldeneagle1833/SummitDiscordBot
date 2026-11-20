@@ -20,7 +20,7 @@ export default function Terms() {
         </p>
         <h2 className="text-lg font-semibold pt-2">Fair Play</h2>
         <p className="text-text-muted">
-          Match results must be reported honestly. Falsifying match outcomes, manipulating ELO ratings,
+          Match results must be reported honestly. Falsifying match outcomes, manipulating ratings,
           or engaging in any form of cheating may result in removal from the platform.
         </p>
         <h2 className="text-lg font-semibold pt-2">Community Conduct</h2>

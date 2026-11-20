@@ -6,7 +6,7 @@ export default function Login() {
   const [searchParams] = useSearchParams()
 
   // Build the redirect-back URL: use ?next= param, or fallback to current origin
-  const next = searchParams.get('next') || window.location.origin + '/'
+  const next = unwrapLoginNext(searchParams.get('next')) || window.location.origin + '/'
   const qs = `?next=${encodeURIComponent(next)}`
 
   return (
@@ -31,4 +31,22 @@ export default function Login() {
       </div>
     </div>
   )
+}
+
+// A next= that points back at /login (from clicking Login while already on the
+// login page) would nest forever: /login?next=/login?next=/login?next=...
+// Peel those layers off and return the page the person actually came from.
+export function unwrapLoginNext(next) {
+  let value = next
+  for (let i = 0; i < 20 && value; i++) {
+    let url
+    try {
+      url = new URL(value, window.location.origin)
+    } catch {
+      return value
+    }
+    if (url.origin !== window.location.origin || url.pathname !== '/login') return value
+    value = url.searchParams.get('next')
+  }
+  return value || null
 }

@@ -42,4 +42,38 @@ describe('MatchFilters', () => {
     await userEvent.selectOptions(screen.getByLabelText('Play/Draw'), 'draw')
     expect(onChange).toHaveBeenCalledWith({ play_draw: 'draw' })
   })
+
+  it('hides the card filter when the viewer may not see card data', () => {
+    render(<MatchFilters filters={{}} data={data} onChange={() => {}} />)
+    expect(screen.queryByLabelText('Card played')).toBeNull()
+  })
+
+  it('filters to games where a card was played', async () => {
+    const onChange = vi.fn()
+    const withCards = { ...data, options: { ...data.options, cards: [{ name: 'Desert', games: 3 }], card_games: 5 } }
+    render(<MatchFilters filters={{}} data={withCards} onChange={onChange} />)
+    await userEvent.type(screen.getByLabelText('Card played'), 'desert')
+    expect(onChange).toHaveBeenCalledWith({ card: 'Desert' })
+  })
+
+  it('clears the card filter when the box is emptied', async () => {
+    const onChange = vi.fn()
+    const withCards = { ...data, options: { ...data.options, cards: [{ name: 'Desert', games: 3 }], card_games: 5 } }
+    render(<MatchFilters filters={{ card: 'Desert' }} data={withCards} onChange={onChange} />)
+    expect(screen.getByText(/only counts games with card data/)).toHaveTextContent('5 games in this period')
+    await userEvent.clear(screen.getByLabelText('Card played'))
+    expect(onChange).toHaveBeenCalledWith({})
+  })
+
+  it('shows Lavamancer and Frostmage and the precon record when precon games are added', () => {
+    const withPrecon = {
+      ...data,
+      options: { ...data.options, avatars: ['Lavamancer', 'Pathfinder'], opponent_avatars: ['Frostmage', 'Seer'] },
+      precon: { wins: 2, losses: 1 },
+    }
+    render(<MatchFilters filters={{ avatar: 'Lavamancer' }} data={withPrecon} onChange={() => {}} />)
+    expect(screen.getByRole('option', { name: 'Lavamancer' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Frostmage' })).toBeInTheDocument()
+    expect(screen.getByTestId('filter-record')).toHaveTextContent('Precon: 2W - 1L (66.7%)')
+  })
 })

@@ -38,6 +38,17 @@ STOREFRONT_ROLES = ("manager", "fulfillment")
 
 APPLICATION_STATUSES = ("pending", "approved", "declined")
 
+# physical: shipped to the buyer. discord_role: the Summit bot gives the
+# buyer a Discord role when the order is paid (Summit Store only), e.g. a
+# season ticket. Nothing to ship. bundle: shipped like a physical item and
+# also gives a role, e.g. a token pack plus a season ticket.
+PRODUCT_TYPES = ("physical", "discord_role", "bundle")
+ROLE_PRODUCT_TYPES = ("discord_role", "bundle")
+DISCORD_ID_PATTERN = re.compile(r"^\d{17,20}$")
+# Stored instead of a role ID: give whichever season ticket is on sale
+# (services/ticket_roles.py), so one listing works every season
+CURRENT_SEASON_TICKET = "season_ticket"
+
 SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
 
 # A storefront can take payments with its own Stripe secret (or restricted)
@@ -244,6 +255,26 @@ class StoreRepository:
                 conn.execute("ALTER TABLE products ADD COLUMN image_framing TEXT")
             except sqlite3.OperationalError:
                 pass  # column already exists
+            try:
+                # Position of the product on its storefront's page, set by
+                # dragging in Store Admin. Lower shows first.
+                conn.execute("ALTER TABLE products ADD COLUMN sort_order "
+                             "INTEGER NOT NULL DEFAULT 0")
+                added_sort_order = True
+            except sqlite3.OperationalError:
+                added_sort_order = False  # column already exists
+            for column in ("product_type TEXT NOT NULL DEFAULT 'physical'",
+                           "discord_role_id TEXT"):
+                try:
+                    conn.execute(f"ALTER TABLE products ADD COLUMN {column}")
+                except sqlite3.OperationalError:
+                    pass  # column already exists
+            try:
+                # The role the bot was asked to give for this item, so a
+                # refund takes back that role even after the season changed
+                conn.execute("ALTER TABLE order_items ADD COLUMN granted_role_id TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
             for table in ("products", "orders"):
                 try:
                     conn.execute(
@@ -252,6 +283,47 @@ class StoreRepository:
                     )
                 except sqlite3.OperationalError:
                     pass  # column already exists
+
+            try:
+                # Optional family name for the sales dashboard's "Sales by
+                # product line" box (e.g. "Skeleton Tokens" for the foil and
+                # regular packs). NULL = grouped automatically by name.
+                conn.execute("ALTER TABLE products ADD COLUMN product_line TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+
+            # Shipping per listing (services/store_shipping.py): cards in one
+            # of it, and/or its own shipping price. NULL = not set.
+            for column in ("ship_cards INTEGER", "shipping_cents INTEGER"):
+                try:
+                    conn.execute(f"ALTER TABLE products ADD COLUMN {column}")
+                except sqlite3.OperationalError:
+                    pass  # column already exists
+
+            try:
+                # Private (link only) listings: left off /store, sold only to
+                # people who open the listing's own link (QR code in person).
+                # The token stays when the listing goes public again, so a
+                # printed QR code keeps working if it is made private later.
+                conn.execute("ALTER TABLE products ADD COLUMN is_private "
+                             "INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+            try:
+                conn.execute("ALTER TABLE products ADD COLUMN private_token TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_private_token "
+                "ON products(private_token)"
+            )
+
+            try:
+                # Orders an admin paired to go out in one package. Every
+                # order in the pair shares the same value; NULL = on its own.
+                conn.execute("ALTER TABLE orders ADD COLUMN ship_group TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
             try:
                 # Discord DM when the storefront makes a sale; each person
@@ -293,6 +365,15 @@ class StoreRepository:
                 conn.execute(
                     f"UPDATE {table} SET storefront_id = ? WHERE storefront_id IS NULL",
                     (default_id,),
+                )
+            if added_sort_order:
+                # Keep the order the store showed before (A to Z by name)
+                conn.execute(
+                    """UPDATE products SET sort_order = (
+                           SELECT COUNT(*) FROM products p2
+                           WHERE p2.storefront_id IS products.storefront_id
+                             AND (p2.name < products.name
+                                  OR (p2.name = products.name AND p2.id < products.id)))"""
                 )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_products_storefront ON products(storefront_id)"
@@ -409,6 +490,45 @@ class StoreRepository:
                 cleaned[url] = {"x": round(x, 1), "y": round(y, 1), "zoom": round(zoom, 2)}
         return cleaned
 
+    def clean_product_type(self, product_type, discord_role_id,
+                           storefront_id: int) -> tuple[str, str | None]:
+        """Validate a product's type and role. Returns (type, role id or None).
+
+        Discord role products only exist in the Summit Store, since the
+        Summit bot gives the role in the Summit server.
+        """
+        product_type = product_type or "physical"
+        if product_type not in PRODUCT_TYPES:
+            raise ValueError("product_type must be physical, discord_role or bundle")
+        if product_type == "physical":
+            return "physical", None
+        if storefront_id != self.default_storefront_id():
+            raise ValueError("Discord role products are only for the Summit Store")
+        role_id = str(discord_role_id or "").strip()
+        if role_id == CURRENT_SEASON_TICKET:
+            return product_type, role_id
+        if not DISCORD_ID_PATTERN.match(role_id):
+            raise ValueError("Enter the Discord role ID (17 to 20 digits)")
+        return product_type, role_id
+
+    def set_granted_role(self, order_item_id: int, role_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("UPDATE order_items SET granted_role_id = ? WHERE id = ?",
+                         (str(role_id), order_item_id))
+
+    @staticmethod
+    def is_role_product(product: dict) -> bool:
+        """Whether buying it gives a Discord role (role only, or a bundle)."""
+        return (product.get("product_type") or "physical") in ROLE_PRODUCT_TYPES
+
+    @staticmethod
+    def order_is_digital(order: dict) -> bool:
+        """True when every item is a Discord role, so there's nothing to ship."""
+        items = order.get("items") or []
+        return bool(items) and all(
+            (i.get("product_type") or "physical") == "discord_role" for i in items
+        )
+
     def list_products(self, include_inactive: bool = False,
                       storefront_ids: list[int] | None = None) -> list[dict]:
         """Products, optionally limited to some storefronts.
@@ -419,8 +539,9 @@ class StoreRepository:
         conditions = []
         params: list = []
         if not include_inactive:
+            # Private listings are only reachable by their own link
             conditions.append(
-                "p.is_active = 1 AND p.storefront_id IN "
+                "p.is_active = 1 AND p.is_private = 0 AND p.storefront_id IN "
                 "(SELECT id FROM storefronts WHERE is_active = 1)"
             )
         if storefront_ids is not None:
@@ -431,7 +552,13 @@ class StoreRepository:
             )
             params.extend(storefront_ids)
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-        query = f"SELECT p.* FROM products p{where} ORDER BY p.name ASC"
+        # Grouped by storefront (in storefront order), then the order set
+        # in Store Admin; name breaks ties.
+        query = (
+            f"SELECT p.* FROM products p{where} ORDER BY "
+            "(SELECT s.sort_order FROM storefronts s WHERE s.id = p.storefront_id), "
+            "p.storefront_id, p.sort_order ASC, p.name ASC, p.id ASC"
+        )
         with self._connect() as conn:
             return [self._product_from_row(r)
                     for r in conn.execute(query, params).fetchall()]
@@ -442,6 +569,51 @@ class StoreRepository:
                 "SELECT * FROM products WHERE id = ?", (product_id,)
             ).fetchone()
             return self._product_from_row(row) if row else None
+
+    @staticmethod
+    def new_private_token() -> str:
+        return secrets.token_urlsafe(12)
+
+    def get_private_product(self, token: str) -> dict | None:
+        """The private listing a link points at, if it can be bought now.
+
+        None for an unknown token, a listing that was made public again
+        (it's on /store then), a hidden listing, or a hidden storefront.
+        """
+        token = (token or "").strip()
+        if not token:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM products WHERE private_token = ? AND is_private = 1"
+                " AND is_active = 1 AND storefront_id IN"
+                " (SELECT id FROM storefronts WHERE is_active = 1)",
+                (token,),
+            ).fetchone()
+            return self._product_from_row(row) if row else None
+
+    def set_private(self, product_id: int, private: bool,
+                    new_link: bool = False) -> dict | None:
+        """Make a listing private (link only) or public again.
+
+        A private listing gets a link token the first time and keeps it, so
+        printed QR codes stay valid; new_link swaps it for a fresh one (the
+        old link and QR stop working). Returns the updated product.
+        """
+        with self._connect() as conn:
+            row = conn.execute("SELECT private_token FROM products WHERE id = ?",
+                               (product_id,)).fetchone()
+            if row is None:
+                return None
+            token = row["private_token"]
+            if private and (new_link or not token):
+                token = self.new_private_token()
+            conn.execute(
+                "UPDATE products SET is_private = ?, private_token = ?, updated_at = ?"
+                " WHERE id = ?",
+                (1 if private else 0, token, self._now(), product_id),
+            )
+        return self.get_product(product_id)
 
     def create_product(
         self,
@@ -455,6 +627,11 @@ class StoreRepository:
         images: list[str] | None = None,
         storefront_id: int | None = None,
         image_framing: dict | None = None,
+        product_line: str | None = None,
+        ship_cards: int | None = None,
+        shipping_cents: int | None = None,
+        product_type: str | None = None,
+        discord_role_id: str | None = None,
     ) -> int:
         images = self._clean_images(images)
         if not images and image_url:
@@ -464,17 +641,26 @@ class StoreRepository:
             storefront_id = self.default_storefront_id()
         elif not self.get_storefront(storefront_id):
             raise ValueError("Unknown storefront")
+        product_type, discord_role_id = self.clean_product_type(
+            product_type, discord_role_id, storefront_id)
         now = self._now()
         with self._connect() as conn:
+            # New listings go to the end of their storefront's page
             cur = conn.execute(
                 """INSERT INTO products
                    (sku, name, description, price_cents, image_url, images,
                     image_framing, stock_quantity, max_per_user_monthly,
-                    storefront_id, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    storefront_id, product_line, ship_cards, shipping_cents,
+                    product_type, discord_role_id,
+                    sort_order, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                           (SELECT COALESCE(MAX(sort_order), -1) + 1
+                            FROM products WHERE storefront_id = ?), ?, ?)""",
                 (sku, name, description, price_cents,
                  images[0] if images else None, json.dumps(images),
                  json.dumps(framing), stock_quantity, max_per_user_monthly,
+                 storefront_id, (product_line or "").strip() or None,
+                 ship_cards, shipping_cents, product_type, discord_role_id,
                  storefront_id, now, now),
             )
             return cur.lastrowid
@@ -482,12 +668,22 @@ class StoreRepository:
     def update_product(self, product_id: int, **fields) -> bool:
         allowed = {"sku", "name", "description", "price_cents", "image_url",
                    "stock_quantity", "is_active", "max_per_user_monthly", "images",
-                   "storefront_id", "image_framing"}
+                   "storefront_id", "image_framing", "product_line",
+                   "ship_cards", "shipping_cents", "product_type",
+                   "discord_role_id"}
         if "storefront_id" in fields and not self.get_storefront(fields["storefront_id"]):
             raise ValueError("Unknown storefront")
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return False
+        if {"product_type", "discord_role_id", "storefront_id"} & updates.keys():
+            # Check the type against where the product ends up
+            current = self.get_product(product_id) or {}
+            updates["product_type"], updates["discord_role_id"] = self.clean_product_type(
+                updates.get("product_type", current.get("product_type")),
+                updates.get("discord_role_id", current.get("discord_role_id")),
+                updates.get("storefront_id", current.get("storefront_id")),
+            )
         if "images" in updates:
             images = self._clean_images(updates["images"])
             updates["images"] = json.dumps(images)
@@ -507,11 +703,42 @@ class StoreRepository:
         updates["updated_at"] = self._now()
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         with self._connect() as conn:
+            if "storefront_id" in updates:
+                # Moving to another storefront puts it at the end of that page
+                row = conn.execute("SELECT storefront_id FROM products WHERE id = ?",
+                                   (product_id,)).fetchone()
+                if row and row["storefront_id"] != updates["storefront_id"]:
+                    conn.execute(
+                        """UPDATE products SET sort_order = (
+                               SELECT COALESCE(MAX(sort_order), -1) + 1
+                               FROM products WHERE storefront_id = ?)
+                           WHERE id = ?""",
+                        (updates["storefront_id"], product_id),
+                    )
             cur = conn.execute(
                 f"UPDATE products SET {set_clause} WHERE id = ?",
                 (*updates.values(), product_id),
             )
             return cur.rowcount > 0
+
+    def reorder_products(self, storefront_id: int, product_ids: list[int]) -> None:
+        """Set the display order of one storefront's products.
+
+        product_ids must be exactly that storefront's products (hidden ones
+        included), first shown first. Raises ValueError otherwise, so a
+        stale page can't drop or duplicate positions.
+        """
+        with self._connect() as conn:
+            current = {r["id"] for r in conn.execute(
+                "SELECT id FROM products WHERE storefront_id = ?", (storefront_id,))}
+            if len(product_ids) != len(set(product_ids)) or set(product_ids) != current:
+                raise ValueError(
+                    "The product list changed since this page loaded. Reload and try again.")
+            now = self._now()
+            conn.executemany(
+                "UPDATE products SET sort_order = ?, updated_at = ? WHERE id = ?",
+                [(i, now, pid) for i, pid in enumerate(product_ids)],
+            )
 
     def adjust_stock(self, product_id: int, delta: int) -> bool:
         """Atomically adjust stock; refuses to go below zero."""
@@ -572,6 +799,13 @@ class StoreRepository:
                     ).fetchone()
                     if row is None:
                         raise ValueError(f"Product {item['product_id']} not available")
+                    # Private listings sell only through their own link
+                    if row["is_private"] and (
+                        not item.get("private_token")
+                        or not secrets.compare_digest(
+                            str(item.get("private_token")), row["private_token"] or "")
+                    ):
+                        raise ValueError(f"Product {item['product_id']} not available")
                     # Each storefront is its own order and its own checkout
                     if storefront_id is None:
                         storefront_id = row["storefront_id"]
@@ -583,6 +817,14 @@ class StoreRepository:
                     qty = int(item["quantity"])
                     if qty <= 0:
                         raise ValueError("Quantity must be positive")
+                    if row["product_type"] in ROLE_PRODUCT_TYPES:
+                        # The bot gives the role to the buyer's Discord account
+                        if auth_provider != "discord" or str(user_id).startswith("google_"):
+                            raise ValueError(
+                                f"Sign in with Discord to buy {row['name']}"
+                            )
+                        if qty > 1:
+                            raise ValueError(f"You can only buy one {row['name']}")
                     # Enforce per-user monthly limit
                     cap = row["max_per_user_monthly"]
                     if cap is not None:
@@ -654,7 +896,8 @@ class StoreRepository:
             order = dict(row)
             order["items"] = [
                 dict(r) for r in conn.execute(
-                    """SELECT oi.*, p.image_url, p.sku
+                    """SELECT oi.*, p.image_url, p.sku, p.product_type,
+                              p.discord_role_id
                        FROM order_items oi
                        LEFT JOIN products p ON p.id = oi.product_id
                        WHERE oi.order_id = ?""",
@@ -727,6 +970,18 @@ class StoreRepository:
             )
             return cur.rowcount > 0
 
+    def set_order_shipping(self, order_id: int, shipping_cents: int) -> bool:
+        """Set shipping on an order still awaiting payment; total follows."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                """UPDATE orders SET shipping_cents = ?,
+                          total_cents = subtotal_cents + ? + tax_cents,
+                          updated_at = ?
+                   WHERE id = ? AND status = 'pending_payment'""",
+                (shipping_cents, shipping_cents, self._now(), order_id),
+            )
+            return cur.rowcount > 0
+
     def attach_payment(self, order_id: int, provider: str, payment_ref: str) -> bool:
         with self._connect() as conn:
             cur = conn.execute(
@@ -759,6 +1014,80 @@ class StoreRepository:
                 (tracking_number, tracking_carrier, now, now, order_id),
             )
             return cur.rowcount > 0
+
+    # ------------------------------------------------------------------
+    # Shipping orders together
+    # ------------------------------------------------------------------
+
+    def pair_orders(self, order_ids: list[int]) -> str:
+        """Put paid orders in one ship group so they go out in one package.
+
+        Orders already in a group bring the rest of that group along.
+        All of them must be paid (not yet shipped) and from one storefront.
+        Returns the group's id. Raises ValueError when they can't be paired.
+        """
+        ids = sorted({int(i) for i in order_ids})
+        if len(ids) < 2:
+            raise ValueError("Pick at least two orders to ship together")
+        with self._connect() as conn:
+            marks = ",".join("?" for _ in ids)
+            rows = [dict(r) for r in conn.execute(
+                f"SELECT id, status, storefront_id, ship_group FROM orders "
+                f"WHERE id IN ({marks})", ids,
+            ).fetchall()]
+            if len(rows) != len(ids):
+                raise ValueError("Order not found")
+            if any(r["status"] != "paid" for r in rows):
+                raise ValueError("Only orders that are paid and not shipped yet can be paired")
+            if len({r["storefront_id"] for r in rows}) > 1:
+                raise ValueError("Orders from different storefronts ship separately")
+            existing = sorted({r["ship_group"] for r in rows if r["ship_group"]})
+            group = existing[0] if existing else f"SG-{ids[0]}"
+            now = self._now()
+            conn.execute(
+                f"UPDATE orders SET ship_group = ?, updated_at = ? WHERE id IN ({marks})",
+                [group, now, *ids],
+            )
+            for other in existing[1:]:
+                conn.execute(
+                    "UPDATE orders SET ship_group = ?, updated_at = ? WHERE ship_group = ?",
+                    (group, now, other),
+                )
+            return group
+
+    def unpair_order(self, order_id: int) -> bool:
+        """Take an order out of its ship group.
+
+        A group left with one order is cleared, since there's nothing
+        left to ship it with.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT ship_group FROM orders WHERE id = ?", (order_id,)
+            ).fetchone()
+            if row is None or not row["ship_group"]:
+                return False
+            group = row["ship_group"]
+            now = self._now()
+            conn.execute(
+                "UPDATE orders SET ship_group = NULL, updated_at = ? WHERE id = ?",
+                (now, order_id),
+            )
+            left = conn.execute(
+                "SELECT COUNT(*) FROM orders WHERE ship_group = ?", (group,)
+            ).fetchone()[0]
+            if left < 2:
+                conn.execute(
+                    "UPDATE orders SET ship_group = NULL, updated_at = ? WHERE ship_group = ?",
+                    (now, group),
+                )
+            return True
+
+    def orders_in_ship_group(self, group: str) -> list[dict]:
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(
+                "SELECT * FROM orders WHERE ship_group = ? ORDER BY id", (group,)
+            ).fetchall()]
 
     def set_status(self, order_id: int, status: str) -> bool:
         if status not in ORDER_STATUSES:
@@ -1049,6 +1378,73 @@ class StoreRepository:
         with self._connect() as conn:
             return [dict(r) for r in conn.execute(query, params).fetchall()]
 
+    @staticmethod
+    def group_orders_by_buyer(orders: list[dict]) -> list[dict]:
+        """Mark orders in this list that look like they're from one buyer.
+
+        Two orders from the same storefront are the same buyer when they
+        share the account, the email, or the shipping address (street line
+        and ZIP, ignoring case and punctuation), or are already paired to
+        ship together. Matches chain: A and B share an account, B and C an
+        address, so all three are one buyer.
+
+        Sets buyer_group (shared id, or None when the order has no match in
+        the list) and buyer_match (what linked them: account, email,
+        address) on each order, in place. Returns the list.
+        """
+        import re
+
+        def norm(text: str | None) -> str:
+            return re.sub(r"[^a-z0-9]", "", (text or "").lower())
+
+        parent = list(range(len(orders)))
+
+        def find(i: int) -> int:
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        seen: dict[tuple, int] = {}
+        reasons: dict[int, set] = {}
+        for i, o in enumerate(orders):
+            sf = o.get("storefront_id")
+            keys = []
+            if o.get("user_id"):
+                keys.append(("account", f"{o.get('auth_provider') or 'discord'}:{o['user_id']}"))
+            if norm(o.get("email")):
+                keys.append(("email", (o.get("email") or "").strip().lower()))
+            street, postal = norm(o.get("ship_line1")), norm(o.get("ship_postal"))[:5]
+            if street and postal:
+                keys.append(("address", f"{street}|{postal}"))
+            if o.get("ship_group"):
+                keys.append(("paired", o["ship_group"]))
+            for kind, value in keys:
+                k = (sf, kind, value)
+                if k in seen:
+                    j = seen[k]
+                    reasons.setdefault(i, set()).add(kind)
+                    reasons.setdefault(j, set()).add(kind)
+                    parent[find(i)] = find(j)
+                else:
+                    seen[k] = i
+
+        members: dict[int, list[int]] = {}
+        for i in range(len(orders)):
+            members.setdefault(find(i), []).append(i)
+        order_of = ("account", "email", "address", "paired")
+        for idx in members.values():
+            if len(idx) < 2:
+                orders[idx[0]]["buyer_group"] = None
+                orders[idx[0]]["buyer_match"] = []
+                continue
+            group_id = f"b{min(orders[i]['id'] for i in idx)}"
+            why = set().union(*(reasons.get(i, set()) for i in idx))
+            for i in idx:
+                orders[i]["buyer_group"] = group_id
+                orders[i]["buyer_match"] = [k for k in order_of if k in why]
+        return orders
+
     def get_items_for_orders(self, order_ids: list[int]) -> dict[int, list[dict]]:
         """Return order items grouped by order_id, with product image_url."""
         if not order_ids:
@@ -1057,7 +1453,7 @@ class StoreRepository:
         with self._connect() as conn:
             rows = conn.execute(
                 f"""SELECT oi.order_id, oi.product_name, oi.unit_price_cents,
-                           oi.quantity, p.image_url
+                           oi.quantity, p.image_url, p.product_type
                     FROM order_items oi
                     LEFT JOIN products p ON p.id = oi.product_id
                     WHERE oi.order_id IN ({placeholders})

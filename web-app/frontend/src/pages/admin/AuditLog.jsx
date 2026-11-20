@@ -39,7 +39,7 @@ export default function AuditLog() {
       <AdminCollapsible title="Promo Banners" subtitle="Manage home page promotional banners">
         <BannersSection />
       </AdminCollapsible>
-      <AdminCollapsible title="Transfer Account History" subtitle="Move all match history, ELO, and data from one account to another">
+      <AdminCollapsible title="Transfer Account History" subtitle="Move all match history, ratings, and data from one account to another">
         <TransferHistorySection />
       </AdminCollapsible>
       <AdminCollapsible title="Card Points" subtitle="Assign point values to cards for deck budget restrictions">

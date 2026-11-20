@@ -54,6 +54,9 @@ FART_PLAYER_ROLE_ID = 000000000000000000  # Given to anyone who uses a fart game
 DM_DISABLED_ROLE_ID = 000000000000000000
 MASTERS_ROLE_IDS = {000000000000000000}  # Set of role IDs
 TICKET_HOLDER_ROLE_IDS = {000000000000000000}
+# Roles that count as a ticket every season on top of the season's own ticket
+# role from !ticket_role (default: the Patreon role)
+# ALWAYS_TICKET_ROLE_IDS = {000000000000000000}
 TOP_CUT_ROLE_ID = 000000000000000000  # Given to the season's top cut; opens the Top Cut channel
 TOP_CUT_CHANNEL_ID = 000000000000000000  # Where new bracket pairings are posted (else a channel named like "top-cut")
 LIMITED_TOP_CUT_CHANNEL_ID = 000000000000000000  # Limited top 8: season-end post and Limited bracket pairings

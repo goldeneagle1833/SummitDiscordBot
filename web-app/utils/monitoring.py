@@ -117,7 +117,73 @@ CREATE TABLE IF NOT EXISTS error_events (
     message TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_error_events_ts ON error_events(ts);
+CREATE TABLE IF NOT EXISTS client_traffic (
+    bucket INTEGER NOT NULL,
+    user_agent TEXT NOT NULL,
+    ip TEXT NOT NULL,
+    requests INTEGER NOT NULL DEFAULT 0,
+    api_requests INTEGER NOT NULL DEFAULT 0,
+    data_requests INTEGER NOT NULL DEFAULT 0,
+    keyed_requests INTEGER NOT NULL DEFAULT 0,
+    errors_4xx INTEGER NOT NULL DEFAULT 0,
+    blocked INTEGER NOT NULL DEFAULT 0,
+    last_ts INTEGER NOT NULL DEFAULT 0,
+    last_path TEXT,
+    PRIMARY KEY (bucket, user_agent, ip)
+);
+CREATE INDEX IF NOT EXISTS idx_client_traffic_bucket ON client_traffic(bucket);
+CREATE TABLE IF NOT EXISTS blocked_clients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    pattern TEXT NOT NULL,
+    reason TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_by TEXT,
+    created_at INTEGER NOT NULL,
+    removed_by TEXT,
+    removed_at INTEGER,
+    UNIQUE (kind, pattern)
+);
 """
+
+# Per-client rollups are hourly (bot traffic is judged over hours, not minutes)
+CLIENT_BUCKET_S = 3600
+MAX_USER_AGENT_LEN = 300
+
+# Frequent background calls every open tab makes. They are API calls but not
+# "data", so a person with the site open isn't mistaken for a scraper.
+NOISE_ENDPOINTS = frozenset({
+    "/api/site-token",
+    "/api/me",
+    "/api/analytics/heartbeat",
+    "/api/analytics/page-view",
+    "/api/analytics/banners/active",
+    "/api/match-report/pending",
+    "/api/store/notifications",
+    "/api/streamers/banner",
+    "/api/nav/new-content",
+    "/api/nav/seen",
+    "/api/health",
+})
+
+
+def client_ip() -> str:
+    """The visitor's address: Cloudflare's header first, then the proxy chain."""
+    forwarded = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", "")
+    ip = forwarded.split(",")[0].strip() if forwarded else ""
+    return ip or request.remote_addr or "unknown"
+
+
+@dataclass
+class _ClientStats:
+    requests: int = 0
+    api_requests: int = 0
+    data_requests: int = 0
+    keyed_requests: int = 0
+    errors_4xx: int = 0
+    blocked: int = 0
+    last_ts: int = 0
+    last_path: str = ""
 
 
 def connect(db_path=None) -> sqlite3.Connection:
@@ -203,6 +269,7 @@ class MetricsCollector:
         self._requests: dict[tuple[int, str, str], _Stats] = {}
         self._external: dict[tuple[int, str], _Stats] = {}
         self._errors: list[tuple] = []
+        self._clients: dict[tuple[int, str, str], _ClientStats] = {}
 
     @staticmethod
     def _bucket(now: float | None = None) -> int:
@@ -219,6 +286,30 @@ class MetricsCollector:
         with self._lock:
             self._external.setdefault(key, _Stats()).add(ms, status)
 
+    def record_client(self, user_agent: str, ip: str, path: str, endpoint: str, status: int,
+                      *, keyed: bool = False, blocked: bool = False) -> None:
+        now = time.time()
+        key = (int(now // CLIENT_BUCKET_S * CLIENT_BUCKET_S), (user_agent or "")[:MAX_USER_AGENT_LEN], ip or "unknown")
+        is_api = path.startswith("/api/")
+        with self._lock:
+            # Bound memory if the DB is unwritable during a flood
+            if key not in self._clients and len(self._clients) >= 20000:
+                return
+            s = self._clients.setdefault(key, _ClientStats())
+            s.requests += 1
+            if is_api:
+                s.api_requests += 1
+                if endpoint not in NOISE_ENDPOINTS:
+                    s.data_requests += 1
+            if keyed:
+                s.keyed_requests += 1
+            if blocked:
+                s.blocked += 1
+            elif 400 <= status < 500:
+                s.errors_4xx += 1
+            s.last_ts = int(now)
+            s.last_path = path[:200]
+
     def record_error(self, *, request_id, method, endpoint, path, status, error_type, message) -> None:
         row = (int(time.time()), request_id, method, endpoint, path, status,
                error_type, (message or "")[:MAX_ERROR_MESSAGE_LEN])
@@ -232,7 +323,8 @@ class MetricsCollector:
             requests_, self._requests = self._requests, {}
             external, self._external = self._external, {}
             errors, self._errors = self._errors, []
-        if not (requests_ or external or errors):
+            clients, self._clients = self._clients, {}
+        if not (requests_ or external or errors or clients):
             return
 
         hist_cols = ", ".join(HISTOGRAM_COLUMNS)
@@ -267,6 +359,24 @@ class MetricsCollector:
                             {hist_update}""",
                     [(b, svc, s.count, s.errors_4xx + s.errors_5xx, s.total_ms, s.max_ms, *s.histogram)
                      for (b, svc), s in external.items()],
+                )
+                conn.executemany(
+                    """INSERT INTO client_traffic
+                        (bucket, user_agent, ip, requests, api_requests, data_requests, keyed_requests,
+                         errors_4xx, blocked, last_ts, last_path)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(bucket, user_agent, ip) DO UPDATE SET
+                            requests = requests + excluded.requests,
+                            api_requests = api_requests + excluded.api_requests,
+                            data_requests = data_requests + excluded.data_requests,
+                            keyed_requests = keyed_requests + excluded.keyed_requests,
+                            errors_4xx = errors_4xx + excluded.errors_4xx,
+                            blocked = blocked + excluded.blocked,
+                            last_ts = MAX(last_ts, excluded.last_ts),
+                            last_path = CASE WHEN excluded.last_ts >= last_ts THEN excluded.last_path ELSE last_path END""",
+                    [(b, ua, ip, s.requests, s.api_requests, s.data_requests, s.keyed_requests,
+                      s.errors_4xx, s.blocked, s.last_ts, s.last_path)
+                     for (b, ua, ip), s in clients.items()],
                 )
                 conn.executemany(
                     """INSERT INTO error_events
@@ -340,6 +450,7 @@ def prune(db_path=None, days: int = RETENTION_DAYS) -> None:
         conn.execute("DELETE FROM external_metrics WHERE bucket < ?", (cutoff,))
         conn.execute("DELETE FROM resource_samples WHERE ts < ?", (cutoff,))
         conn.execute("DELETE FROM error_events WHERE ts < ?", (cutoff,))
+        conn.execute("DELETE FROM client_traffic WHERE bucket < ?", (cutoff,))
         conn.commit()
     finally:
         conn.close()
@@ -452,6 +563,11 @@ def init_monitoring(app: Flask) -> None:
         ms = (time.perf_counter() - start) * 1000
         endpoint = _endpoint_label()
         collector.record_request(request.method, endpoint, response.status_code, ms)
+        collector.record_client(
+            request.headers.get("User-Agent", ""), client_ip(), request.path, endpoint,
+            response.status_code, keyed=g.get("api_gate") == "api_key",
+            blocked=bool(g.get("blocked_client")),
+        )
         response.headers["X-Request-ID"] = g.request_id
         response.headers["Server-Timing"] = f"app;dur={ms:.1f}"
         if ms >= SLOW_REQUEST_MS:

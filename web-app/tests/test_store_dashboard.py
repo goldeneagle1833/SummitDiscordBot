@@ -219,3 +219,51 @@ class TestDashboardRoutes:
         lines = res.get_data(as_text=True).strip().splitlines()
         assert lines[0].startswith("month,storefront,orders")
         assert ",Summit Store,1,1,1.00,3.00,0.00,4.00,0,0.00,4.00" in lines[1]
+
+
+class TestProductLines:
+    @pytest.fixture()
+    def tokens(self, repo):
+        ids = {}
+        for sku, name, price in [
+            ("PLAY", "Full playset of Behemoth and Leviathan Tokens", 1499),
+            ("ISL", "Island Leviathan Token Pack", 599),
+            ("HRN", "Horns of Behemoth Token Pack", 599),
+            ("FSK", "Foil Skeleton Token pack", 1500),
+            ("SK", "Skeleton Token pack", 1300),
+            ("FROG", "Frog Tokens", 1000),
+        ]:
+            ids[sku] = repo.create_product(sku=sku, name=name, price_cents=price,
+                                           stock_quantity=100)
+        _sale(repo, ids["PLAY"], "a", qty=2)
+        _sale(repo, ids["ISL"], "b", qty=3)
+        _sale(repo, ids["HRN"], "a")
+        _sale(repo, ids["FSK"], "c")
+        _sale(repo, ids["SK"], "d", qty=2)
+        _sale(repo, ids["FROG"], "e")
+        _sale(repo, ids["FROG"], "f", status="refunded")  # not counted
+        return ids
+
+    def test_automatic_lines_join_shared_names(self, repo, tokens):
+        lines = _summary(repo, None)["product_lines"]
+        by = {x["line"]: x for x in lines}
+        assert set(by) == {"Behemoth & Leviathan Tokens", "Skeleton Tokens", "Frog Tokens"}
+        bl = by["Behemoth & Leviathan Tokens"]
+        assert bl["units"] == 6 and bl["sales_cents"] == 2 * 1499 + 3 * 599 + 599
+        assert bl["orders"] == 3 and bl["auto"] is True
+        assert [p["name"] for p in bl["products"]][0] == "Full playset of Behemoth and Leviathan Tokens"
+        assert by["Skeleton Tokens"]["units"] == 3
+        assert by["Frog Tokens"]["units"] == 1
+        assert lines[0]["line"] == "Behemoth & Leviathan Tokens"  # biggest first
+        assert abs(sum(x["share"] for x in lines) - 1) < 0.001
+
+    def test_set_line_overrides_automatic_grouping(self, repo, tokens):
+        repo.update_product(tokens["FSK"], product_line="Foil")
+        repo.update_product(tokens["FROG"], product_line="foil")  # same line, any case
+        by = {x["line"]: x for x in _summary(repo, None)["product_lines"]}
+        assert by["Foil"]["units"] == 2 and by["Foil"]["auto"] is False
+        assert by["Skeleton Token pack"]["units"] == 2  # alone now, so its own name
+
+    def test_follows_storefront_and_range(self, repo, tokens, shop):
+        assert [x["line"] for x in _summary(repo, [shop["explorer"]])["product_lines"]] == ["Pin"]
+        assert _summary(repo, [])["product_lines"] == []

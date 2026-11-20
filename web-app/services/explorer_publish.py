@@ -22,7 +22,7 @@ from services.explorer_notifications import PUBLIC_SITE_URL
 
 logger = logging.getLogger(__name__)
 
-APPLICATION_PATH = "/explorer/apply"
+APPLICATION_PATH = "/explorer-series/host"
 
 WEB_NOTIFICATION_TYPE = "explorer_application"
 

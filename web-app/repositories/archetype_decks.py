@@ -417,7 +417,7 @@ class ArchetypeDeckRepository:
             return decks, games
         try:
             cur = conn.cursor()
-            for table in ("match_records", "match_records_archive"):
+            for table in ("match_records", "match_records_archive", "season_match_records"):
                 for row in self._ranked_rows(cur, table):
                     values = dict(zip(
                         ("json_deck_data_winner", "json_deck_data_loser", "curiosa_url_winner",

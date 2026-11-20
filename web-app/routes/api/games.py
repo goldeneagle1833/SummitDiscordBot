@@ -1,5 +1,6 @@
 """Game recording API routes."""
 
+from utils.match_tables import live_matches
 import logging
 import sqlite3
 
@@ -254,7 +255,7 @@ def update_match_deck():
             else:
                 # Bot matches use INTEGER rowid and normalized user_id
                 cur.execute(
-                    "SELECT winner_id, losser_id FROM match_records WHERE rowid = ?",
+                    f"SELECT winner_id, losser_id FROM {live_matches()} WHERE rowid = ?",
                     (int(match_id),),
                 )
                 row = cur.fetchone()
@@ -273,12 +274,12 @@ def update_match_deck():
 
                 if is_winner:
                     cur.execute(
-                        "UPDATE match_records SET curiosa_url_winner = ?, json_deck_data_winner = ? WHERE rowid = ?",
+                        f"UPDATE {live_matches()} SET curiosa_url_winner = ?, json_deck_data_winner = ? WHERE rowid = ?",
                         (deck_url, json_deck_data, int(match_id)),
                     )
                 else:
                     cur.execute(
-                        "UPDATE match_records SET curiosa_url_loser = ?, json_deck_data_loser = ? WHERE rowid = ?",
+                        f"UPDATE {live_matches()} SET curiosa_url_loser = ?, json_deck_data_loser = ? WHERE rowid = ?",
                         (deck_url, json_deck_data, int(match_id)),
                     )
 

@@ -70,3 +70,8 @@ export const refreshReactionRoleDiscordOptions = () => post('/api/reaction-roles
 
 // Monitoring dashboard (requests, outbound services, resources, errors)
 export const getMonitoring = (hours = 24) => get(`/api/admin/monitoring?hours=${hours}`)
+
+// Bot traffic: clients by user agent / IP, and the API block list
+export const getBotTraffic = (hours = 24) => get(`/api/admin/bots?hours=${hours}`)
+export const blockClient = (kind, pattern, reason = '') => post('/api/admin/bots/blocks', { kind, pattern, reason })
+export const unblockClient = (id) => del(`/api/admin/bots/blocks/${id}`)

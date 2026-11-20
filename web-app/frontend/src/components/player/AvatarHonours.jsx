@@ -67,7 +67,7 @@ export function useAvatarHonours(playerId) {
   return honours
 }
 
-function Medal({ place, size = 15 }) {
+export function Medal({ place, size = 15 }) {
   return (
     <svg
       width={size}
@@ -141,7 +141,7 @@ export function AvatarHonoursSection({ honours = [] }) {
                   <Medal place={h.place} />
                   <strong className={PLACE_COLOURS[h.place]}>{h.label}</strong>
                   <span className="text-text-muted tabular-nums">
-                    {h.elo} Elo
+                    {h.elo} Rating
                     {h.wins != null && ` · ${h.wins}-${h.losses}`}
                   </span>
                 </li>
@@ -151,7 +151,7 @@ export function AvatarHonoursSection({ honours = [] }) {
         ))}
       </ul>
       <p className="text-xs text-text-muted">
-        The top three on each avatar's season Elo ladder (Avatar-mode seasons, 10+ games, each player on their best avatar only), set when the season ends.
+        The top three on each avatar's season rating ladder (Avatar-mode seasons, 10+ games, each player on their best avatar only), set when the season ends.
       </p>
     </section>
   )

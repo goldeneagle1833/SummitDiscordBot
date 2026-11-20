@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 import requests
 
 import webapp_config
+from services.ticket_roles import active_ticket_role, ticket_holder_role_ids
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class TicketHolderError(Exception):
 
 def is_configured() -> bool:
     """Whether we have both a bot token and at least one ticket role."""
-    return bool(webapp_config.DISCORD_BOT_TOKEN and webapp_config.TICKET_HOLDER_ROLE_IDS)
+    return bool(webapp_config.DISCORD_BOT_TOKEN and ticket_holder_role_ids())
 
 
 def sync_roster(repo) -> dict:
@@ -43,7 +44,9 @@ def sync_roster(repo) -> dict:
     """
     if not webapp_config.DISCORD_BOT_TOKEN:
         raise TicketHolderError("No Discord bot token configured (set TOKEN or DISCORD_BOT_TOKEN)")
-    if not webapp_config.TICKET_HOLDER_ROLE_IDS:
+    # This season's ticket role, or the configured ones before seasons had one
+    ticket_roles = ticket_holder_role_ids()
+    if not ticket_roles:
         raise TicketHolderError("No TICKET_HOLDER_ROLE_IDS configured")
 
     headers = {"Authorization": f"Bot {webapp_config.DISCORD_BOT_TOKEN}"}
@@ -79,7 +82,7 @@ def sync_roster(repo) -> dict:
             if not user_id:
                 continue
             roles = set(member.get("roles") or [])
-            if roles & webapp_config.TICKET_HOLDER_ROLE_IDS:
+            if roles & ticket_roles:
                 holders.append(
                     {
                         "user_id": user_id,
@@ -122,6 +125,18 @@ def _roster_is_stale(synced_at: str | None) -> bool:
         return True
 
 
+def _synced_before_season_ticket(synced_at: str | None) -> bool:
+    """True when a new season's ticket role took over after the last sync."""
+    active = active_ticket_role()
+    if not synced_at or not active or not active.get("activated_at"):
+        return False
+    try:
+        synced = datetime.fromisoformat(synced_at).astimezone()
+        return synced < datetime.fromisoformat(active["activated_at"])
+    except ValueError:
+        return False
+
+
 def _sync_in_background(repo):
     """Refresh the roster off the request thread; only one refresh at a time."""
     if not _refresh_lock.acquire(blocking=False):
@@ -151,7 +166,8 @@ def ensure_roster_fresh(repo) -> str | None:
         return roster_synced_at(repo)
 
     synced_at = roster_synced_at(repo)
-    if synced_at is None:
+    # A new season counts different holders: last season's roster is wrong
+    if synced_at is None or _synced_before_season_ticket(synced_at):
         try:
             sync_roster(repo)
         except TicketHolderError as e:

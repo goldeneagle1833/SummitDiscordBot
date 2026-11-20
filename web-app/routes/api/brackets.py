@@ -112,12 +112,17 @@ def list_brackets():
 
 @brackets_bp.route("/brackets/<slug>", methods=["GET"])
 def get_bracket(slug):
-    detail = service.get_bracket_detail(
-        slug, viewer_id=_current_user_id(), is_admin=is_admin()
-    )
+    admin = is_admin()
+    detail = service.get_bracket_detail(slug, viewer_id=_current_user_id(), is_admin=admin)
     if not detail:
         return jsonify({"success": False, "error": "Bracket not found"}), 404
-    detail["viewer_can_manage"] = can_manage(detail["bracket"])
+    manager = can_manage(detail["bracket"])
+    if manager and not admin and detail.get("pairings_hidden"):
+        # An organizer runs their own bracket, hidden pairings included.
+        detail = service.get_bracket_detail(
+            slug, viewer_id=_current_user_id(), is_admin=False, can_see_hidden=True
+        )
+    detail["viewer_can_manage"] = manager
     return jsonify({"success": True, **detail}), 200
 
 
@@ -457,6 +462,22 @@ def admin_swap_players(slug):
         return jsonify({"success": False, "error": str(e)}), 400
     except (TypeError, ValueError):
         return jsonify({"success": False, "error": "seed and with_seed are required"}), 400
+    return jsonify({"success": True, **result}), 200
+
+
+@brackets_bp.route("/admin/brackets/<slug>/replace", methods=["POST"])
+@require_bracket_manager
+def admin_replace_player(slug):
+    """Put a new player in an unplayed seat of a published bracket."""
+    data = request.get_json() or {}
+    try:
+        result = service.replace_player(
+            slug, int(data.get("seed")), data.get("user_id"), data.get("display_name")
+        )
+    except BracketError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "seed and user_id are required"}), 400
     return jsonify({"success": True, **result}), 200
 
 

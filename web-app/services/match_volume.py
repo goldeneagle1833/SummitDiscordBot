@@ -50,7 +50,7 @@ def match_volume(cur, existing_tables, now=None) -> dict:
     oldest = windows["week"][1][0].strftime(_FMT)
 
     sources = []
-    for table in ("match_records", "match_records_archive"):
+    for table in ("match_records", "match_records_archive", "season_match_records"):
         if table in existing_tables:
             columns = {row[1] for row in cur.execute(f"PRAGMA table_info({table})")}
             sources.append((table, _type_expr(columns)))

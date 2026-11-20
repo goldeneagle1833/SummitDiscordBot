@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sqlite3
@@ -19,6 +20,15 @@ STORE_DB_PATH = Path(
 )
 
 MAX_ATTEMPTS = 5
+LEADERBOARD_REFRESH_DELAY = 5  # seconds
+
+# Discord role products in the Summit Store (e.g. a season ticket): the web
+# app queues one row per role, recipient = buyer's Discord id, body = role id
+ROLE_CHANNELS = ("discord_role_add", "discord_role_remove")
+
+
+class RoleGrantProblem(Exception):
+    """A role change that retrying won't fix (not in the server, no such role)."""
 
 
 class StoreNotificationsCog(commands.Cog):
@@ -27,6 +37,8 @@ class StoreNotificationsCog(commands.Cog):
     The web app enqueues rows into the notifications table in store.db when
     orders are paid or shipped; this cog polls for pending Discord rows and
     delivers them. Email rows are handled by the web app, not the bot.
+    It also gives (or, after a refund, takes back) Discord roles bought in
+    the Summit Store.
     """
 
     def __init__(self, bot):
@@ -50,10 +62,10 @@ class StoreNotificationsCog(commands.Cog):
                 dict(r) for r in conn.execute(
                     """SELECT * FROM notifications
                        WHERE status = 'pending'
-                         AND channel IN ('discord_dm', 'discord_admin')
+                         AND channel IN ('discord_dm', 'discord_admin', ?, ?)
                          AND attempts < ?
                        ORDER BY created_at ASC LIMIT 10""",
-                    (MAX_ATTEMPTS,),
+                    (*ROLE_CHANNELS, MAX_ATTEMPTS),
                 ).fetchall()
             ]
         except sqlite3.OperationalError:
@@ -62,10 +74,18 @@ class StoreNotificationsCog(commands.Cog):
         finally:
             conn.close()
 
-    def _mark(self, notification_id: int, success: bool, error: str | None = None):
+    def _mark(self, notification_id: int, success: bool, error: str | None = None,
+              final: bool = False):
         conn = sqlite3.connect(STORE_DB_PATH)
         try:
-            if success:
+            if final:
+                conn.execute(
+                    """UPDATE notifications
+                       SET attempts = attempts + 1, last_error = ?, status = 'failed'
+                       WHERE id = ?""",
+                    (error, notification_id),
+                )
+            elif success:
                 conn.execute(
                     """UPDATE notifications
                        SET status = 'sent', sent_at = datetime('now'),
@@ -104,7 +124,11 @@ class StoreNotificationsCog(commands.Cog):
             logger.error(f"Store notifications: fetch failed: {e}")
             return
 
+        roles_changed = False
         for n in pending:
+            if n["channel"] in ROLE_CHANNELS:
+                roles_changed |= await self._deliver_role(n)
+                continue
             try:
                 if n["channel"] == "discord_admin":
                     await self._send_admin(n)
@@ -126,6 +150,77 @@ class StoreNotificationsCog(commands.Cog):
                 logger.warning(
                     f"Store notification {n['id']} delivery error: {e}"
                 )
+
+        if roles_changed:
+            await self._refresh_leaderboard()
+
+    async def _refresh_leaderboard(self):
+        """Redraw the leaderboard so a new ticket holder shows up right away.
+
+        It otherwise only redraws after a match, so someone who bought a
+        ticket would sit in Free Play until the next game was played.
+        """
+        lfg = self.bot.get_cog("LFGCog")
+        if lfg is None:
+            return
+        # Let Discord's member update reach the bot's cache first; the
+        # leaderboard reads roles from that cache
+        await asyncio.sleep(LEADERBOARD_REFRESH_DELAY)
+        try:
+            await lfg.update_leaderboard()
+        except Exception as e:
+            logger.warning(f"Leaderboard refresh after a store role change failed: {e}")
+
+    async def _deliver_role(self, n: dict) -> bool:
+        """Give or take back one role. True when the role was changed."""
+        try:
+            await self._change_role(n)
+            self._mark(n["id"], success=True)
+            return True
+        except RoleGrantProblem as e:
+            error = str(e)
+            final = True
+        except discord.Forbidden:
+            error = ("The bot isn't allowed to manage this role. Give it Manage Roles "
+                     "and move its role above this one in Server Settings > Roles.")
+            final = True
+        except Exception as e:
+            error = str(e)[:500]
+            final = n["attempts"] + 1 >= MAX_ATTEMPTS
+        self._mark(n["id"], success=False, error=error, final=final)
+        logger.warning(f"Store role change {n['id']} failed: {error}")
+        if final:
+            # Someone has to do it by hand, so tell the store admins
+            try:
+                await self._send_admin({
+                    "subject": f"Couldn't {n['subject'][0].lower()}{n['subject'][1:]}",
+                    "body": f"Buyer: <@{n['recipient']}> ({n['recipient']})\n"
+                            f"Role: <@&{n['body']}> ({n['body']})\n"
+                            f"Problem: {error}\n\nPlease do it by hand in Discord.",
+                })
+            except Exception as e:
+                logger.error(f"Store role failure alert not sent: {e}")
+        return False
+
+    async def _change_role(self, n: dict):
+        guild = self.bot.get_guild(config.GUILD_ID)
+        if guild is None:
+            guild = await self.bot.fetch_guild(config.GUILD_ID)
+        role = guild.get_role(int(n["body"]))
+        if role is None:
+            raise RoleGrantProblem(f"No role with ID {n['body']} in the server")
+        member = guild.get_member(int(n["recipient"]))
+        if member is None:
+            try:
+                member = await guild.fetch_member(int(n["recipient"]))
+            except discord.NotFound:
+                raise RoleGrantProblem("The buyer isn't in the Summit Discord server")
+        reason = f"Summit Store: {n['subject']}"
+        if n["channel"] == "discord_role_add":
+            if role not in member.roles:
+                await member.add_roles(role, reason=reason)
+        elif role in member.roles:
+            await member.remove_roles(role, reason=reason)
 
     async def _send_dm(self, n: dict):
         user = self.bot.get_user(int(n["recipient"]))

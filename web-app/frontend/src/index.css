@@ -89,3 +89,80 @@ option {
 .article-body pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 0.9em 1em; overflow-x: auto; }
 .article-body pre code { background: none; padding: 0; }
 .article-body hr { border: 0; border-top: 1px solid #30363d; margin: 2em 0; }
+.article-body img { max-width: 100%; height: auto; border-radius: 8px; }
+.article-body figure img { margin: 0 auto; }
+.article-body figcaption { font-size: 0.875rem; color: #8b949e; text-align: center; margin-top: 0.5em; }
+.article-body table { width: 100%; border-collapse: collapse; font-size: 0.95em; display: block; overflow-x: auto; }
+.article-body th, .article-body td { border: 1px solid #30363d; padding: 0.4em 0.65em; text-align: left; vertical-align: top; }
+.article-body th { background: #161b22; color: #f0f6fc; font-weight: 700; }
+.article-body u { text-underline-offset: 2px; }
+.article-editor { caret-color: #ffd700; }
+.article-body > :first-child { margin-top: 0; }
+.article-editor a { cursor: text; }
+.article-editor img { cursor: default; }
+
+/* Rainbow foil: the event avatar badge matches the event's prize, a rainbow
+   foil card of the avatar. A slow sheen moves across the border and text. */
+@keyframes foil-sheen {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.foil-chip {
+  position: relative;
+  border: 1.5px solid transparent;
+  background:
+    linear-gradient(135deg, rgba(20, 22, 30, 0.96), rgba(32, 30, 44, 0.96)) padding-box,
+    linear-gradient(110deg, #ff5f6d, #ffc371, #f9f871, #6dfba5, #47c5ff, #a77bff, #ff6fd8, #ff5f6d) border-box;
+  background-size: 100% 100%, 200% 100%;
+  animation: foil-sheen 6s linear infinite;
+  box-shadow: 0 0 10px rgba(167, 123, 255, 0.25);
+}
+
+.foil-chip:hover {
+  box-shadow: 0 0 14px rgba(71, 197, 255, 0.45);
+}
+
+.foil-text {
+  background: linear-gradient(110deg, #ff8a8a, #ffd27a, #f6f78a, #8affbc, #7fd6ff, #c3a6ff, #ff9be6, #ff8a8a);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: foil-sheen 6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foil-chip, .foil-text { animation: none; }
+}
+
+/* An avatar portrait in a rainbow foil ring, with a faint foil sheen over it */
+.foil-ring {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  padding: 2px;
+  background: linear-gradient(110deg, #ff5f6d, #ffc371, #f9f871, #6dfba5, #47c5ff, #a77bff, #ff6fd8, #ff5f6d);
+  background-size: 200% 100%;
+  animation: foil-sheen 6s linear infinite;
+}
+
+.foil-ring > img,
+.foil-ring > span {
+  border-radius: 9999px;
+}
+
+.foil-ring::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(125deg, rgba(255, 95, 109, 0.28), rgba(249, 248, 113, 0.18) 30%, rgba(109, 251, 165, 0.22) 50%, rgba(71, 197, 255, 0.24) 70%, rgba(255, 111, 216, 0.28));
+  mix-blend-mode: color-dodge;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foil-ring { animation: none; }
+}

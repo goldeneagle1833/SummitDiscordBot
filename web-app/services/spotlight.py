@@ -1,5 +1,6 @@
 """Community Spotlight service — daily rotating feature for the homepage."""
 
+from utils.match_tables import live_matches
 import json
 import logging
 import os
@@ -605,11 +606,11 @@ def _get_eligible_players(start_date: str | None) -> list[dict]:
         query = f"""
             WITH player_matches AS (
                 SELECT winner_id AS player_id, losser_id AS opponent_id, 1 AS is_win
-                FROM match_records
+                FROM {live_matches()}
                 WHERE (match_type = 'ranked' OR match_type IS NULL) {date_clause}
                 UNION ALL
                 SELECT losser_id AS player_id, winner_id AS opponent_id, 0 AS is_win
-                FROM match_records
+                FROM {live_matches()}
                 WHERE (match_type = 'ranked' OR match_type IS NULL) {date_clause}
             )
             SELECT
@@ -725,7 +726,7 @@ def _get_player_deck_stats(
                     json_deck_data_winner,
                     json_deck_data_loser,
                     timestamp
-                FROM match_records
+                FROM {live_matches()}
                 WHERE (winner_id = ? OR losser_id = ?)
                   AND (match_type = 'ranked' OR match_type IS NULL)
                   {date_clause}

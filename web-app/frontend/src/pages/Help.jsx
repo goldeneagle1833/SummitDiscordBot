@@ -22,11 +22,11 @@ export default function Help() {
           </div>
           <div>
             <p className="font-medium text-primary">!stats / /stats</p>
-            <p className="text-text-muted">View your ELO rating, win/loss record, and match history.</p>
+            <p className="text-text-muted">View your rating, win/loss record, and match history.</p>
           </div>
           <div>
             <p className="font-medium text-primary">!leaderboard / /leaderboard</p>
-            <p className="text-text-muted">View the current ELO leaderboard.</p>
+            <p className="text-text-muted">View the current rating leaderboard.</p>
           </div>
           <div>
             <p className="font-medium text-primary">!deck / /deck</p>

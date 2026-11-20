@@ -4,19 +4,27 @@ import { renderWithRouter } from '@/test/test-utils'
 
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: null }) }))
 vi.mock('@/api/client', () => ({ get: vi.fn(() => Promise.resolve({})) }))
-vi.mock('@/api/store', () => ({ getProducts: vi.fn() }))
+vi.mock('@/api/store', () => ({ getProducts: vi.fn(), getStorefronts: vi.fn() }))
 
-import { getProducts } from '@/api/store'
+import { getProducts, getStorefronts } from '@/api/store'
 import { StoreCard } from '../Home'
 
 describe('StoreCard', () => {
   beforeEach(() => {
     getProducts.mockReset()
+    getStorefronts.mockReset()
+    getStorefronts.mockResolvedValue({
+      storefronts: [
+        { id: 1, slug: 'summit', name: 'Summit Store' },
+        { id: 2, slug: 'explorer-series', name: 'Explorer Series' },
+      ],
+    })
     getProducts.mockResolvedValue({
       products: [
-        { id: 1, images: ['/static/store/a.jpg'] },
-        { id: 2, images: [], image_url: '/static/store/b.jpg' },
-        { id: 3, images: [] },
+        { id: 1, storefront_id: 1, images: ['/static/store/a.jpg'] },
+        { id: 2, storefront_id: 1, images: [], image_url: '/static/store/b.jpg' },
+        { id: 3, storefront_id: 1, images: [] },
+        { id: 4, storefront_id: 2, images: ['/static/store/explorer.jpg'] },
       ],
     })
   })
@@ -33,5 +41,15 @@ describe('StoreCard', () => {
     const img = await screen.findByTestId('store-card-bg')
     expect(['/static/store/a.jpg', '/static/store/b.jpg']).toContain(img.getAttribute('src'))
     expect(screen.getByRole('link', { name: 'Shop Summit Store' })).toHaveAttribute('href', '/store')
+  })
+
+  it('never uses a photo from another storefront', async () => {
+    getProducts.mockResolvedValue({
+      products: [{ id: 4, storefront_id: 2, images: ['/static/store/explorer.jpg'] }],
+    })
+    renderWithRouter(<StoreCard live />)
+    await screen.findByRole('link', { name: 'Shop Summit Store' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.queryByTestId('store-card-bg')).not.toBeInTheDocument()
   })
 })

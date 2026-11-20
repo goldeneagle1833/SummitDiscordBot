@@ -183,7 +183,7 @@ class TestArchivedLeaderboardRoute:
         data = client.get("/api/leaderboard/archived/7").get_json()
 
         assert data["event_info"]["event_name"] == "Season 7"
-        assert data["event_info"]["value_label"] == "Event ELO"
+        assert data["event_info"]["value_label"] == "Event Rating"
         assert data["total_matches"] == 3
         by_name = {r["display_name"]: r for r in data["leaderboard"]}
         assert [r["display_name"] for r in data["leaderboard"]][:3] == ["duckworthy_", "Geoffrey", "Hicham"]

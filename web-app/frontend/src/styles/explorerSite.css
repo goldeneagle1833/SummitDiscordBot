@@ -1,0 +1,110 @@
+/*
+ * Explorer Series mini-site: parchment and ink, styled on the series logo.
+ *
+ * The Explorer pages were built for the dark Summit theme, so inside
+ * .es-theme the Summit colour utilities they use are remapped to the
+ * parchment palette. Nothing outside .es-theme is affected.
+ */
+.es-theme {
+  --es-paper: #f1e2bf;
+  --es-paper-deep: #e7d2a4;
+  --es-card: #faf1dc;
+  --es-card-2: #f4e6c6;
+  --es-ink: #3b2614;
+  --es-ink-soft: #6e5236;
+  --es-rule: #c9a873;
+  --es-rule-soft: rgba(110, 82, 54, 0.22);
+  --es-rust: #8a4b1f;
+  --es-rust-dark: #6f3a15;
+  --es-gold: #c99a45;
+  --es-green: #4f6b2f;
+  --es-red: #9b2f1f;
+  --es-blue: #2f557a;
+
+  color: var(--es-ink);
+  background-color: var(--es-paper);
+  background-image:
+    radial-gradient(ellipse at 15% 10%, rgba(255, 248, 225, 0.75), transparent 55%),
+    radial-gradient(ellipse at 85% 80%, rgba(201, 154, 69, 0.18), transparent 60%),
+    radial-gradient(ellipse at 50% 120%, rgba(110, 82, 54, 0.18), transparent 60%);
+  background-attachment: fixed;
+  color-scheme: light;
+}
+
+.es-theme .es-heading { font-family: 'Almendra', Georgia, serif; color: var(--es-ink); }
+.es-theme .es-card {
+  background: var(--es-card);
+  border: 1px solid var(--es-rule);
+  border-radius: 10px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 2px 10px rgba(59, 38, 20, 0.08);
+}
+.es-theme .es-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+  background: var(--es-rust); color: #fbf1dc; font-weight: 600;
+  padding: 0.55rem 1rem; border-radius: 8px; border: 1px solid var(--es-rust-dark);
+  transition: background-color 150ms;
+}
+.es-theme .es-btn:hover { background: var(--es-rust-dark); }
+.es-theme .es-btn-ghost {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+  border: 1px solid var(--es-rule); color: var(--es-ink); background: rgba(250, 241, 220, 0.6);
+  padding: 0.55rem 1rem; border-radius: 8px; font-weight: 500; transition: border-color 150ms;
+}
+.es-theme .es-btn-ghost:hover { border-color: var(--es-rust); }
+.es-theme .es-link { color: var(--es-rust); }
+.es-theme .es-link:hover { text-decoration: underline; }
+.es-theme .es-muted { color: var(--es-ink-soft); }
+.es-theme .es-rule { border-color: var(--es-rule-soft); }
+.es-theme .es-kicker {
+  font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; color: var(--es-rust);
+}
+
+/* ── Summit colour utilities, remapped ─────────────────────────────── */
+.es-theme .text-text-primary, .es-theme .text-text, .es-theme .text-white { color: var(--es-ink); }
+.es-theme .text-text-muted, .es-theme .text-muted { color: var(--es-ink-soft); }
+.es-theme .text-secondary, .es-theme .text-secondary\/80, .es-theme .hover\:text-secondary:hover { color: var(--es-rust); }
+.es-theme .text-primary, .es-theme .text-primary-light { color: var(--es-blue); }
+.es-theme .hover\:text-text-primary:hover, .es-theme .hover\:text-text:hover { color: var(--es-ink); }
+
+.es-theme .bg-bg-surface, .es-theme .bg-surface { background-color: var(--es-card); }
+.es-theme .bg-bg-elevated, .es-theme .bg-bg-raised { background-color: var(--es-card-2); }
+.es-theme .bg-bg-base, .es-theme .bg-bg-dark { background-color: var(--es-paper); }
+.es-theme .hover\:bg-white\/5:hover, .es-theme .bg-white\/5 { background-color: rgba(138, 75, 31, 0.07); }
+.es-theme .hover\:bg-secondary\/10:hover, .es-theme .bg-secondary\/10 { background-color: rgba(138, 75, 31, 0.1); }
+
+.es-theme .border-border { border-color: var(--es-rule); }
+.es-theme .border-border\/50, .es-theme .border-border\/40,
+.es-theme .border-border\/30 { border-color: var(--es-rule-soft); }
+.es-theme .divide-border > * + * { border-color: var(--es-rule-soft); }
+.es-theme .hover\:border-secondary:hover, .es-theme .border-secondary,
+.es-theme .focus\:border-secondary:focus, .es-theme .hover\:border-secondary\/60:hover { border-color: var(--es-rust); }
+
+.es-theme .bg-secondary { background-color: var(--es-rust); color: #fbf1dc; }
+.es-theme .bg-secondary.text-black, .es-theme .bg-secondary .text-black { color: #fbf1dc; }
+.es-theme .hover\:bg-secondary\/80:hover { background-color: var(--es-rust-dark); }
+.es-theme .ring-secondary { --tw-ring-color: var(--es-rust); }
+
+/* Pale tints made for a dark page, darkened so they read on parchment */
+.es-theme .text-red-300, .es-theme .text-red-400, .es-theme .text-accent-red,
+.es-theme .hover\:text-red-300:hover { color: var(--es-red); }
+.es-theme .text-blue-300, .es-theme .text-sky-300 { color: var(--es-blue); }
+.es-theme .text-green-400, .es-theme .text-emerald-300, .es-theme .text-accent-green { color: var(--es-green); }
+.es-theme .text-yellow-400, .es-theme .text-yellow-200, .es-theme .text-amber-300,
+.es-theme .text-amber-400 { color: #8a5a00; }
+.es-theme .text-violet-300 { color: #5b3f8a; }
+
+/* Form fields */
+.es-theme input:not([type='checkbox']):not([type='radio']):not([type='range']),
+.es-theme select, .es-theme textarea {
+  background-color: #fffaf0;
+  color: var(--es-ink);
+  border-color: var(--es-rule);
+}
+.es-theme input::placeholder, .es-theme textarea::placeholder { color: rgba(110, 82, 54, 0.6); }
+
+/* Tables */
+.es-theme table thead th { color: var(--es-ink-soft); }
+
+/* Store image placeholders use a dark gradient */
+.es-theme .from-bg-elevated { --tw-gradient-from: var(--es-card-2) var(--tw-gradient-from-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.es-theme .to-bg-surface { --tw-gradient-to: var(--es-paper-deep) var(--tw-gradient-to-position); }

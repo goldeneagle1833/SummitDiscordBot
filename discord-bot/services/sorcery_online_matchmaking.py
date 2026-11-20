@@ -11,6 +11,7 @@ import aiohttp
 from dotenv import dotenv_values
 
 from cogs.lfg.voice import NO_VOICE, VOICE
+from repositories.turn_order_repo import pick_first_player
 
 
 logger = logging.getLogger("discord_bot")
@@ -103,6 +104,18 @@ def summit_matchmaking_api_key():
     return str(file_key or os.getenv("DRAFT_SORCERY_API_KEY", "")).strip()
 
 
+def _provision_player(player):
+    entry = {
+        "discordUserId": str(player["discord_user_id"]),
+        "displayName": player["display_name"],
+        "deckUrl": player.get("deck_url") or None,
+    }
+    if player.get("precon"):
+        # Precon queue: PSO loads the named precon ("lavamancer" / "frostmage")
+        entry["precon"] = player["precon"]
+    return entry
+
+
 async def provision_sorcery_online_match(
     guild_id, pairing_id, queue_type, players, voice=False, on_replay_url=None,
     on_table_url=None,
@@ -128,15 +141,12 @@ async def provision_sorcery_online_match(
         "pairingId": str(pairing_id),
         "queueType": queue_type,
         "voiceType": VOICE if voice else NO_VOICE,
-        "players": [
-            {
-                "discordUserId": str(player["discord_user_id"]),
-                "displayName": player["display_name"],
-                "deckUrl": player.get("deck_url") or None,
-            }
-            for player in players
-        ],
+        "players": [_provision_player(player) for player in players],
     }
+    # Who goes first, balanced from each player's history in this queue (PSO used to roll)
+    first_player = pick_first_player(players, queue_type)
+    if first_player is not None:
+        payload["firstPlayerDiscordUserId"] = str(first_player)
     timeout = aiohttp.ClientTimeout(total=5, connect=2)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:

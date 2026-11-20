@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import NewTag from '@/components/common/NewTag'
+import { useIsNew } from '@/hooks/useNewContent'
 import { articleImage, articlePath, formatArticleDate, STATUS_LABELS } from '@/api/articles'
 
 // One colour per category, used for the badge and the card's top stripe.
@@ -169,12 +171,14 @@ export function PdfBadge() {
 /** Card in the blog grid. The title link stretches over the whole card;
  *  tags and the author sit above it so they stay clickable. */
 export function ArticleCard({ article, onTag, activeTag }) {
+  const isNew = useIsNew('articles')
   return (
     <article className="group relative flex flex-col bg-bg-surface border border-border rounded-lg overflow-hidden hover:border-secondary/60 transition-colors min-w-0">
       <span className={`h-1 ${categoryColors(article.category).stripe}`} aria-hidden="true" />
       <ArticleImage article={article} className="aspect-[1.91/1] border-b border-border" />
       <div className="p-4 flex flex-col gap-2 flex-1 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
+          {isNew(article.published_at) && <NewTag />}
           <CategoryBadge category={article.category} />
           {article.has_pdf && <PdfBadge />}
           {article.external_url && <ExternalBadge site={article.external_site} />}
@@ -199,6 +203,7 @@ export function ArticleCard({ article, onTag, activeTag }) {
 
 /** Large card for the newest article at the top of the blog. */
 export function FeaturedArticle({ article }) {
+  const isNew = useIsNew('articles')
   return (
     <article className="group relative overflow-hidden rounded-lg border border-border bg-gradient-to-br from-brand-panel via-bg-surface to-bg-surface hover:border-secondary/60 transition-colors">
       <span className={`absolute inset-y-0 left-0 w-1 ${categoryColors(article.category).stripe}`} aria-hidden="true" />
@@ -206,6 +211,7 @@ export function FeaturedArticle({ article }) {
       <div className="p-5 sm:p-7 pl-6 sm:pl-8 min-w-0">
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <span className="text-[11px] font-bold uppercase tracking-wider text-secondary">Latest article</span>
+          {isNew(article.published_at) && <NewTag />}
           <CategoryBadge category={article.category} />
           {article.has_pdf && <PdfBadge />}
           {article.external_url && <ExternalBadge site={article.external_site} />}

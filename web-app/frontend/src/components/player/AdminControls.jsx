@@ -31,7 +31,7 @@ export default function AdminControls({ playerId, playerName, onAction }) {
   }
 
   const handleDeleteAccount = () => {
-    if (!confirm(`DELETE ACCOUNT for "${playerName}"? This will permanently remove ALL data (ELO, matches, profile, etc). This cannot be undone.`)) return
+    if (!confirm(`DELETE ACCOUNT for "${playerName}"? This will permanently remove ALL data (ratings, matches, profile, etc). This cannot be undone.`)) return
     if (!confirm(`Are you absolutely sure? Type the player name to confirm.\n\nThis will delete: "${playerName}"`)) return
     doAction(() => deleteAccount(playerId))
   }
@@ -43,7 +43,7 @@ export default function AdminControls({ playerId, playerName, onAction }) {
 
   const handleResetElo = () => {
     const elo = parseInt(eloValue)
-    if (isNaN(elo) || elo < 0 || elo > 5000) { setError('ELO must be 0-5000.'); return }
+    if (isNaN(elo) || elo < 0 || elo > 5000) { setError('Rating must be 0-5000.'); return }
     doAction(() => resetElo(playerId, elo, eloSource))
   }
 
@@ -65,7 +65,7 @@ export default function AdminControls({ playerId, playerName, onAction }) {
             Remove Match
           </button>
           <button onClick={() => { setEloValue('1500'); setEloSource('both'); setModal('resetElo') }} className="px-3 py-1.5 text-xs bg-bg-raised border border-border rounded text-text-muted hover:text-text-primary">
-            Set ELO
+            Set Rating
           </button>
           <button onClick={() => { setNewName(playerName || ''); setModal('rename') }} className="px-3 py-1.5 text-xs bg-bg-raised border border-border rounded text-text-muted hover:text-text-primary">
             Rename Player
@@ -90,12 +90,12 @@ export default function AdminControls({ playerId, playerName, onAction }) {
                   className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-2"
                   autoFocus
                 />
-                <p className="text-xs text-text-muted mb-4">This will reverse ELO changes from this match.</p>
+                <p className="text-xs text-text-muted mb-4">This will reverse rating changes from this match.</p>
               </>
             )}
             {modal === 'resetElo' && (
               <>
-                <h3 className="text-lg font-semibold text-text-primary mb-4">Set ELO</h3>
+                <h3 className="text-lg font-semibold text-text-primary mb-4">Set Rating</h3>
                 <input
                   type="number"
                   value={eloValue}

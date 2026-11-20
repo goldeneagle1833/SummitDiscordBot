@@ -147,7 +147,9 @@ class ExplorerRepository:
         with self._conn() as conn:
             rows = conn.execute(
                 """SELECT r.*, e.id AS event_db_id, e.event_name, e.event_date,
-                          e.total_players AS event_total_players
+                          e.total_players AS event_total_players,
+                          e.venue_name AS event_venue_name,
+                          e.source_url AS event_source_url
                    FROM explorer_results r
                    JOIN explorer_events e ON e.id = r.event_id
                    WHERE e.season_id = ?

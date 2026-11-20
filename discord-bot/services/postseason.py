@@ -23,7 +23,7 @@ import random
 import re
 import sqlite3
 
-from services.avatar_mode import LadderEntry, get_event_ladder, unique_players
+from services.avatar_mode import LadderEntry, get_event_ladder, top_cut_eligible, unique_players
 
 logger = logging.getLogger("discord_bot")
 
@@ -117,9 +117,14 @@ def limited_top_cut(size: int = LIMITED_TOP_CUT_SIZE, elo_db: str = "elo.db",
     return ladder[:size]
 
 
-def select_top_cut(ladder, ticket_holder_ids, size: int = TOP_CUT_SIZE) -> list:
-    """The first ``size`` unique ticket holders on the ladder, best first."""
+def select_top_cut(ladder, ticket_holder_ids, size: int = TOP_CUT_SIZE, event=None) -> list:
+    """The first ``size`` unique ticket holders on the ladder, best first.
+
+    In a Glicko-2 season (``event``) only entries with enough games count.
+    """
     holders = {int(uid) for uid in ticket_holder_ids}
+    if event is not None:
+        ladder = top_cut_eligible(ladder, event)
     return [entry for entry in unique_players(ladder) if int(entry.user_id) in holders][:size]
 
 

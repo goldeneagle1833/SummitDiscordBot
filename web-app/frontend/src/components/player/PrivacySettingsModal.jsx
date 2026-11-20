@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { getProfileVisibility, setProfileVisibility } from '@/api/players'
 
 const SECTION_LABELS = {
-  elo_history: 'ELO History',
-  elo_brackets: 'ELO Brackets',
+  elo_history: 'Rating History',
+  elo_brackets: 'Rating Brackets',
   avatar_performance: 'Avatar Performance',
   avatar_matchups: 'Avatar Matchups',
   recent_decks: 'Recent Decks',

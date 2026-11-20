@@ -36,6 +36,7 @@ import stripe
 
 from repositories.store import StoreRepository, webhook_secret_env
 from services.store_shipping import listing_shipping_cents
+from services.ticket_roles import ticket_free_shipping_role_ids
 from webapp_config import FRONTEND_URL, FREE_SHIPPING_ROLE_IDS
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,11 @@ STRIPE_SHIPPING_RATE_INTERNATIONAL = os.environ.get("STRIPE_SHIPPING_RATE_INTERN
 STRIPE_SHIPPING_RATE_FREE = os.environ.get("STRIPE_SHIPPING_RATE_FREE", "")
 
 stripe.api_key = STRIPE_SECRET_KEY
+
+
+def free_shipping_role_ids() -> set[str]:
+    """Patreon and ticket roles from config, plus this and next season's ticket."""
+    return set(FREE_SHIPPING_ROLE_IDS) | ticket_free_shipping_role_ids()
 
 
 def _site_url(path: str) -> str:
@@ -131,9 +137,13 @@ class StoreCheckoutService:
         storefront = self._storefront_for_items(items)
         if storefront and not self.repo.accepts_payments(storefront):
             raise ValueError(f"{storefront['name']} isn't taking orders yet")
-        shipping_options, shipping_cents = self._shipping_plan(
-            storefront, discord_roles, items
-        )
+        if self._items_are_digital(items):
+            # Only Discord roles: nothing to ship, no address to collect
+            shipping_options, shipping_cents = None, 0
+        else:
+            shipping_options, shipping_cents = self._shipping_plan(
+                storefront, discord_roles, items
+            )
 
         order = self.repo.create_order(
             user_id=user_id,
@@ -200,8 +210,9 @@ class StoreCheckoutService:
                     "It will show as paid shortly."
                 )
 
-        if order["shipping_cents"]:
-            # Shipping was priced when the order was placed; charge the same
+        if order["shipping_cents"] or self.repo.order_is_digital(order):
+            # Shipping was priced when the order was placed; charge the same.
+            # Orders of only Discord roles have nothing to ship.
             shipping_options = None
         else:
             shipping_options, shipping_cents = self._shipping_plan(
@@ -259,7 +270,7 @@ class StoreCheckoutService:
         # own products only
         has_free_shipping = bool(
             not own_account
-            and discord_roles and FREE_SHIPPING_ROLE_IDS.intersection(discord_roles)
+            and discord_roles and free_shipping_role_ids().intersection(discord_roles)
         )
 
         if has_free_shipping and STRIPE_SHIPPING_RATE_FREE:
@@ -321,6 +332,8 @@ class StoreCheckoutService:
                 }
             )
 
+        digital = self.repo.order_is_digital(full_order)
+
         # The success/cancel pages clear or keep this storefront's cart only
         sf = f"&storefront={storefront.get('slug', '')}" if storefront else ""
         # A private (link only) listing is bought outside the cart: the
@@ -344,14 +357,30 @@ class StoreCheckoutService:
             "success_url": _site_url(f"/store/success?order={number}{sf}"),
             "cancel_url": _site_url(f"/store/cancelled?order={number}{sf}"),
             "expires_at": int(time.time()) + CHECKOUT_EXPIRES_MINUTES * 60,
-            # Always collect a shipping address, US only
-            "shipping_address_collection": {"allowed_countries": SHIP_COUNTRIES},
         }
-        if shipping_options:
-            session_params["shipping_options"] = shipping_options
+        if not digital:
+            # Collect a shipping address, US only. Orders of only Discord
+            # roles have nothing to ship.
+            session_params["shipping_address_collection"] = {
+                "allowed_countries": SHIP_COUNTRIES
+            }
+            if shipping_options:
+                session_params["shipping_options"] = shipping_options
 
         return stripe.checkout.Session.create(
             **session_params, **self._stripe_kwargs(storefront)
+        )
+
+    def _items_are_digital(self, items: list[dict]) -> bool:
+        """True when every cart item is a role-only product (bundles ship)."""
+        products = []
+        for item in items:
+            try:
+                products.append(self.repo.get_product(int(item.get("product_id"))))
+            except (TypeError, ValueError):
+                return False
+        return bool(products) and all(
+            p and p.get("product_type") == "discord_role" for p in products
         )
 
     def _storefront_for_items(self, items: list[dict]) -> dict | None:
@@ -642,6 +671,17 @@ class StoreCheckoutService:
                 f"order={order['order_number']} amount={amount}",
             )
             logger.info(f"Order paid: {order['order_number']}")
+            paid_order = self.repo.get_order(order["id"])
+            try:
+                from services.store_roles import queue_role_grants
+                queue_role_grants(self.repo, paid_order)
+                if self.repo.order_is_digital(paid_order):
+                    # Nothing to ship: the bot hands over the role
+                    self.repo.set_status(order["id"], "delivered")
+            except Exception:
+                logger.exception(
+                    f"Discord role grant enqueue failed for {order['order_number']}"
+                )
             try:
                 from services.store_notifications import StoreNotificationService
                 StoreNotificationService(self.repo).notify_order_paid(

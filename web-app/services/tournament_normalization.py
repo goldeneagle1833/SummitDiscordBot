@@ -88,7 +88,13 @@ def _allowed(event, spec):
     folder = str(event.get('folder') or '')
     if not folder or folder.startswith('_'):
         return False
-    if re.search(r'\b(limited|draft|sealed)\b', folder + ' ' + str(event.get('name') or ''), re.I):
+    # Trust an explicit or inferred event-level format. Keep the old name
+    # safeguard for callers that pass legacy event dictionaries without it.
+    event_format = str(event.get('format') or '').strip().lower()
+    if event_format:
+        if event_format != 'constructed':
+            return False
+    elif re.search(r'\b(limited|draft|sealed|peasant)\b', folder + ' ' + str(event.get('name') or ''), re.I):
         return False
     return _in_gothic_era(event, spec)
 
@@ -117,7 +123,8 @@ def normalized_tournaments(events, loader, *, exceptions_path=EXCEPTIONS_PATH):
     report = {'sourceCollections': 0, 'mergedCollections': 0,
               'duplicateSourceRows': 0,
               'unusableRecords': 0, 'ignoredLowRatingGroups': 0,
-              'correctedRatingGroups': 0, 'correctedRatingEvents': []}
+              'correctedRatingGroups': 0, 'correctedRatingEvents': [],
+              'ignoredNonConstructedGroups': 0, 'formatConflicts': []}
     output = []
     for key, sources in sorted(grouped.items()):
         # Historical collections may have different ratings. If any one is
@@ -138,8 +145,22 @@ def normalized_tournaments(events, loader, *, exceptions_path=EXCEPTIONS_PATH):
         sources.sort(key=lambda src: (priority.get(_normalize_folder(src['folder']), 999), src['folder']))
         report['sourceCollections'] += len(sources)
         report['mergedCollections'] += max(0, len(sources) - 1)
-        verified_event_format = (str(spec.get('confirmedFormat') or '').lower() == 'constructed'
-                                 or any(str(s.get('format') or '').lower() == 'constructed' for s in sources))
+        # Event-level format is authoritative when verified by an admin.
+        # Legacy records with their own Constructed tag remain supported.
+        known_formats = {
+            str(s.get('format') or '').strip().lower()
+            for s in sources
+        } - {''}
+        exception_format = str(spec.get('confirmedFormat') or '').strip().lower()
+        mismatched_sources = bool(known_formats and known_formats != {'constructed'})
+        mismatched_exception = exception_format not in ('', 'constructed')
+        conflicting_metadata = bool(known_formats and exception_format and exception_format not in known_formats)
+        if mismatched_sources or mismatched_exception or conflicting_metadata:
+            report['ignoredNonConstructedGroups'] += 1
+            if len(known_formats) > 1 or conflicting_metadata:
+                report['formatConflicts'].append(key)
+            continue
+        verified_event_format = exception_format == 'constructed' or 'constructed' in known_formats
         by_id = {}
         top8_ids = set()
         topcut_ids = set()

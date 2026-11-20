@@ -4,9 +4,10 @@ import { screen, renderWithRouter, userEvent } from '@/test/test-utils'
 vi.mock('@/api/explorer', () => ({
   fetchSiteContent: vi.fn(),
   saveSiteContent: vi.fn(),
+  uploadSiteImages: vi.fn(),
 }))
 
-import { fetchSiteContent, saveSiteContent } from '@/api/explorer'
+import { fetchSiteContent, saveSiteContent, uploadSiteImages } from '@/api/explorer'
 import ExplorerContentEditor from '../ExplorerContentEditor'
 
 describe('Explorer site content editor', () => {
@@ -24,11 +25,15 @@ describe('Explorer site content editor', () => {
     await user.click(screen.getByRole('button', { name: '+ Add section' }))
     await user.type(screen.getByLabelText('Heading'), 'Prizes')
     await user.type(screen.getByLabelText(/^Text/), 'Hand-painted alter')
+    uploadSiteImages.mockResolvedValue({ urls: ['/static/uploads/explorer/a.jpg'] })
+    const picker = screen.getByLabelText('+ Add pictures')
+    await user.upload(picker, new File(['x'], 'photo.jpg', { type: 'image/jpeg' }))
+    expect(await screen.findByRole('button', { name: 'Move picture left' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(saveSiteContent).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Explorer Series 2027',
-      sections: [{ title: 'Prizes', body: 'Hand-painted alter', hidden: false }],
+      sections: [{ title: 'Prizes', body: 'Hand-painted alter', images: ['/static/uploads/explorer/a.jpg'], hidden: false }],
     }))
     expect(await screen.findByText(/Saved/)).toBeInTheDocument()
   })

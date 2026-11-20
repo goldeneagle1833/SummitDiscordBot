@@ -208,7 +208,7 @@ function Snapshot({ systems }) {
 }
 
 const MORE = [
-  { to: '/elo', label: 'ELO Leaderboards' },
+  { to: '/elo', label: 'Rating Leaderboards' },
   { to: '/brackets', label: 'Season Top Cut' },
   { to: '/top-8', label: 'Top 8 Decks' },
   { to: '/summit-format', label: 'Summit Format' },

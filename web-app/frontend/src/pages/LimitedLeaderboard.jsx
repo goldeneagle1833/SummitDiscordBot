@@ -109,7 +109,7 @@ export default function LimitedLeaderboard() {
       {/* Leaderboard */}
       <section className="mb-8">
         <h2 className="text-xl font-display text-secondary mb-1">
-          {view === 'season' ? 'Current Season' : 'Lifetime'} Limited ELO
+          {view === 'season' ? 'Current Season' : 'Lifetime'} Limited Rating
         </h2>
         <p className="text-sm text-text-muted mb-4">
           {view === 'season'

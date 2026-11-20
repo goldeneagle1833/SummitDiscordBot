@@ -17,7 +17,7 @@ export default function Privacy() {
         <h2 className="text-lg font-semibold pt-2">Information We Collect</h2>
         <p className="text-text-muted">
           We collect your Discord user ID and display name when you interact with our bot or log in
-          via Discord OAuth. Match results, ELO ratings, and deck submissions are stored to provide
+          via Discord OAuth. Match results, ratings, and deck submissions are stored to provide
           leaderboard and stats features.
         </p>
         <h2 className="text-lg font-semibold pt-2">How We Use Your Information</h2>
@@ -27,7 +27,7 @@ export default function Privacy() {
         </p>
         <h2 className="text-lg font-semibold pt-2">Data Retention</h2>
         <p className="text-text-muted">
-          Match records and ELO data are retained indefinitely to maintain historical leaderboards.
+          Match records and rating data are retained indefinitely to maintain historical leaderboards.
           You may request deletion of your data by contacting us through our Discord server.
         </p>
         <h2 className="text-lg font-semibold pt-2">Contact</h2>

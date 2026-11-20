@@ -780,6 +780,10 @@ def season_stats(conn, season_id) -> dict:
             "fm_wins": matchup[FROSTMAGE],
             "lm_mirrors": mirrors[LAVAMANCER],
             "fm_mirrors": mirrors[FROSTMAGE],
+            # Games saved without a precon for one or both players (none expected);
+            # with the four counts above it always adds up to ``games``
+            "no_precon": games - matchup[LAVAMANCER] - matchup[FROSTMAGE]
+            - mirrors[LAVAMANCER] - mirrors[FROSTMAGE],
         },
     }
 

@@ -4,6 +4,8 @@ export const getLeaderboard = () => get('/api/leaderboard')
 export const getEventLeaderboard = () => get('/api/leaderboard/event')
 // The running season's ladder split per avatar (Avatar-mode seasons), in plain Elo order
 export const getAvatarLeaderboards = () => get('/api/leaderboard/avatars?min_games=0')
+// Lifetime avatar ELO per avatar (Glicko-2, Season 9 on; empty before), same shape
+export const getLifetimeAvatarLeaderboards = () => get('/api/leaderboard/avatars?min_games=0&scope=lifetime')
 export const getPaperEventLeaderboard = () => get('/api/leaderboard/paper-event')
 export const getLimitedLeaderboard = (view = 'lifetime') => get(`/api/leaderboard/limited?view=${view}`)
 export const getArchivedLimitedEvents = () => get('/api/leaderboard/limited/archived')

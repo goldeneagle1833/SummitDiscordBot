@@ -117,13 +117,19 @@ class TestRoutes:
     def test_logged_out_gets_latest_only(self, client, sources, monkeypatch):
         import routes.api.nav as nav
         fake = {"latest": {"top-8": "2026-11-08T00:00:00Z"}, "notes": {"top-8": {"text": "New Top 8 event: X", "link": "/top-8/X"}}}
-        monkeypatch.setattr(nav, "get_new_content", lambda: fake)
+        monkeypatch.setattr(nav, "load_new_content", lambda: fake)
         data = client.get("/api/nav/new-content").get_json()
         assert data == {**fake, "seen": None}
 
+    def test_real_service_answers_without_patching(self, client, sources):
+        # Patching the service used to hide a route that called itself forever.
+        res = client.get("/api/nav/new-content")
+        assert res.status_code == 200
+        assert set(res.get_json()) == {"latest", "notes", "seen"}
+
     def test_logged_in_mark_seen_round_trip(self, client, sources, monkeypatch):
         import routes.api.nav as nav
-        monkeypatch.setattr(nav, "get_new_content", lambda: {"latest": {"top-8": "2026-11-08T00:00:00Z"}, "notes": {}})
+        monkeypatch.setattr(nav, "load_new_content", lambda: {"latest": {"top-8": "2026-11-08T00:00:00Z"}, "notes": {}})
         with client.session_transaction() as sess:
             sess["user_id"] = "123"
         assert client.get("/api/nav/new-content").get_json()["seen"] == {}

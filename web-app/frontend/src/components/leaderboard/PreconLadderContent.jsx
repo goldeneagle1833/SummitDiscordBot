@@ -140,11 +140,9 @@ export function PreconLadder({ data }) {
 
   return (
     <div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 gap-3 mb-6 sm:max-w-md">
         <StatBox label="Players" value={stats.players || 0} />
         <StatBox label="Games" value={stats.games || 0} />
-        <StatBox label="LM wins vs FM" value={matchup.lm_wins || 0} />
-        <StatBox label="FM wins vs LM" value={matchup.fm_wins || 0} />
       </div>
       {crossGames > 0 && (
         <div className="mb-6" aria-label="Lavamancer against Frostmage">

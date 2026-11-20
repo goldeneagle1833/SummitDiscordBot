@@ -1,9 +1,11 @@
 """Service for admin operations on players and matches."""
 
+from utils.match_tables import live_matches
 import logging
 import sqlite3
 
 from repositories.elo import EloRepository
+from services import glicko2_season
 from repositories.matches import MatchRepository
 from webapp_config import ELO_DB_PATH, MATCH_RECORDS_DB_PATH, RUMBLE_DB_PATH
 
@@ -56,7 +58,7 @@ class AdminService:
             return self._remove_bot_match(match_id)
 
     def _remove_bot_match(self, match_id: str) -> dict:
-        """Remove a bot match (from match_records) and reverse ELO in overall_standings."""
+        f"""Remove a bot match (from {live_matches()}) and reverse ELO in overall_standings."""
         try:
             numeric_id = int(match_id)
         except (ValueError, TypeError):
@@ -71,10 +73,16 @@ class AdminService:
         winner_elo_change = match["winner_elo_change"]
         loser_elo_change = match["loser_elo_change"]
 
+        active_event = self._elo_repo.get_active_event()
+        match_season = self._match_season(numeric_id)
+        glicko_row = match_season[1] == glicko2_season.GLICKO2
+        if glicko_row and (not active_event or match_season[0] != active_event["event_id"]):
+            # Ended Glicko-2 seasons keep their matches in match_records for good
+            return {"success": False, "error": f"Match #{match_id} is from an ended season and can't be removed"}
+
         # Undo every ladder by its own change: lifetime by the lifetime change
         # (very old rows only stored the event change), event by the event
         # change, and in Avatar-mode events the two avatar entries.
-        active_event = self._elo_repo.get_active_event()
         avatar_event_id = (
             active_event["event_id"]
             if active_event and active_event.get("elo_mode") == "avatar"
@@ -110,6 +118,10 @@ class AdminService:
 
         deleted = self._match_repo.delete_match(numeric_id)
         if deleted:
+            # A Glicko-2 result can't be subtracted: replay the Glicko-2 season
+            # and lifetime ladders without it
+            self._rebuild_glicko2_season(active_event)
+        if deleted:
             logger.info(
                 f"Admin removed bot match #{match_id}: "
                 f"winner={winner_id} (ELO {int(winner_elo_change):+d} reversed), "
@@ -124,6 +136,36 @@ class AdminService:
                 "loser_elo_reversed": loser_elo_change,
             }
         return {"success": False, "error": "Failed to delete match record"}
+
+    def _match_season(self, numeric_id: int) -> tuple:
+        """(event_id, rating_system) of a bot match; (None, None) before those columns."""
+        conn = self._match_repo._get_connection()
+        try:
+            glicko2_season.ensure_match_schema(conn)
+            row = conn.execute(
+                f"SELECT event_id, rating_system FROM {live_matches()} WHERE rowid = ?", (numeric_id,)
+            ).fetchone()
+            return tuple(row) if row else (None, None)
+        finally:
+            conn.close()
+
+    def _rebuild_glicko2_season(self, active_event) -> dict:
+        """Replay what Glicko-2 rates after a fix (same as the bot's): the running
+        Glicko-2 season and, once lifetime is Glicko-2, the lifetime ladder."""
+        elo_conn = self._elo_repo._get_connection()
+        match_conn = self._match_repo._get_connection()
+        try:
+            result = glicko2_season.rebuild_after_fix(elo_conn, match_conn, active_event)
+            elo_conn.commit()
+            match_conn.commit()
+            return result
+        except Exception:
+            elo_conn.rollback()
+            match_conn.rollback()
+            raise
+        finally:
+            elo_conn.close()
+            match_conn.close()
 
     def _remove_web_match(self, match_id: str) -> dict:
         """Remove a web match (from match_reports_web) and reverse paper ELO."""
@@ -229,7 +271,7 @@ class AdminService:
             tables = {row[0] for row in cur.fetchall()}
 
             # match_records + archive: winner_id, losser_id, reporter_id
-            for table in ("match_records", "match_records_archive"):
+            for table in ("match_records", "match_records_archive", "season_match_records"):
                 if table not in tables:
                     continue
                 count = _update_cols(cur, table, ("winner_id", "losser_id", "reporter_id"), new_user_id, old_user_id)
@@ -370,6 +412,22 @@ class AdminService:
                 )
                 updates["event_avatar_standings"] = cur.rowcount
 
+            # event_rating_adjustments (Glicko-2 seasons' admin resets)
+            if "event_rating_adjustments" in tables:
+                cur.execute(
+                    "UPDATE event_rating_adjustments SET user_id = ? WHERE user_id = ?",
+                    (new_user_id, old_user_id),
+                )
+                updates["event_rating_adjustments"] = cur.rowcount
+
+            # lifetime_rating_adjustments (Glicko-2 lifetime admin resets)
+            if "lifetime_rating_adjustments" in tables:
+                cur.execute(
+                    "UPDATE lifetime_rating_adjustments SET user_id = ? WHERE user_id = ?",
+                    (new_user_id, old_user_id),
+                )
+                updates["lifetime_rating_adjustments"] = cur.rowcount
+
             # limited_event_standings_archive
             if "limited_event_standings_archive" in tables:
                 cur.execute("UPDATE limited_event_standings_archive SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
@@ -390,6 +448,16 @@ class AdminService:
         except Exception as e:
             logger.error(f"Failed to transfer elo.db: {e}")
             return {"success": False, "error": f"Failed during ELO transfer: {e}"}
+
+        # A Glicko-2 season's ratings follow its matches: replay it so the
+        # moved games count as the new account's
+        active_event = self._elo_repo.get_active_event()
+        try:
+            if self._rebuild_glicko2_season(active_event):
+                updates["glicko2_season_rebuilt"] = "yes"
+        except Exception as e:
+            logger.error(f"Transfer done but the Glicko-2 season rebuild failed: {e}")
+            updates["glicko2_season_rebuilt"] = f"failed: {e}"
 
         summary = {k: v for k, v in updates.items() if v}
         total_rows = sum(v for v in updates.values() if isinstance(v, int))
@@ -432,7 +500,7 @@ class AdminService:
             cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = {row[0] for row in cur.fetchall()}
 
-            for table in ("match_records", "match_records_archive"):
+            for table in ("match_records", "match_records_archive", "season_match_records"):
                 if table in tables:
                     deleted[table] = _delete_rows(cur, table, ("winner_id", "losser_id"), user_id)
 

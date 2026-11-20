@@ -37,6 +37,7 @@ from cogs.moderation_alerts import ModerationAlertsCog, PersistentModerationButt
 from repositories.moderation_repo import create_moderation_tables
 from repositories.pairing_bans_repo import create_pairing_bans_table
 from repositories.voice_only_repo import create_voice_only_table
+from repositories.tag_me_repo import create_tag_me_table
 from repositories.player_reports_repo import create_player_reports_table
 from repositories.player_kudos_repo import create_player_kudos_table
 from cogs.lfg.player_kudos import PersistentKudosButton
@@ -223,6 +224,7 @@ async def main():
         ensure_card_catalog_table()
         create_pairing_bans_table()
         create_voice_only_table()
+        create_tag_me_table()
         create_player_reports_table()
         create_player_kudos_table()
         create_moderation_tables()

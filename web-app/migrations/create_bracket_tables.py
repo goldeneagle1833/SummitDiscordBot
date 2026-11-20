@@ -198,6 +198,14 @@ def create_bracket_tables(db_path=None):
             "ALTER TABLE brackets ADD COLUMN kind TEXT NOT NULL DEFAULT 'official'"
         )
 
+    # Keep the pairings secret until every entrant has a decklist in, so
+    # nobody builds against their draw. On by default, which is how
+    # brackets already behaved; an admin can switch it off per bracket.
+    if "hide_pairings" not in bracket_columns:
+        cursor.execute(
+            "ALTER TABLE brackets ADD COLUMN hide_pairings INTEGER NOT NULL DEFAULT 1"
+        )
+
     conn.commit()
     conn.close()
     logger.info("Bracket tables ensured")

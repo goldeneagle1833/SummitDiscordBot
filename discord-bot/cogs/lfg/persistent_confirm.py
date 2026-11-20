@@ -34,6 +34,7 @@ from repositories.limited_repo import (
     mark_limited_pairing_reported,
 )
 from services.limited_service import limited_winner_report, get_run_summary
+from services import provisional
 from utils.deck_checker import clean_deck_url
 from cogs.lfg.player_kudos import kudos_button
 from cogs.lfg.player_report import is_player_feedback_item, report_player_button, report_player_only_view
@@ -2008,8 +2009,8 @@ class PersistentCorrectionConfirmButton(
                     f"~~Winner: {result['original_winner_name']}~~\n"
                     f"~~Loser: {result['original_loser_name']}~~\n\n"
                     f"**Corrected Result:**\n"
-                    f"Winner: **{result['new_winner_name']}** ({result['new_winner_elo_change']:+d} ELO)\n"
-                    f"Loser: **{result['new_loser_name']}** ({result['new_loser_elo_change']:+d} ELO)"
+                    f"Winner: {provisional.corrected_side_text(result, 'winner')}\n"
+                    f"Loser: {provisional.corrected_side_text(result, 'loser')}"
                 ),
                 color=discord.Color.green(),
             )

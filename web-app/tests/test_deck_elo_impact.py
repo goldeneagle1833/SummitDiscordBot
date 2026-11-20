@@ -68,8 +68,11 @@ class TestDeckEloImpact:
     def test_uses_stored_lifetime_delta_over_event_delta(self, client, match_db, elo_db):
         _active_event(elo_db, "2026-08-01")
         conn = sqlite3.connect(str(match_db))
-        conn.execute("ALTER TABLE match_records ADD COLUMN winner_lifetime_elo_change INTEGER")
-        conn.execute("ALTER TABLE match_records ADD COLUMN loser_lifetime_elo_change INTEGER")
+        # The live table has these (bot migration; the site startup migration adds them too)
+        have = {row[1] for row in conn.execute("PRAGMA table_info(match_records)")}
+        for col in ("winner_lifetime_elo_change", "loser_lifetime_elo_change"):
+            if col not in have:
+                conn.execute(f"ALTER TABLE match_records ADD COLUMN {col} INTEGER")
         # Event delta says +10, lifetime delta says +7: the deck figure uses lifetime
         _record(conn, "m1", "111", "222", DECK, None, "2026-09-01 10:00:00",
                 winner_change=10, loser_change=-10, lifetime=(7, -7))

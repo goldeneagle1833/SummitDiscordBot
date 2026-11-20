@@ -179,10 +179,12 @@ def test_export_contents(client, match_db, elo_db):
 
     assert data["profile"]["user_profiles"][0]["email"] == "me@example.com"
     assert "raw_oauth_data" not in data["profile"]["user_profiles"][0]
-    assert data["ratings"]["overall_standings"] == [
-        {"user_id": ME, "user_display_name": "Me", "online_elo": 1612, "online_event_elo": 1500,
-         "paper_elo": 1500, "paper_event_elo": 1500}
-    ]
+    # The row carries every standings column (Glicko-2 seasons add several); check the core ones
+    [standing] = data["ratings"]["overall_standings"]
+    assert {k: standing[k] for k in ("user_id", "user_display_name", "online_elo", "online_event_elo",
+                                     "paper_elo", "paper_event_elo")} == {
+        "user_id": ME, "user_display_name": "Me", "online_elo": 1612, "online_event_elo": 1500,
+        "paper_elo": 1500, "paper_event_elo": 1500}
     assert [b["blocked_user_id"] for b in data["settings"]["blocked_users"]] == [OPP]
     assert data["kudos"]["received"][0]["giver_name"] == "Anonymous"
     assert "giver_id" not in data["kudos"]["received"][0]

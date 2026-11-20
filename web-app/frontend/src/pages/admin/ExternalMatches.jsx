@@ -40,7 +40,7 @@ export default function ExternalMatches() {
         <Link to="/admin/audit-log" className="text-text-muted hover:text-secondary transition-colors text-sm">&larr; Admin</Link>
         <div>
           <h1 className="text-2xl font-display text-secondary">External Matches</h1>
-          <p className="text-sm text-text-muted">Matches reported by third-party platforms. These do not affect ELO ratings.</p>
+          <p className="text-sm text-text-muted">Matches reported by third-party platforms. These do not affect ratings.</p>
         </div>
       </div>
 

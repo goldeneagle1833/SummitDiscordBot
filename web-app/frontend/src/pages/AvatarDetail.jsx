@@ -8,6 +8,8 @@ import AvatarImageAdmin from '@/components/ui/AvatarImageAdmin'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import DataReleaseNote from '@/components/ui/DataReleaseNote'
+import { HiddenChange } from '@/components/common/Provisional'
+import { isHidden } from '@/utils/provisional'
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -74,7 +76,7 @@ function MatchTable({ matches, emptyText }) {
           <tr className="border-b border-border text-left">
             <th className="px-3 py-2 text-xs font-semibold text-text-muted uppercase">Winner</th>
             <th className="px-3 py-2 text-xs font-semibold text-text-muted uppercase">Loser</th>
-            <th className="px-3 py-2 text-xs font-semibold text-text-muted uppercase">ELO</th>
+            <th className="px-3 py-2 text-xs font-semibold text-text-muted uppercase">Rating</th>
           </tr>
         </thead>
         <tbody>
@@ -83,9 +85,9 @@ function MatchTable({ matches, emptyText }) {
               <td className="px-3 py-2">{m.winner_name}</td>
               <td className="px-3 py-2">{m.loser_name}</td>
               <td className="px-3 py-2 text-text-muted whitespace-nowrap">
-                <span className="text-accent-green">+{m.winner_elo_change || 0}</span>
+                {isHidden(m, 'winner_elo_change') ? <HiddenChange /> : <span className="text-accent-green">+{m.winner_elo_change || 0}</span>}
                 {' / '}
-                <span className="text-accent-red">{m.loser_elo_change || 0}</span>
+                {isHidden(m, 'loser_elo_change') ? <HiddenChange /> : <span className="text-accent-red">{m.loser_elo_change || 0}</span>}
               </td>
             </tr>
           ))}
@@ -173,8 +175,8 @@ function EloMatrix({ avatarName, source, eventFilter }) {
       .finally(() => setLoading(false))
   }, [avatarName, source, eventFilter])
 
-  if (loading) return <p className="text-text-muted text-sm py-4">Loading ELO matrix...</p>
-  if (!data || !data.matrix?.length) return <p className="text-text-muted text-sm py-4">Not enough data for ELO breakdown.</p>
+  if (loading) return <p className="text-text-muted text-sm py-4">Loading rating matrix...</p>
+  if (!data || !data.matrix?.length) return <p className="text-text-muted text-sm py-4">Not enough data for rating breakdown.</p>
 
   const { brackets, matrix } = data
 
@@ -184,7 +186,7 @@ function EloMatrix({ avatarName, source, eventFilter }) {
         <thead>
           <tr className="border-b border-border">
             <th className="px-2 py-2 text-left text-xs font-semibold text-text-muted uppercase whitespace-nowrap">
-              Player ELO ↓ / Opp →
+              Player Rating ↓ / Opp →
             </th>
             {brackets.map((b) => (
               <th key={b} className="px-2 py-2 text-center text-xs font-semibold text-text-muted uppercase whitespace-nowrap">
@@ -516,17 +518,19 @@ export default function AvatarDetail() {
 
         {/* ELO Win Rate Matrix */}
         <div className="p-6 border-t border-border">
-          <h3 className="text-lg font-semibold mb-1">Win Rate by ELO Bracket</h3>
-          <p className="text-xs text-text-muted mb-4">How this avatar performs across different ELO ranges (using current player ratings)</p>
+          <h3 className="text-lg font-semibold mb-1">Win Rate by Rating Bracket</h3>
+          <p className="text-xs text-text-muted mb-4">How this avatar performs across different rating ranges (using current player ratings)</p>
           <EloMatrix avatarName={name} source={source} eventFilter={eventFilter} />
         </div>
 
-        {/* Deck Composition */}
-        <div className="p-6 border-t border-border">
-          <h3 className="text-lg font-semibold mb-1">Deck Element Composition</h3>
-          <p className="text-xs text-text-muted mb-3">Element breakdown across all decks played with this avatar</p>
-          <DeckComposition avatarName={name} />
-        </div>
+        {/* Deck Composition (admin-only endpoint, so only admins ask for it) */}
+        {isAdmin && (
+          <div className="p-6 border-t border-border">
+            <h3 className="text-lg font-semibold mb-1">Deck Element Composition</h3>
+            <p className="text-xs text-text-muted mb-3">Element breakdown across all decks played with this avatar</p>
+            <DeckComposition avatarName={name} />
+          </div>
+        )}
 
         {/* Wins History */}
         <div className="p-6 border-t border-border">

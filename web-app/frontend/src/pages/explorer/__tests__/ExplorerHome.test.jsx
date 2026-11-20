@@ -75,6 +75,7 @@ describe('Explorer Series home: admin-written content', () => {
       show_points_guide: false,
       sections: [
         { title: "Who's behind the Series", body: 'Our Council:\n- Kiel\n- [James](https://example.com/james)' },
+        { title: 'Finale photos', body: '', images: ['/static/uploads/explorer/1.jpg', '/static/uploads/explorer/2.jpg'] },
         { title: 'Secret', body: 'Hidden one', hidden: true },
       ],
     })
@@ -85,6 +86,7 @@ describe('Explorer Series home: admin-written content', () => {
     expect(screen.getByRole('link', { name: 'James' })).toHaveAttribute('href', 'https://example.com/james')
     expect(screen.getByRole('link', { name: /Join our Discord/ })).toHaveAttribute('href', 'https://discord.gg/example')
     expect(screen.queryByText('Hidden one')).toBeNull()
+    expect(document.querySelectorAll('img[src^="/static/uploads/explorer/"]')).toHaveLength(2)
     expect(screen.queryByText('How Series points work')).toBeNull()
     expect(screen.queryByText(/Edit this page/)).toBeNull()
   })

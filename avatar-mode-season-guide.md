@@ -184,6 +184,7 @@ avatar shown isn't the one you played.
 | Start a Player-mode season | `!start_event <season name>` (or `!start_event player <season name>`) |
 | Start a season that ends by itself | Add a Discord timestamp: `!start_event avatar <season name> <t:1794805140:F>` |
 | Change or clear the automatic end | `!set_event_end <t:1794805140:F>` or `!set_event_end clear` |
+| Put next season's ticket on sale | `!ticket_role Season 9 Ticket` (the bot creates the role) or `!ticket_role @Role`; `!ticket_role` alone shows the ticket roles. It starts counting when the next `!start_event` runs |
 | End the season now | `!end_event` |
 | See the running season's mode and end time | `!event_status` |
 | Report a match by hand | `/admin-report winner loser`, then enter both avatars in the form |

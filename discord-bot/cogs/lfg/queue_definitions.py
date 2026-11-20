@@ -11,7 +11,7 @@ QUEUE_DEFINITIONS = (
         "emoji": "⚔️",
         "pilot": "RankedQueue",
         "deck_mode": "required",
-        "status_note": "no Seer/Scry",
+        "status_note": "Seer/Scry is back, LM and FM legal",
     },
     {
         "type": "testing",
@@ -29,9 +29,9 @@ QUEUE_DEFINITIONS = (
         "label": "Precon (LM/FM)",
         "emoji": "🧙",
         "pilot": None,  # switched by precon_settings.queue_enabled, not a pilot
-        # Players pick Lavamancer or Frostmage instead of giving a deck link
+        # No deck link: one player gets Lavamancer, the other Frostmage, at random
         "deck_mode": "precon",
-        "status_note": "Lavamancer or Frostmage precon only",
+        "status_note": "Lavamancer vs Frostmage, assigned at random",
     },
 )
 

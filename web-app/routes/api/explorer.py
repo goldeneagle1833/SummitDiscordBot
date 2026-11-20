@@ -609,6 +609,7 @@ DEFAULT_SITE_CONTENT = {
         "Each Explorer Series event is run by a local tournament organizer with "
         "their community of Sorcery players."
     ),
+    "hero_image": "",
     "sections": [],
 }
 
@@ -620,6 +621,24 @@ _URL_FIELDS = ("discord_url", "member_url")
 MAX_SECTIONS = 20
 MAX_SECTION_TITLE = 120
 MAX_SECTION_BODY = 10000
+MAX_SECTION_IMAGES = 12
+
+# Pictures on the site must be ones uploaded here (or the bundled logo), so
+# the page never pulls images from somewhere else.
+EXPLORER_UPLOAD_URL = "/static/uploads/explorer/"
+_IMAGE_URL_RE = re.compile(
+    r"^/static/(uploads/explorer|images/explorer-series)/[A-Za-z0-9._-]+\.(jpe?g|png|webp|gif)$",
+    re.IGNORECASE,
+)
+
+
+def _clean_image(value) -> str:
+    url = str(value or "").strip()
+    if not url:
+        return ""
+    if not _IMAGE_URL_RE.match(url):
+        raise ValueError("Pictures must be uploaded through the editor")
+    return url
 
 
 def _clean_url(value) -> str:
@@ -645,6 +664,8 @@ def _clean_site_content(data: dict) -> dict:
             out[key] = _clean_url(data.get(key))
     if "show_points_guide" in data:
         out["show_points_guide"] = bool(data.get("show_points_guide"))
+    if "hero_image" in data:
+        out["hero_image"] = _clean_image(data.get("hero_image"))
     if "sections" in data:
         sections = data.get("sections") or []
         if not isinstance(sections, list):
@@ -657,13 +678,22 @@ def _clean_site_content(data: dict) -> dict:
                 raise ValueError("Each section needs a title and text")
             title = str(s.get("title") or "").strip()
             body = str(s.get("body") or "").strip()
-            if not title and not body:
+            images = s.get("images") or []
+            if not isinstance(images, list):
+                raise ValueError("Section pictures must be a list")
+            if len(images) > MAX_SECTION_IMAGES:
+                raise ValueError(f"At most {MAX_SECTION_IMAGES} pictures per section")
+            images = [u for u in (_clean_image(i) for i in images) if u]
+            if not title and not body and not images:
                 continue
             if len(title) > MAX_SECTION_TITLE:
                 raise ValueError(f"Section titles max {MAX_SECTION_TITLE} characters")
             if len(body) > MAX_SECTION_BODY:
                 raise ValueError(f"Section text max {MAX_SECTION_BODY} characters")
-            cleaned.append({"title": title, "body": body, "hidden": bool(s.get("hidden"))})
+            cleaned.append({
+                "title": title, "body": body, "images": images,
+                "hidden": bool(s.get("hidden")),
+            })
         out["sections"] = cleaned
     return out
 
@@ -705,3 +735,52 @@ def update_site_content():
     repo = ExplorerRepository()
     repo.set_setting(SITE_CONTENT_SETTING, json.dumps(content))
     return jsonify(_load_site_content(repo))
+
+
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_IMAGES_PER_UPLOAD = 10
+
+
+@explorer_bp.route("/upload-image", methods=["POST"])
+@require_explorer_admin
+def upload_site_image():
+    """Upload pictures for the Explorer Series site (field ``image``).
+
+    Every file is checked before any is saved. Returns ``urls`` in order.
+    """
+    import os
+    import uuid
+
+    from webapp_config import EXPLORER_UPLOADS_DIR
+
+    files = [f for f in request.files.getlist("image") if f and f.filename]
+    if not files:
+        return jsonify({"success": False, "error": "Choose a picture to upload."}), 400
+    if len(files) > MAX_IMAGES_PER_UPLOAD:
+        return jsonify({"success": False, "error": f"Upload up to {MAX_IMAGES_PER_UPLOAD} pictures at a time."}), 400
+
+    staged = []
+    for file in files:
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in ALLOWED_IMAGE_EXTENSIONS:
+            return jsonify({
+                "success": False,
+                "error": f'"{file.filename}" isn\'t a supported picture. Use JPG, PNG, WEBP or GIF.',
+            }), 400
+        file.seek(0, os.SEEK_END)
+        size = file.tell()
+        file.seek(0)
+        if size > MAX_IMAGE_SIZE:
+            return jsonify({
+                "success": False,
+                "error": f'"{file.filename}" is {size / (1024 * 1024):.1f} MB. Pictures must be 10 MB or smaller.',
+            }), 400
+        staged.append((file, f"{uuid.uuid4().hex}{ext}"))
+
+    urls = []
+    for file, filename in staged:
+        file.save(str(EXPLORER_UPLOADS_DIR / filename))
+        urls.append(f"{EXPLORER_UPLOAD_URL}{filename}")
+    logger.info("Explorer site pictures uploaded: %s", ", ".join(urls))
+    return jsonify({"success": True, "urls": urls})

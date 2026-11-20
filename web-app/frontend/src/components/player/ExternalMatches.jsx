@@ -12,7 +12,7 @@ export default function ExternalMatches({ matches, stats, pagination, playerId, 
     <section>
       <h3 className="text-lg font-semibold text-text-primary mb-1">External Matches</h3>
       <p className="text-xs text-text-muted mb-3">
-        Matches reported by third-party platforms. These do not affect ELO ratings.
+        Matches reported by third-party platforms. These do not affect ratings.
       </p>
 
       {stats && stats.total > 0 && (

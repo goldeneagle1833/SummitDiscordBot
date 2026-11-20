@@ -35,6 +35,7 @@ function lazyPage(load) {
 const Leaderboard = lazyPage(() => import('@/pages/Leaderboard'))
 const LimitedLeaderboard = lazyPage(() => import('@/pages/LimitedLeaderboard'))
 const Player = lazyPage(() => import('@/pages/Player'))
+const MyProfile = lazyPage(() => import('@/pages/MyProfile'))
 const DeckStats = lazyPage(() => import('@/pages/DeckStats'))
 const PlayerAvatar = lazyPage(() => import('@/pages/PlayerAvatar'))
 const Matches = lazyPage(() => import('@/pages/Matches'))
@@ -100,6 +101,7 @@ const AdminHub = lazyPage(() => import('@/pages/admin/AdminHub'))
 const AuditLog = lazyPage(() => import('@/pages/admin/AuditLog'))
 const StoreAdmin = lazyPage(() => import('@/pages/admin/StoreAdmin'))
 const StoreOrderPrint = lazyPage(() => import('@/pages/admin/StoreOrderPrint'))
+const StoreOrderBulkPrint = lazyPage(() => import('@/pages/admin/StoreOrderBulkPrint'))
 const ActiveConnections = lazyPage(() => import('@/pages/admin/ActiveConnections'))
 const UniqueUsers = lazyPage(() => import('@/pages/admin/UniqueUsers'))
 const SessionAnalytics = lazyPage(() => import('@/pages/admin/SessionAnalytics'))
@@ -107,6 +109,7 @@ const ExternalMatchesAdmin = lazyPage(() => import('@/pages/admin/ExternalMatche
 const OmensMatchesAdmin = lazyPage(() => import('@/pages/admin/OmensMatches'))
 const ChartDetail = lazyPage(() => import('@/pages/admin/ChartDetail'))
 const Monitoring = lazyPage(() => import('@/pages/admin/Monitoring'))
+const BotTraffic = lazyPage(() => import('@/pages/admin/BotTraffic'))
 const BracketsAdmin = lazyPage(() => import('@/pages/admin/BracketsAdmin'))
 const UserProfiles = lazyPage(() => import('@/pages/admin/UserProfiles'))
 const ExplorerApplications = lazyPage(() => import('@/pages/admin/ExplorerApplications'))
@@ -243,6 +246,9 @@ const router = createBrowserRouter([
       { path: '/precon', element: <Navigate to="/?ladder=precon#leaderboard" replace /> },
       { path: '/lmfm', element: <Navigate to="/?ladder=precon#leaderboard" replace /> },
       { path: '/player/:playerId', element: <Player /> },
+      // The logged-in player's own profile, optionally with a panel open (/me/block-list)
+      { path: '/me', element: <MyProfile /> },
+      { path: '/me/:panel', element: <MyProfile /> },
       { path: '/match-history', element: <Matches /> },
       { path: '/deck-stats/:playerId', element: <DeckStats /> },
       { path: '/player/:playerId/avatar/:avatarName', element: <PlayerAvatar /> },
@@ -329,6 +335,7 @@ const router = createBrowserRouter([
       { path: '/admin/omens-matches', element: <AdminGuard><OmensMatchesAdmin /></AdminGuard> },
       { path: '/admin/chart/:chartType', element: <AdminGuard><ChartDetail /></AdminGuard> },
       { path: '/admin/monitoring', element: <AdminGuard><Monitoring /></AdminGuard> },
+      { path: '/admin/bots', element: <AdminGuard><BotTraffic /></AdminGuard> },
       { path: '/admin/events', element: <AdminGuard><EventsAdmin /></AdminGuard> },
       { path: '/admin/brackets', element: <AdminGuard><BracketsAdmin /></AdminGuard> },
       { path: '/admin/users', element: <AdminGuard><UserProfiles /></AdminGuard> },
@@ -359,6 +366,14 @@ const router = createBrowserRouter([
     ],
   },
   // Print views live outside the site chrome so only the form is printed
+  {
+    path: '/admin/store/orders/print',
+    element: (
+      <AuthProvider>
+        <StoreAdminGuard><StoreOrderBulkPrint /></StoreAdminGuard>
+      </AuthProvider>
+    ),
+  },
   {
     path: '/admin/store/orders/:id/print',
     element: (

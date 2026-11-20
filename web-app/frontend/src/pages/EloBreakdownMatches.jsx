@@ -3,6 +3,8 @@ import { useSearchParams, Link } from 'react-router-dom'
 import Spinner from '@/components/ui/Spinner'
 import { get } from '@/api/client'
 import usePageTitle from '@/hooks/usePageTitle'
+import { HiddenChange } from '@/components/common/Provisional'
+import { isHidden, isNum } from '@/utils/provisional'
 
 function getWinRateColor(rate) {
   if (rate >= 60) return '#22c55e'
@@ -90,7 +92,11 @@ function MatchRow({ match }) {
         <Link to={`/player/${match.player_id}`} className="text-primary hover:underline">
           {match.player_name}
         </Link>
-        <span className="text-text-muted text-xs ml-1">({match.player_elo})</span>
+        {isNum(match.player_elo) && (
+          <span className="text-text-muted text-xs ml-1" title="Rating and season rank at the time of the game">
+            ({match.player_elo}{isNum(match.player_rank_then) && ` · #${match.player_rank_then}`})
+          </span>
+        )}
       </td>
       <td className="px-3 py-2">
         <DeckLinks
@@ -108,7 +114,11 @@ function MatchRow({ match }) {
         <Link to={`/player/${match.opponent_id}`} className="text-primary hover:underline">
           {match.opponent_name}
         </Link>
-        <span className="text-text-muted text-xs ml-1">({match.opponent_elo})</span>
+        {isNum(match.opponent_elo) && (
+          <span className="text-text-muted text-xs ml-1" title="Rating and season rank at the time of the game">
+            ({match.opponent_elo}{isNum(match.opponent_rank_then) && ` · #${match.opponent_rank_then}`})
+          </span>
+        )}
         {match.opponent_avatar && (
           <span className="text-text-muted text-xs ml-1">- {match.opponent_avatar}</span>
         )}
@@ -130,7 +140,7 @@ function MatchRow({ match }) {
       </td>
       <td className="px-3 py-2 text-xs text-text-muted">{date}</td>
       <td className="px-3 py-2 text-center text-xs">
-        {match.elo_change != null ? (
+        {isHidden(match, 'elo_change') ? <HiddenChange /> : match.elo_change != null ? (
           <span className={match.elo_change >= 0 ? 'text-accent-green' : 'text-accent-red'}>
             {match.elo_change >= 0 ? '+' : ''}{match.elo_change}
           </span>
@@ -160,12 +170,12 @@ function OpponentEloBreakdown({ matches }) {
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5">
-      <h2 className="text-lg font-display text-text-primary mb-4">Win Rate vs Opponent ELO</h2>
+      <h2 className="text-lg font-display text-text-primary mb-4">Win Rate vs Opponent Rating</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b border-border">
-              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Opponent ELO</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Opponent Rating</th>
               {brackets.map(b => (
                 <th key={b} className="px-3 py-2 text-center text-xs font-semibold text-text-muted uppercase whitespace-nowrap">
                   {b}-{b + 99}
@@ -224,7 +234,7 @@ export default function EloBreakdownMatches() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  usePageTitle(isAll ? `${avatar} All Matches` : `${avatar} ${bracket}-${bracket + 99} ELO Matches`)
+  usePageTitle(isAll ? `${avatar} All Matches` : `${avatar} ${bracket}-${bracket + 99} Rating Matches`)
 
   useEffect(() => {
     setLoading(true)
@@ -253,7 +263,7 @@ export default function EloBreakdownMatches() {
 
       <div className="bg-bg-surface border border-border rounded-lg p-5">
         <h1 className="text-2xl font-display text-text-primary">
-          {avatar} — {isAll ? 'All ELO Brackets' : `${bracket}-${bracket + 99} ELO Bracket`}
+          {avatar} — {isAll ? 'All Rating Brackets' : `${bracket}-${bracket + 99} Rating Bracket`}
         </h1>
         <p className="text-sm text-text-muted mt-1">
           {total} matches — <span style={{ color: getWinRateColor(parseFloat(winRate)) }} className="font-bold">{winRate}%</span> win rate
@@ -277,7 +287,7 @@ export default function EloBreakdownMatches() {
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Elements</th>
               <th className="px-3 py-2 text-center text-xs font-semibold text-text-muted uppercase">Play/Draw</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Date</th>
-              <th className="px-3 py-2 text-center text-xs font-semibold text-text-muted uppercase">ELO</th>
+              <th className="px-3 py-2 text-center text-xs font-semibold text-text-muted uppercase">Rating</th>
             </tr>
           </thead>
           <tbody>

@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import PostseasonName, { useBracketMarks } from '@/components/player/BracketMarks'
 import { AvatarHonourBadge, useAvatarHonours } from '@/components/player/AvatarHonours'
 import { PaperFinishChips, usePaperFinishes } from '@/components/player/PaperFinishes'
+import { EventAvatarBadgeChips, useEventAvatarBadges } from '@/components/player/EventAvatarBadges'
+import { eventBadgeKey, heroBadgeKeys, paperBadgeKey, profileBadges } from '@/components/player/profileBadges'
+import { ProvisionalTag } from '@/components/common/Provisional'
+import { provisionalOf } from '@/utils/provisional'
 
 function initials(name) {
   const parts = String(name || '?').replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/)
@@ -113,15 +117,38 @@ function PostseasonBadge({ label, entries = [], onClick }) {
 /**
  * The profile's hero card: name, avatar ratings, postseason badge, the
  * headline ELO / rank / record, the period picker, the owner's actions and
- * the featured deck tile.
+ * the showcase row (featured deck, favorite card, home store) and bio.
  */
 export default function PlayerHeader({
   data, playerId, headline = {}, avatarEntries = [], eventFilter, pastEvents, onEventChange,
-  canSeeLifetime, onReport, settingsItems = [], onPostseason, featured = null,
+  canSeeLifetime, onReport, settingsItems = [], onPostseason, featured = null, bio = null, hiddenBadges = [], shownBadges = null,
 }) {
   const marks = useBracketMarks(playerId)
   const honours = useAvatarHonours(playerId)
-  const paperFinishes = usePaperFinishes(playerId)
+  const allPaperFinishes = usePaperFinishes(playerId)
+  const allEventBadges = useEventAvatarBadges(playerId)
+  // The best 3 by default, or the player's own pick ("Profile badges");
+  // the Postseason tab always lists every badge.
+  const allBadges = profileBadges({
+    marks, honours, paperFinishes: allPaperFinishes, eventBadges: allEventBadges,
+  })
+  const visible = heroBadgeKeys(allBadges, shownBadges, hiddenBadges)
+  const shows = (key) => visible.has(key)
+  const moreCount = allBadges.length - visible.size
+  const moreButton = (
+    <button
+      type="button"
+      onClick={onPostseason}
+      className="inline-flex items-center px-3 py-1 rounded-full border border-border text-xs sm:text-sm text-text-muted hover:text-text-primary hover:border-secondary"
+      title="See every badge in the Postseason tab"
+    >
+      +{moreCount} more
+    </button>
+  )
+  const paperFinishes = allPaperFinishes.filter((f) => shows(paperBadgeKey(f)))
+  const eventBadges = allEventBadges.filter((b) => shows(eventBadgeKey(b)))
+  // The "+N more" button follows the last row of chips
+  const chipRows = eventBadges.length > 0 || paperFinishes.length > 0
   const wins = data.wins ?? 0
   const losses = data.losses ?? 0
 
@@ -139,27 +166,35 @@ export default function PlayerHeader({
             </PostseasonName>
           </h1>
           <div className="flex flex-wrap gap-2">
-            {marks?.best_label && (
+            {marks?.best_label && shows('postseason') && (
               <PostseasonBadge label={marks.best_label} entries={marks.entries} onClick={onPostseason} />
             )}
-            {marks?.limited_best_label && (
+            {marks?.limited_best_label && shows('postseason_limited') && (
               <PostseasonBadge
                 label={marks.limited_best_label}
                 entries={marks.entries}
                 onClick={onPostseason}
               />
             )}
-            {marks?.underdog_best_label && (
+            {marks?.underdog_best_label && shows('postseason_underdog') && (
               <PostseasonBadge
                 label={marks.underdog_best_label}
                 entries={marks.entries}
                 onClick={onPostseason}
               />
             )}
-            <AvatarHonourBadge honours={honours} onClick={onPostseason} />
+            {shows('avatar_honours') && <AvatarHonourBadge honours={honours} onClick={onPostseason} />}
+            {moreCount > 0 && !chipRows && moreButton}
           </div>
+          {bio}
         </div>
       </div>
+
+      {eventBadges.length > 0 && (
+        <div className="basis-full -mt-2 lg:order-last">
+          <EventAvatarBadgeChips badges={eventBadges} />
+        </div>
+      )}
 
       {paperFinishes.length > 0 && (
         <div className="basis-full -mt-2 lg:order-last">
@@ -167,22 +202,45 @@ export default function PlayerHeader({
         </div>
       )}
 
+      {moreCount > 0 && chipRows && (
+        <div className="basis-full -mt-2 lg:order-last">{moreButton}</div>
+      )}
+
       {avatarEntries.length > 0 && (
-        <ul className="basis-full flex flex-wrap gap-2 -mt-2 lg:order-last" aria-label="Event ELO per avatar">
+        <ul className="basis-full flex flex-wrap gap-2 -mt-2 lg:order-last" aria-label="Event Rating per avatar">
           {avatarEntries.map((entry) => (
             <li
               key={entry.avatar}
               className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-bg-raised border border-border text-xs sm:text-sm"
             >
               <strong className="text-text-primary">{entry.avatar}</strong>
-              <span className="text-text-muted tabular-nums">{entry.event_elo} · #{entry.rank}</span>
+              {provisionalOf(entry) ? (
+                <ProvisionalTag games={provisionalOf(entry).games} />
+              ) : (
+                <span className="text-text-muted tabular-nums">
+                  {entry.event_elo}{entry.rank != null && ` · #${entry.rank}`}
+                </span>
+              )}
             </li>
           ))}
         </ul>
       )}
 
       <div className="flex flex-wrap gap-8">
-        {headline.elo != null && <BigStat value={headline.elo} label={headline.eloLabel} gold />}
+        {headline.provisional ? (
+          <div>
+            <div className="h-10 flex items-end">
+              <ProvisionalTag
+                games={headline.provisional.games}
+                className="px-2.5 py-1 rounded-full bg-bg-raised border border-border text-sm"
+              />
+            </div>
+            <div className="text-sm text-text-muted mt-1.5">{headline.eloLabel}</div>
+          </div>
+        ) : (
+          headline.elo != null && <BigStat value={headline.elo} label={headline.eloLabel} gold />
+        )}
+        {headline.legacyElo != null && <BigStat value={headline.legacyElo} label="Legacy Rating (Seasons 1-8)" />}
         {headline.rank != null && <BigStat value={`#${headline.rank}`} label={headline.rankLabel} />}
         {wins + losses > 0 && (
           <BigStat value={`${data.win_rate ?? 0}%`} label={`${wins} W · ${losses} L`} />
@@ -219,7 +277,13 @@ export default function PlayerHeader({
         )}
       </div>
 
-      {featured}
+      {/* Featured deck, favorite card, home store: only the filled ones for
+          visitors, so the row disappears when a player has none */}
+      {featured && (
+        <div className="basis-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 empty:hidden">
+          {featured}
+        </div>
+      )}
     </section>
   )
 }

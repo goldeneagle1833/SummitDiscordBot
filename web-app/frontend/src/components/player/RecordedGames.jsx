@@ -4,7 +4,7 @@ export default function RecordedGames({ games }) {
   return (
     <section>
       <h3 className="text-lg font-semibold text-text-primary mb-1">Self-Reported Games</h3>
-      <p className="text-xs text-text-muted mb-3">Games you've recorded for personal tracking. These do not affect your ELO rating.</p>
+      <p className="text-xs text-text-muted mb-3">Games you've recorded for personal tracking. These do not affect your rating.</p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>

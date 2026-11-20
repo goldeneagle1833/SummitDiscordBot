@@ -20,7 +20,11 @@ def test_required_format_accepts_explicit_choice(value):
 
 
 @pytest.mark.parametrize("endpoint,payload", [
-    ("/api/events/create", {"title": "Sample Grand Contest"}),
+    ("/api/events/create", {
+        "title": "Sample Grand Contest",
+        "ranked_urls": ["https://sorcerytcg.com/decks/example"],
+        "event_url": "https://sorcerytcg.com/events/example",
+    }),
     ("/api/events/import-from-url", {"event_url": "https://sorcerytcg.com/events/example"}),
     ("/api/events/submissions/123/approve", {}),
 ])
@@ -52,3 +56,38 @@ def test_repository_does_not_create_invalid_format_event(tmp_path):
     result = repo.create_event("Invalid Event", [], event_format="Limited")
     assert result["success"] is False
     assert not (tmp_path / "Invalid Event").exists()
+
+
+# Regression coverage for the existing import jobs and submission test doubles.
+# Admin HTTP endpoints continue to require an explicitly chosen format.
+def test_optional_service_format_preserves_legacy_repository_interface():
+    from routes.api.events import _create_event_with_optional_format
+
+    class LegacyRepository:
+        def create_event(self, folder, top8, bulk=None):
+            return {"success": True, "folder": folder, "count": len(top8)}
+
+    result = _create_event_with_optional_format(
+        LegacyRepository(), "Legacy Event", [{}], None
+    )
+    assert result == {"success": True, "folder": "Legacy Event", "count": 1}
+
+
+def test_explicit_service_format_is_persisted():
+    from routes.api.events import _create_event_with_optional_format
+
+    class FormatRepository:
+        def create_event(self, folder, top8, bulk=None, *, event_format=None):
+            return {"folder": folder, "format": event_format}
+
+    result = _create_event_with_optional_format(
+        FormatRepository(), "New Event", [{}], None, event_format="Sealed"
+    )
+    assert result == {"folder": "New Event", "format": "Sealed"}
+
+
+def test_legacy_import_worker_still_accepts_its_old_signature():
+    import inspect
+    from routes.api.events import _run_event_import
+
+    assert inspect.signature(_run_event_import).parameters["event_format"].default is None

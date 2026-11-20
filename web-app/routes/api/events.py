@@ -684,6 +684,17 @@ def reorder_event_decks(event_folder):
     return jsonify(result), status
 
 
+def _create_event_with_optional_format(repo, *args, event_format=None):
+    """Preserve internal callers while persisting explicitly chosen formats.
+
+    New admin HTTP requests must pass a format before this helper is reached.
+    Older import jobs and tests may still call the service without one.
+    """
+    if event_format is None:
+        return repo.create_event(*args)
+    return repo.create_event(*args, event_format=event_format)
+
+
 def _required_event_format(data):
     """Require a conscious choice; reject null, missing and unsupported values."""
     value = data.get("format") if isinstance(data, dict) else None
@@ -744,7 +755,9 @@ def _run_event_creation(job_id, title, valid_ranked, valid_bulk, event_url="", e
             return
 
         repo = EventRepository()
-        result = repo.create_event(title, top8_decks, bulk_decks if bulk_decks else None, event_format=event_format)
+        result = _create_event_with_optional_format(
+            repo, title, top8_decks, bulk_decks if bulk_decks else None, event_format=event_format
+        )
 
         if result.get("success"):
             result["top8_added"] = len(top8_decks)
@@ -784,10 +797,6 @@ def create_event():
     if not data:
         return jsonify({"success": False, "error": "Request body required"}), 400
 
-    event_format = _required_event_format(data)
-    if event_format is None:
-        return _format_required_error()
-
     title = data.get("title", "").strip()
     if not title:
         return jsonify({"success": False, "error": "Title is required"}), 400
@@ -816,6 +825,10 @@ def create_event():
     from services.curiosa import CuriosaService
     if not event_url or not CuriosaService.get_event_id_from_url(event_url):
         return jsonify({"success": False, "error": "Add the sorcerytcg.com event link (sorcerytcg.com/events/...) so we get the player count."}), 400
+
+    event_format = _required_event_format(data)
+    if event_format is None:
+        return _format_required_error()
 
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting..."})
@@ -1053,7 +1066,9 @@ def _import_event(title, event_url, on_progress, curiosa=None, discovery=None, e
 
     on_progress("Creating event...")
     repo = EventRepository()
-    result = repo.create_event(title, top8_decks, bulk_decks, event_format=event_format)
+    result = _create_event_with_optional_format(
+        repo, title, top8_decks, bulk_decks, event_format=event_format
+    )
 
     if result.get("success"):
         _clear_import_cache(event_id)
@@ -1085,7 +1100,7 @@ def _import_event(title, event_url, on_progress, curiosa=None, discovery=None, e
 
 
 @_job_worker
-def _run_event_import(job_id, title, event_url, event_format):
+def _run_event_import(job_id, title, event_url, event_format=None):
     """Background worker for importing an event from a sorcerytcg.com URL."""
     try:
         def on_progress(msg):
@@ -1116,10 +1131,6 @@ def import_event_from_url():
     if not data:
         return jsonify({"success": False, "error": "Request body required"}), 400
 
-    event_format = _required_event_format(data)
-    if event_format is None:
-        return _format_required_error()
-
     event_url = data.get("event_url", "").strip()
     if not event_url:
         return jsonify({"success": False, "error": "event_url is required"}), 400
@@ -1142,6 +1153,10 @@ def import_event_from_url():
         title, name_error = EventRepository().check_new_folder_name(title)
         if name_error:
             return jsonify({"success": False, "error": name_error}), 400
+
+    event_format = _required_event_format(data)
+    if event_format is None:
+        return _format_required_error()
 
     job_id = str(uuid.uuid4())
     _write_job(job_id, {"status": "processing", "progress": "Starting import..."})
@@ -1351,7 +1366,9 @@ def _import_linked_submission(sub, deck_urls, on_progress, curiosa, event_format
     if not decks:
         return {"success": False, "error": "None of the deck links could be read.",
                 "fetch_errors": errors, "attendance": _attendance(page)}
-    result = EventRepository().create_event(title, decks, None, event_format=event_format)
+    result = _create_event_with_optional_format(
+        EventRepository(), title, decks, None, event_format=event_format
+    )
     if not result.get("success"):
         result["folder_error"] = True
         result["attendance"] = _attendance(page)
@@ -1416,7 +1433,7 @@ def approve_submission(submission_id, on_progress=lambda msg: None, curiosa=None
 
 
 @_job_worker
-def _run_submission_approval(job_id, submission_id, event_format):
+def _run_submission_approval(job_id, submission_id, event_format=None):
     def on_progress(msg):
         _write_job(job_id, {"status": "processing", "progress": msg})
 
@@ -1534,13 +1551,18 @@ def _reviewer_name():
 @require_admin
 def approve_submission_route(submission_id):
     data = request.get_json(silent=True) or {}
+    repo = _submission_repo()
+    existing = repo.get(submission_id)
+    if existing and existing.get("status") not in ("pending", "failed"):
+        return jsonify({"success": False, "error": "This one has already been handled."}), 409
+
     event_format = _required_event_format(data)
     if event_format is None:
         return _format_required_error()
-    note = (data.get("note") or "").strip()[:SUBMISSION_NOTE_MAX]
-    repo = _submission_repo()
-    if not repo.get(submission_id):
+    if not existing:
         return jsonify({"success": False, "error": "Submission not found"}), 404
+
+    note = (data.get("note") or "").strip()[:SUBMISSION_NOTE_MAX]
     if not repo.claim_for_import(submission_id, _reviewer_name(), note):
         return jsonify({"success": False, "error": "This one has already been handled."}), 409
 

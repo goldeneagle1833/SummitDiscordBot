@@ -1,7 +1,9 @@
 """Caps a player's season ratings at 1500 when they get a ticket after the grace week.
 
-Watches for a ticket holder role being added (config.TICKET_HOLDER_ROLE_IDS);
-the rules live in services/ticket_reset.py.
+Watches for a ticket holder role being added: this season's ticket role (set
+with !ticket_role) plus the always-counted Patreon roles, falling back to
+config.TICKET_HOLDER_ROLE_IDS for a season without its own role (the same set
+the leaderboard uses). The rules live in services/ticket_reset.py.
 """
 
 import logging
@@ -11,13 +13,19 @@ from discord.ext import commands
 
 import config
 from repositories.elo_repo import get_active_event
+from repositories.ticket_roles_repo import ticket_holder_role_ids
 from services.ticket_reset import RESET_CAP, apply_ticket_reset, plan_ticket_reset
 
 logger = logging.getLogger("discord_bot")
 
 
-def _has_ticket(member) -> bool:
-    ticket_roles = set(getattr(config, "TICKET_HOLDER_ROLE_IDS", ()) or ())
+def _ticket_roles() -> set[int]:
+    return ticket_holder_role_ids(getattr(config, "TICKET_HOLDER_ROLE_IDS", ()) or ())
+
+
+def _has_ticket(member, ticket_roles=None) -> bool:
+    if ticket_roles is None:
+        ticket_roles = _ticket_roles()
     return any(role.id in ticket_roles for role in member.roles)
 
 
@@ -43,7 +51,8 @@ class TicketResetCog(commands.Cog):
         guild_id = getattr(config, "GUILD_ID", None)
         if guild_id and getattr(after.guild, "id", None) != guild_id:
             return
-        if _has_ticket(before) or not _has_ticket(after):
+        ticket_roles = _ticket_roles()
+        if _has_ticket(before, ticket_roles) or not _has_ticket(after, ticket_roles):
             return
         await self.handle_new_ticket(after)
 

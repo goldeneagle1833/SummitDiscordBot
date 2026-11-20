@@ -151,3 +151,24 @@ async def test_other_role_changes_do_nothing():
         await cog.on_member_update(_member([TICKET_ROLE]), _member([TICKET_ROLE, 5]))  # already had one
         await cog.on_member_update(_member([]), _member([5]))  # not a ticket role
     assert get_avatar_event_elo(event["event_id"], PLAYER, "Imposter") == 1620
+
+
+@pytest.mark.asyncio
+async def test_this_seasons_ticket_role_triggers_the_reset():
+    """A season with its own role (!ticket_role) uses it, not the config fallback."""
+    from repositories.ticket_roles_repo import activate_role_now, create_ticket_roles_table
+
+    season_role = 9009
+    event = _avatar_event(days_in=10)
+    _avatar_entry(event["event_id"], PLAYER, "Imposter", 1620, 5)
+    create_ticket_roles_table()
+    activate_role_now(season_role, "Gothic season 9", event_id=event["event_id"])
+    bot = MagicMock()
+    bot.get_cog.return_value = SimpleNamespace(update_leaderboard=AsyncMock())
+    cog = TicketResetCog(bot)
+    with patch("cogs.ticket_reset.config", SimpleNamespace(TICKET_HOLDER_ROLE_IDS={TICKET_ROLE}, GUILD_ID=1)):
+        # The old config role no longer counts once the season has its own
+        await cog.on_member_update(_member([]), _member([TICKET_ROLE]))
+        assert get_avatar_event_elo(event["event_id"], PLAYER, "Imposter") == 1620
+        await cog.on_member_update(_member([]), _member([season_role]))
+    assert get_avatar_event_elo(event["event_id"], PLAYER, "Imposter") == 1500

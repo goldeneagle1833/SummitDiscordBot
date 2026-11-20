@@ -13,7 +13,7 @@ import RecentDecks from '@/components/player/RecentDecks'
 import FeaturedDeck from '@/components/player/FeaturedDeck'
 import FeaturedDeckModal from '@/components/player/FeaturedDeckModal'
 import LimitedArena from '@/components/player/LimitedArena'
-import { PreconMatchHistory, PreconStandings, usePreconPlayer } from '@/components/player/PlayerPrecon'
+import { PreconMatchHistory, PreconStandings, usePreconPlayer, withPreconFilters } from '@/components/player/PlayerPrecon'
 import MatchHistoryTable from '@/components/player/MatchHistoryTable'
 import MatchFilters from '@/components/player/MatchFilters'
 import RecordedGames from '@/components/player/RecordedGames'
@@ -391,7 +391,7 @@ export default function Player() {
 
       {activeTab === 'matches' && (
         <div className="space-y-6">
-          <MatchFilters filters={matchFilters} data={data.match_filters} onChange={changeMatchFilters} />
+          <MatchFilters filters={matchFilters} data={withPreconFilters(data.match_filters, precon, matchFilters)} onChange={changeMatchFilters} />
 
           <MatchHistoryTable
             title="Ranked Match History"
@@ -409,7 +409,7 @@ export default function Player() {
             onMatchUpdate={refreshCurrentPage}
           />
 
-          <PreconMatchHistory data={precon} />
+          <PreconMatchHistory data={precon} filters={matchFilters} />
 
           {data.casual_matches?.length > 0 && (
             <MatchHistoryTable

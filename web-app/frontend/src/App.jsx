@@ -35,6 +35,7 @@ function lazyPage(load) {
 const Leaderboard = lazyPage(() => import('@/pages/Leaderboard'))
 const LimitedLeaderboard = lazyPage(() => import('@/pages/LimitedLeaderboard'))
 const Player = lazyPage(() => import('@/pages/Player'))
+const MyProfile = lazyPage(() => import('@/pages/MyProfile'))
 const DeckStats = lazyPage(() => import('@/pages/DeckStats'))
 const PlayerAvatar = lazyPage(() => import('@/pages/PlayerAvatar'))
 const Matches = lazyPage(() => import('@/pages/Matches'))
@@ -245,6 +246,9 @@ const router = createBrowserRouter([
       { path: '/precon', element: <Navigate to="/?ladder=precon#leaderboard" replace /> },
       { path: '/lmfm', element: <Navigate to="/?ladder=precon#leaderboard" replace /> },
       { path: '/player/:playerId', element: <Player /> },
+      // The logged-in player's own profile, optionally with a panel open (/me/block-list)
+      { path: '/me', element: <MyProfile /> },
+      { path: '/me/:panel', element: <MyProfile /> },
       { path: '/match-history', element: <Matches /> },
       { path: '/deck-stats/:playerId', element: <DeckStats /> },
       { path: '/player/:playerId/avatar/:avatarName', element: <PlayerAvatar /> },

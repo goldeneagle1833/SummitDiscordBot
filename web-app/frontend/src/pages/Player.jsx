@@ -96,6 +96,15 @@ export default function Player() {
     setSearchParams(next, { replace: true })
   }
   const navigate = useNavigate()
+  // ?open=block-list (from /me/block-list) opens that panel on the owner's page
+  const openPanel = searchParams.get('open')
+  useEffect(() => {
+    if (!openPanel || !data) return
+    if (openPanel === 'block-list' && data.is_owner) setShowBlockListModal(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete('open')
+    setSearchParams(next, { replace: true })
+  }, [openPanel, data]) // eslint-disable-line react-hooks/exhaustive-deps
   const avatarHonours = useAvatarHonours(playerId)
   const paperFinishes = usePaperFinishes(playerId)
   const eventAvatarBadges = useEventAvatarBadges(playerId)

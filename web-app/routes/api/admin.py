@@ -1,5 +1,6 @@
 """Admin API routes for player and match management."""
 
+from utils.match_tables import live_matches
 import logging
 import re
 import sqlite3
@@ -141,7 +142,7 @@ def reset_elo(user_id):
             except (ValueError, TypeError):
                 return jsonify({"success": False, "error": "new_elo must be a number"}), 400
             if new_elo < 0 or new_elo > 5000:
-                return jsonify({"success": False, "error": "ELO must be between 0 and 5000"}), 400
+                return jsonify({"success": False, "error": "Rating must be between 0 and 5000"}), 400
         if data.get("source") in ("bot", "paper", "both"):
             source = data["source"]
 
@@ -206,7 +207,7 @@ def reset_all_elo():
 
         conn_match = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur_match = conn_match.cursor()
-        cur_match.execute("SELECT COUNT(*) FROM match_records")
+        cur_match.execute(f"SELECT COUNT(*) FROM {live_matches()}")
         match_count = cur_match.fetchone()[0]
         conn_match.close()
 
@@ -221,13 +222,18 @@ def reset_all_elo():
         )
         if cur_elo.fetchone():
             cur_elo.execute("DELETE FROM event_avatar_standings")
+        cur_elo.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_rating_adjustments'"
+        )
+        if cur_elo.fetchone():
+            cur_elo.execute("DELETE FROM event_rating_adjustments")
         cur_elo.execute("DELETE FROM events")
         conn_elo.commit()
         conn_elo.close()
 
         conn_match = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur_match = conn_match.cursor()
-        cur_match.execute("DELETE FROM match_records")
+        cur_match.execute(f"DELETE FROM {live_matches()}")
         cur_match.execute("DELETE FROM pairings")
         cur_match.execute("DELETE FROM match_records_archive")
         cur_match.execute("DELETE FROM match_reports_web")
@@ -270,7 +276,7 @@ def game_activity():
 
         # Bot matches
         cur_match.execute(
-            "SELECT COUNT(*) FROM match_records WHERE timestamp >= ?",
+            f"SELECT COUNT(*) FROM {live_matches()} WHERE timestamp >= ?",
             (cutoff_str,)
         )
         bot_matches = cur_match.fetchone()[0]
@@ -284,11 +290,11 @@ def game_activity():
 
         # Get unique players (note: column is "losser_id" due to typo in schema)
         cur_match.execute(
-            """
+            f"""
             SELECT COUNT(DISTINCT player_id) FROM (
-                SELECT winner_id AS player_id FROM match_records WHERE timestamp >= ?
+                SELECT winner_id AS player_id FROM {live_matches()} WHERE timestamp >= ?
                 UNION
-                SELECT losser_id AS player_id FROM match_records WHERE timestamp >= ?
+                SELECT losser_id AS player_id FROM {live_matches()} WHERE timestamp >= ?
             )
             """,
             (cutoff_str, cutoff_str)
@@ -353,7 +359,7 @@ def dashboard_stats():
 
         # Build UNION fragments for "all online matches" (current + archive)
         # and "all matches" (online + web). Archive uses same schema as match_records.
-        online_tables = ["match_records"]
+        online_tables = [live_matches()]
         if has_archive:
             online_tables.append("match_records_archive")
 
@@ -770,7 +776,7 @@ def chart_stats_hourly():
         has_archive = "match_records_archive" in existing_tables
         has_web = "match_reports_web" in existing_tables
 
-        online_tables = ["match_records"]
+        online_tables = [live_matches()]
         if has_archive:
             online_tables.append("match_records_archive")
 
@@ -867,7 +873,7 @@ def chart_stats_daily():
         has_archive = "match_records_archive" in existing_tables
         has_web = "match_reports_web" in existing_tables
 
-        online_tables = ["match_records"]
+        online_tables = [live_matches()]
         if has_archive:
             online_tables.append("match_records_archive")
 
@@ -967,7 +973,7 @@ def omens_matches():
 
         # Count total
         try:
-            cur.execute("SELECT COUNT(*) FROM match_records WHERE match_type = 'points'")
+            cur.execute(f"SELECT COUNT(*) FROM {live_matches()} WHERE match_type = 'points'")
             total = cur.fetchone()[0]
         except sqlite3.OperationalError:
             total = 0
@@ -976,7 +982,7 @@ def omens_matches():
         page = min(page, total_pages)
 
         # Detect available columns
-        cur.execute("PRAGMA table_info(match_records)")
+        cur.execute(f"PRAGMA table_info({live_matches()})")
         available_cols = {row[1] for row in cur.fetchall()}
 
         # Build SELECT dynamically based on available columns
@@ -994,7 +1000,7 @@ def omens_matches():
         try:
             cur.execute(f"""
                 SELECT {', '.join(select_parts)}
-                FROM match_records
+                FROM {live_matches()}
                 WHERE match_type = 'points'
                 ORDER BY timestamp DESC
                 LIMIT ? OFFSET ?
@@ -1104,6 +1110,11 @@ def start_event_route():
     if elo_mode not in ("player", "avatar"):
         return jsonify({"success": False, "error": "elo_mode must be 'player' or 'avatar'"}), 400
 
+    # "elo" (through Season 8) or "glicko2" (Season 9 on). Locked too.
+    rating_system = str(data.get("rating_system") or "elo").strip().lower()
+    if rating_system not in ("elo", "glicko2"):
+        return jsonify({"success": False, "error": "rating_system must be 'elo' or 'glicko2'"}), 400
+
     try:
         # Import bot database utilities
         bot_db = _import_bot_database_utils()
@@ -1112,7 +1123,7 @@ def start_event_route():
         previous_event = bot_db.get_active_event()
 
         # Start new event
-        result = bot_db.start_new_event(event_name, elo_mode=elo_mode)
+        result = bot_db.start_new_event(event_name, elo_mode=elo_mode, rating_system=rating_system)
 
         # Log action
         admin_id, admin_name = _get_admin_info()
@@ -1121,8 +1132,9 @@ def start_event_route():
             admin_id, admin_name, "web_start_event",
             target_name=event_name,
             previous_state={"event": previous_event["event_name"] if previous_event else None},
-            new_state={"event": event_name, "event_id": result["event_id"], "elo_mode": elo_mode},
-            details=f"Started new event '{event_name}' (ID: {result['event_id']}) in {elo_mode} mode",
+            new_state={"event": event_name, "event_id": result["event_id"], "elo_mode": elo_mode,
+                       "rating_system": rating_system},
+            details=f"Started new event '{event_name}' (ID: {result['event_id']}) in {elo_mode} mode, {rating_system}",
         )
 
         return jsonify({
@@ -1130,6 +1142,7 @@ def start_event_route():
             "message": f"Event '{event_name}' started successfully ({elo_mode} mode)",
             "event_id": result["event_id"],
             "elo_mode": elo_mode,
+            "rating_system": rating_system,
             "previous_event": result.get("previous_event")
         }), 200
 
@@ -1419,12 +1432,12 @@ def matches_with_notes():
         # Build UNION query across all match tables
         # match_records/archive use rowid for IDs; match_reports_web has match_id column
         queries = []
-        queries.append("""
+        queries.append(f"""
             SELECT
                 rowid as match_id, winner_display_name, losser_display_name,
                 winner_id, losser_id, winner_elo_change, loser_elo_change,
                 timestamp, match_time, match_comment, 'online' as source
-            FROM match_records
+            FROM {live_matches()}
             WHERE match_comment IS NOT NULL AND match_comment != ''
         """)
         if has_archive:
@@ -1926,3 +1939,73 @@ def delete_user_profile(user_id):
     )
 
     return jsonify({"success": True}), 200
+
+
+@admin_bp.route("/admin/data-exports", methods=["GET"])
+@require_admin
+def data_exports_summary():
+    """Who downloaded their "Export my data" zip, when, and how big (admin only).
+
+    Reads the self_data_export / self_data_export_failed audit log rows that
+    the player export route writes. ``days`` sets the tile window (default 30).
+    """
+    import json as _json
+
+    days = min(max(1, request.args.get("days", 30, type=int)), 3650)
+    limit = min(max(1, request.args.get("limit", 100, type=int)), 500)
+    since = (datetime.now() - timedelta(days=days)).isoformat()
+
+    conn = AuditRepository()._get_connection()  # same database the export logs to
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """SELECT timestamp, admin_id AS user_id, admin_name, action, new_state
+               FROM admin_audit_log
+               WHERE action IN ('self_data_export', 'self_data_export_failed')
+               ORDER BY timestamp DESC""",
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []  # audit table not created yet
+    finally:
+        conn.close()
+
+    resolve_name = _player_name_resolver()
+    entries = []
+    for r in rows:
+        stats = {}
+        if r["new_state"]:
+            try:
+                stats = _json.loads(r["new_state"]) or {}
+            except (ValueError, TypeError):
+                stats = {}
+        entries.append({
+            "user_id": str(r["user_id"]),  # 18-digit ids lose precision as JSON numbers
+            "name": resolve_name(str(r["user_id"]), r["admin_name"]),
+            "timestamp": r["timestamp"],
+            "ok": r["action"] == "self_data_export",
+            "bytes": stats.get("bytes"),
+            "matches": stats.get("matches"),
+            "sections": stats.get("sections") or [],
+        })
+
+    recent = [e for e in entries if (e["timestamp"] or "") >= since]
+    ok_recent = [e for e in recent if e["ok"]]
+    per_player: dict[str, dict] = {}
+    for e in ok_recent:
+        p = per_player.setdefault(e["user_id"], {"user_id": e["user_id"], "name": e["name"], "downloads": 0, "bytes": 0})
+        p["downloads"] += 1
+        p["bytes"] += e["bytes"] or 0
+
+    return jsonify({
+        "success": True,
+        "days": days,
+        "summary": {
+            "downloads": len(ok_recent),
+            "players": len(per_player),
+            "bytes": sum(e["bytes"] or 0 for e in ok_recent),
+            "failed": len(recent) - len(ok_recent),
+            "all_time_downloads": sum(1 for e in entries if e["ok"]),
+        },
+        "top_players": sorted(per_player.values(), key=lambda p: (-p["downloads"], -p["bytes"]))[:10],
+        "entries": entries[:limit],
+    }), 200

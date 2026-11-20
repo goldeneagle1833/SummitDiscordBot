@@ -12,7 +12,7 @@ additive: a client that never sends the new field gets exactly the old behaviour
 - A match is **on voice whenever both players would play voice** (e.g. a no-voice-first,
   voice-OK player and a voice player get a voice game).
 - Among compatible partners, ones that make a voice match come first, then oldest first.
-- A voice-first, no-voice-OK player waits `VOICE_HOLD_SECONDS` (30) for a voice partner. During
+- A voice-first, no-voice-OK player waits `VOICE_HOLD_SECONDS` (10) for a voice partner. During
   that hold no no-voice game is made for them; after it, a 5-second sweep pairs them with a
   waiting no-voice player through the normal join flow.
 - Strict voice players still get the "play without voice?" DM; flexible players don't need it.
@@ -31,7 +31,7 @@ to read):
 | Field                      | Meaning                                                                  |
 |----------------------------|--------------------------------------------------------------------------|
 | `voice_flexible_supported` | `true` when joins to this queue may send `voice_flexible`.               |
-| `voice_hold_seconds`       | How long a voice-first, no-voice-OK player waits for voice (30).          |
+| `voice_hold_seconds`       | How long a voice-first, no-voice-OK player waits for voice (10).          |
 | `waiting_willing`          | `{voice, no_voice}`: waiting players who would play each choice.         |
 | `voice_flexible`           | The player's own entry is also OK with the other choice.                 |
 

@@ -48,12 +48,14 @@ export default function StoreSuccess() {
   const [params] = useSearchParams()
   const orderNumber = params.get('order')
   const storefront = params.get('storefront')
+  // Bought from a private listing's own page, not from the cart
+  const privateListing = params.get('p')
 
   // Stripe only redirects here after payment, so this storefront's cart
   // has been bought. Other storefronts' carts stay.
   useEffect(() => {
-    clearCart(storefront)
-  }, [storefront])
+    if (!privateListing) clearCart(storefront)
+  }, [storefront, privateListing])
 
   return (
     <div className="max-w-lg mx-auto text-center py-12">

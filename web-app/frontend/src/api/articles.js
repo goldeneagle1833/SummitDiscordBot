@@ -27,7 +27,7 @@ export function articleImage(a) {
   if (a.external_url) return a.external_image || null
   return cardImageUrl(a.header_image)
 }
-export const previewArticle = (body) => post('/api/articles/preview', { body })
+export const previewArticle = (body, format = 'md') => post('/api/articles/preview', { body, format })
 export const deleteArticle = (id) => del(`/api/articles/${id}`)
 export const addArticleComment = (id, body) => post(`/api/articles/${id}/comments`, { body })
 

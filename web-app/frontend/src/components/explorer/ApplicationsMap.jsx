@@ -8,7 +8,7 @@ export { STATUS_COLORS }
  * without coordinates are not plotted — the review board counts them
  * separately so an admin can retry geocoding.
  */
-export default function ApplicationsMap({ applications, onSelect }) {
+export default function ApplicationsMap({ applications, onSelect, height, fitToPoints }) {
   const points = applications
     .filter((a) => typeof a.latitude === 'number' && typeof a.longitude === 'number')
     .map((application) => ({
@@ -31,6 +31,8 @@ export default function ApplicationsMap({ applications, onSelect }) {
     <SeriesMap
       points={points}
       storageKey="explorer-applications-map-style"
+      height={height}
+      fitToPoints={fitToPoints}
       onSelect={(point) => onSelect?.(point.application)}
     />
   )

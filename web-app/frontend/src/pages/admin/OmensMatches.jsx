@@ -126,7 +126,7 @@ export default function OmensMatches() {
                   <th className="py-2 px-3 text-text-muted font-semibold">Loser</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Loser Deck</th>
                   <th className="py-2 px-3 text-text-muted font-semibold text-center">Pts Used</th>
-                  <th className="py-2 px-3 text-text-muted font-semibold text-center">ELO</th>
+                  <th className="py-2 px-3 text-text-muted font-semibold text-center">Rating</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Time</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Date</th>
                 </tr>

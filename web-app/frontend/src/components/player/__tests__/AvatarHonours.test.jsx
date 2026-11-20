@@ -31,6 +31,6 @@ describe('AvatarHonours', () => {
     expect(screen.getByText('Gothic Season 8')).toBeInTheDocument()
     expect(screen.getByText('Gothic Season 7')).toBeInTheDocument()
     expect(screen.getByText('2nd Seer')).toBeInTheDocument()
-    expect(screen.getByText('1712 Elo · 14-2')).toBeInTheDocument()
+    expect(screen.getByText('1712 Rating · 14-2')).toBeInTheDocument()
   })
 })

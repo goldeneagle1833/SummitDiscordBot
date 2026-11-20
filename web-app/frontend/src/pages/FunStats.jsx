@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
+import { isNum } from '@/utils/provisional'
 
 function StatCard({ title, children }) {
   return (
@@ -108,12 +109,14 @@ function MostActive({ data }) {
   )
 }
 
-function BiggestUpsets({ data }) {
+function BiggestUpsets({ data: all }) {
+  // Hidden (provisional) changes are left out
+  const data = all?.filter((m) => isNum(m.elo_change))
   if (!data?.length) return null
   return (
     <StatCard title="Biggest Upsets">
       <RankTable
-        headers={['Player', 'ELO Gained']}
+        headers={['Player', 'Rating Gained']}
         rows={data.map((m) => [
           m.winner_name,
           <span key="e" className="text-accent-green font-medium">+{m.elo_change}</span>,
@@ -214,12 +217,13 @@ function MatchDuration({ data }) {
   )
 }
 
-function MostImproved({ data }) {
+function MostImproved({ data: all }) {
+  const data = all?.filter((p) => isNum(p.elo_change))
   if (!data?.length) return null
   return (
     <StatCard title={<>Most Improved <span className="text-xs text-text-muted font-normal">Last 7 Days</span></>}>
       <RankTable
-        headers={['Player', 'ELO']}
+        headers={['Player', 'Rating']}
         rows={data.map((p) => [
           p.name,
           <span key="e" className="text-accent-green font-medium">+{p.elo_change}</span>,

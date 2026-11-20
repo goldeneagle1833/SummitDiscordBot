@@ -213,7 +213,7 @@ def close_arena_run(user_id):
 
     return (
         f"Record: {completed_run['wins']}-{completed_run['losses']} | "
-        f"Limited ELO: {current_elo} ({sign}{elo_change})"
+        f"Limited Rating: {current_elo} ({sign}{elo_change})"
     )
 
 
@@ -269,5 +269,5 @@ def forfeit_arena_run(user_id):
 
     return (
         f"Record: {completed_run['wins']}-{completed_run['losses']} | "
-        f"Limited ELO: {current_elo} ({sign}{elo_change})"
+        f"Limited Rating: {current_elo} ({sign}{elo_change})"
     )

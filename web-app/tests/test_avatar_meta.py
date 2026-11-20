@@ -74,7 +74,7 @@ def test_empty_database(monkeypatch, match_db, client):
     import routes.api.cards as cards
     monkeypatch.setattr(cards, "MATCH_RECORDS_DB_PATH", match_db)
     data = client.get("/api/elements/avatar-meta").get_json()
-    assert data == {"dates": [], "avatars": {}, "pairs": {}, "daily_totals": {}}
+    assert data == {"dates": [], "avatars": {}, "pairs": {}, "daily_totals": {}, "matchups": {}}
 
 
 def test_event_filter_limits_to_that_event(patched):
@@ -120,6 +120,20 @@ def test_meta_pairs_split_avatar_by_top_two_elements(timeline):
         "Sorcerer|Earth": {"2026-09-01": 1, "2026-09-03": 1},
         "Sorcerer|Water": {"2026-09-03": 1},
     }
+
+
+def test_meta_matchups_count_winner_against_loser_by_day(timeline):
+    data = timeline.get("/api/elements/avatar-meta").get_json()
+    assert data["matchups"] == {
+        "2026-09-01": {"Sorcerer|Fire / Water>Sorcerer|Earth": 1},
+        "2026-09-03": {"Sorcerer|Earth>Sorcerer|Water": 1},
+    }
+
+
+def test_meta_matchups_skip_games_missing_a_deck(patched):
+    data = patched.get("/api/elements/avatar-meta").get_json()
+    # These decks have no cards, so no element pair: nothing to match up.
+    assert data["matchups"] == {}
 
 
 def test_element_pair_keeps_top_two_alphabetical():
@@ -236,3 +250,15 @@ def test_failed_first_build_answers_503(timeline, monkeypatch):
 
     monkeypatch.setattr(cards, "_build_timeline", boom)
     assert timeline.get("/api/elements/timeline").status_code == 503
+
+
+def test_cache_files_from_an_older_build_are_not_served(timeline, monkeypatch):
+    import json as _json
+    import routes.api.cards as cards
+    # A cache file the previous version wrote (no "matchups") must not be read.
+    cards._TIMELINE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    old = cards._TIMELINE_CACHE_DIR / "elements-timeline-all.json"
+    old.write_text(_json.dumps({"meta": {"dates": [], "avatars": {}, "pairs": {}, "daily_totals": {}},
+                                "elements": {"dates": [], "days": {}}}))
+    data = timeline.get("/api/elements/avatar-meta").get_json()
+    assert data["matchups"]

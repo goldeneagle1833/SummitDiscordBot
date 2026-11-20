@@ -39,7 +39,7 @@ const pill = (active) => `px-3 py-1 text-xs font-medium rounded-lg border transi
  * One date slider, play button and window picker that drives every chart on
  * the page. The parent owns the state: { windowKey, endIdx, playing, speed }.
  */
-export default function TimelineControls({ dates, windowKey, endIdx, playing, speed = DEFAULT_SPEED, onChange }) {
+export default function TimelineControls({ dates, windowKey, endIdx, playing, speed = DEFAULT_SPEED, onChange, bare = false }) {
   const last = dates.length - 1
   const days = windowDays(windowKey)
   const [custom, setCustom] = useState('')
@@ -72,7 +72,7 @@ export default function TimelineControls({ dates, windowKey, endIdx, playing, sp
   const startIdx = days == null ? 0 : Math.max(0, endIdx - days + 1)
 
   return (
-    <div className="bg-bg-surface/95 backdrop-blur border border-border rounded-lg px-4 py-3">
+    <div className={bare ? '' : 'bg-bg-surface/95 backdrop-blur border border-border rounded-lg px-4 py-3'}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-text-muted">Rolling:</span>

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 import PageTabs from '@/components/ui/PageTabs'
 import { HELP_TABS } from '@/utils/pageTabs'
@@ -20,12 +21,19 @@ export default function About() {
         </p>
         <p>
           Whether you are a seasoned veteran or just getting started, Summit provides tools to help you
-          improve your game. Track your ELO rating, analyze your match history, explore top tournament
+          improve your game. Track your rating, analyze your match history, explore top tournament
           decks, and find opponents through our Looking For Game system.
         </p>
         <p>
           The platform includes a Discord bot for in-server matchmaking and game reporting, paired with
           this web application for deeper stats, leaderboards, and deck exploration.
+        </p>
+        <p>
+          New to ranked seasons?{' '}
+          <Link to="/summit-format" className="text-primary hover:underline">
+            See how the Summit format works
+          </Link>
+          : tickets, the top cut and prizes.
         </p>
         <p className="text-text-muted">
           Built with care by the Sorcerers Summit community.

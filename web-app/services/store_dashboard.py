@@ -23,6 +23,15 @@ LOW_STOCK = 3  # products at or below this many left show under Needs attention
 FLAG_ACTIONS = ("amount_mismatch", "paid_after_cancel", "account_mismatch")
 TOP_N = 5
 
+# Words that describe the format of a listing rather than what it is, so
+# "Foil Skeleton Token pack" and "Skeleton Token pack" land in one line
+LINE_FILLER_WORDS = {
+    "a", "an", "and", "the", "of", "for", "with", "plus", "x",
+    "token", "tokens", "pack", "packs", "foil", "foils", "regular", "normal",
+    "full", "playset", "playsets", "set", "sets", "bundle", "bundles", "box",
+    "card", "cards", "single", "singles", "mini", "edition", "limited",
+}
+
 
 def _in(column: str, values) -> tuple[str, list]:
     values = list(values)
@@ -64,6 +73,7 @@ class StoreDashboard:
                 "daily": self._daily(conn, scope, args, start, now),
                 "attention": self._attention(conn, scope, args, storefront_ids, now),
                 "top_products": self._top_products(conn, scope, args, s, e),
+                "product_lines": self._product_lines(conn, scope, args, storefront_ids, s, e),
                 "money": self._money(conn, scope, args, s, e),
                 "repeat_buyers": self._repeat_buyers(conn, scope, args, s, e),
                 "ship_time": self._ship_time(conn, scope, args, s, e),
@@ -315,6 +325,124 @@ class StoreDashboard:
                 (*sold_args, start, end, *args, TOP_N),
             )
         ]
+
+    def _product_lines(self, conn, scope, args, storefront_ids, start, end) -> list[dict]:
+        """Sales grouped into product lines (families of listings).
+
+        A product's line is the "Product line" set in Store Admin. Products
+        without one are grouped automatically: listings whose names share a
+        distinctive word (not "foil", "pack", "playset", "tokens"...) go in
+        the same line, so the Behemoth pack, Leviathan pack and the playset
+        of both are one line.
+        """
+        sold, sold_args = _in("o.status", SOLD_STATUSES)
+        sales = conn.execute(
+            f"""SELECT oi.product_id, MAX(oi.product_name) AS name,
+                       SUM(oi.quantity) AS units,
+                       SUM(oi.quantity * oi.unit_price_cents) AS sales_cents,
+                       GROUP_CONCAT(DISTINCT o.id) AS order_ids
+                FROM order_items oi JOIN orders o ON o.id = oi.order_id
+                WHERE {sold} AND o.paid_at >= ? AND o.paid_at < ? AND {scope}
+                GROUP BY oi.product_id""",
+            (*sold_args, start, end, *args),
+        ).fetchall()
+        if not sales:
+            return []
+        p_scope, p_args = self._scope(storefront_ids, "p")
+        products = {
+            r["id"]: {"name": r["name"], "line": (r["product_line"] or "").strip()}
+            for r in conn.execute(
+                f"SELECT p.id, p.name, p.product_line FROM products p WHERE {p_scope}", p_args)
+        }
+        for r in sales:  # a listing deleted since it sold still counts
+            products.setdefault(r["product_id"], {"name": r["name"], "line": ""})
+
+        labels = self.line_labels(products)
+        lines: dict[str, dict] = {}
+        for r in sales:
+            label, auto = labels[r["product_id"]]
+            line = lines.setdefault(label.lower(), {
+                "line": label, "auto": auto, "units": 0, "sales_cents": 0,
+                "_orders": set(), "products": []})
+            line["units"] += r["units"] or 0
+            line["sales_cents"] += r["sales_cents"] or 0
+            line["_orders"].update((r["order_ids"] or "").split(","))
+            line["products"].append({
+                "product_id": r["product_id"],
+                "name": products[r["product_id"]]["name"] or r["name"],
+                "units": r["units"] or 0,
+                "sales_cents": r["sales_cents"] or 0,
+            })
+        total = sum(line["sales_cents"] for line in lines.values()) or 1
+        out = []
+        for line in lines.values():
+            line["orders"] = len(line.pop("_orders") - {""})
+            line["share"] = round(line["sales_cents"] / total, 4)
+            line["products"].sort(key=lambda p: (-p["sales_cents"], -p["units"], p["name"]))
+            out.append(line)
+        out.sort(key=lambda x: (-x["sales_cents"], -x["units"], x["line"].lower()))
+        return out
+
+    @staticmethod
+    def line_labels(products: dict) -> dict:
+        """{product_id: (line label, chosen automatically?)}.
+
+        products is {id: {"name", "line"}}. Set lines win; the rest are
+        joined when their names share a distinctive word.
+        """
+        out = {}
+        set_labels: dict[str, str] = {}
+        for pid, p in products.items():
+            if p["line"]:
+                label = set_labels.setdefault(p["line"].lower(), p["line"])
+                out[pid] = (label, False)
+
+        def words(name: str) -> list[str]:
+            seen = []
+            for w in re.findall(r"[a-z0-9']+", (name or "").lower()):
+                w = w.strip("'")
+                if w and w not in LINE_FILLER_WORDS and not w.isdigit() and w not in seen:
+                    seen.append(w)
+            return seen
+
+        auto = [pid for pid in products if pid not in out]
+        parent = {pid: pid for pid in auto}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        owner: dict[str, object] = {}
+        for pid in auto:
+            for w in words(products[pid]["name"]):
+                if w in owner:
+                    parent[find(pid)] = find(owner[w])
+                else:
+                    owner[w] = pid
+        groups: dict = {}
+        for pid in auto:
+            groups.setdefault(find(pid), []).append(pid)
+        for members in groups.values():
+            names = [products[pid]["name"] or "" for pid in members]
+            if len(members) == 1:
+                label = names[0] or "Unnamed product"
+            else:
+                counts: dict[str, int] = {}
+                order: list[str] = []
+                for n in sorted(names, key=len, reverse=True):
+                    for w in words(n):
+                        counts[w] = counts.get(w, 0) + 1
+                        if w not in order:
+                            order.append(w)
+                shared = [w for w in order if counts[w] > 1][:3] or order[:1]
+                label = " & ".join(w.capitalize() for w in shared)
+                if all(re.search(r"\btokens?\b", n, re.I) for n in names):
+                    label += " Tokens"
+            for pid in members:
+                out[pid] = (label, True)
+        return out
 
     def _money(self, conn, scope, args, start, end) -> dict:
         sold, sold_args = _in("o.status", SOLD_STATUSES)

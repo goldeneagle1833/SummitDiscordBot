@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { isNum } from '@/utils/provisional'
 
 // Mirrors the recap embed the Discord bot posts (discord-bot/cogs/daily_summary.py).
 const MATCH_TYPES = [
@@ -62,7 +63,8 @@ export default function RecapPanel({ recap }) {
     const [id, name, change] = stats.top_gainer
     performers.push(<li key="gain">📈 <b>Top Gainer:</b> <P id={id} name={name} /> <Code>+{change}</Code></li>)
   }
-  if (stats.biggest_loser) {
+  // Hidden (provisional) changes and ratings come back null: skip them
+  if (stats.biggest_loser && isNum(stats.biggest_loser[2])) {
     const [id, name, change] = stats.biggest_loser
     performers.push(<li key="drop">📉 <b>Biggest Drop:</b> <P id={id} name={name} /> <Code>{change}</Code></li>)
   }
@@ -76,13 +78,13 @@ export default function RecapPanel({ recap }) {
   }
 
   const highlights = []
-  if (stats.biggest_upset) {
+  if (stats.biggest_upset && isNum(stats.biggest_upset[4])) {
     const [wId, wName, lId, lName, change] = stats.biggest_upset
     highlights.push(
       <li key="upset">🎯 <b>Biggest Upset:</b> <P id={wId} name={wName} /> beat <P id={lId} name={lName} /> <Code>+{change}</Code></li>
     )
   }
-  if (stats.highest_rated) {
+  if (stats.highest_rated && isNum(stats.highest_rated[4]) && isNum(stats.highest_rated[5])) {
     const [wId, wName, lId, lName, wElo, lElo] = stats.highest_rated
     highlights.push(
       <li key="rated">🏆 <b>Highest Rated:</b> <P id={wId} name={wName} /> <Code>{wElo}</Code> vs <P id={lId} name={lName} /> <Code>{lElo}</Code></li>

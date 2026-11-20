@@ -275,4 +275,38 @@ describe('ExplorerApply page', () => {
       await screen.findByText('Missing required field(s): city')
     ).toBeInTheDocument()
   })
+
+  it('sends the picked dates and timing notes', async () => {
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerApply />)
+    await screen.findByLabelText(/First name/)
+
+    await fillRequiredFields(user)
+    await user.type(screen.getByLabelText('First choice'), '2027-04-10')
+    await user.type(screen.getByLabelText('Third choice'), '2027-09-18')
+    await user.type(screen.getByLabelText(/Anything else about timing/), 'June works too')
+    await user.click(screen.getByRole('button', { name: /Submit Application/ }))
+
+    await waitFor(() => expect(submitApplication).toHaveBeenCalled())
+    const payload = submitApplication.mock.calls[0][0]
+    expect(payload.proposed_date_list).toEqual(['2027-04-10', '', '2027-09-18'])
+    expect(payload.proposed_dates_notes).toBe('June works too')
+  })
+
+  it('fills the date pickers when editing an application', async () => {
+    getMyApplication.mockResolvedValue({
+      applications: [{
+        id: 7, status: 'pending', editable: true, source: 'application',
+        read_navigator_role: 1, first_name: 'Ruben', lgs_url: 'not registered',
+        proposed_date_list: ['2027-06-12'], proposed_dates_notes: 'or mid-July',
+      }],
+    })
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerApply />)
+    await user.click(await screen.findByRole('button', { name: /Edit/ }))
+
+    expect(screen.getByLabelText('First choice')).toHaveValue('2027-06-12')
+    expect(screen.getByLabelText('Second choice')).toHaveValue('')
+    expect(screen.getByLabelText(/Anything else about timing/)).toHaveValue('or mid-July')
+  })
 })

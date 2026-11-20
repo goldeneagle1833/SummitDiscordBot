@@ -1,5 +1,6 @@
 """API routes for web-based match reporting."""
 
+from utils.match_tables import live_matches
 import logging
 import sqlite3
 from flask import Blueprint, jsonify, request, session
@@ -616,7 +617,7 @@ def auto_confirm_match(confirmation_id):
 
         return jsonify({
             "success": True,
-            "message": "Match auto-confirmed with ELO applied",
+            "message": "Match auto-confirmed with rating applied",
             **result,
         })
 
@@ -675,7 +676,7 @@ def edit_match_comment():
                 id_col = "rowid"
                 match_id = numeric_match_id - 1_000_000_000
             else:
-                table = "match_records"
+                table = live_matches()
                 id_col = "rowid"
 
         conn = sqlite3.connect(db_path)
@@ -833,7 +834,7 @@ def edit_match_time():
                 id_col = "rowid"
                 match_id = numeric_match_id - 1_000_000_000
             else:
-                table = "match_records"
+                table = live_matches()
                 id_col = "rowid"
 
         conn = sqlite3.connect(db_path)

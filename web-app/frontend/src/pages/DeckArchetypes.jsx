@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 import { getAvatarImageFiles } from '@/api/cards'
+import RankedMetagameTrends from '@/components/deck/RankedMetagameTrends'
 import { getDeckArchetype, getDeckArchetypes } from '@/api/deckArchetypes'
 
 // Archetypes are grouped on the server from the Top 8 page's tournament decks
@@ -302,9 +303,9 @@ function ArchetypeDetails({ group, source, filters, imageFiles, onClose }) {
         <div className="p-4 sm:p-5 space-y-8">
           <section>
             <h3 className="text-lg font-semibold text-text-primary mb-1">Recommended decklists</h3>
-            <p className="text-xs text-text-muted mb-3">Decks from the Top 8 page in this archetype. Open a list on Summit's Deck Rec page.</p>
+            <p className="text-xs text-text-muted mb-3">Eligible tournament decks in this archetype. Open a list on Summit's Deck Rec page.</p>
             <div className="grid gap-2">
-              {recommendations.length === 0 && <p className="text-sm text-text-muted">No Top 8 decks in this archetype yet.</p>}
+              {recommendations.length === 0 && <p className="text-sm text-text-muted">No tournament decks available for recommendations yet.</p>}
               {recommendations.map((rec) => <DeckLink key={rec.deckId} deck={rec.deck} label={rec.label} description={rec.deck.entries?.[0]?.event} tournament />)}
             </div>
           </section>
@@ -404,7 +405,7 @@ function AboutDataPanel({ meta, onClose }) {
           </section>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">Deck recommendations</h3>
-            <p>Recommended lists only come from decks on the Top 8 page. The representative list is the Top 8 deck most similar to the rest of its archetype. Others highlight the best tournament finish and the deck taken to the most tournaments. Ranked games never decide a recommendation. Card inclusion percentages describe how often a card appears among decks in that group.</p>
+            <p>Recommended lists come from eligible tournament decks, including historical events. The representative list is the tournament deck most similar to the rest of its archetype. Others highlight the best tournament finish and the deck taken to the most tournaments. Ranked games never decide a recommendation. Card inclusion percentages describe how often a card appears among decks in that group.</p>
           </section>
           <section>
             <h3 className="text-base font-semibold text-text-primary mb-2">Dataset coverage</h3>
@@ -541,6 +542,14 @@ export default function DeckArchetypes() {
         <p className="text-sm text-text-muted max-w-2xl mx-auto">
           Discover recurring Gothic-era Sorcery deck builds using similarity analysis of three-star tournament decklists and ranked match decks.
         </p>
+        <p className="mt-2 text-[11px] text-text-muted/70">
+          Concept by{' '}
+          <a href="https://github.com/j4n7" target="_blank" rel="noopener noreferrer" className="hover:text-secondary hover:underline">Jan</a>
+          {' · Developed by '}
+          <a href="https://github.com/j4n7" target="_blank" rel="noopener noreferrer" className="hover:text-secondary hover:underline">Jan</a>
+          {' & '}
+          <a href="https://github.com/goldeneagle1833" target="_blank" rel="noopener noreferrer" className="hover:text-secondary hover:underline">GoldenEagle</a>
+        </p>
         <button
           type="button"
           onClick={() => setShowAbout(true)}
@@ -550,6 +559,8 @@ export default function DeckArchetypes() {
           About the Data
         </button>
       </header>
+
+      <RankedMetagameTrends tournamentGroups={data?.groups || []} />
 
       <div className="rounded-lg border border-border bg-bg-surface p-3 mb-5">
         <div className="flex flex-wrap gap-2 mb-3" role="group" aria-label="Decks to include">

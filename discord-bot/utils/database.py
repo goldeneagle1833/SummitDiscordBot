@@ -63,6 +63,7 @@ from services.elo_service import (  # noqa: F401
     match_event_k,
     update_elo_db,
     update_elo_db_lifetime_only,
+    rate_top_cut_lifetime,
     update_elo_db_ladder,
     get_current_event_match_elo_snapshot,
     record_match,

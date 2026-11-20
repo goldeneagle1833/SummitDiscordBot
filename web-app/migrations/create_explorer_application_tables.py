@@ -128,10 +128,15 @@ def create_explorer_application_tables(db_path=None):
         "lgs_history": "TEXT",
         "lgs_checked_at": "TEXT",
         "lgs_lookup_error": "TEXT",
+        # Suggested 1-5 Local activity score worked out from the median above.
+        "lgs_activity_score": "INTEGER",
         # The decision the applicant has been told about. Status changes stay
         # internal to the Council until an admin publishes them.
         "published_status": "TEXT",
         "published_at": "TEXT",
+        # Free-text note beside the date pickers ("flexible", "any weekend in
+        # June"). Older applications put everything in proposed_dates.
+        "proposed_dates_notes": "TEXT",
     }
     cursor.execute("PRAGMA table_info(explorer_applications)")
     existing = {row[1] for row in cursor.fetchall()}
@@ -141,6 +146,51 @@ def create_explorer_application_tables(db_path=None):
                 f"ALTER TABLE explorer_applications ADD COLUMN {column} {column_type}"
             )
             logger.info("Added %s to explorer_applications", column)
+
+    # Stores checked before the suggested score existed: work it out from the
+    # median we already saved, so nobody has to re-check every store.
+    from services.lgs_attendance import activity_score
+    rows = cursor.execute(
+        """SELECT id, lgs_median_players FROM explorer_applications
+           WHERE lgs_activity_score IS NULL AND lgs_median_players IS NOT NULL"""
+    ).fetchall()
+    for application_id, median in rows:
+        score = activity_score(median)
+        if score is not None:
+            cursor.execute(
+                "UPDATE explorer_applications SET lgs_activity_score = ? WHERE id = ?",
+                (score, application_id),
+            )
+
+    # Each application's preferred event dates as structured rows, read from
+    # the free-text answer (source 'parser') or the apply form's date pickers
+    # ('applicant'), or set by a Council member ('admin'). Feeds the events
+    # calendar. The applicant's proposed_dates text is never changed.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS explorer_application_dates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            application_id INTEGER NOT NULL
+                REFERENCES explorer_applications(id) ON DELETE CASCADE,
+            choice_rank INTEGER NOT NULL,
+            start_date TEXT,
+            end_date TEXT,
+            precision TEXT NOT NULL,
+            confidence TEXT NOT NULL,
+            raw_text TEXT,
+            source TEXT NOT NULL DEFAULT 'parser',
+            confirmed_by TEXT,
+            confirmed_at TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_explorer_application_dates_app
+        ON explorer_application_dates (application_id)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_explorer_application_dates_start
+        ON explorer_application_dates (start_date)
+    """)
 
     conn.commit()
     conn.close()

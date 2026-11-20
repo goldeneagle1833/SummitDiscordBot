@@ -45,6 +45,7 @@ def _patch_db_paths(elo_db, match_db, tmp_path):
     import repositories.audit
     import repositories.blocked_users_repo
     import repositories.voice_only_repo
+    import repositories.tag_me_repo
     import repositories.player_reports_repo
     import repositories.player_kudos_repo
     import repositories.explorer
@@ -66,12 +67,17 @@ def _patch_db_paths(elo_db, match_db, tmp_path):
     repositories.audit.MATCH_RECORDS_DB_PATH = match_db
     repositories.blocked_users_repo.MATCH_RECORDS_DB_PATH = match_db
     repositories.voice_only_repo.MATCH_RECORDS_DB_PATH = match_db
+    repositories.tag_me_repo.MATCH_RECORDS_DB_PATH = match_db
     repositories.player_reports_repo.MATCH_RECORDS_DB_PATH = match_db
     repositories.player_kudos_repo.MATCH_RECORDS_DB_PATH = match_db
     import services.spotlight
     services.spotlight.MATCH_RECORDS_DB_PATH = match_db
     services.spotlight.ELO_DB_PATH = elo_db
     services.spotlight.clear_spotlight_cache()
+    # Card stats caches write shared files; keep each test's apart.
+    import services.shared_stats_cache
+    services.shared_stats_cache.CACHE_DIR = tmp_path / "stats-cache"
+    services.shared_stats_cache.clear_all()
     import repositories.moderation_repo
     repositories.moderation_repo.MATCH_RECORDS_DB_PATH = match_db
     import repositories.pso_game_lookups
@@ -344,3 +350,25 @@ def seed_matches(db_path, matches):
         ))
     conn.commit()
     conn.close()
+
+
+# -- Bracket pairing hold ---------------------------------------------
+# Brackets hide their pairings until every decklist is in. Most bracket
+# tests are about reporting, tables and results, not that hold, so it is
+# lifted for them; tests marked ``pairing_hold`` keep the real behaviour.
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "pairing_hold: keep the hide-pairings-until-decks-are-in hold active"
+    )
+
+
+@pytest.fixture(autouse=True)
+def _lift_bracket_pairing_hold(request, monkeypatch):
+    if request.node.get_closest_marker("pairing_hold"):
+        return
+    try:
+        from services.brackets import BracketService
+    except Exception:
+        return
+    monkeypatch.setattr(BracketService, "pairings_hidden", lambda self, bracket: False)

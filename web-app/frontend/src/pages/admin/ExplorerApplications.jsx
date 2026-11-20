@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
+import { ES_PATHS } from '@/utils/explorerSite'
+import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
 import {
@@ -13,11 +15,15 @@ import {
   deleteApplication,
   regeocodeApplication,
   refreshLgsAttendance,
+  confirmApplicationDates,
+  setApplicationDates,
   EXPORT_CSV_URL,
 } from '@/api/explorerApplications'
 
 import { STATUS_COLORS } from '@/components/explorer/statusColors'
 import LgsAttendance from '@/components/explorer/LgsAttendance'
+import ApplicationDates from '@/components/explorer/ApplicationDates'
+import ApplicantLocations from '@/components/explorer/ApplicantLocations'
 
 const STATUS_OPTIONS = [
   { value: 'pending', label: 'Pending' },
@@ -62,19 +68,21 @@ function percent(count, total) {
  */
 function ApplicationMetrics({
   applications, statusFilter, onStatusFilter, fewVotes, onFewVotes, needsMyVote, onNeedsMyVote,
+  datesCheck, onDatesCheck,
 }) {
   const total = applications.length
   const candidates = applications.filter((a) => a.source === 'admin_added').length
   const needVotes = applications.filter((a) => (a.vote_count || 0) < VOTE_TARGET).length
   const needMine = applications.filter((a) => !a.my_vote).length
+  const needDates = applications.filter((a) => a.dates_need_check).length
   const tile = 'bg-bg-raised border rounded-lg p-4 text-left transition-colors'
 
   return (
     <section aria-label="Application metrics" className="space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <button
-          onClick={() => { onStatusFilter(''); onFewVotes(false); onNeedsMyVote(false) }}
-          className={`${tile} ${!statusFilter && !fewVotes && !needsMyVote ? 'border-secondary/60' : 'border-border hover:border-secondary'}`}
+          onClick={() => { onStatusFilter(''); onFewVotes(false); onNeedsMyVote(false); onDatesCheck(false) }}
+          className={`${tile} ${!statusFilter && !fewVotes && !needsMyVote && !datesCheck ? 'border-secondary/60' : 'border-border hover:border-secondary'}`}
         >
           <div className="text-xs text-text-muted">Applications received</div>
           <div className="text-3xl font-display text-secondary">{total}</div>
@@ -104,6 +112,17 @@ function ApplicationMetrics({
           <div className="text-3xl font-display text-sky-300">{needMine}</div>
           <div className="text-xs text-text-muted">
             {needsMyVote ? 'Showing only these. Click to show all.' : "Click to show ones you haven't voted on"}
+          </div>
+        </button>
+        <button
+          onClick={() => onDatesCheck(!datesCheck)}
+          aria-pressed={datesCheck}
+          className={`${tile} ${datesCheck ? 'border-violet-400/60 bg-violet-400/5' : 'border-border hover:border-secondary'}`}
+        >
+          <div className="text-xs text-text-muted">Dates need a check</div>
+          <div className="text-3xl font-display text-violet-300">{needDates}</div>
+          <div className="text-xs text-text-muted">
+            {datesCheck ? 'Showing only these. Click to show all.' : 'Vague or unreadable dates nobody has checked'}
           </div>
         </button>
       </div>
@@ -260,10 +279,13 @@ function PublishModal({ preview, onClose, onPublished }) {
   )
 }
 
-function ScoreSelect({ value, onChange, label }) {
+function ScoreSelect({ value, onChange, label, hint }) {
   return (
     <label className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-text-muted">{label}</span>
+      <span className="text-text-muted">
+        {label}
+        {hint && <span className="block text-xs text-secondary/80">{hint}</span>}
+      </span>
       <select
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
@@ -344,6 +366,8 @@ function ApplicationDetail({ applicationId, currentUserId, onClose, onChanged })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [scores, setScores] = useState({ enthusiasm: null, track_record: null, local_activity: null })
+  // Whether this reviewer has already saved a Local activity score of their own.
+  const [savedLocalActivity, setSavedLocalActivity] = useState(false)
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -353,11 +377,14 @@ function ApplicationDetail({ applicationId, currentUserId, onClose, onChanged })
       const data = await getApplication(applicationId)
       setDetail(data)
       const mine = (data.votes || []).find((v) => String(v.voter_user_id) === String(currentUserId))
+      // Local activity starts from the score suggested by the store's real
+      // attendance; the reviewer can change it before saving.
       setScores({
         enthusiasm: mine?.enthusiasm ?? null,
         track_record: mine?.track_record ?? null,
-        local_activity: mine?.local_activity ?? null,
+        local_activity: mine?.local_activity ?? data.application?.lgs_activity_score ?? null,
       })
+      setSavedLocalActivity(mine?.local_activity != null)
       setError(null)
     } catch (err) {
       setError(err.message || 'Failed to load application')
@@ -381,6 +408,16 @@ function ApplicationDetail({ applicationId, currentUserId, onClose, onChanged })
   }
 
   const application = detail?.application
+
+  const autoLocalActivity = application?.lgs_activity_score ?? null
+  const localActivityHint = (() => {
+    if (autoLocalActivity == null) return null
+    if (!savedLocalActivity && scores.local_activity === autoLocalActivity) {
+      return `Auto-filled from store attendance (not saved yet)`
+    }
+    if (scores.local_activity === autoLocalActivity) return 'Matches store attendance'
+    return `Store attendance suggests ${autoLocalActivity}`
+  })()
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4">
@@ -450,6 +487,20 @@ function ApplicationDetail({ applicationId, currentUserId, onClose, onChanged })
                 <DetailRow label="Owner confirmed?" value={application.lgs_confirmed} />
                 <DetailRow label="Expected attendance" value={application.expected_attendance} />
                 <DetailRow label="Proposed dates" value={application.proposed_dates} />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 py-2 border-b border-border/50">
+                  <dt className="text-xs text-text-muted">Dates for the calendar</dt>
+                  <dd className="sm:col-span-2">
+                    <ApplicationDates
+                      key={(detail.dates || []).map((d) => `${d.id}${d.confirmed_at || ''}`).join()}
+                      dates={detail.dates || []}
+                      needsCheck={detail.dates_need_check}
+                      busy={busy}
+                      onConfirm={() => run(() => confirmApplicationDates(application.id))}
+                      onSave={(dates) => run(() => setApplicationDates(application.id, dates))}
+                    />
+                  </dd>
+                </div>
+                <DetailRow label="Timing notes" value={application.proposed_dates_notes} />
                 <DetailRow label="Events run" value={application.events_run_count} />
                 <DetailRow label="Average headcount" value={application.avg_headcount} />
                 <DetailRow label="Event experience" value={application.events_run} />
@@ -473,6 +524,7 @@ function ApplicationDetail({ applicationId, currentUserId, onClose, onChanged })
                     <ScoreSelect
                       key={key}
                       label={label}
+                      hint={key === 'local_activity' ? localActivityHint : null}
                       value={scores[key]}
                       onChange={(value) => setScores((s) => ({ ...s, [key]: value }))}
                     />
@@ -641,13 +693,14 @@ function AddCandidateForm({ onAdded }) {
 }
 
 export default function ExplorerApplications() {
-  usePageTitle('Explorer Applications')
+  usePageTitle('Review Explorer Series Applications')
 
   const { user } = useAuth()
   const [applications, setApplications] = useState([])
   const [statusFilter, setStatusFilter] = useState('')
   const [fewVotes, setFewVotes] = useState(false)
   const [needsMyVote, setNeedsMyVote] = useState(false)
+  const [datesCheck, setDatesCheck] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
@@ -680,13 +733,14 @@ export default function ExplorerApplications() {
     (!statusFilter || a.status === statusFilter)
     && (!fewVotes || (a.vote_count || 0) < VOTE_TARGET)
     && (!needsMyVote || !a.my_vote)
+    && (!datesCheck || a.dates_need_check)
   )
 
   return (
     <div className="max-w-content mx-auto px-4 py-8 space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display text-secondary">Explorer Applications</h1>
+          <h1 className="text-2xl font-display text-secondary">Review Explorer Series Applications</h1>
           <p className="text-sm text-text-muted">
             Review, score and approve applications to host Explorer Series events.
           </p>
@@ -703,6 +757,12 @@ export default function ExplorerApplications() {
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
+          <Link
+            to={ES_PATHS.calendar}
+            className="px-3 py-1.5 text-sm bg-bg-elevated border border-border rounded hover:border-secondary text-text-primary transition-colors"
+          >
+            Events calendar
+          </Link>
           <a
             href={EXPORT_CSV_URL}
             className="px-3 py-1.5 text-sm bg-bg-elevated border border-border rounded hover:border-secondary text-text-primary transition-colors"
@@ -740,6 +800,13 @@ export default function ExplorerApplications() {
       )}
 
       {!loading && applications.length > 0 && (
+        <ApplicantLocations
+          applications={applications}
+          onSelect={(application) => setSelectedId(application.id)}
+        />
+      )}
+
+      {!loading && applications.length > 0 && (
         <ApplicationMetrics
           applications={applications}
           statusFilter={statusFilter}
@@ -748,6 +815,8 @@ export default function ExplorerApplications() {
           onFewVotes={setFewVotes}
           needsMyVote={needsMyVote}
           onNeedsMyVote={setNeedsMyVote}
+          datesCheck={datesCheck}
+          onDatesCheck={setDatesCheck}
         />
       )}
 

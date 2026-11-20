@@ -1,5 +1,6 @@
 """Player API routes."""
 
+from utils.match_tables import live_matches
 import json
 import logging
 import sqlite3
@@ -17,10 +18,17 @@ from repositories.external_matches import ExternalMatchRepository
 from repositories.user_profiles import UserProfileRepository
 from repositories.blocked_users_repo import BlockedUsersRepository
 from repositories.voice_only_repo import VoiceOnlyRepository
-from utils.auth import is_admin
+from repositories.tag_me_repo import TagMeRepository
+from utils.auth import is_admin, require_auth
 from utils.card_images import attach_images, resolve_card_image
 from services.curiosa import deck_url_source, is_deck_url, normalize_deck_url
-from services.avatar_elo import get_player_avatar_changes, get_player_avatar_elo
+from services.avatar_elo import (
+    get_player_avatar_changes,
+    get_player_avatar_elo,
+    get_player_lifetime_avatar_elo,
+)
+from services import provisional
+from services.elo_gap import current_ratings, pre_match_select, ratings_then
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +167,50 @@ def _row_lifetime_delta(row, did_win):
     return lifetime or 0
 
 
+# Bot rows from the live table carry each side's Glicko-2 game counts after
+# the match from this index on (see provisional.GAMES_COLUMNS)
+GAMES_INDEX = 27
+_GAMES_KINDS = {"event": 0, "avatar": 2, "lifetime": 4}
+
+
+def _row_games(row, did_win, kind="event"):
+    """The player's side's game count after this match on a ladder, or None (Elo/older rows)."""
+    index = GAMES_INDEX + _GAMES_KINDS[kind] + (0 if did_win else 1)
+    return row[index] if len(row) > index else None
+
+
+def _row_change_hidden(row, did_win, kind="event") -> bool:
+    """True when this match's change on that ladder was made while provisional."""
+    return provisional.change_hidden(_row_games(row, did_win, kind))
+
+
+def _row_lifetime_delta_hidden(row, did_win) -> bool:
+    """The lifetime delta _row_lifetime_delta would use is a provisional one."""
+    if _row_change_hidden(row, did_win, "lifetime"):
+        return True
+    has_lifetime = len(row) > 26 and (row[25] if did_win else row[26]) is not None
+    return not has_lifetime and _row_change_hidden(row, did_win, "event")
+
+
+# After the games columns, bot rows carry each side's rating before the game,
+# whether the game stored pre-game standings (elo_gap.pre_match_select) and the
+# lifetime ladder that rated it ('glicko2' from Season 9 on)
+PRE_INDEX = GAMES_INDEX + len(provisional.GAMES_COLUMNS)
+LIFETIME_SYSTEM_INDEX = PRE_INDEX + 3
+
+
+def _history_select(columns):
+    """SELECT fragment for the columns from PRE_INDEX on (NULLs where the table lacks them)."""
+    system = "lifetime_system" if "lifetime_system" in columns else "NULL AS lifetime_system"
+    return f"{pre_match_select(columns)}, {system}"
+
+
+def _row_era(row):
+    """'glicko2' for a game rated on the Glicko-2 lifetime ladder, else 'legacy' (Elo lifetime)."""
+    glicko = len(row) > LIFETIME_SYSTEM_INDEX and row[LIFETIME_SYSTEM_INDEX] == "glicko2"
+    return "glicko2" if glicko else "legacy"
+
+
 def _active_event_window():
     """(start_date, end_date) of the active event, or (None, None) when none is running."""
     try:
@@ -183,7 +235,7 @@ def _attach_replays(entries: list[dict], player_id: str) -> None:
     try:
         placeholders = ",".join("?" * len(ids))
         found = conn.execute(
-            f"SELECT rowid, replay_url FROM match_records WHERE rowid IN ({placeholders})"
+            f"SELECT rowid, replay_url FROM {live_matches()} WHERE rowid IN ({placeholders})"
             " AND replay_url IS NOT NULL AND replay_url != ''",
             ids,
         ).fetchall()
@@ -304,7 +356,8 @@ def get_deck_stats(player_id):
 
     # Pull every match for this player from both active and archive tables
     all_rows = []
-    for table, id_col in [("match_records", "rowid"), ("match_records_archive", "rowid + 1000000000")]:
+    for table, id_col in [("match_records", "rowid"), ("match_records_archive", "rowid + 1000000000"), ("season_match_records", "rowid")]:
+        games_select = provisional.table_games_select(conn, table)
         try:
             cur.execute(
                 f"""
@@ -324,7 +377,8 @@ def get_deck_stats(player_id):
                     json_deck_data_winner as winner_json,
                     json_deck_data_loser as loser_json,
                     winner_went_first,
-                    loser_went_first
+                    loser_went_first,
+                    {games_select}
                 FROM {table}
                 WHERE winner_id = ? OR losser_id = ?
                 ORDER BY timestamp DESC
@@ -388,7 +442,8 @@ def get_deck_stats(player_id):
         opp_json = row["loser_json"] if did_win else row["winner_json"]
         opp_name = row["losser_display_name"] if did_win else row["winner_display_name"]
         opp_id = str(row["losser_id"]) if did_win else str(row["winner_id"])
-        elo_change = row["winner_elo_change"] if did_win else row["loser_elo_change"]
+        # Glicko-2: null (with elo_change_hidden) while the player was provisional
+        elo_change, change_hidden = provisional.side_change(dict(row), did_win)
 
         # Extract own deck info (use first match that has it)
         if avatar == "Unknown" and player_json and player_json not in ("{}", ""):
@@ -436,6 +491,7 @@ def get_deck_stats(player_id):
             "opponent_id": opp_id,
             "opponent_avatar": opp_avatar,
             "elo_change": elo_change,
+            **({"elo_change_hidden": True} if change_hidden else {}),
             "match_time": row["match_time"],
         })
 
@@ -494,7 +550,7 @@ def _any_display_name(player_id):
     except sqlite3.OperationalError:
         return None
     try:
-        for table in ["match_records", "match_records_archive"]:
+        for table in ["match_records", "match_records_archive", "season_match_records"]:
             try:
                 row = conn.execute(
                     f"""
@@ -527,13 +583,13 @@ def player_avatar_stats(player_id, avatar_name):
     # Period picker, same choices as the profile: lifetime, the current event
     # (live table), a past event (archive rows with that event_id) or a
     # season_* date range. event_start/end date the external matches.
-    tables = ["match_records", "match_records_archive"]
+    tables = [live_matches(), "match_records_archive"]
     archive_event_id = None
     season_range = None
     event_start_date = None
     event_end_date = None
     if event_filter == "current":
-        tables = ["match_records"]
+        tables = [live_matches()]
         event_start_date, event_end_date = _active_event_window()
     elif event_filter.startswith("season_"):
         season = next((sf for sf in SEASON_FILTERS if sf["id"] == event_filter), None)
@@ -573,6 +629,7 @@ def player_avatar_stats(player_id, avatar_name):
         elif season_range:
             date_filter = " AND timestamp >= ? AND timestamp <= ?"
             params.extend(season_range)
+        games_select = provisional.table_games_select(conn, table)
         try:
             cur.execute(
                 f"""
@@ -593,7 +650,8 @@ def player_avatar_stats(player_id, avatar_name):
                     json_deck_data,
                     winner_went_first,
                     loser_went_first,
-                    match_type
+                    match_type,
+                    {games_select}
                 FROM {table}
                 WHERE (winner_id = ? OR losser_id = ?){date_filter}
                 ORDER BY timestamp DESC
@@ -708,7 +766,8 @@ def player_avatar_stats(player_id, avatar_name):
         opp_avatar = _get_main_avatar(opp_json) or "Unknown"
         opp_name = row["losser_display_name"] if did_win else row["winner_display_name"]
         opp_id = str(row["losser_id"]) if did_win else str(row["winner_id"])
-        elo_change = row["winner_elo_change"] if did_win else row["loser_elo_change"]
+        # Glicko-2: null (with elo_change_hidden) while the player was provisional
+        elo_change, change_hidden = provisional.side_change(dict(row), did_win)
 
         if did_win:
             wins += 1
@@ -759,6 +818,7 @@ def player_avatar_stats(player_id, avatar_name):
             "opponent_id": opp_id,
             "opponent_avatar": opp_avatar,
             "elo_change": elo_change,
+            **({"elo_change_hidden": True} if change_hidden else {}),
             "match_time": row["match_time"],
             "match_type": match_type,
             "first_player": "Play" if player_on_play else "Draw" if player_on_play is False else None,
@@ -851,7 +911,19 @@ def player_avatar_stats(player_id, avatar_name):
         "on_draw": _play_draw_stats(on_draw),
         "matches": match_history,
         "event_filter": event_filter,
+        # This avatar's lifetime avatar ELO entry (shown to everyone here), or
+        # null before the player has one (always null before Glicko-2 seasons)
+        "lifetime_avatar_elo": _lifetime_avatar_entry(player_id, display_avatar_name),
     })
+
+
+def _lifetime_avatar_entry(player_id, avatar):
+    try:
+        entries = get_player_lifetime_avatar_elo(player_id, ELO_DB_PATH, avatar=avatar)
+    except Exception:
+        logger.exception("Could not load lifetime avatar ELO for %s", player_id)
+        return None
+    return entries[0] if entries else None
 
 
 def _get_limited_stats(player_id: str, event_filter: str = "current", is_owner: bool = False) -> dict:
@@ -1065,6 +1137,25 @@ def _profile_picture_url(profile):
     return f"https://cdn.discordapp.com/avatars/{profile['user_id']}/{profile['avatar']}.png?size=256"
 
 
+def _visible_rating_flags(flags: dict, event_filter, show_lifetime) -> dict:
+    """The profile's provisional flags, with lifetime ones only where lifetime ELO shows.
+
+    Visitors see the event rating in place of lifetime ELO (see displayed_elo),
+    so the displayed_ flags follow the event rating for them.
+    """
+    flags = dict(flags)
+    if not show_lifetime:
+        for key in ("lifetime_provisional", "lifetime_provisional_games"):
+            flags.pop(key, None)
+        if event_filter == "lifetime":
+            flags.pop("displayed_provisional", None)
+            flags.pop("displayed_provisional_games", None)
+            if "event_provisional" in flags:
+                flags["displayed_provisional"] = flags["event_provisional"]
+                flags["displayed_provisional_games"] = flags["event_provisional_games"]
+    return flags
+
+
 @players_bp.route("/player/<player_id>")
 def player_api(player_id):
     """Get comprehensive player stats and match history.
@@ -1129,8 +1220,8 @@ def player_api(player_id):
     # Check for bot matches (match_records table with INTEGER IDs)
     try:
         cur.execute(
-            """
-            SELECT COUNT(*), MAX(timestamp) FROM match_records
+            f"""
+            SELECT COUNT(*), MAX(timestamp) FROM {live_matches()}
             WHERE winner_id = ? OR losser_id = ?
             """,
             (player_id_normalized, player_id_normalized),
@@ -1172,6 +1263,9 @@ def player_api(player_id):
     include_current_matches = True  # From match_records or match_reports_web table
     include_archived_matches = True  # From match_records_archive table
     archive_event_id = None  # Specific event to filter in archive
+    # season_match_records keeps every season from 9 on (never archived): bot
+    # games from it are scoped to this event when one is in view
+    live_event_id = None
 
     # Event date range for filtering web matches (which have no event_id column)
     event_start_date = None
@@ -1185,11 +1279,12 @@ def player_api(player_id):
             elo_conn_tmp = sqlite3.connect(str(ELO_DB_PATH))
             elo_cur_tmp = elo_conn_tmp.cursor()
             elo_cur_tmp.execute(
-                "SELECT start_date FROM events WHERE is_active = 1 LIMIT 1"
+                "SELECT start_date, event_id FROM events WHERE is_active = 1 LIMIT 1"
             )
             ev_row = elo_cur_tmp.fetchone()
             if ev_row:
                 event_start_date = ev_row[0]
+                live_event_id = ev_row[1]
             elo_conn_tmp.close()
         except sqlite3.OperationalError:
             pass
@@ -1222,6 +1317,10 @@ def player_api(player_id):
                     event_start_date = ev_row[0]
                     event_end_date = ev_row[1]
                 elo_conn_tmp.close()
+                # Season 9 on: past seasons stay in season_match_records, not the archive
+                if live_matches() == "season_match_records":
+                    include_current_matches = True
+                    live_event_id = archive_event_id
             except (ValueError, TypeError):
                 pass  # Invalid event_id, fall back to lifetime
             except sqlite3.OperationalError:
@@ -1301,10 +1400,15 @@ def player_api(player_id):
             bot_date_filter = " AND timestamp >= ? AND timestamp <= ?"
             bot_base_params = (query_player_id, query_player_id, query_player_id, event_start_date, event_end_date)
         # Voice games have been flagged only since the voice queue preference shipped
-        cur.execute("PRAGMA table_info(match_records)")
+        cur.execute(f"PRAGMA table_info({live_matches()})")
         record_cols = {c[1] for c in cur.fetchall()}
+        if (live_event_id is not None and live_matches() == "season_match_records"
+                and "event_id" in record_cols):
+            bot_date_filter += " AND event_id = ?"
+            bot_base_params = (*bot_base_params, live_event_id)
         voice_select = "voice" if "voice" in record_cols else "NULL as voice"
         lifetime_change_select = _lifetime_change_select(record_cols)
+        games_select = provisional.games_select(record_cols)
         # Try new schema first, fallback to old
         try:
             cur.execute(
@@ -1335,8 +1439,10 @@ def player_api(player_id):
                     match_comment,
                     reporter_id,
                     {voice_select},
-                    {lifetime_change_select}
-                FROM match_records
+                    {lifetime_change_select},
+                    {games_select},
+                    {_history_select(record_cols)}
+                FROM {live_matches()}
                 WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                 ORDER BY timestamp DESC
             """,
@@ -1373,7 +1479,7 @@ def player_api(player_id):
                         NULL as loser_lifetime_elo_after,
                         NULL as match_comment,
                         reporter_id
-                    FROM match_records
+                    FROM {live_matches()}
                     WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                     ORDER BY timestamp DESC
                 """,
@@ -1410,7 +1516,7 @@ def player_api(player_id):
                             NULL as loser_lifetime_elo_after,
                             NULL as match_comment,
                             reporter_id
-                        FROM match_records
+                        FROM {live_matches()}
                         WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                         ORDER BY timestamp DESC
                     """,
@@ -1469,7 +1575,9 @@ def player_api(player_id):
                     match_comment,
                     reporter_id,
                     {archive_voice_select},
-                    {archive_lifetime_select}
+                    {archive_lifetime_select},
+                    {provisional.games_select(archive_cols)},
+                    {_history_select(archive_cols)}
                 FROM match_records_archive
                 WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                 ORDER BY timestamp DESC
@@ -1679,11 +1787,11 @@ def player_api(player_id):
                     )
                     displayed_rank = sum(1 for r in elo_cur.fetchall() if str(r[0]) in web_participants) + 1
                 else:
-                    match_cur_tmp.execute("""
+                    match_cur_tmp.execute(f"""
                         SELECT DISTINCT user_id FROM (
-                            SELECT winner_id as user_id FROM match_records WHERE timestamp >= ?
+                            SELECT winner_id as user_id FROM {live_matches()} WHERE timestamp >= ?
                             UNION
-                            SELECT losser_id as user_id FROM match_records WHERE timestamp >= ?
+                            SELECT losser_id as user_id FROM {live_matches()} WHERE timestamp >= ?
                         )
                     """, (event_start_date or "", event_start_date or ""))
                     bot_participants = {row[0] for row in match_cur_tmp.fetchall()}
@@ -1713,6 +1821,45 @@ def player_api(player_id):
         elo_conn.close()
     except sqlite3.OperationalError:
         pass
+
+    # Glicko-2 ladders (Season 9 on): a provisional rating shows no number and
+    # no rank, and settled players rank among settled players only
+    season_games, lifetime_games = provisional.standings_games(ELO_DB_PATH).get(
+        str(player_id_normalized), (0, 0)
+    )
+    rating_flags = {}  # event_/lifetime_/displayed_ provisional flags
+    if provisional.event_is_glicko2(elo_db_path=ELO_DB_PATH):
+        if provisional.mark(rating_flags, season_games, prefix="event_"):
+            online_event_elo = None
+        if source == "bot":
+            event_elo = online_event_elo
+            if event_filter == "current":
+                provisional.mark(rating_flags, season_games, prefix="displayed_")
+                displayed_elo = event_elo
+                displayed_rank = None if event_elo is None else provisional.settled_rank(
+                    event_elo, "online_event_elo", "online_event_games", ELO_DB_PATH
+                )
+    if provisional.lifetime_is_glicko2(ELO_DB_PATH):
+        if provisional.mark(rating_flags, lifetime_games, prefix="lifetime_"):
+            online_elo = None
+        if source == "bot":
+            player_elo = online_elo
+            rank = None if online_elo is None else provisional.settled_rank(
+                online_elo, "online_elo", "online_games", ELO_DB_PATH
+            )
+            if event_filter == "lifetime":
+                provisional.mark(rating_flags, lifetime_games, prefix="displayed_")
+                displayed_elo, displayed_rank = player_elo, rank
+    if archive_event_id is not None and source == "bot":
+        ladder = provisional.archived_ladder(archive_event_id, ELO_DB_PATH, MATCH_RECORDS_DB_PATH)
+        own = next(
+            (r for r in ladder or [] if str(r["user_id"]) == str(player_id_normalized)), None
+        )
+        if own:
+            displayed_elo, displayed_rank = own["event_elo"], own["rank"]
+            rating_flags["displayed_provisional"] = own["provisional"]
+            rating_flags["displayed_provisional_games"] = own["provisional_games"]
+    legacy_elo = provisional.legacy_elo(player_id_normalized, ELO_DB_PATH)
 
     # Get player name - custom_display_name has highest priority
     player_name = None
@@ -1942,6 +2089,8 @@ def player_api(player_id):
         own_avatar, _ = _extract_deck_info(winner_json if did_win else loser_json)
         opponent_avatar, _ = _extract_deck_info(loser_json if did_win else winner_json)
         elo_change = (row[7] if did_win else row[8]) if len(row) > 8 else None
+        if _row_change_hidden(row, did_win):
+            elo_change = None  # made while provisional: left out of the sums
         avatar_change = history_avatar_changes.get((str(row[6]), str(row[10]), str(row[11])))
         if avatar_change is not None:
             elo_change = avatar_change[0] if did_win else avatar_change[1]
@@ -2002,6 +2151,9 @@ def player_api(player_id):
         entry = entries_by_avatar.get(perf["name"])
         perf["event_elo"] = entry["event_elo"] if entry else None
         perf["event_rank"] = entry["rank"] if entry else None
+        if entry and "provisional" in entry:
+            perf["event_provisional"] = entry["provisional"]
+            perf["event_provisional_games"] = entry["provisional_games"]
 
     def _matchup_rows(counts):
         result = []
@@ -2047,49 +2199,33 @@ def player_api(player_id):
         "1199 or less": {"wins": 0, "losses": 0},
     }
 
-    # Get opponent ELOs from database
+    # Opponent's rating at the time of each game: stored on newer games (left
+    # out while it was still provisional), today's rating for older ones
     try:
         elo_conn = sqlite3.connect(str(ELO_DB_PATH))
-        elo_cur = elo_conn.cursor()
+        try:
+            ratings_now = current_ratings(elo_conn, paper=source == "web", default=None)
+        except sqlite3.OperationalError:
+            ratings_now = {}
+        elo_conn.close()
 
         # Ranked games only, the same ones as the Ranked Match History table
         for row in (r for r in rows if not _is_casual_row(r)):
             did_win = row[0]
             opponent_id = str(row[11]) if did_win else str(row[10])
-            winner_elo_change = row[7] if row[7] else 0
-            loser_elo_change = row[8] if row[8] else 0
+            if source != "web" and opponent_id.startswith("google_"):
+                opponent_id = opponent_id[7:]
 
-            # Get opponent's current ELO
-            opponent_elo = None
-            if source == "web":
-                # Query paper_standings for web matches
-                try:
-                    elo_cur.execute(
-                        "SELECT paper_elo FROM paper_standings WHERE user_id = ?",
-                        (opponent_id,)
-                    )
-                    opp_row = elo_cur.fetchone()
-                    if opp_row:
-                        opponent_elo = opp_row[0]
-                except sqlite3.OperationalError:
-                    pass
-            else:
-                # Query overall_standings for bot matches
-                # Normalize opponent_id for bot matches (remove google_ prefix if present)
-                opponent_id_normalized = opponent_id
-                if opponent_id.startswith("google_"):
-                    opponent_id_normalized = opponent_id[7:]
-
-                try:
-                    elo_cur.execute(
-                        "SELECT elo FROM overall_standings WHERE user_id = ?",
-                        (opponent_id_normalized,)
-                    )
-                    opp_row = elo_cur.fetchone()
-                    if opp_row:
-                        opponent_elo = opp_row[0]
-                except sqlite3.OperationalError:
-                    pass
+            winner_pre, loser_pre, has_snapshot = (
+                row[PRE_INDEX:PRE_INDEX + 3] if len(row) > PRE_INDEX + 2 else (None, None, 0)
+            )
+            # Today's rating stands in for the opponent only; ours isn't needed
+            now = ratings_now.get(opponent_id)
+            winner_then, loser_then = ratings_then(
+                winner_pre, loser_pre, has_snapshot,
+                0 if did_win else now, now if did_win else 0,
+            )
+            opponent_elo = loser_then if did_win else winner_then
 
             # If we have opponent ELO, categorize by bracket
             if opponent_elo is not None:
@@ -2112,8 +2248,6 @@ def player_api(player_id):
                     elo_bracket_stats[bracket]["wins"] += 1
                 else:
                     elo_bracket_stats[bracket]["losses"] += 1
-
-        elo_conn.close()
     except Exception as e:
         logger.error(f"Error calculating ELO bracket stats: {e}", exc_info=True)
 
@@ -2192,6 +2326,30 @@ def player_api(player_id):
         }
 
     row_facts = {id(r): _row_facts(r) for r in sorted_rows}
+
+    # Card filter: the cards this player played, from saved PSO card data.
+    # Only their own cards, and only for viewers who may see their Card Stats.
+    card_filter_allowed = source == "bot" and (
+        is_owner or UserProfileRepository().get_profile_visibility(player_id_normalized).get("card_stats", False)
+    )
+    row_cards = {}
+    if card_filter_allowed and sorted_rows:
+        from services.player_card_stats import archive_original_ids, played_cards_by_match
+        played_by_match = played_cards_by_match(MATCH_RECORDS_DB_PATH, player_id_normalized)
+        if played_by_match:
+            archived = archive_original_ids(MATCH_RECORDS_DB_PATH, player_id_normalized)
+            for r in sorted_rows:
+                if len(r) <= 12 or not isinstance(r[12], int):
+                    continue
+                if r[12] >= 1_000_000_000:
+                    original = archived.get(r[12] - 1_000_000_000)
+                else:
+                    original = r[12]
+                if original is None:
+                    continue
+                cards = played_by_match.get((original, str(r[10]), str(r[11])))
+                if cards:
+                    row_cards[id(r)] = cards
     opponent_games = {}
     opponent_names = {}
     for r in sorted_rows:
@@ -2208,6 +2366,15 @@ def player_api(player_id):
         "avatars": sorted({row_facts[id(r)]["avatar"] for r in sorted_rows} - {None}),
         "opponent_avatars": sorted({row_facts[id(r)]["opponent_avatar"] for r in sorted_rows} - {None}),
     }
+    if card_filter_allowed:
+        card_games = {}
+        for cards in row_cards.values():
+            for name in cards:
+                card_games[name] = card_games.get(name, 0) + 1
+        filter_options["cards"] = sorted(
+            ({"name": n, "games": g} for n, g in card_games.items()), key=lambda c: c["name"].lower()
+        )
+        filter_options["card_games"] = len(row_cards)
     match_filters = {
         "opponent_id": (request.args.get("opponent") or "").strip(),
         "result": (request.args.get("result") or "").strip().lower(),
@@ -2217,12 +2384,20 @@ def player_api(player_id):
         "play_draw": (request.args.get("play_draw") or "").strip().lower(),
     }
     match_filters = {k: v for k, v in match_filters.items() if v}
+    # Games where the player played this card (needs saved PSO card data)
+    card_filter = (request.args.get("card") or "").strip() if card_filter_allowed else ""
+    if card_filter:
+        match_filters["card"] = card_filter
 
     def _passes_filters(row):
         facts = row_facts[id(row)]
-        return all(
-            str(facts[k] or "").lower() == v.lower() for k, v in match_filters.items()
-        )
+        for k, v in match_filters.items():
+            if k == "card":
+                if v.lower() not in {c.lower() for c in row_cards.get(id(row), ())}:
+                    return False
+            elif str(facts[k] or "").lower() != v.lower():
+                return False
+        return True
 
     if match_filters:
         ranked_rows = [r for r in ranked_rows if _passes_filters(r)]
@@ -2313,9 +2488,11 @@ def player_api(player_id):
         opponent_name = row[5] if did_win else row[4]
         opponent_id = str(row[11]) if did_win else str(row[10])
         elo_change = row[7] if did_win else row[8]
+        change_hidden = _row_change_hidden(row, did_win)
         avatar_change = avatar_changes.get((str(row[6]), str(row[10]), str(row[11])))
         if avatar_change is not None:
             elo_change = avatar_change[0] if did_win else avatar_change[1]
+            change_hidden = avatar_change[2] if did_win else avatar_change[3]
 
         player_deck_url = None
         opponent_deck_url = None
@@ -2362,7 +2539,9 @@ def player_api(player_id):
             "opponent": opponent_name,
             "opponent_id": opponent_id,
             "result": "Win" if did_win else "Loss",
-            "elo_change": elo_change if elo_change else 0,
+            # Glicko-2: null (with elo_change_hidden) while the player was provisional
+            "elo_change": None if change_hidden else (elo_change if elo_change else 0),
+            **({"elo_change_hidden": True} if change_hidden else {}),
             "date": row[6],
             "first_player": "Play"
             if player_on_play
@@ -2461,21 +2640,35 @@ def player_api(player_id):
     except sqlite3.OperationalError:
         pass
 
-    # Walk forward, using stored lifetime ELO when available
+    # Walk forward, using stored lifetime ELO when available.
+    # Each point carries its era: "legacy" for the Elo lifetime (Seasons 1-8,
+    # kept as Legacy ELO) and "glicko2" for games on the Glicko-2 lifetime
+    # ladder, which restarted at 1500. The chart draws them apart, so the
+    # restart doesn't read as a drop.
     elo = 1500
     event_idx = 0
+    era = None
     elo_history = []
     for row in elo_history_source:
         did_win = row[0]
         elo_change = row[7] if did_win else row[8]
         match_date = row[6]
+        row_era = _row_era(row)
+        if row_era != era and row_era == "glicko2":
+            elo = 1500  # the Glicko-2 lifetime ladder starts over
+        era = row_era
 
         # Try stored lifetime_elo_after first (index 20 = winner, 21 = loser)
         stored_elo_after = None
         if len(row) > 21:
             stored_elo_after = row[20] if did_win else row[21]
 
-        if stored_elo_after is not None:
+        if era == "glicko2":
+            # Lifetime change, so the tooltip adds up to the lifetime line
+            # (a Glicko-2 season's change is a different ladder)
+            elo_change = _row_lifetime_delta(row, did_win)
+            elo = stored_elo_after if stored_elo_after is not None else elo + elo_change
+        elif stored_elo_after is not None:
             elo = stored_elo_after
         else:
             # Fallback: reconstruct using event boundaries
@@ -2484,14 +2677,22 @@ def player_api(player_id):
                 event_idx += 1
             elo += elo_change or 0
 
+        # Glicko-2: no point while lifetime was provisional; a season change
+        # made while provisional is null (elo_change_hidden)
+        if _row_change_hidden(row, did_win, "lifetime"):
+            continue
         opponent_name = row[5] if did_win else row[4]
-        elo_history.append({
+        point = {
             "date": match_date,
             "elo_change": elo_change,
             "elo_after": round(elo),
             "result": "Win" if did_win else "Loss",
             "opponent": opponent_name,
-        })
+            "era": era,
+        }
+        if era == "legacy" and _row_change_hidden(row, did_win):
+            point.update(elo_change=None, elo_change_hidden=True)
+        elo_history.append(point)
 
     # Recent decks - group matches by deck URL to calculate win rates and ELO impact.
     # Both ELO figures sum the per-match *lifetime* ELO deltas: "season" over the
@@ -2568,9 +2769,9 @@ def player_api(player_id):
 
             deck_stats[player_deck_url] = _new_deck_stats(avatar_name, deck_name, row[6])
 
-        _add_deck_result(
-            deck_stats[player_deck_url], did_win, row[6], _row_lifetime_delta(row, did_win)
-        )
+        # Changes made while provisional (Glicko-2) stay out of the totals
+        lifetime_delta = 0 if _row_lifetime_delta_hidden(row, did_win) else _row_lifetime_delta(row, did_win)
+        _add_deck_result(deck_stats[player_deck_url], did_win, row[6], lifetime_delta)
 
     # Include external matches in recent decks
     for em in external_matches_raw:
@@ -2716,6 +2917,11 @@ def player_api(player_id):
         hidden_avatars = set(UserProfileRepository().get_hidden_avatars(player_id_normalized))
     except Exception:
         hidden_avatars = set()
+    try:
+        hidden_badges = UserProfileRepository().get_hidden_badges(player_id_normalized)
+        shown_badges = UserProfileRepository().get_shown_badges(player_id_normalized)
+    except Exception:
+        hidden_badges, shown_badges = [], None
     if hidden_avatars:
         if is_owner:
             for perf in avatar_performance:
@@ -2732,16 +2938,33 @@ def player_api(player_id):
             return True
         return visibility.get(section_key, False)
 
+    # Lifetime avatar ELO (Glicko-2, first Glicko-2 season on): same visibility
+    # as the profile's lifetime ELO; empty before that season
+    lifetime_avatar_elo = []
+    if show_lifetime:
+        try:
+            lifetime_avatar_elo = [
+                e for e in get_player_lifetime_avatar_elo(player_id_normalized, ELO_DB_PATH)
+                if is_owner or e["avatar"] not in hidden_avatars
+            ]
+        except Exception:
+            logger.exception("Could not load lifetime avatar ELO for %s", player_id_normalized)
+
     return jsonify(
         {
             "id": player_id_normalized,
             "name": player_name,
             "avatar_url": _profile_picture_url(profile),
             "elo": player_elo if show_lifetime else None,
+            # Seasons 1-8 lifetime ELO, frozen when lifetime moved to Glicko-2
+            "legacy_elo": legacy_elo if show_lifetime else None,
             "event_elo": event_elo,
             "displayed_elo": displayed_elo if event_filter != "lifetime" or show_lifetime else event_elo,
             "rank": rank if show_lifetime else None,
             "displayed_rank": displayed_rank if event_filter != "lifetime" or show_lifetime else 0,
+            # Glicko-2 only: event_provisional(_games), lifetime_provisional(_games)
+            # and displayed_provisional(_games) for whichever rating displayed_elo is
+            **_visible_rating_flags(rating_flags, event_filter, show_lifetime),
             "event_filter": event_filter,
             "wins": wins,
             "losses": losses,
@@ -2776,6 +2999,9 @@ def player_api(player_id):
                 "entries": avatar_elo["entries"],
                 "history": avatar_elo["history"] if _section_visible("elo_history") else {},
             },
+            # [{avatar, elo, games, rank, provisional, provisional_games}]; elo and
+            # rank are null while provisional (rank counts settled entries only)
+            "lifetime_avatar_elo": lifetime_avatar_elo,
             "avatar_matchups": avatar_matchups if _section_visible("avatar_matchups") else [],
             "avatar_matchups_by_avatar": avatar_matchups_by_avatar if _section_visible("avatar_matchups") else {},
             "recent_decks": recent_decks if _section_visible("recent_decks") else [],
@@ -2801,6 +3027,10 @@ def player_api(player_id):
             "recorded_games": recorded_games if _section_visible("recorded_games") else [],
             "is_owner": is_owner,
             "is_admin": is_admin(),
+            # Badge keys the player keeps off their hero card (badges are public anyway)
+            "hidden_badges": hidden_badges,
+            # The hero card badges the player picked; None = their best 3
+            "shown_badges": shown_badges,
             "has_custom_display_name": has_custom_display_name,
             "elo_vs_brackets": elo_vs_brackets if _section_visible("elo_brackets") else [],
             "profile_visibility": visibility,
@@ -2979,6 +3209,85 @@ def set_hidden_avatars(player_id):
     return jsonify({"success": True, "avatars": repo.get_hidden_avatars(player_id_normalized)})
 
 
+@players_bp.route("/player/<player_id>/hidden-badges", methods=["PUT"])
+def set_hidden_badges(player_id):
+    """Choose which badges show on the profile's hero card (owner or admin).
+
+    Keys are the ones the profile builds ("postseason", "avatar_honours",
+    "paper:<event>", "event_avatar:<event>", ...). Hidden badges still show
+    in the Postseason tab.
+    """
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+    viewer = str(logged_in_user_id).removeprefix("google_")
+    player_id_normalized = str(player_id).removeprefix("google_")
+    if viewer != player_id_normalized and not is_admin():
+        return jsonify({"error": "You can only change your own profile"}), 403
+
+    data = request.get_json(silent=True) or {}
+    keys = data.get("hidden")
+    if (
+        not isinstance(keys, list)
+        or len(keys) > 500
+        or not all(isinstance(k, str) and 0 < len(k) <= 300 for k in keys)
+    ):
+        return jsonify({"error": "hidden must be a list of badge keys"}), 400
+
+    repo = UserProfileRepository()
+    if not repo.set_hidden_badges(player_id_normalized, keys):
+        return jsonify({"error": "Profile not found"}), 404
+    return jsonify({"success": True, "hidden": repo.get_hidden_badges(player_id_normalized)})
+
+
+@players_bp.route("/profile-badge-prefs", methods=["GET"])
+def get_profile_badge_prefs():
+    """Which badges each player chose for their name (leaderboards show the same).
+
+    Only players who changed the default (their best 3) are listed. The
+    badges themselves are public; this is just each player's pick.
+    """
+    try:
+        prefs = UserProfileRepository().get_all_badge_prefs()
+    except Exception as e:
+        logger.warning("Could not load badge preferences: %s", e)
+        prefs = {}
+    return jsonify({"success": True, "prefs": prefs})
+
+
+@players_bp.route("/player/<player_id>/shown-badges", methods=["PUT"])
+def set_shown_badges(player_id):
+    """Pick the badges on the profile's hero card (owner or admin).
+
+    {"shown": [key, ...]} shows exactly those, in that order;
+    {"shown": null} goes back to the default, the player's best 3.
+    Every badge still shows in the Postseason tab.
+    """
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+    viewer = str(logged_in_user_id).removeprefix("google_")
+    player_id_normalized = str(player_id).removeprefix("google_")
+    if viewer != player_id_normalized and not is_admin():
+        return jsonify({"error": "You can only change your own profile"}), 403
+
+    data = request.get_json(silent=True) or {}
+    if "shown" not in data:
+        return jsonify({"error": "shown is required (a list of badge keys, or null)"}), 400
+    keys = data["shown"]
+    if keys is not None and (
+        not isinstance(keys, list)
+        or len(keys) > 500
+        or not all(isinstance(k, str) and 0 < len(k) <= 300 for k in keys)
+    ):
+        return jsonify({"error": "shown must be a list of badge keys, or null"}), 400
+
+    repo = UserProfileRepository()
+    if not repo.set_shown_badges(player_id_normalized, keys):
+        return jsonify({"error": "Profile not found"}), 404
+    return jsonify({"success": True, "shown": repo.get_shown_badges(player_id_normalized)})
+
+
 # ---------------------------------------------------------------------------
 # Featured deck: a deck the player chose to show on their profile.
 #
@@ -3124,6 +3433,220 @@ def clear_featured_deck(player_id):
         return error
     UserProfileRepository().clear_featured_deck(player_id_normalized)
     return jsonify({"success": True})
+
+
+# The player's own boxes on their profile card. Player-written text is
+# public, so it is short, plain and link-free; admins can edit or clear it
+# from the profile like the owner (logged in the Audit Log).
+SHOWCASE_BIO_MAX = 160
+RIVAL_OPTIONS_MAX = 300
+_LINK_RE = re.compile(
+    r"(https?://|www\.|discord\.gg|\b[a-z0-9-]+\.(com|net|org|gg|io|co|ly|me|tv|xyz|app)\b)",
+    re.IGNORECASE,
+)
+
+
+def _showcase_text(raw, limit, label):
+    """(cleaned text, error) for one player-written field."""
+    from services.article_content import clean_text
+    text = clean_text(str(raw or ""))
+    if len(text) > limit:
+        return None, f"{label} can be at most {limit} characters"
+    if _LINK_RE.search(text):
+        return None, f"{label} can't include links"
+    return text, None
+
+
+def _showcase_card(raw):
+    """({"name", "image"} or None, error). Only cards we serve art for."""
+    from services.article_content import clean_text
+    from repositories.card_catalog import CardCatalogRepository
+    name = clean_text(str(raw or ""))[:80]
+    if not name:
+        return None, None
+    try:
+        names = CardCatalogRepository().get_all_card_names()
+    except Exception:
+        names = []
+    lower = name.lower()
+    match = next((n for n in names if n.lower() == lower), None)
+    image = resolve_card_image(match) if match else None
+    if not image:
+        return None, "Pick a card from the list"
+    return {"name": match, "image": image}, None
+
+
+def _opponent_records(player_id, opponent_id=None):
+    """{opponent id: {"name", "wins", "losses"}} from the player's lifetime bot matches.
+
+    Lifetime = the live match table plus the archive, like the profile's
+    Lifetime period. With opponent_id, only games against that player.
+    """
+    out = {}
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    except sqlite3.OperationalError:
+        return out
+    try:
+        for table in dict.fromkeys([live_matches(), "match_records_archive"]):
+            sql = (
+                f"SELECT winner_id, winner_display_name, losser_id, losser_display_name"
+                f" FROM {table} WHERE (winner_id = ? OR losser_id = ?)"
+            )
+            params = [player_id, player_id]
+            if opponent_id is not None:
+                sql += " AND (winner_id = ? OR losser_id = ?)"
+                params += [opponent_id, opponent_id]
+            try:
+                rows = conn.execute(sql + " ORDER BY timestamp", params).fetchall()
+            except sqlite3.OperationalError:
+                continue
+            for winner_id, winner_name, loser_id, loser_name in rows:
+                won = str(winner_id) == str(player_id)
+                opp_id, opp_name = (loser_id, loser_name) if won else (winner_id, winner_name)
+                if not opp_id or str(opp_id) == str(player_id):
+                    continue
+                rec = out.setdefault(str(opp_id), {"name": opp_name, "wins": 0, "losses": 0})
+                rec["name"] = opp_name or rec["name"]  # newest name wins
+                rec["wins" if won else "losses"] += 1
+    finally:
+        conn.close()
+    return out
+
+
+def _rival_payload(player_id, rival_id):
+    """The rival box: who, their picture, and the head-to-head record. None when hidden."""
+    if not rival_id:
+        return None
+    rival_id = str(rival_id)
+    # A rival who blocked this player is never shown on their profile
+    try:
+        blocked = {
+            str(b.get("blocked_user_id")).removeprefix("google_")
+            for b in BlockedUsersRepository().get_blocked_users(rival_id)
+        }
+        if str(player_id) in blocked:
+            return None
+    except Exception as e:
+        logger.warning("Could not check blocks for rival %s: %s", rival_id, e)
+    record = _opponent_records(player_id, rival_id).get(rival_id, {"name": None, "wins": 0, "losses": 0})
+    repo = UserProfileRepository()
+    name = repo.get_custom_display_names([rival_id]).get(rival_id) or record["name"]
+    profile = None
+    try:
+        profile = repo.get_by_user_id(rival_id)
+    except Exception:
+        pass
+    if not name and profile:
+        name = profile.get("custom_display_name") or profile.get("display_name")
+    return {
+        "id": rival_id,
+        "name": name or "Unknown player",
+        "avatar_url": _profile_picture_url(profile),
+        "wins": record["wins"],
+        "losses": record["losses"],
+    }
+
+
+def _showcase_payload(player_id, showcase):
+    card = showcase.get("favorite_card")
+    if isinstance(card, dict) and card.get("name"):
+        # The image file can change when card art is updated on the server
+        card = {"name": card["name"], "image": resolve_card_image(card["name"]) or card.get("image")}
+    else:
+        card = None
+    return {
+        "bio": showcase.get("bio") or None,
+        "favorite_card": card,
+        "rival": _rival_payload(player_id, showcase.get("rival")),
+    }
+
+
+@players_bp.route("/player/<player_id>/showcase", methods=["GET"])
+def get_showcase(player_id):
+    """The player's short bio, favorite card and rival (each null when not set)."""
+    player_id_normalized = str(player_id).removeprefix("google_")
+    try:
+        showcase = UserProfileRepository().get_showcase(player_id_normalized)
+    except Exception as e:
+        logger.warning("Could not load profile showcase for %s: %s", player_id_normalized, e)
+        showcase = {}
+    return jsonify(_showcase_payload(player_id_normalized, showcase))
+
+
+@players_bp.route("/player/<player_id>/rival-options", methods=["GET"])
+def get_rival_options(player_id):
+    """Players this player has played (most games first), to pick a rival from. Owner or admin."""
+    player_id_normalized, error = _owner_or_admin(player_id)
+    if error:
+        return error
+    records = _opponent_records(player_id_normalized)
+    names = UserProfileRepository().get_custom_display_names(list(records))
+    options = [
+        {
+            "id": opp_id,
+            "name": names.get(opp_id) or rec["name"] or "Unknown player",
+            "wins": rec["wins"],
+            "losses": rec["losses"],
+        }
+        for opp_id, rec in records.items()
+    ]
+    options.sort(key=lambda o: (-(o["wins"] + o["losses"]), o["name"].lower()))
+    return jsonify({"players": options[:RIVAL_OPTIONS_MAX]})
+
+
+@players_bp.route("/player/<player_id>/showcase", methods=["PUT"])
+def set_showcase(player_id):
+    """Change any of bio / favorite_card / rival (owner or admin).
+
+    Body fields are optional; a field that is sent replaces the old value,
+    and an empty value clears it. favorite_card is a card name; rival is
+    the id of a player they have played.
+    """
+    player_id_normalized, error = _owner_or_admin(player_id)
+    if error:
+        return error
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Send the fields to change"}), 400
+
+    repo = UserProfileRepository()
+    before = repo.get_showcase(player_id_normalized)
+    showcase = dict(before)
+
+    if "bio" in data:
+        bio, err = _showcase_text(data["bio"], SHOWCASE_BIO_MAX, "Your description")
+        if err:
+            return jsonify({"error": err}), 400
+        showcase["bio"] = bio
+    if "favorite_card" in data:
+        card, err = _showcase_card(data["favorite_card"])
+        if err:
+            return jsonify({"error": err}), 400
+        showcase["favorite_card"] = card
+    if "rival" in data:
+        rival = str(data["rival"] or "").removeprefix("google_")
+        if rival and rival not in _opponent_records(player_id_normalized, rival):
+            return jsonify({"error": "Pick a player you have played"}), 400
+        showcase["rival"] = rival or None
+
+    if not repo.set_showcase(player_id_normalized, showcase):
+        return jsonify({"error": "Profile not found"}), 404
+
+    viewer = str(session.get("user_id") or "").removeprefix("google_")
+    if viewer != player_id_normalized:
+        try:
+            from repositories.audit import AuditRepository
+            AuditRepository().log_action(
+                viewer, session.get("username") or viewer,
+                "edit_profile_showcase", target_id=player_id_normalized,
+                previous_state=before or None, new_state=showcase or None,
+            )
+        except Exception as e:
+            logger.warning("Could not audit-log showcase edit: %s", e)
+
+    return jsonify({"success": True, **_showcase_payload(
+        player_id_normalized, repo.get_showcase(player_id_normalized))})
 
 
 @players_bp.route("/player/<player_id>/card-stats")
@@ -3301,28 +3824,45 @@ def _queue_settings_key(player_id) -> tuple[str | None, str | None]:
 
 @players_bp.route("/player/<player_id>/queue-settings", methods=["GET"])
 def get_queue_settings(player_id):
-    """A player's Discord queue settings (owner only): voice only."""
+    """A player's Discord queue settings (owner only): voice only, tag me."""
     if session.get("user_id") is None:
         return jsonify({"error": "Authentication required"}), 401
     key, error = _queue_settings_key(player_id)
     if key is None:
         return jsonify({"error": error}), 403
-    return jsonify({"voice_only": VoiceOnlyRepository().is_voice_only(key)})
+    return jsonify({
+        "voice_only": VoiceOnlyRepository().is_voice_only(key),
+        "tag_me": TagMeRepository().wants_tag(key),
+    })
+
+
+_QUEUE_SETTINGS = ("voice_only", "tag_me")
 
 
 @players_bp.route("/player/<player_id>/queue-settings", methods=["POST"])
 def set_queue_settings(player_id):
-    """Save a player's Discord queue settings (owner only)."""
+    """Save a player's Discord queue settings (owner only).
+
+    Send any of voice_only / tag_me; settings left out are unchanged.
+    """
     if session.get("user_id") is None:
         return jsonify({"error": "Authentication required"}), 401
     key, error = _queue_settings_key(player_id)
     if key is None:
         return jsonify({"error": error}), 403
     data = request.get_json(silent=True) or {}
-    if not isinstance(data.get("voice_only"), bool):
-        return jsonify({"error": "voice_only must be true or false"}), 400
-    voice_only = VoiceOnlyRepository().set_voice_only(key, data["voice_only"])
-    return jsonify({"success": True, "voice_only": voice_only})
+    sent = [name for name in _QUEUE_SETTINGS if name in data]
+    if not sent:
+        return jsonify({"error": "Send voice_only or tag_me"}), 400
+    for name in sent:
+        if not isinstance(data[name], bool):
+            return jsonify({"error": f"{name} must be true or false"}), 400
+    result = {"success": True}
+    if "voice_only" in data:
+        result["voice_only"] = VoiceOnlyRepository().set_voice_only(key, data["voice_only"])
+    if "tag_me" in data:
+        result["tag_me"] = TagMeRepository().set_tag_me(key, data["tag_me"])
+    return jsonify(result)
 
 
 @players_bp.route("/nav-prefs", methods=["GET"])
@@ -3466,3 +4006,62 @@ def delete_own_account(player_id):
 
     status = 200 if result.get("success") else 500
     return jsonify(result), status
+
+
+@players_bp.route("/player/<path:player_id>/data-export", methods=["GET"])
+@require_auth
+def export_own_data(player_id):
+    """Download a zip of everything the site holds for the logged-in player.
+
+    Owner only: admins and API keys cannot pull another player's export.
+    """
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Log in to export your data"}), 401
+
+    logged_in_id_str = str(logged_in_user_id)
+    player_id_normalized = str(player_id)
+    if logged_in_id_str.startswith("google_"):
+        logged_in_id_str = logged_in_id_str[7:]
+    if player_id_normalized.startswith("google_"):
+        player_id_normalized = player_id_normalized[7:]
+    if logged_in_id_str != player_id_normalized:
+        return jsonify({"error": "You can only export your own data"}), 403
+
+    from io import BytesIO
+    from flask import send_file
+    from services.data_export import build_export_zip_with_stats
+    from repositories.audit import AuditRepository
+
+    display_name = session.get("username", str(logged_in_user_id))
+
+    def _audit(action, details, new_state=None):
+        # Feeds the admin "Data Exports" tile; never block the download on it
+        try:
+            AuditRepository().log_action(
+                str(logged_in_user_id), display_name, action,
+                target_id=str(logged_in_user_id), target_name=display_name,
+                new_state=new_state, details=details,
+            )
+        except Exception:
+            logger.warning("Could not audit-log data export", exc_info=True)
+
+    try:
+        payload, filename, stats = build_export_zip_with_stats(str(logged_in_user_id))
+    except Exception as e:
+        logger.error(f"Data export failed for {logged_in_user_id}: {e}", exc_info=True)
+        _audit("self_data_export_failed", f"Data export failed for {display_name}: {type(e).__name__}")
+        return jsonify({"error": "Could not build your export, please try again"}), 500
+
+    _audit(
+        "self_data_export",
+        f"User {display_name} downloaded their data export ({stats['bytes']} bytes, {stats['matches']} matches)",
+        new_state=stats,
+    )
+
+    resp = send_file(
+        BytesIO(payload), mimetype="application/zip",
+        as_attachment=True, download_name=filename,
+    )
+    resp.headers["Cache-Control"] = "no-store"
+    return resp

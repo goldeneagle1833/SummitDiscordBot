@@ -7,7 +7,7 @@ export default function EloBrackets({ brackets }) {
 
   return (
     <section className="bg-bg-surface border border-border rounded-xl p-5">
-      <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted mb-4">Win rate vs opponent ELO</h2>
+      <h2 className="text-xs font-bold uppercase tracking-wider text-text-muted mb-4">Win rate vs opponent rating</h2>
       <ul className="space-y-3">
         {rows.map((b) => (
           <li key={b.bracket} className="grid grid-cols-[96px_1fr_auto] items-center gap-3 text-sm">

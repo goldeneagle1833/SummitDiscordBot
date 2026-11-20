@@ -3,15 +3,18 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { getProducts, getStorefronts, formatMoney } from '@/api/store'
 import useStoreCart, {
-  DEFAULT_STOREFRONT, cartCount, maxQuantity, reconcileCart,
+  DEFAULT_STOREFRONT, cartCount, isRoleOnly, isRoleProduct, maxQuantity, reconcileCart,
 } from '@/hooks/useStoreCart'
 import Spinner from '@/components/ui/Spinner'
 import FramedImage from '@/components/store/FramedImage'
 import LinkifiedText from '@/components/ui/LinkifiedText'
 import usePageTitle from '@/hooks/usePageTitle'
 import ImageLightbox from '@/components/store/ImageLightbox'
+import NewTag from '@/components/common/NewTag'
+import { useIsNew } from '@/hooks/useNewContent'
+import { ES_STOREFRONT_SLUG } from '@/utils/explorerSite'
 
-function LoginPromptModal({ onClose }) {
+export function LoginPromptModal({ onClose }) {
   const returnUrl = encodeURIComponent(window.location.href)
 
   useEffect(() => {
@@ -61,7 +64,7 @@ function productImages(p) {
 
 // Main image plus a thumbnail strip when a product has more than one image.
 // Clicking the main image opens it full screen, uncropped.
-function ProductGallery({ product }) {
+export function ProductGallery({ product }) {
   const images = productImages(product)
   const [index, setIndex] = useState(0)
   const [viewing, setViewing] = useState(false)
@@ -125,66 +128,35 @@ function ProductGallery({ product }) {
   )
 }
 
-// Summit shirts are printed and sold by Crit Apparel, so this card links out
-// to their store in a new tab instead of going in the cart.
-export const SUMMIT_SHIRTS = {
-  url: 'https://critapparel.com/collections/sorcerersummit',
-  image: '/static/images/store/summit-shirts.png',
-}
-
-function ShirtsCard() {
-  return (
-    <a
-      href={SUMMIT_SHIRTS.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="group bg-bg-surface border border-border rounded-lg overflow-hidden flex flex-col transition-all duration-200 hover:border-secondary/40 hover:-translate-y-0.5 hover:shadow-harsh"
-    >
-      <img
-        src={SUMMIT_SHIRTS.image}
-        alt="Sorcerers Summit T-shirt"
-        className="w-full aspect-[3/2] object-contain bg-gradient-to-br from-bg-elevated to-bg-surface"
-      />
-      <div className="p-4 flex flex-col flex-1">
-        <h2 className="font-semibold text-text-primary">Summit T-Shirts</h2>
-        <p className="text-sm text-text-muted mt-1">
-          Sorcerers Summit shirts, printed by Crit Apparel. Back only $28, front &amp; back $33.
-          Lightweight: back only $23, front &amp; back $25.
-        </p>
-        <p className="text-xs text-text-muted mt-2 flex-1">
-          Ordered and shipped through Crit Apparel's store, not your cart here.
-        </p>
-        <div className="flex items-center justify-between mt-3">
-          <span className="text-secondary font-semibold text-lg">From $23</span>
-          <span className="bg-primary group-hover:bg-primary-dark text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5">
-            Shop shirts
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
-            </svg>
-            <span className="sr-only">(opens in a new tab)</span>
-          </span>
-        </div>
-      </div>
-    </a>
-  )
-}
-
 // Used when the storefront list can't load: everything shows in one tab
 const FALLBACK_STOREFRONTS = [{ id: null, slug: DEFAULT_STOREFRONT, name: 'Summit Store' }]
 
-export default function Store() {
-  usePageTitle('Store')
+// The Explorer Series storefront lives on the Explorer Series site's Shop
+// instead of as a tab here.
+const MINI_SITE_STOREFRONTS = [ES_STOREFRONT_SLUG]
+
+/**
+ * storefrontSlug: show just that storefront, with no tabs (the Explorer Series
+ * site's Shop). Without it, /store shows every other storefront as tabs.
+ */
+export default function Store({ storefrontSlug = null }) {
+  usePageTitle(storefrontSlug ? 'Shop' : 'Store')
   const { user } = useAuth()
+  const isNewProduct = useIsNew('store')
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [allProducts, setAllProducts] = useState([])
-  const [storefronts, setStorefronts] = useState(FALLBACK_STOREFRONTS)
+  const [allStorefronts, setStorefronts] = useState(FALLBACK_STOREFRONTS)
+  const storefronts = storefrontSlug
+    ? allStorefronts.filter((s) => s.slug === storefrontSlug)
+    : allStorefronts.filter((s) => !MINI_SITE_STOREFRONTS.includes(s.slug))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
 
   const active =
-    storefronts.find((s) => s.slug === params.get('storefront')) || storefronts[0]
+    storefronts.find((s) => s.slug === params.get('storefront')) || storefronts[0] ||
+    { id: -1, slug: storefrontSlug || DEFAULT_STOREFRONT, name: 'Shop', accepts_payments: false }
   // Each storefront has its own cart, because each one checks out separately
   const [cart, setCart] = useStoreCart(active.slug) // { [productId]: quantity }
   const products = allProducts.filter((p) =>
@@ -224,9 +196,7 @@ export default function Store() {
   const cartItems = products.filter((p) => cart[p.id])
   const subtotal = cartItems.reduce((sum, p) => sum + p.price_cents * cart[p.id], 0)
   const totalQty = cartItems.reduce((n, p) => n + cart[p.id], 0)
-
-  // The shirts link lives on the Summit Store tab only
-  const showShirts = active === storefronts[0]
+  const cartIsDigital = cartItems.length > 0 && cartItems.every(isRoleOnly)
 
   // Storefronts other than Summit can't check out until their Stripe is set up
   const notTakingOrders = active.accepts_payments === false
@@ -239,7 +209,7 @@ export default function Store() {
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-        <h1 className="text-2xl font-display text-secondary">Sorcery Community Store</h1>
+        <h1 className="text-2xl font-display text-secondary">{storefrontSlug ? active.name : 'Sorcery Community Store'}</h1>
         <div className="flex flex-col items-end gap-2">
           {user && (
             <Link to="/store/orders" className="text-sm text-primary hover:underline">
@@ -249,6 +219,7 @@ export default function Store() {
         </div>
       </div>
 
+      {storefrontSlug ? <div className="border-b border-border mb-6" /> : (
       <div role="tablist" aria-label="Storefronts" className="flex gap-6 border-b border-border mb-6 overflow-x-auto no-scrollbar">
         {storefronts.map((sf) => {
           const selected = sf.slug === active.slug
@@ -276,6 +247,7 @@ export default function Store() {
           )
         })}
       </div>
+      )}
 
       {active.description && (
         <p className="text-sm text-text-muted mb-2 max-w-3xl whitespace-pre-line">
@@ -303,7 +275,7 @@ export default function Store() {
         </p>
       )}
 
-      {products.length === 0 && !showShirts ? (
+      {products.length === 0 ? (
         <p className="text-center text-text-muted py-12">
           Nothing for sale right now. Check back soon!
         </p>
@@ -314,6 +286,8 @@ export default function Store() {
             const max = maxQuantity(p)
             const soldOut = p.stock_quantity === 0
             const limitReached = !soldOut && p.remaining_this_month === 0
+            const isRole = isRoleProduct(p)
+            const hasRole = isRole && p.has_role
             const lowStock = !soldOut && p.stock_quantity <= 5
             return (
               <div
@@ -326,7 +300,20 @@ export default function Store() {
               >
                 <ProductGallery product={p} />
                 <div className="p-4 flex flex-col flex-1">
-                  <h2 className="font-semibold text-text-primary">{p.name}</h2>
+                  <h2 className="font-semibold text-text-primary flex items-center gap-2">
+                    {p.name}
+                    {isNewProduct(p.created_at) && <NewTag />}
+                  </h2>
+                  {isRole && (
+                    <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-[#8f99f7]">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.6 1.3a18.3 18.3 0 0 0-5.6 0L8.6 3a19.7 19.7 0 0 0-4.9 1.4C.6 9 0 13.6.3 18.1a19.9 19.9 0 0 0 6 3l1.3-2a12.9 12.9 0 0 1-2-1l.5-.4a14.2 14.2 0 0 0 12.2 0l.5.4c-.6.4-1.3.7-2 1l1.3 2a19.8 19.8 0 0 0 6-3c.5-5.2-.8-9.7-3.8-13.7ZM8.5 15.3c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm7 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z" />
+                      </svg>
+                      {isRoleOnly(p)
+                        ? 'Discord role · added to your account after payment, nothing shipped'
+                        : 'Includes a Discord role · added after payment, the rest ships'}
+                    </p>
+                  )}
                   {p.description && (
                     <p className="text-sm text-text-muted mt-1 flex-1">{p.description}</p>
                   )}
@@ -337,6 +324,20 @@ export default function Store() {
                     {soldOut ? (
                       <span className="text-xs font-medium bg-accent-red/20 text-accent-red px-2.5 py-1 rounded-full">
                         Sold out
+                      </span>
+                    ) : isRole && p.needs_discord_login ? (
+                      <a
+                        href={`/auth/discord?next=${encodeURIComponent(window.location.pathname + window.location.search)}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-[#5865F2] hover:bg-[#4752c4] text-white text-sm font-semibold px-3 py-2 transition-colors"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                          <path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.6 1.3a18.3 18.3 0 0 0-5.6 0L8.6 3a19.7 19.7 0 0 0-4.9 1.4C.6 9 0 13.6.3 18.1a19.9 19.9 0 0 0 6 3l1.3-2a12.9 12.9 0 0 1-2-1l.5-.4a14.2 14.2 0 0 0 12.2 0l.5.4c-.6.4-1.3.7-2 1l1.3 2a19.8 19.8 0 0 0 6-3c.5-5.2-.8-9.7-3.8-13.7ZM8.5 15.3c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm7 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z" />
+                        </svg>
+                        Log in with Discord
+                      </a>
+                    ) : hasRole ? (
+                      <span className="text-xs font-medium bg-[#5865F2]/20 text-[#8f99f7] px-2.5 py-1 rounded-full">
+                        You have this role
                       </span>
                     ) : limitReached ? (
                       <span className="text-xs font-medium bg-bg-elevated text-text-muted px-2.5 py-1 rounded-full">
@@ -383,7 +384,6 @@ export default function Store() {
               </div>
             )
           })}
-          {showShirts && <ShirtsCard />}
         </div>
       )}
 
@@ -398,7 +398,9 @@ export default function Store() {
             </span>
             {' '}&middot;{' '}
             <span className="text-secondary font-semibold">{formatMoney(subtotal)}</span>
-            <span className="text-text-muted ml-1.5 hidden sm:inline">+ shipping at checkout</span>
+            {!cartIsDigital && (
+              <span className="text-text-muted ml-1.5 hidden sm:inline">+ shipping at checkout</span>
+            )}
           </div>
           {notTakingOrders ? (
             <button

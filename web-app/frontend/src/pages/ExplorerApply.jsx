@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ES_PATHS } from '@/utils/explorerSite'
 import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
@@ -66,6 +67,9 @@ const EMPTY_FORM = {
     lgs_confirmed: 'No',
     expected_attendance: ATTENDANCE_OPTIONS[3],
     proposed_dates: '',
+    // Three date pickers. The server turns these into proposed_dates text too.
+    proposed_date_list: ['', '', ''],
+    proposed_dates_notes: '',
     events_run_count: '',
     events_run: '',
     avg_headcount: '',
@@ -85,10 +89,20 @@ function fillForm(base, application, keys = Object.keys(base)) {
   keys.forEach((key) => {
     const value = application?.[key]
     if (value === null || value === undefined) return
+    if (key === 'proposed_date_list') {
+      filled[key] = padDates(value)
+      return
+    }
     filled[key] = key === 'read_navigator_role' ? Boolean(value) : value
   })
   return filled
 }
+
+const DATE_CHOICES = ['First choice', 'Second choice', 'Third choice']
+
+// Always three picker slots, blanks for any not chosen.
+const padDates = (list) =>
+  DATE_CHOICES.map((_, i) => (Array.isArray(list) && list[i]) || '')
 
 // An admin-added row the applicant hasn't filled in themselves yet.
 const isUnfinishedCandidate = (application) =>
@@ -189,6 +203,15 @@ export default function ExplorerApply() {
     setForm((f) => ({ ...f, [name]: value }))
   }
 
+  const updateDate = (index) => (e) => {
+    const value = e.target.value
+    setForm((f) => {
+      const list = padDates(f.proposed_date_list)
+      list[index] = value
+      return { ...f, proposed_date_list: list }
+    })
+  }
+
   // Answers stay editable until the Council publishes a decision.
   const storeNotListed = form.lgs_url.trim().toLowerCase() === NOT_LISTED
   const storeUrlError =
@@ -248,7 +271,7 @@ export default function ExplorerApply() {
           Series council can reach you about your application.
         </p>
         <Link
-          to={`/login?next=${encodeURIComponent('/explorer/apply')}`}
+          to={`/login?next=${encodeURIComponent(ES_PATHS.host)}`}
           className="inline-block px-4 py-2 text-sm bg-secondary text-black font-medium rounded hover:bg-secondary/80 transition-colors"
         >
           Log in with Discord
@@ -299,8 +322,8 @@ export default function ExplorerApply() {
                 View all your applications
               </button>
             )}
-            <Link to="/explorer" className="text-sm text-primary hover:underline">
-              Back to the Community Series
+            <Link to={ES_PATHS.home} className="text-sm text-primary hover:underline">
+              Back to the Explorer Series
             </Link>
           </div>
         </div>
@@ -389,8 +412,8 @@ export default function ExplorerApply() {
           </a>{' '}
           and ask for help in our #questions channel.
         </p>
-        <Link to="/explorer" className="inline-block text-sm text-primary hover:underline">
-          Back to the Community Series
+        <Link to={ES_PATHS.home} className="inline-block text-sm text-primary hover:underline">
+          Back to the Explorer Series
         </Link>
       </div>
     )
@@ -562,14 +585,34 @@ export default function ExplorerApply() {
               ))}
             </select>
           </Field>
+          <fieldset className="space-y-2">
+            <legend className="block text-sm text-text-primary">
+              Three potential dates from March through October when you'd like to host?
+            </legend>
+            <span className="block text-xs text-text-muted">
+              Rough ideas are fine for now. Pick up to three dates.
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {DATE_CHOICES.map((choice, i) => (
+                <label key={choice} className="block space-y-1">
+                  <span className="block text-xs text-text-muted">{choice}</span>
+                  <input
+                    type="date"
+                    value={form.proposed_date_list[i]}
+                    onChange={updateDate(i)}
+                    className={inputClass}
+                  />
+                </label>
+              ))}
+            </div>
+          </fieldset>
           <Field
-            label="Three potential dates from March through October when you'd like to host?"
-            hint="Rough ideas are fine for now"
+            label="Anything else about timing?"
+            hint="Optional, for example “any weekend in June also works”"
           >
             <input
-              value={form.proposed_dates}
-              onChange={update('proposed_dates')}
-              placeholder="For example, 4/10/27, 6/12/27, 9/18/27"
+              value={form.proposed_dates_notes}
+              onChange={update('proposed_dates_notes')}
               className={inputClass}
             />
           </Field>

@@ -7,7 +7,13 @@ import time
 import urllib.parse
 import requests
 
-from services.explorer import ExplorerService
+from services.explorer import (
+    ExplorerService,
+    check_event_payload,
+    event_fetch_error_message,
+    request_event_get,
+    trpc_error_detail,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +194,34 @@ def _convert_trpc_to_legacy(trpc_response: dict) -> dict:
         "sideboard": sideboard,
         "maybeboard": maybeboard,
     }
+
+
+# Decks built from an event's player snapshot have no sorcerytcg.com deck id,
+# so they are keyed by the player's registration id and tagged with this
+# source. A deck refresh leaves them alone: the list is frozen at the event.
+EVENT_SNAPSHOT_DECK_SOURCE = "sorcerytcg_event"
+
+
+def _snapshot_to_legacy(snapshot: dict, player: dict) -> dict:
+    """Convert an event.playerSnapshot (frozen event deck list) to the legacy
+    deck format, or {} when it holds no cards."""
+    if not isinstance(snapshot, dict) or not snapshot.get("decklist"):
+        return {}
+    registration_id = player.get("id") or ""
+    if not registration_id:
+        return {}
+    user = player.get("user") or {}
+    legacy = _convert_trpc_to_legacy({"result": {"data": {"json": {
+        "id": registration_id,
+        "name": snapshot.get("name") or "",
+        "decklist": snapshot.get("decklist") or [],
+        "owner": {"username": user.get("username") or ""},
+    }}}})
+    if not legacy or not (legacy["avatar"] or legacy["spellbook"] or legacy["atlas"]):
+        return {}
+    legacy["source"] = EVENT_SNAPSHOT_DECK_SOURCE
+    legacy["registration_id"] = registration_id
+    return legacy
 
 
 def _convert_pso_export_to_legacy(export: dict) -> dict:
@@ -409,7 +443,10 @@ class CuriosaService:
 
         Fetches the event player list, scrapes the page for standings order,
         then batch-fetches playerSnapshot for each player to extract their
-        registered sourceDeck ID.  Players are returned sorted by standing.
+        registered sourceDeck ID.  When the snapshot no longer names a source
+        deck (sorcerytcg.com stopped sending it in Nov 2026) the deck is built
+        from the snapshot's frozen list and returned under "deck", keyed by
+        the registration id.  Players are returned sorted by standing.
 
         Returns:
             {
@@ -450,6 +487,7 @@ class CuriosaService:
                 "event_date": event_date,
                 "event_id": event_id,
                 "top_cut_size": top_cut_size,
+                "player_count": 0,
                 "players": [],
                 "match_history": [],
                 "errors": ["No active players found in this event"],
@@ -525,14 +563,27 @@ class CuriosaService:
                     errors.append(f"No deck snapshot for {name}")
                     continue
                 source_deck = result.get("sourceDeck")
-                if not source_deck or not source_deck.get("id"):
-                    errors.append(f"No source deck found for {name}")
+                if source_deck and source_deck.get("id"):
+                    deck_by_registration[player["id"]] = source_deck["id"]
+                    player_deck_ids.append({
+                        "name": name,
+                        "deck_id": source_deck["id"],
+                        "standing": standing,
+                    })
                     continue
-                deck_by_registration[player["id"]] = source_deck["id"]
+                # Since Nov 2026 sorcerytcg.com no longer says which deck a
+                # player registered; the snapshot carries the frozen list
+                # itself, so build the deck straight from it.
+                deck = _snapshot_to_legacy(result, player)
+                if not deck:
+                    errors.append(f"No deck list found for {name}")
+                    continue
+                deck_by_registration[player["id"]] = deck["id"]
                 player_deck_ids.append({
                     "name": name,
-                    "deck_id": source_deck["id"],
+                    "deck_id": deck["id"],
                     "standing": standing,
+                    "deck": deck,
                 })
 
         match_history = self._build_match_history(
@@ -545,6 +596,7 @@ class CuriosaService:
             "event_date": event_date,
             "event_id": event_id,
             "top_cut_size": top_cut_size,
+            "player_count": len(active_players),
             "players": player_deck_ids,
             "match_history": match_history,
             "errors": errors,
@@ -662,21 +714,20 @@ class CuriosaService:
 
     def _fetch_event_trpc(self, event_id: str) -> dict:
         """Fetch event data from sorcerytcg.com tRPC endpoint."""
-        params = {
-            "batch": "1",
-            "input": json.dumps({"0": {"json": {"id": event_id}}}),
-        }
-        resp = requests.get(
-            f"{_TRPC_BASE_ROOT}/event.get", params=params, timeout=15
-        )
+        resp = request_event_get(event_id)
         if resp.status_code != 200:
+            detail = trpc_error_detail(resp)
+            logger.warning(
+                "event.get for %s returned %s: %s", event_id, resp.status_code, detail
+            )
             raise ValueError(
-                f"sorcerytcg.com returned {resp.status_code} for event {event_id}"
+                event_fetch_error_message(resp.status_code, event_id, detail)
             )
         try:
-            return resp.json()[0]["result"]["data"]["json"]["event"]
+            event = resp.json()[0]["result"]["data"]["json"]["event"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ValueError(f"Unexpected event response format: {exc}") from exc
+        return check_event_payload(event, event_id)
 
     def _fetch_player_snapshots_batch(
         self, event_id: str, players: list[dict]
@@ -710,7 +761,10 @@ class CuriosaService:
             return [None] * len(players)
 
         if resp.status_code != 200:
-            logger.warning("Batch snapshot fetch returned %s", resp.status_code)
+            logger.warning(
+                "Batch snapshot fetch returned %s: %s",
+                resp.status_code, trpc_error_detail(resp),
+            )
             return [None] * len(players)
 
         results = []

@@ -66,7 +66,7 @@ class BracketRepository:
         conn.close()
         return bracket_id
 
-    EDITABLE_FIELDS = ("name", "description", "confirm_hours", "set_name")
+    EDITABLE_FIELDS = ("name", "description", "confirm_hours", "set_name", "hide_pairings")
 
     def update_bracket(self, bracket_id: int, fields: dict) -> bool:
         updates = {k: v for k, v in fields.items() if k in self.EDITABLE_FIELDS}
@@ -234,6 +234,24 @@ class BracketRepository:
         rows = cur.fetchall()
         conn.close()
         return [dict(r) for r in rows]
+
+    def update_entrant(self, bracket_id: int, seed: int, fields: dict) -> bool:
+        """Change one seat's player without touching the rest of the field."""
+        allowed = {"user_id", "display_name", "elo", "games", "is_ticket_holder"}
+        fields = {k: v for k, v in fields.items() if k in allowed}
+        if not fields:
+            return False
+        conn = self._get_connection()
+        cur = conn.cursor()
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        cur.execute(
+            f"UPDATE bracket_entrants SET {sets} WHERE bracket_id = ? AND seed = ?",
+            (*fields.values(), bracket_id, seed),
+        )
+        changed = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return changed
 
     # -- Decks ----------------------------------------------------
 

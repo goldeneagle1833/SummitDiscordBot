@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
+import { useState, useEffect } from 'react'
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services'
@@ -50,14 +50,27 @@ export const DEFAULT_STYLE = 'dark'
 const DEFAULT_CENTER = [39.5, -98.35]
 const DEFAULT_ZOOM = 3
 
-function readStoredStyle(storageKey) {
-  if (!storageKey) return DEFAULT_STYLE
+function readStoredStyle(storageKey, fallback = DEFAULT_STYLE) {
+  if (!storageKey) return fallback
   try {
     const stored = localStorage.getItem(storageKey)
-    return stored && MAP_STYLES[stored] ? stored : DEFAULT_STYLE
+    return stored && MAP_STYLES[stored] ? stored : fallback
   } catch {
-    return DEFAULT_STYLE
+    return fallback
   }
+}
+
+/** Zooms the map to frame every pin, once, when the pins first arrive. */
+function FitToPoints({ points }) {
+  const map = useMap()
+  const hasPoints = points.length > 0
+  useEffect(() => {
+    if (!hasPoints) return
+    map.fitBounds(points.map((p) => [p.latitude, p.longitude]), { padding: [30, 30], maxZoom: 6 })
+    // Only on first arrival, so a reviewer's own pan and zoom stick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, hasPoints])
+  return null
 }
 
 /**
@@ -74,8 +87,10 @@ export default function SeriesMap({
   storageKey,
   center = DEFAULT_CENTER,
   zoom = DEFAULT_ZOOM,
+  fitToPoints = false,
+  defaultStyle = DEFAULT_STYLE,
 }) {
-  const [style, setStyle] = useState(() => readStoredStyle(storageKey))
+  const [style, setStyle] = useState(() => readStoredStyle(storageKey, MAP_STYLES[defaultStyle] ? defaultStyle : DEFAULT_STYLE))
 
   const pickStyle = (next) => {
     setStyle(next)
@@ -111,6 +126,7 @@ export default function SeriesMap({
           {tiles.labels && (
             <TileLayer key={`${style}-labels`} url={tiles.labels} maxZoom={tiles.maxZoom} />
           )}
+          {fitToPoints && <FitToPoints points={points} />}
           {points.map((point) => (
             <CircleMarker
               key={point.id}

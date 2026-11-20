@@ -64,6 +64,7 @@ class TestLeaderboardRoutes:
             "wins": 1,
             "losses": 0,
             "voice_games": 0,
+            "top_cut_eligible": True,  # Elo season: no game minimum
         }
         assert data["voice_requirement"] == {"min_games": 5, "enforced": False}
         assert data["leaderboard"][1]["wins"] == 0

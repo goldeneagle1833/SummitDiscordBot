@@ -15,7 +15,10 @@ import {
   adminPublishBracket,
   adminPreviewBracket,
   adminUpdateBracket,
+  adminSwapBracketPlayers,
+  adminReplaceBracketPlayer,
 } from '@/api/brackets'
+import { searchUsers } from '@/api/admin'
 
 vi.mock('@/api/brackets', () => ({
   adminListBrackets: vi.fn(),
@@ -31,6 +34,8 @@ vi.mock('@/api/brackets', () => ({
   adminUpdateBracket: vi.fn(),
   adminUnpublishBracket: vi.fn(),
   adminDeleteBracket: vi.fn(),
+  adminSwapBracketPlayers: vi.fn(),
+  adminReplaceBracketPlayer: vi.fn(),
 }))
 
 vi.mock('@/api/admin', () => ({ searchUsers: vi.fn() }))
@@ -349,5 +354,100 @@ describe('BracketsAdmin card sets', () => {
       expect(adminUpdateBracket).toHaveBeenCalledWith('season-7', { set_name: 'Beta' }),
     )
     expect(adminListBrackets).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('BracketsAdmin live edit', () => {
+  const LIVE = { slug: 'cup', name: 'Cup', status: 'published', entrant_count: 4 }
+  const seatMatch = (no, a, b, extra = {}) => ({
+    match_no: no,
+    round: 1,
+    state: 'pending',
+    p1_seed: a[0],
+    p1_name: a[1],
+    p1_user_id: `u${a[0]}`,
+    p2_seed: b[0],
+    p2_name: b[1],
+    p2_user_id: `u${b[0]}`,
+    p1_movable: true,
+    p2_movable: true,
+    ...extra,
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    adminListBrackets.mockResolvedValue({ brackets: [LIVE] })
+    adminGetBracket.mockResolvedValue({
+      bracket: LIVE,
+      entrants: [],
+      rounds: [
+        {
+          round: 1,
+          title: 'Semifinals',
+          matches: [
+            seatMatch(1, [1, 'Ann'], [4, 'Dee']),
+            seatMatch(2, [2, 'Bo'], [3, 'Cy'], {
+              state: 'complete',
+              p1_movable: false,
+              p2_movable: false,
+            }),
+          ],
+        },
+      ],
+    })
+    adminSwapBracketPlayers.mockResolvedValue({ swapped: ['Ann', 'Dee'] })
+    adminReplaceBracketPlayer.mockResolvedValue({
+      replaced: 'Dee',
+      with: 'Eve',
+      seed: 4,
+      hold_switched_off: false,
+    })
+    searchUsers.mockResolvedValue({
+      users: [{ user_id: 'u9', display_name: 'Eve', provider: 'discord' }],
+    })
+  })
+
+  it('shows Edit only on a live bracket', async () => {
+    adminListBrackets.mockResolvedValue({
+      brackets: [LIVE, { ...LIVE, slug: 'old', name: 'Old', status: 'complete' }],
+    })
+    renderWithRouter(<BracketsAdmin />)
+    await screen.findByText('Old')
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(1)
+  })
+
+  it('swaps two players by tapping them', async () => {
+    renderWithRouter(<BracketsAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await userEvent.click(await screen.findByRole('button', { name: /Ann/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Dee/ }))
+    await waitFor(() => expect(adminSwapBracketPlayers).toHaveBeenCalledWith('cup', 1, 4))
+    expect(await screen.findByText('Swapped Ann and Dee.')).toBeInTheDocument()
+  })
+
+  it('locks seats whose match has been played', async () => {
+    renderWithRouter(<BracketsAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByRole('button', { name: /Ann/ })
+    expect(screen.queryByRole('button', { name: /Bo/ })).toBeNull()
+    expect(screen.getAllByText('played')).toHaveLength(2)
+  })
+
+  it('replaces a player with someone new', async () => {
+    renderWithRouter(<BracketsAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await userEvent.click(await screen.findByRole('button', { name: /Dee/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Replace Dee' }))
+    await userEvent.type(screen.getByLabelText('Who comes in?'), 'Eve')
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }))
+    await userEvent.click(await screen.findByRole('button', { name: '+ Eve' }))
+    await waitFor(() =>
+      expect(adminReplaceBracketPlayer).toHaveBeenCalledWith('cup', 4, {
+        user_id: 'u9',
+        display_name: 'Eve',
+      }),
+    )
+    expect(await screen.findByText(/Eve replaced Dee as seed 4/)).toBeInTheDocument()
   })
 })

@@ -117,10 +117,11 @@ describe('ExplorerApplications admin page', () => {
     expect(screen.getByText('Unscored')).toBeInTheDocument()
   })
 
-  it('does not show the applications map', async () => {
+  it('shows the applicant locations map above the metrics, whatever the filters', async () => {
     renderWithRouter(<ExplorerApplications />)
     await screen.findByText('Ruben Sanchez')
-    expect(screen.queryByTestId('map')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Applicant locations' })).toBeInTheDocument()
+    expect(await screen.findByTestId('map')).toBeInTheDocument()
     expect(screen.queryByText('Not on the map')).not.toBeInTheDocument()
   })
 
@@ -229,6 +230,46 @@ describe('ExplorerApplications admin page', () => {
         local_activity: 4,
       })
     )
+  })
+
+  it('auto-fills Local activity from store attendance when not yet scored', async () => {
+    getApplication.mockResolvedValue({
+      ...detail,
+      application: { ...application, lgs_activity_score: 3, lgs_median_players: 10 },
+      votes: [],
+    })
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerApplications />)
+    await user.click(await screen.findByText('Ruben Sanchez'))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Application detail' })
+    expect(within(dialog).getByLabelText('Local activity')).toHaveValue('3')
+    expect(within(dialog).getByText(/Auto-filled from store attendance/)).toBeInTheDocument()
+    expect(within(dialog).getByText('3 / 5')).toBeInTheDocument()
+
+    await user.selectOptions(within(dialog).getByLabelText('Enthusiasm'), '5')
+    await user.click(within(dialog).getByRole('button', { name: 'Save scores' }))
+    await waitFor(() =>
+      expect(voteOnApplication).toHaveBeenCalledWith(1, {
+        enthusiasm: 5,
+        track_record: null,
+        local_activity: 3,
+      })
+    )
+  })
+
+  it('keeps a reviewer’s own Local activity score over the suggestion', async () => {
+    getApplication.mockResolvedValue({
+      ...detail,
+      application: { ...application, lgs_activity_score: 2 },
+    })
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerApplications />)
+    await user.click(await screen.findByText('Ruben Sanchez'))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Application detail' })
+    expect(within(dialog).getByLabelText('Local activity')).toHaveValue('4')
+    expect(within(dialog).getByText('Store attendance suggests 2')).toBeInTheDocument()
   })
 
   it('changes the application status', async () => {

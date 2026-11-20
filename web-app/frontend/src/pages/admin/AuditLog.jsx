@@ -8,6 +8,7 @@ import MatchNotesSection from '@/components/admin/MatchNotesSection'
 import BlockedUsersSection from '@/components/admin/BlockedUsersSection'
 import PlayerReportsSection from '@/components/admin/PlayerReportsSection'
 import PlayerKudosSection from '@/components/admin/PlayerKudosSection'
+import DataExportsSection from '@/components/admin/DataExportsSection'
 import CardPointsSection from '@/components/admin/CardPointsSection'
 import ReactionRolesSection from '@/components/admin/ReactionRolesSection'
 import AuditLogTable from '@/components/admin/AuditLogTable'
@@ -38,7 +39,7 @@ export default function AuditLog() {
       <AdminCollapsible title="Promo Banners" subtitle="Manage home page promotional banners">
         <BannersSection />
       </AdminCollapsible>
-      <AdminCollapsible title="Transfer Account History" subtitle="Move all match history, ELO, and data from one account to another">
+      <AdminCollapsible title="Transfer Account History" subtitle="Move all match history, ratings, and data from one account to another">
         <TransferHistorySection />
       </AdminCollapsible>
       <AdminCollapsible title="Card Points" subtitle="Assign point values to cards for deck budget restrictions">
@@ -68,6 +69,9 @@ export default function AuditLog() {
           <p className="text-xs text-text-muted">Given from the Give Kudos button on Discord match messages or from Play Sorcery Online. Hide one to keep it off the homepage.</p>
           <PlayerKudosSection />
         </div>
+      </AdminCollapsible>
+      <AdminCollapsible title="Data Exports" subtitle="Who downloaded their own data from Export my data, and how much">
+        <DataExportsSection />
       </AdminCollapsible>
       <AdminCollapsible title="Audit Log" subtitle="History of administrative actions">
         <AuditLogTable />

@@ -2753,3 +2753,190 @@ class TestSetNameApi:
         assert resp.status_code == 200
         detail = admin_session.get(f"/api/admin/brackets/{slug}").get_json()
         assert detail["bracket"]["set_name"] == "Beta"
+
+
+# -- Hide pairings until every decklist is in -----------------------
+
+
+@pytest.mark.pairing_hold
+class TestPairingHold:
+    def _deck_in(self, service, slug, *seeds):
+        for seed in seeds:
+            service.submit_deck(slug, f"https://curiosa.io/decks/{seed}", actor_id=f"u{seed}")
+
+    def test_new_brackets_hold_their_pairings(self, service, repo):
+        slug, bracket_id = published(service, repo, count=4)
+        assert repo.get_bracket(bracket_id=bracket_id)["hide_pairings"] == 1
+
+        detail = service.get_bracket_detail(slug, viewer_id="u1")
+        assert detail["pairings_hidden"] is True
+        assert detail["rounds"] == []  # never sent, not just hidden on the page
+        assert len(detail["entrants"]) == 4
+
+    def test_admins_still_see_the_tree(self, service, repo):
+        slug, _ = published(service, repo, count=4)
+        detail = service.get_bracket_detail(slug, is_admin=True)
+        assert detail["pairings_hidden"] is True
+        assert detail["rounds"]
+
+    def test_nobody_is_messaged_until_the_last_deck_is_in(self, service, repo, announcements):
+        slug, _ = published(service, repo, count=4)
+        assert announcements == []
+
+        self._deck_in(service, slug, 1, 2, 3)
+        assert announcements == []
+        assert service.get_player_open_matches("u1") == []
+
+        self._deck_in(service, slug, 4)
+        assert len(announcements) == 2
+        detail = service.get_bracket_detail(slug, viewer_id="u1")
+        assert detail["pairings_hidden"] is False
+        assert detail["rounds"]
+        assert service.get_player_open_matches("u1")
+
+    def test_the_profile_run_waits_too(self, service, repo):
+        slug, _ = published(service, repo, count=4)
+        entry = service.get_player_postseason("u1")[0]
+        assert entry["run"] == []
+        self._deck_in(service, slug, 1, 2, 3, 4)
+        assert service.get_player_postseason("u1")[0]["run"]
+
+    def test_switching_the_hold_off_reveals_and_announces(self, service, repo, announcements):
+        slug, bracket_id = published(service, repo, count=4)
+        assert service.update_bracket(bracket_id, {"hide_pairings": False})
+        assert len(announcements) == 2
+        detail = service.get_bracket_detail(slug, viewer_id="u1")
+        assert detail["pairings_hidden"] is False
+        assert detail["bracket"]["hide_pairings"] is False
+        assert detail["rounds"]
+
+    def test_with_the_hold_off_publishing_pairs_straight_away(self, service, repo, announcements):
+        created = service.create_bracket(name="Open Cup", size=4, source="overall")
+        service.update_bracket(created["bracket_id"], {"hide_pairings": False})
+        service.publish(created["bracket_id"])
+        assert len(announcements) == 2
+
+
+# -- Replacing a player in a live bracket ---------------------------
+
+
+class TestReplacingPlayers:
+    """An 8-player field opens 1v8, 4v5, 2v7, 3v6; 6 players give 1 and 2 byes."""
+
+    def test_the_newcomer_takes_the_seat_and_seed(self, service, repo, announcements):
+        slug, bracket_id = published(service, repo, 8)
+        announcements.clear()
+
+        result = service.replace_player(slug, 8, "u20", "P20")
+
+        match = repo.get_match(bracket_id, 1)
+        assert (match["p2_seed"], match["p2_user_id"], match["p2_name"]) == (8, "u20", "P20")
+        entrant = next(e for e in repo.get_entrants(bracket_id) if e["seed"] == 8)
+        assert (entrant["user_id"], entrant["display_name"]) == ("u20", "P20")
+        assert result["replaced"] == "P8"
+        [sent] = announcements
+        assert {p["user_id"] for p in sent["players"]} == {"u1", "u20"}
+
+    def test_the_newcomer_can_play_and_advance(self, service, repo):
+        slug, bracket_id = published(service, repo, 8)
+        service.replace_player(slug, 8, "u20", "P20")
+
+        service.report_result(slug, 1, "u20", "u20")
+        service.confirm_result(slug, 1, "u1")
+        assert repo.get_match(bracket_id, 5)["p1_user_id"] == "u20"
+
+    def test_replacing_a_bye_player_hands_over_the_bye(self, service, repo):
+        slug, bracket_id = published(service, repo, 6)
+
+        service.replace_player(slug, 1, "u20", "P20")
+
+        assert repo.get_match(bracket_id, 5)["p1_user_id"] == "u20"
+        bye = repo.get_match(bracket_id, 1)
+        assert bye["state"] == "bye"
+        assert bye["winner_user_id"] == "u20"
+
+    def test_the_old_players_deck_goes_with_them(self, service, repo):
+        slug, bracket_id = published(service, repo, 8)
+        service.submit_deck(slug, "https://curiosa.io/decks/x", actor_id="u8")
+
+        result = service.replace_player(slug, 8, "u20", "P20")
+
+        assert result["deck_removed"] is True
+        assert repo.get_deck(bracket_id, 8) is None
+
+    def test_someone_already_in_the_bracket_cannot_come_in(self, service, repo):
+        slug, _ = published(service, repo, 8)
+        with pytest.raises(BracketError, match="already in this bracket"):
+            service.replace_player(slug, 8, "u5", "P5")
+
+    def test_a_played_seat_cannot_be_handed_over(self, service, repo, match_db):
+        slug, bracket_id = published(service, repo, 8)
+        service.set_result(slug, 1, "u1", admin_id="a")
+        before = repo.get_match(bracket_id, 1)
+
+        with pytest.raises(BracketError, match="already been played"):
+            service.replace_player(slug, 8, "u20", "P20")
+        # The winner's round-two seat is a result, not a pairing.
+        with pytest.raises(BracketError, match="already"):
+            service.replace_player(slug, 1, "u20", "P20")
+        assert repo.get_match(bracket_id, 1) == before
+        assert next(e for e in repo.get_entrants(bracket_id) if e["seed"] == 8)["user_id"] == "u8"
+
+    def test_reported_and_table_seats_cannot_be_handed_over(self, service, repo):
+        slug, bracket_id = published(service, repo, 8)
+        service.report_result(slug, 1, "u1", "u1")
+        repo.update_match(bracket_id, 2, {"table_provisioned_at": "2026-10-01T12:00:00"})
+
+        with pytest.raises(BracketError, match="waiting to be confirmed"):
+            service.replace_player(slug, 8, "u20", "P20")
+        with pytest.raises(BracketError, match="Play Sorcery Online table"):
+            service.replace_player(slug, 5, "u20", "P20")
+
+    def test_drafts_and_finished_brackets_are_refused(self, service, repo):
+        created = service.create_bracket(name="Draft Cup", size=4, source="overall")
+        with pytest.raises(BracketError, match="Drafts"):
+            service.replace_player(created["slug"], 4, "u20", "P20")
+
+
+@pytest.mark.pairing_hold
+class TestReplacingUnderThePairingHold:
+    def _all_decks(self, service, slug, count):
+        for seed in range(1, count + 1):
+            service.submit_deck(slug, f"https://curiosa.io/decks/{seed}", actor_id=f"u{seed}")
+
+    def test_shown_pairings_stay_shown(self, service, repo, announcements):
+        slug, bracket_id = published(service, repo, 4)
+        self._all_decks(service, slug, 4)
+        announcements.clear()
+
+        result = service.replace_player(slug, 4, "u20", "P20")
+
+        assert result["hold_switched_off"] is True
+        detail = service.get_bracket_detail(slug, viewer_id="u2")
+        assert detail["pairings_hidden"] is False
+        assert detail["rounds"]
+        [sent] = announcements
+        assert {p["user_id"] for p in sent["players"]} == {"u1", "u20"}
+
+    def test_a_hidden_bracket_keeps_waiting_for_the_newcomers_deck(
+        self, service, repo, announcements
+    ):
+        slug, bracket_id = published(service, repo, 4)
+        self._all_decks(service, slug, 3)
+
+        result = service.replace_player(slug, 4, "u20", "P20")
+
+        assert result["hold_switched_off"] is False
+        assert announcements == []
+        service.submit_deck(slug, "https://curiosa.io/decks/new", actor_id="u20")
+        assert len(announcements) == 2
+
+    def test_swapping_under_the_hold_messages_nobody_yet(self, service, repo, announcements):
+        slug, _ = published(service, repo, 4)
+
+        service.swap_players(slug, 1, 2)
+
+        assert announcements == []
+        self._all_decks(service, slug, 4)
+        paired = [{p["user_id"] for p in a["players"]} for a in announcements]
+        assert {"u2", "u4"} in paired and {"u1", "u3"} in paired

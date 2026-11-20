@@ -18,6 +18,83 @@ const FEEDBACK_STEPS = [
   `Check ${SITE_NAME} for new tokens, events, and community series.`,
 ]
 
+export const SLIP_CSS = `
+    .slip-page {
+      background: #fff;
+      color: #000;
+      min-height: 100vh;
+      font-family: Helvetica, Arial, sans-serif;
+      font-size: 10pt;
+      line-height: 1.3;
+    }
+    .slip {
+      width: 8.5in;
+      min-height: 11in;
+      margin: 0 auto;
+      padding: 0.5in;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+    }
+    .slip-toolbar {
+      width: 8.5in;
+      margin: 0 auto;
+      padding: 0.25in 0.5in 0;
+      box-sizing: border-box;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #666;
+    }
+    .slip-toolbar button {
+      background: #000;
+      color: #fff;
+      border: 0;
+      padding: 6px 16px;
+      font: inherit;
+      cursor: pointer;
+    }
+    .slip-shipto { font-size: 14pt; font-weight: bold; line-height: 1.15; margin-top: 4px; }
+    .slip-order-number { font-size: 14pt; font-weight: bold; margin-top: 0.55in; }
+    .slip-thanks { margin-top: 6px; }
+    .slip-columns { display: flex; gap: 0.4in; margin-top: 0.3in; }
+    .slip-columns > div { flex: 1; }
+    .slip-label { font-weight: bold; }
+    .slip-kv { display: grid; grid-template-columns: 1.4in 1fr; row-gap: 2px; }
+    .slip-table { width: 100%; border-collapse: collapse; margin-top: 0.4in; }
+    .slip-table th { text-align: left; font-weight: bold; padding: 3px 4px; border-bottom: 1px solid #000; }
+    .slip-table td { padding: 4px; vertical-align: top; }
+    .slip-table .num { text-align: right; white-space: nowrap; }
+    .slip-table .qty { text-align: center; width: 0.7in; }
+    .slip-table tr.total td { border-top: 1px solid #000; }
+    .slip-table tr.summary td { padding-top: 1px; padding-bottom: 1px; }
+    .slip-table .sku { color: #555; font-size: 8.5pt; }
+    .slip-help { display: flex; gap: 0.3in; margin-top: 0.35in; }
+    .slip-help > div { flex: 1; }
+    .slip-help ol { margin: 4px 0 0; padding-left: 1.3em; }
+    .slip-help li { margin-bottom: 4px; }
+    .slip-help p { margin: 4px 0 8px; }
+    .slip-footer {
+      margin-top: auto;
+      padding-top: 0.3in;
+      display: flex;
+      justify-content: space-between;
+    }
+    .slip-bulk .slip + .slip { border-top: 2px dashed #bbb; }
+    .slip-toolbar .slip-toolbar-note { font-size: 9pt; }
+    @media print {
+      html, body { background: #fff !important; color: #000 !important; margin: 0; }
+      .slip-toolbar { display: none; }
+      .slip-page { min-height: 0; }
+      .slip { min-height: 0; height: auto; padding: 0; width: auto; }
+      .slip-page:not(.slip-bulk) .slip-footer { position: fixed; bottom: 0; left: 0; right: 0; padding: 0; }
+      .slip-bulk .slip { min-height: 9.9in; break-inside: auto; }
+      .slip-bulk .slip + .slip { break-before: page; page-break-before: always; border-top: 0; }
+      .slip-bulk .slip-footer { padding-top: 0.2in; }
+      @page { size: letter; margin: 0.5in; }
+    }
+`
+
 function fmtDate(iso) {
   if (!iso) return ''
   return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
@@ -38,6 +115,155 @@ function shippingMethod(order) {
 }
 
 /**
+ * One packing slip. Pass several orders that ship in one package (a
+ * same-buyer pair) to get one combined slip for all of them.
+ */
+export function PackingSlip({ orders }) {
+  const order = orders[0]
+  const combined = orders.length > 1
+  const items = orders.flatMap((o) => o.items || [])
+  const totalQty = items.reduce((n, i) => n + i.quantity, 0)
+  const sum = (key) => orders.reduce((n, o) => n + (o[key] || 0), 0)
+  const numbers = orders.map((o) => o.order_number).join(', ')
+  const currency = order.currency || 'USD'
+  const address = addressLines(order)
+
+  return (
+    <div className="slip">
+      <div>Ship To:</div>
+      {address.length > 0 ? (
+        <div className="slip-shipto">
+          {address.map((line, i) => <div key={i}>{line}</div>)}
+        </div>
+      ) : (
+        <div className="slip-shipto" style={{ fontStyle: 'italic', fontWeight: 'normal' }}>
+          No shipping address on file
+        </div>
+      )}
+
+      <div className="slip-order-number">
+        {combined ? `Order Numbers: ${numbers}` : `Order Number: ${order.order_number}`}
+      </div>
+      <div className="slip-thanks">Thank you for buying from {SELLER_NAME} on {SITE_NAME}.</div>
+
+      <div className="slip-columns">
+        <div>
+          <div className="slip-label">Shipping Address:</div>
+          {address.length > 0 ? (
+            address.map((line, i) => <div key={i}>{line}</div>)
+          ) : (
+            <div>No shipping address on file</div>
+          )}
+        </div>
+        <div className="slip-kv">
+          <div>Order Date:</div>
+          <div>{combined ? orders.map((o) => fmtDate(o.created_at)).filter((d, i, a) => a.indexOf(d) === i).join(', ') : fmtDate(order.created_at)}</div>
+          <div>Shipping Method:</div>
+          <div>
+            {shippingMethod(order)}
+            {order.tracking_number && (
+              <>
+                <br />
+                {order.tracking_carrier ? `${order.tracking_carrier} ` : ''}{order.tracking_number}
+              </>
+            )}
+          </div>
+          <div>Buyer Name:</div>
+          <div>{order.username}</div>
+          {order.email && (
+            <>
+              <div>Buyer Email:</div>
+              <div>{order.email}</div>
+            </>
+          )}
+          <div>Seller Name:</div>
+          <div>{SELLER_NAME}</div>
+        </div>
+      </div>
+
+      <table className="slip-table">
+        <thead>
+          <tr>
+            <th className="qty">Quantity</th>
+            <th>Description</th>
+            <th className="num">Price</th>
+            <th className="num">Total Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          {orders.map((o) => [
+            combined && (
+              <tr key={`h${o.id}`}>
+                <td />
+                <td className="slip-label" colSpan={3}>Order {o.order_number}</td>
+              </tr>
+            ),
+            ...(o.items || []).map((i) => (
+            <tr key={i.id}>
+              <td className="qty">{i.quantity}</td>
+              <td>
+                {i.product_name}
+                {i.sku && <span className="sku"> ({i.sku})</span>}
+              </td>
+              <td className="num">{formatMoney(i.unit_price_cents, currency)}</td>
+              <td className="num">{formatMoney(i.unit_price_cents * i.quantity, currency)}</td>
+            </tr>
+            )),
+          ])}
+          <tr className="total">
+            <td className="qty">{totalQty}</td>
+            <td className="slip-label">Total</td>
+            <td />
+            <td className="num">{formatMoney(sum('subtotal_cents'), currency)}</td>
+          </tr>
+          <tr className="summary">
+            <td />
+            <td>Shipping</td>
+            <td />
+            <td className="num">{formatMoney(sum('shipping_cents'), currency)}</td>
+          </tr>
+          {sum('tax_cents') > 0 && (
+            <tr className="summary">
+              <td />
+              <td>Tax</td>
+              <td />
+              <td className="num">{formatMoney(sum('tax_cents'), currency)}</td>
+            </tr>
+          )}
+          <tr className="summary">
+            <td />
+            <td className="slip-label">Order Total</td>
+            <td />
+            <td className="num slip-label">{formatMoney(sum('total_cents'), currency)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div className="slip-help">
+        <div>
+          <div className="slip-label">For Any Questions About Your Order:</div>
+          <ol>
+            {QUESTIONS_STEPS.map((step, i) => <li key={i}>{step}</li>)}
+          </ol>
+        </div>
+        <div>
+          <div className="slip-label">To Provide Feedback for This Order:</div>
+          <p>{FEEDBACK_INTRO}</p>
+          <ol>
+            {FEEDBACK_STEPS.map((step, i) => <li key={i}>{step}</li>)}
+          </ol>
+        </div>
+      </div>
+
+      <div className="slip-footer">
+        <span>{combined ? `Order Numbers: ${numbers}` : `Order Number: ${order.order_number}`}</span>
+        <span>1 of 1</span>
+      </div>
+    </div>
+  )
+}
+
+/**
  * Printable packing slip for one order, laid out like a TCGplayer slip:
  * bold ship-to block for a window envelope, order details, item table,
  * and a help footer. Rendered outside the site layout. Opened with
@@ -47,15 +273,20 @@ export default function StoreOrderPrint() {
   const { id } = useParams()
   const [params] = useSearchParams()
   const autoPrint = params.get('print') === '1'
-  const [order, setOrder] = useState(null)
+  // ?with=12,13 adds paired orders: one slip for everything in the package
+  const withIds = (params.get('with') || '').split(',').map((x) => x.trim()).filter(Boolean)
+  const withKey = withIds.join(',')
+  const [orders, setOrders] = useState(null)
   const [error, setError] = useState(null)
-  usePageTitle(order ? `Packing slip ${order.order_number}` : 'Packing slip')
+  const order = orders ? orders[0] : null
+  usePageTitle(order ? `Packing slip ${orders.map((o) => o.order_number).join(', ')}` : 'Packing slip')
 
   useEffect(() => {
-    adminGetOrder(id)
-      .then((d) => setOrder(d.order))
+    const ids = [id, ...(withKey ? withKey.split(',') : [])]
+    Promise.all(ids.map((x) => adminGetOrder(x)))
+      .then((list) => setOrders(list.map((d) => d.order)))
       .catch((e) => setError(e.message))
-  }, [id])
+  }, [id, withKey])
 
   useEffect(() => {
     if (!order || !autoPrint) return
@@ -77,211 +308,16 @@ export default function StoreOrderPrint() {
     return <div className="slip-page"><p>Loading order…</p></div>
   }
 
-  const items = order.items || []
-  const totalQty = items.reduce((n, i) => n + i.quantity, 0)
-  const currency = order.currency || 'USD'
-  const address = addressLines(order)
-
   return (
     <div className="slip-page">
-      <style>{`
-        .slip-page {
-          background: #fff;
-          color: #000;
-          min-height: 100vh;
-          font-family: Helvetica, Arial, sans-serif;
-          font-size: 10pt;
-          line-height: 1.3;
-        }
-        .slip {
-          width: 8.5in;
-          min-height: 11in;
-          margin: 0 auto;
-          padding: 0.5in;
-          box-sizing: border-box;
-          display: flex;
-          flex-direction: column;
-        }
-        .slip-toolbar {
-          width: 8.5in;
-          margin: 0 auto;
-          padding: 0.25in 0.5in 0;
-          box-sizing: border-box;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          color: #666;
-        }
-        .slip-toolbar button {
-          background: #000;
-          color: #fff;
-          border: 0;
-          padding: 6px 16px;
-          font: inherit;
-          cursor: pointer;
-        }
-        .slip-shipto { font-size: 14pt; font-weight: bold; line-height: 1.15; margin-top: 4px; }
-        .slip-order-number { font-size: 14pt; font-weight: bold; margin-top: 0.55in; }
-        .slip-thanks { margin-top: 6px; }
-        .slip-columns { display: flex; gap: 0.4in; margin-top: 0.3in; }
-        .slip-columns > div { flex: 1; }
-        .slip-label { font-weight: bold; }
-        .slip-kv { display: grid; grid-template-columns: 1.4in 1fr; row-gap: 2px; }
-        .slip-table { width: 100%; border-collapse: collapse; margin-top: 0.4in; }
-        .slip-table th { text-align: left; font-weight: bold; padding: 3px 4px; border-bottom: 1px solid #000; }
-        .slip-table td { padding: 4px; vertical-align: top; }
-        .slip-table .num { text-align: right; white-space: nowrap; }
-        .slip-table .qty { text-align: center; width: 0.7in; }
-        .slip-table tr.total td { border-top: 1px solid #000; }
-        .slip-table tr.summary td { padding-top: 1px; padding-bottom: 1px; }
-        .slip-table .sku { color: #555; font-size: 8.5pt; }
-        .slip-help { display: flex; gap: 0.3in; margin-top: 0.35in; }
-        .slip-help > div { flex: 1; }
-        .slip-help ol { margin: 4px 0 0; padding-left: 1.3em; }
-        .slip-help li { margin-bottom: 4px; }
-        .slip-help p { margin: 4px 0 8px; }
-        .slip-footer {
-          margin-top: auto;
-          padding-top: 0.3in;
-          display: flex;
-          justify-content: space-between;
-        }
-        @media print {
-          html, body { background: #fff !important; color: #000 !important; margin: 0; }
-          .slip-toolbar { display: none; }
-          .slip-page { min-height: 0; }
-          .slip { min-height: 0; height: auto; padding: 0; width: auto; }
-          .slip-footer { position: fixed; bottom: 0; left: 0; right: 0; padding: 0; }
-          @page { size: letter; margin: 0.5in; }
-        }
-      `}</style>
+      <style>{SLIP_CSS}</style>
 
       <div className="slip-toolbar">
         <span>Packing slip preview</span>
         <button type="button" onClick={() => window.print()}>Print</button>
       </div>
 
-      <div className="slip">
-        <div>Ship To:</div>
-        {address.length > 0 ? (
-          <div className="slip-shipto">
-            {address.map((line, i) => <div key={i}>{line}</div>)}
-          </div>
-        ) : (
-          <div className="slip-shipto" style={{ fontStyle: 'italic', fontWeight: 'normal' }}>
-            No shipping address on file
-          </div>
-        )}
-
-        <div className="slip-order-number">Order Number: {order.order_number}</div>
-        <div className="slip-thanks">Thank you for buying from {SELLER_NAME} on {SITE_NAME}.</div>
-
-        <div className="slip-columns">
-          <div>
-            <div className="slip-label">Shipping Address:</div>
-            {address.length > 0 ? (
-              address.map((line, i) => <div key={i}>{line}</div>)
-            ) : (
-              <div>No shipping address on file</div>
-            )}
-          </div>
-          <div className="slip-kv">
-            <div>Order Date:</div>
-            <div>{fmtDate(order.created_at)}</div>
-            <div>Shipping Method:</div>
-            <div>
-              {shippingMethod(order)}
-              {order.tracking_number && (
-                <>
-                  <br />
-                  {order.tracking_carrier ? `${order.tracking_carrier} ` : ''}{order.tracking_number}
-                </>
-              )}
-            </div>
-            <div>Buyer Name:</div>
-            <div>{order.username}</div>
-            {order.email && (
-              <>
-                <div>Buyer Email:</div>
-                <div>{order.email}</div>
-              </>
-            )}
-            <div>Seller Name:</div>
-            <div>{SELLER_NAME}</div>
-          </div>
-        </div>
-
-        <table className="slip-table">
-          <thead>
-            <tr>
-              <th className="qty">Quantity</th>
-              <th>Description</th>
-              <th className="num">Price</th>
-              <th className="num">Total Price</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((i) => (
-              <tr key={i.id}>
-                <td className="qty">{i.quantity}</td>
-                <td>
-                  {i.product_name}
-                  {i.sku && <span className="sku"> ({i.sku})</span>}
-                </td>
-                <td className="num">{formatMoney(i.unit_price_cents, currency)}</td>
-                <td className="num">{formatMoney(i.unit_price_cents * i.quantity, currency)}</td>
-              </tr>
-            ))}
-            <tr className="total">
-              <td className="qty">{totalQty}</td>
-              <td className="slip-label">Total</td>
-              <td />
-              <td className="num">{formatMoney(order.subtotal_cents, currency)}</td>
-            </tr>
-            <tr className="summary">
-              <td />
-              <td>Shipping</td>
-              <td />
-              <td className="num">{formatMoney(order.shipping_cents, currency)}</td>
-            </tr>
-            {order.tax_cents > 0 && (
-              <tr className="summary">
-                <td />
-                <td>Tax</td>
-                <td />
-                <td className="num">{formatMoney(order.tax_cents, currency)}</td>
-              </tr>
-            )}
-            <tr className="summary">
-              <td />
-              <td className="slip-label">Order Total</td>
-              <td />
-              <td className="num slip-label">{formatMoney(order.total_cents, currency)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div className="slip-help">
-          <div>
-            <div className="slip-label">For Any Questions About Your Order:</div>
-            <ol>
-              {QUESTIONS_STEPS.map((step, i) => <li key={i}>{step}</li>)}
-            </ol>
-          </div>
-          <div>
-            <div className="slip-label">To Provide Feedback for This Order:</div>
-            <p>{FEEDBACK_INTRO}</p>
-            <ol>
-              {FEEDBACK_STEPS.map((step, i) => <li key={i}>{step}</li>)}
-            </ol>
-          </div>
-        </div>
-
-        <div className="slip-footer">
-          <span>Order Number: {order.order_number}</span>
-          <span>1 of 1</span>
-        </div>
-      </div>
+      <PackingSlip orders={orders} />
     </div>
   )
 }

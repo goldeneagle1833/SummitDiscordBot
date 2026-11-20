@@ -22,6 +22,7 @@ from __future__ import annotations
 import html
 import re
 import zlib
+from html.parser import HTMLParser
 from urllib.parse import quote, urlparse
 
 # ---------------------------------------------------------------------------
@@ -30,7 +31,8 @@ from urllib.parse import quote, urlparse
 
 TITLE_MAX = 120
 SUMMARY_MAX = 300
-BODY_MAX = 40_000
+BODY_MAX = 40_000          # characters of text the reader sees
+HTML_MAX = 150_000         # characters of cleaned HTML (tags included)
 TAGS_MAX = 5
 TAG_MAX_LEN = 24
 LINKS_MAX = 40
@@ -110,8 +112,13 @@ def site_label(url: str, site_name: str | None = None) -> str:
 
 
 def validate_article(title: str, summary: str, body: str, category: str,
-                     has_pdf: bool, has_link: bool = False) -> str | None:
-    """Return an error message, or None when the article may be saved."""
+                     has_pdf: bool, has_link: bool = False,
+                     body_format: str = "md") -> str | None:
+    """Return an error message, or None when the article may be saved.
+
+    For ``body_format="html"`` the body must already be cleaned with
+    :func:`sanitize_html`; the length rules count the text a reader sees.
+    """
     if not title:
         return "Add a title."
     if len(title) > TITLE_MAX:
@@ -122,21 +129,32 @@ def validate_article(title: str, summary: str, body: str, category: str,
         return f"Keep the summary to {SUMMARY_MAX} characters."
     if category not in CATEGORIES:
         return "Pick a category."
-    if len(body) > BODY_MAX:
-        return f"The article is too long ({len(body):,} characters, max {BODY_MAX:,})."
-    if not has_pdf and not has_link and len(body) < 200:
+    if body_format == "html":
+        if len(body) > HTML_MAX:
+            return ("The article has too much formatting to save. Try removing "
+                    "some tables or pasted styling.")
+        text = html_to_text(body)
+        links = len(_HREF.findall(body))
+    else:
+        text = body
+        links = len(_URL_ANYWHERE.findall(body))
+    if len(text) > BODY_MAX:
+        return f"The article is too long ({len(text):,} characters, max {BODY_MAX:,})."
+    if not has_pdf and not has_link and len(text) < 200:
         return "Write at least a few paragraphs (200+ characters), or attach a PDF."
-    if len(_URL_ANYWHERE.findall(body)) > LINKS_MAX:
+    if links > LINKS_MAX:
         return f"Too many links (max {LINKS_MAX})."
     return None
 
 
-def word_count(body: str) -> int:
+def word_count(body: str, body_format: str = "md") -> int:
+    if body_format == "html":
+        body = html_to_text(body)
     return len(re.findall(r"\w+", body or ""))
 
 
-def reading_minutes(body: str) -> int:
-    return max(1, round(word_count(body) / 220))
+def reading_minutes(body: str, body_format: str = "md") -> int:
+    return max(1, round(word_count(body, body_format) / 220))
 
 
 def slugify(title: str) -> str:
@@ -286,6 +304,287 @@ def render_markdown(body: str) -> str:
 
     flush_para()
     return "\n".join(out)
+
+
+# ---------------------------------------------------------------------------
+# HTML from the visual editor -> safe HTML
+# ---------------------------------------------------------------------------
+#
+# The editor sends HTML.  Nothing it sends is trusted: the HTML is parsed and
+# a fresh copy is written out that holds only the tags and attributes listed
+# below.  Text is always re-escaped, so whatever the parser makes of odd input
+# can only ever come out as text.  Scripts, styles, frames, forms, event
+# handlers, inline styles and classes are all dropped.
+
+# Tags kept as they are.
+_KEEP_TAGS = {
+    "p", "br", "h2", "h3", "h4", "strong", "em", "u", "s", "sub", "sup",
+    "blockquote", "ul", "ol", "li", "a", "code", "pre", "hr", "img",
+    "table", "thead", "tbody", "tr", "th", "td", "figure", "figcaption",
+}
+# Tags written out as a kept tag instead.
+_RENAME_TAGS = {
+    "b": "strong", "i": "em", "strike": "s", "del": "s", "ins": "u",
+    "h1": "h2", "h5": "h4", "h6": "h4", "tfoot": "tbody", "kbd": "code",
+    "tt": "code", "samp": "code",
+    # Word processors and contentEditable wrap lines in these.
+    "div": "p", "section": "p", "article": "p", "header": "p", "footer": "p",
+    "main": "p", "aside": "p", "address": "p", "center": "p", "dd": "p",
+    "dt": "p", "caption": "p",
+}
+# Tags removed together with everything inside them.
+_DROP_WITH_CONTENT = {
+    "script", "style", "iframe", "frameset", "object",
+    "applet", "noscript", "noembed", "noframes", "template", "svg", "math",
+    "head", "title", "textarea", "select", "button", "form",
+    "audio", "video", "canvas", "map", "xml",
+}
+# Empty (void) tags that are simply ignored.  They have no end tag, so they
+# must never start a "drop everything inside" run.
+_IGNORED_VOID_TAGS = {
+    "meta", "link", "base", "embed", "frame", "input", "param", "source",
+    "track", "area", "wbr", "col", "keygen", "image", "basefont", "isindex",
+}
+_VOID_TAGS = {"br", "hr", "img"}
+# A new one of these closes an open paragraph, as browsers do.
+_BLOCK_TAGS = {
+    "p", "h2", "h3", "h4", "blockquote", "ul", "ol", "li", "pre", "hr",
+    "table", "thead", "tbody", "tr", "th", "td", "figure", "figcaption",
+}
+_HEADINGS = {"h2", "h3", "h4"}
+_CONTAINERS = {"li", "ul", "ol", "blockquote", "td", "th", "tr", "table",
+               "thead", "tbody", "figure", "figcaption", "pre"}
+_MAX_DEPTH = 40
+_CARD_REF = re.compile(r"\[\[([^\[\]\n|]{1,60})\]\]")
+_HREF = re.compile(r'<a href="')
+_TAG = re.compile(r"<[^>]*>")
+_EMPTY_BLOCK = re.compile(r"<(p|h2|h3|h4|li|blockquote|figcaption)>(?:\s|&nbsp;|<br>)*</\1>")
+
+
+def _safe_href(raw: str | None) -> tuple[str | None, bool]:
+    """(href, is_card_link) for a link the author added, or (None, False)."""
+    href = re.sub(r"[\x00-\x20\x7f]", "", raw or "")
+    if not href or len(href) > 500:
+        return None, False
+    if href.startswith("/card/") and "//" not in href and "\\" not in href:
+        return href, True
+    m = re.match(r"^(https?):", href, re.IGNORECASE)
+    if m and urlparse(href).hostname:
+        return href, False
+    if re.match(r"^mailto:[^\s@]+@[^\s@]+$", href, re.IGNORECASE):
+        return href, False
+    return None, False
+
+
+def _safe_src(raw: str | None) -> str | None:
+    src = re.sub(r"[\x00-\x20\x7f]", "", raw or "")
+    if not src or len(src) > 1000:
+        return None
+    if re.match(r"^https://", src, re.IGNORECASE) and urlparse(src).hostname:
+        return src
+    if src.startswith("/card-images/") and "//" not in src and ".." not in src:
+        return src
+    return None
+
+
+def _small_int(raw: str | None, low: int, high: int) -> int | None:
+    try:
+        n = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return n if low <= n <= high else None
+
+
+class _Sanitizer(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.out: list[str] = []
+        self.stack: list[tuple[str, bool]] = []  # (tag, written to output?)
+        self.skip_depth = 0
+        self.skip_tag: str | None = None
+
+    # -- helpers -----------------------------------------------------------
+    def _written(self) -> list[str]:
+        return [t for t, written in self.stack if written]
+
+    def _inside(self, *tags: str) -> bool:
+        return any(t in tags for t in self._written())
+
+    def _close_until(self, tag: str) -> None:
+        """Close open tags down to and including the last ``tag``."""
+        if not any(t == tag for t, _ in self.stack):
+            return
+        while self.stack:
+            t, written = self.stack.pop()
+            if written:
+                self.out.append(f"</{t}>")
+            if t == tag:
+                break
+
+    def _close_implied(self, name: str) -> None:
+        """End elements a browser would end before ``name`` starts."""
+        if name in _BLOCK_TAGS:
+            # An open paragraph or heading ends at the next block, but only up
+            # to the nearest container (list item, quote, table cell...).
+            for t in reversed(self._written()):
+                if t == "p" or t in _HEADINGS:
+                    self._close_until(t)
+                    break
+                if t in _CONTAINERS:
+                    break
+        # A new list item / row / cell ends the previous sibling.
+        siblings = {"li": ({"li"}, {"ul", "ol"}),
+                    "tr": ({"tr"}, {"table", "thead", "tbody"}),
+                    "td": ({"td", "th"}, {"tr", "table"}),
+                    "th": ({"td", "th"}, {"tr", "table"})}
+        if name in siblings:
+            same, parents = siblings[name]
+            for t in reversed(self._written()):
+                if t in same:
+                    self._close_until(t)
+                    break
+                if t in parents:
+                    break
+
+    # -- parser callbacks --------------------------------------------------
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if self.skip_depth:
+            if tag == self.skip_tag:
+                self.skip_depth += 1
+            return
+        if tag in _IGNORED_VOID_TAGS:
+            return
+        if tag in _DROP_WITH_CONTENT:
+            self.skip_tag, self.skip_depth = tag, 1
+            return
+        a = {k.lower(): (v or "") for k, v in attrs}
+        name = _RENAME_TAGS.get(tag, tag)
+        # Google Docs wraps a whole paste in <b style="font-weight:normal">.
+        if name == "strong" and re.search(r"font-weight:\s*(normal|400)", a.get("style", ""), re.I):
+            name = "span"
+        if name not in _KEEP_TAGS:
+            if tag not in _VOID_TAGS:
+                self.stack.append((tag, False))
+            return
+
+        self._close_implied(name)
+        if len(self.stack) >= _MAX_DEPTH:
+            return
+
+        parts = [name]
+        if name == "a":
+            href, is_card = _safe_href(a.get("href"))
+            if not href or self._inside("a"):
+                self.stack.append((tag, False))
+                return
+            if is_card:
+                parts.append(f'class="card-link" href="{html.escape(href)}"')
+            else:
+                parts.append(f'href="{html.escape(href)}" {_LINK_ATTRS}')
+        elif name == "img":
+            src = _safe_src(a.get("src"))
+            if not src:
+                return
+            alt = clean_text(a.get("alt"))[:200]
+            parts.append(f'src="{html.escape(src)}" alt="{html.escape(alt)}" '
+                         'loading="lazy" referrerpolicy="no-referrer"')
+        elif name in ("td", "th"):
+            for key in ("colspan", "rowspan"):
+                n = _small_int(a.get(key), 2, 20)
+                if n:
+                    parts.append(f'{key}="{n}"')
+        elif name == "ol":
+            n = _small_int(a.get("start"), 0, 9999)
+            if n is not None and n != 1:
+                parts.append(f'start="{n}"')
+
+        self.out.append("<" + " ".join(parts) + ">")
+        if name not in _VOID_TAGS:
+            self.stack.append((name, True))
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        tag = tag.lower()
+        if not self.skip_depth and tag not in _VOID_TAGS and \
+                _RENAME_TAGS.get(tag, tag) not in _VOID_TAGS:
+            self.handle_endtag(tag)
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if self.skip_depth:
+            if tag == self.skip_tag:
+                self.skip_depth -= 1
+                if not self.skip_depth:
+                    self.skip_tag = None
+            return
+        name = _RENAME_TAGS.get(tag, tag)
+        if name in _VOID_TAGS and name in _KEEP_TAGS:
+            if name == "br":   # a stray </br> is a line break in browsers
+                self.out.append("<br>")
+            return
+        # Find the matching open tag (by original or written name).
+        for i in range(len(self.stack) - 1, -1, -1):
+            t, written = self.stack[i]
+            if t == tag or (written and t == name):
+                while len(self.stack) > i:
+                    t2, w2 = self.stack.pop()
+                    if w2:
+                        self.out.append(f"</{t2}>")
+                return
+
+    def handle_data(self, data):
+        if self.skip_depth or not data:
+            return
+        data = _CONTROL_CHARS.sub("", data)
+        if self._inside("pre", "code", "a"):
+            self.out.append(html.escape(data, quote=False))
+            return
+        pos = 0
+        for m in _CARD_REF.finditer(data):
+            self.out.append(html.escape(data[pos:m.start()], quote=False))
+            name = m.group(1).strip()
+            href = "/card/" + quote(name, safe="")
+            self.out.append(f'<a class="card-link" href="{html.escape(href)}">'
+                            f"{html.escape(name)}</a>")
+            pos = m.end()
+        self.out.append(html.escape(data[pos:], quote=False))
+
+    def close(self):
+        super().close()
+        while self.stack:
+            t, written = self.stack.pop()
+            if written:
+                self.out.append(f"</{t}>")
+
+
+def sanitize_html(raw: str | None) -> str:
+    """Clean HTML from the article editor down to the allowed tags."""
+    raw = (raw or "").replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
+    if len(raw) > HTML_MAX * 4:
+        raw = raw[: HTML_MAX * 4]
+    parser = _Sanitizer()
+    parser.feed(raw)
+    parser.close()
+    out = "".join(parser.out)
+    # Blank paragraphs from pressing Enter twice, empty headings, etc.
+    prev = None
+    while prev != out:
+        prev = out
+        out = _EMPTY_BLOCK.sub("", out)
+    # Put each block on its own line so the HTML view is readable.
+    out = re.sub(r"\s*(</(?:p|h2|h3|h4|blockquote|ul|ol|li|pre|table|tr|figure)>|<hr>)\s*",
+                 r"\1\n", out)
+    out = re.sub(r"(<(?:ul|ol|table|thead|tbody|tr|blockquote|figure)(?: [^>]*)?>)\s*", r"\1\n", out)
+    out = re.sub(r"\n{2,}", "\n", out)
+    return out.strip()
+
+
+def html_to_text(clean_html: str) -> str:
+    """The words a reader sees in cleaned article HTML."""
+    text = _TAG.sub(" ", clean_html or "")
+    text = html.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 # ---------------------------------------------------------------------------

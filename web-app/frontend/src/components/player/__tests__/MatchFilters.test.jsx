@@ -64,4 +64,16 @@ describe('MatchFilters', () => {
     await userEvent.clear(screen.getByLabelText('Card played'))
     expect(onChange).toHaveBeenCalledWith({})
   })
+
+  it('shows Lavamancer and Frostmage and the precon record when precon games are added', () => {
+    const withPrecon = {
+      ...data,
+      options: { ...data.options, avatars: ['Lavamancer', 'Pathfinder'], opponent_avatars: ['Frostmage', 'Seer'] },
+      precon: { wins: 2, losses: 1 },
+    }
+    render(<MatchFilters filters={{ avatar: 'Lavamancer' }} data={withPrecon} onChange={() => {}} />)
+    expect(screen.getByRole('option', { name: 'Lavamancer' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Frostmage' })).toBeInTheDocument()
+    expect(screen.getByTestId('filter-record')).toHaveTextContent('Precon: 2W - 1L (66.7%)')
+  })
 })

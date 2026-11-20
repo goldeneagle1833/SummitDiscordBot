@@ -1087,6 +1087,39 @@ def send_dms(report: dict, discord_ids: list[str]) -> bool:
     return True
 
 
+def deck_to_beat(report: dict | None) -> str | None:
+    """The Avatar the report calls the deck to beat (top of the tier list)."""
+    archetypes = (((report or {}).get("payload") or {}).get("ranked") or {}).get("archetypes") or []
+    return archetypes[0].get("avatar") if archetypes else None
+
+
+def banner_image(report: dict | None) -> str | None:
+    """Avatar art for the home page slide, or None to keep the plain background."""
+    avatar = deck_to_beat(report)
+    if not avatar:
+        return None
+    from services.spotlight import _find_avatar_image
+
+    return _find_avatar_image(avatar)
+
+
+def fill_banner_art(banners: list[dict], repo: MetaReportRepository | None = None) -> list[dict]:
+    """Give Meta Report home slides made without art (older reports) their deck-to-beat image."""
+    for banner in banners:
+        link = banner.get("link") or ""
+        if banner.get("images") or not link.startswith("/meta-report/"):
+            continue
+        try:
+            repo = repo or MetaReportRepository()
+            image = banner_image(repo.get(link.rsplit("/", 1)[-1]))
+        except Exception:
+            logger.exception("Meta report banner art lookup failed")
+            continue
+        if image:
+            banner["images"] = [image]
+    return banners
+
+
 def create_banner(report: dict) -> None:
     from repositories.analytics import AnalyticsRepository
 
@@ -1109,6 +1142,7 @@ def create_banner(report: dict) -> None:
         badge_text="META",
         color="gold",
         created_by=BANNER_CREATOR,
+        images=json.dumps([image]) if (image := banner_image(report)) else None,
     )
 
 

@@ -108,3 +108,26 @@ describe('MatchHistoryTable provisional Rating changes', () => {
   })
 })
 
+
+describe('MatchHistoryTable type column', () => {
+  it('labels casual, testing, Omens and ranked games by their own type', () => {
+    renderWithRouter(
+      <MatchHistoryTable
+        title="Match History"
+        matches={[
+          { ...match(1, true), match_type: 'casual' },
+          { ...match(2, true), match_type: 'testing' },
+          { ...match(3, true), match_type: 'points' },
+          match(4, true),
+        ]}
+        isOwner={false}
+      />
+    )
+    const rows = screen.getAllByRole('row').slice(1)
+    const typeCell = (row) => within(row).getAllByRole('cell')[2]
+    expect(typeCell(rows[0])).toHaveTextContent('Casual')
+    expect(typeCell(rows[1])).toHaveTextContent('Testing')
+    expect(typeCell(rows[2])).toHaveTextContent('Omens')
+    expect(typeCell(rows[3])).toHaveTextContent('Ranked')
+  })
+})

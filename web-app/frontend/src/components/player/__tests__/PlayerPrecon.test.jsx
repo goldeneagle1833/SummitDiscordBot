@@ -86,3 +86,11 @@ describe('PlayerPrecon', () => {
     expect(screen.queryByRole('table')).toBeNull()
   })
 })
+
+describe('filterPreconGames game type', () => {
+  it('hides precon games under Casual and keeps them under Ranked', () => {
+    const games = [{ opponent_id: '1', won: true }]
+    expect(filterPreconGames(games, { game_type: 'casual' })).toEqual([])
+    expect(filterPreconGames(games, { game_type: 'ranked' })).toEqual(games)
+  })
+})

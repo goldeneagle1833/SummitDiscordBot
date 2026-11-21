@@ -2403,6 +2403,21 @@ def player_api(player_id):
         ranked_rows = [r for r in ranked_rows if _passes_filters(r)]
         casual_rows = [r for r in casual_rows if _passes_filters(r)]
 
+    # Game type filter (ranked includes Omens; casual includes testing)
+    game_type = (request.args.get("game_type") or "").strip().lower()
+    if game_type == "ranked":
+        casual_rows = []
+    elif game_type == "casual":
+        ranked_rows = []
+    else:
+        game_type = ""
+    if game_type:
+        match_filters["game_type"] = game_type
+
+    # combined=1: one Match History list with ranked and casual games together,
+    # newest first, paged with `page`. Without it the old split lists are kept.
+    combined = request.args.get("combined") == "1"
+
     def _record(rows_in):
         wins = sum(1 for r in rows_in if r[0])
         return {"wins": wins, "losses": len(rows_in) - wins}
@@ -2418,13 +2433,18 @@ def player_api(player_id):
     casual_page = max(1, casual_page)
 
     # Calculate ranked pagination
-    total_ranked_matches = len(ranked_rows)
+    if combined:
+        in_list = {id(r) for r in ranked_rows} | {id(r) for r in casual_rows}
+        list_rows = [r for r in sorted_rows if id(r) in in_list]
+    else:
+        list_rows = ranked_rows
+    total_ranked_matches = len(list_rows)
     total_pages = (total_ranked_matches + per_page - 1) // per_page if total_ranked_matches > 0 else 1
     page = min(page, total_pages)  # Ensure page doesn't exceed total pages
 
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
-    paginated_rows = ranked_rows[start_idx:end_idx]
+    paginated_rows = list_rows[start_idx:end_idx]
 
     # Calculate casual pagination
     total_casual_matches = len(casual_rows)
@@ -2433,7 +2453,7 @@ def player_api(player_id):
 
     casual_start_idx = (casual_page - 1) * per_page
     casual_end_idx = casual_start_idx + per_page
-    paginated_casual_rows = casual_rows[casual_start_idx:casual_end_idx]
+    paginated_casual_rows = [] if combined else casual_rows[casual_start_idx:casual_end_idx]
 
     def _clean_match_comment(comment, reporter_id, player_id):
         """Extract the current player's own comment, stripping metadata and opponent's notes."""

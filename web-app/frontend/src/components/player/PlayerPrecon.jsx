@@ -96,13 +96,15 @@ function playDraw(value) {
   return null
 }
 
-const FILTER_KEYS = ['opponent', 'result', 'avatar', 'opponent_avatar', 'play_draw', 'card']
+const FILTER_KEYS = ['opponent', 'result', 'avatar', 'opponent_avatar', 'play_draw', 'card', 'game_type']
 
 /** The precon games that fit the Matches tab filters (same rules as ranked games). */
 export function filterPreconGames(games = [], filters = {}) {
   if (!FILTER_KEYS.some((k) => filters[k])) return games
   // Precon games have no saved card data, so a card filter never matches them
   if (filters.card) return []
+  // Precon ladder games are rated, so the Casual type hides them
+  if (filters.game_type === 'casual') return []
   const same = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase()
   return games.filter((g) => {
     if (filters.opponent && String(g.opponent_id) !== String(filters.opponent)) return false
@@ -151,7 +153,7 @@ export function withPreconFilters(base, precon, filters = {}) {
   }
 }
 
-/** Precon games for the Matches tab (shown above casual games). */
+/** Precon games for the Matches tab (shown below the match history). */
 export function PreconMatchHistory({ data, filters = {} }) {
   const allGames = data?.games || []
   if (!allGames.length) return null

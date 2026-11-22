@@ -176,22 +176,6 @@ option {
 .honour-ring-1 { background: linear-gradient(135deg, #fff3a3, #facc15 45%, #b8860b); }
 .honour-ring-2 { background: linear-gradient(135deg, #ffffff, #cbd5e1 45%, #64748b); }
 .honour-ring-3 { background: linear-gradient(135deg, #fcd9a8, #d97706 45%, #7c2d12); }
-.honour-pip {
-  position: absolute;
-  right: -3px;
-  bottom: -3px;
-  min-width: 12px;
-  height: 12px;
-  padding: 0 2px;
-  border-radius: 9999px;
-  font-size: 8px;
-  line-height: 12px;
-  font-weight: 800;
-  text-align: center;
-  color: #111827;
-  background: inherit;
-  box-shadow: 0 0 0 1.5px #21262d;
-}
 
 @media (prefers-reduced-motion: reduce) {
   .foil-ring { animation: none; }

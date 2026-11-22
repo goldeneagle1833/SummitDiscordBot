@@ -44,7 +44,6 @@ describe('AvatarHonours', () => {
     const { container } = renderWithRouter(<AvatarHonourBadge honours={HONOURS} />)
     const img = container.querySelector('.honour-ring-1 img')
     expect(img).toHaveAttribute('src', '/avatar-images/got-imposter-b-f.png')
-    expect(container.querySelector('.honour-pip')).toHaveTextContent('1')
   })
 
   it('falls back to the medal when the avatar has no picture', () => {

@@ -46,4 +46,15 @@ describe('NameBadges', () => {
     const { container } = renderWithRouter(<NameBadges playerId="2" />)
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('leaves season avatar honours to the profile', async () => {
+    const honour = { season: 'Gothic Season 8', avatar: 'Harbinger', place: 1, label: 'Top Harbinger', title: 'Gothic Season 8 Top Harbinger' }
+    resetAvatarHonoursCache({ 3: [honour] })
+    resetPaperFinishesCache({ 3: [paper(4)] })
+    resetBadgePrefsCache({ 3: { shown: ['avatar_honours', 'paper:E4'], hidden: [] } })
+    renderWithRouter(<NameBadges playerId="3" />)
+    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1))
+    expect(screen.getByLabelText('Top 8 · Event 4')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Top Harbinger/)).toBeNull()
+  })
 })

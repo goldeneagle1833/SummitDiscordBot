@@ -94,7 +94,7 @@ const RING_CLASSES = { 1: 'honour-ring-1', 2: 'honour-ring-2', 3: 'honour-ring-3
 
 /**
  * The avatar's portrait cut into a small circle, ringed in the place's
- * colour (gold, silver, bronze) with the place number on a pip. Falls back
+ * colour (gold, silver, bronze). Falls back
  * to the medal when the avatar has no picture on file.
  */
 export function HonourAvatar({ avatar, place, size = 22 }) {
@@ -111,7 +111,6 @@ export function HonourAvatar({ avatar, place, size = 22 }) {
         style={{ width: size, height: size }}
         className="object-cover object-top"
       />
-      <span className="honour-pip">{place}</span>
     </span>
   )
 }

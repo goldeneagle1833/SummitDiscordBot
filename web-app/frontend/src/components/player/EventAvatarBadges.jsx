@@ -119,7 +119,8 @@ export function resetAvatarFilesCache(preload = null) {
   filesInflight = null
 }
 
-function useAvatarImage(avatar) {
+/** The avatar's stored portrait path, or null when none is on file. */
+export function useAvatarImage(avatar) {
   const pick = (files) => {
     const file = files && avatar ? getAvatarImagePath(avatar, files) : null
     return file ? `/avatar-images/${file}` : null

@@ -299,9 +299,13 @@ async def test_recorded_match_id_is_appended_to_the_announcement():
         await announce_match_id(bot, 417, "ranked", 1234)
 
     channel.fetch_message.assert_awaited_once_with(999)
-    message.edit.assert_awaited_once_with(
-        content="⚔️ **Ranked Match Found!** <@10> matched with <@20>! **Match ID:** #1234"
+    message.edit.assert_awaited_once()
+    assert message.edit.await_args.kwargs["content"] == (
+        "⚔️ **Ranked Match Found!** <@10> matched with <@20>! **Match ID:** #1234"
     )
+    # The edit keeps each player's Tag me choice (both on by default)
+    allowed = message.edit.await_args.kwargs["allowed_mentions"]
+    assert {u.id for u in allowed.users} == {10, 20}
     delete.assert_called_once_with(417, "ranked")
 
 

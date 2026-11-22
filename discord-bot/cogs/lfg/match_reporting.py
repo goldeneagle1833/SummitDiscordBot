@@ -4,6 +4,7 @@ import datetime
 import logging
 
 import config
+from repositories.tag_me_repo import send_with_tag_me
 from cogs.lfg.state import pending_match_reports, processed_matches
 from cogs.lfg.helpers import (
     correction_tip,
@@ -97,7 +98,8 @@ async def _send_confirmation_to_opponent(
                                 member, read_messages=True, send_messages=True
                             )
                     logger.info(f"Sending confirmation to DM-disabled channel for opponent {opponent_id}")
-                    await dm_channel.send(
+                    await send_with_tag_me(
+                        dm_channel,
                         scrub_urls(f"{opponent_user.mention} {confirm_msg}"),
                         view=confirmation_view,
                     )
@@ -752,7 +754,8 @@ class MatchTypeSelectionView(discord.ui.View):
                                 )
 
                     # No deck line here: this channel is public.
-                    await dm_channel.send(
+                    await send_with_tag_me(
+                        dm_channel,
                         scrub_urls(
                             f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match** - "
                             f"You've been matched with {self.opponent_user.mention}!\n\n**Did you go first?**"
@@ -767,7 +770,8 @@ class MatchTypeSelectionView(discord.ui.View):
             dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
             if dm_channel:
                 try:
-                    await dm_channel.send(
+                    await send_with_tag_me(
+                        dm_channel,
                         f"{interaction.user.mention} An error occurred setting up your match. Please try again using `!lfg`.",
                     )
                 except Exception:
@@ -897,7 +901,8 @@ class WentFirstView(discord.ui.View):
                                 )
 
                     # No deck line here: this channel is public.
-                    await dm_channel.send(
+                    await send_with_tag_me(
+                        dm_channel,
                         scrub_urls(
                             f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match Found!** "
                             f"You've been matched with {self.opponent_user.mention}!\n\n"
@@ -913,7 +918,8 @@ class WentFirstView(discord.ui.View):
             dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
             if dm_channel:
                 try:
-                    await dm_channel.send(
+                    await send_with_tag_me(
+                        dm_channel,
                         f"{interaction.user.mention} An error occurred setting up your match. Please try again using `!lfg`.",
                     )
                 except Exception:

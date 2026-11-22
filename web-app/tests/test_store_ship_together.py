@@ -153,3 +153,23 @@ class TestShipTogetherRoutes:
                                          json={"status": "refunded"})
         assert r.status_code == 200
         assert store_repo.get_order(b["id"])["ship_group"] is None
+
+
+class TestOrderSearch:
+    """Order queue search box: username, order #, real (shipping) name, email."""
+
+    def _ids(self, repo, q):
+        return {o["id"] for o in repo.list_orders_filtered(search=q)}
+
+    def test_search_matches_name_email_username_order(self, tmp_path):
+        repo = StoreRepository(db_path=tmp_path / "s.db")
+        pid = _seed_product(repo, stock_quantity=20)
+        a = _paid(repo, pid, username="tormak9970", email="tm@example.com",
+                  shipping_address=ELSEWHERE | {"name": "Joseph Chapman"})
+        b = _paid(repo, pid, username="nomadcamper")
+        assert self._ids(repo, "chapman") == {a["id"]}
+        assert self._ids(repo, "Joseph Chap") == {a["id"]}
+        assert self._ids(repo, "tm@example") == {a["id"]}
+        assert self._ids(repo, "nomad") == {b["id"]}
+        assert self._ids(repo, a["order_number"][-6:]) == {a["id"]}
+        assert self._ids(repo, "nobody") == set()

@@ -1354,10 +1354,13 @@ class StoreRepository:
             params.append(product_id)
 
         if search:
+            # Username, order number, the buyer's real name (shipping name,
+            # filled in from Stripe checkout) or their email.
+            fields = ("o.username", "o.order_number", "o.ship_name", "o.email")
             conditions.append(
-                "(o.username LIKE ? OR o.order_number LIKE ?)"
+                "(" + " OR ".join(f"COALESCE({f}, '') LIKE ?" for f in fields) + ")"
             )
-            params.extend([f"%{search}%", f"%{search}%"])
+            params.extend([f"%{search}%"] * len(fields))
 
         if date_from:
             conditions.append("o.created_at >= ?")

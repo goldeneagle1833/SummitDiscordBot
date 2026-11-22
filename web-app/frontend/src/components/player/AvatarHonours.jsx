@@ -128,12 +128,14 @@ export function AvatarHonourBadge({ honours = [], onClick }) {
       type="button"
       onClick={onClick}
       title={honours.map((h) => h.title).join('\n')}
-      className="inline-flex flex-wrap items-center gap-x-2 px-3 py-1 rounded-2xl bg-bg-raised border border-secondary/40 text-sm hover:border-secondary text-left"
+      className="inline-flex items-center gap-3 pl-3 pr-1.5 py-1 rounded-2xl bg-bg-raised border border-secondary/40 text-sm hover:border-secondary text-left"
     >
-      <HonourAvatar avatar={best.avatar} place={best.place} size={28} />
-      <strong className={`whitespace-nowrap ${PLACE_COLOURS[best.place]}`}>{best.label}</strong>
-      <span className="text-text-muted whitespace-nowrap">{best.season}</span>
-      {more > 0 && <span className="text-text-muted">+{more}</span>}
+      <span className="flex flex-wrap items-center gap-x-2 min-w-0">
+        <strong className={`whitespace-nowrap ${PLACE_COLOURS[best.place]}`}>{best.label}</strong>
+        <span className="text-text-muted whitespace-nowrap">{best.season}</span>
+        {more > 0 && <span className="text-text-muted">+{more}</span>}
+      </span>
+      <HonourAvatar avatar={best.avatar} place={best.place} size={36} />
     </button>
   )
 }

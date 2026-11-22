@@ -20,7 +20,7 @@ import WhatsNewBar from '@/components/layout/WhatsNewBar'
 // Always first on the top bar, in this order; links a user adds follow them.
 // Deck Archetypes and Top 8 Decks came off the top bar (Bruce, 2026-11-10);
 // they stay in the menu and can still be added back through Customize.
-const PERMANENT_LINKS = ['Avatars', 'Feedback']
+export const PERMANENT_LINKS = ['Avatars', 'Feedback']
 // Locked links that sit at the end of the top bar (just before Store) instead
 // of first. Feedback came back on the top bar for everyone (Bruce, 2026-11-20).
 const TRAILING_LINKS = ['Feedback']
@@ -30,7 +30,7 @@ const DROPPED_FROM_TOP_BAR = ['Deck Archetypes', 'Top 8 Decks']
 const PREFS_VERSION_MARK = '__v2'
 
 // Same order as the hamburger menu; the top bar shows added links in this order
-const ALL_NAV_OPTIONS = [
+export const ALL_NAV_OPTIONS = [
   { to: '/deck-rec', label: 'Sorcery Deck Rec' },
   { to: '/top-8', label: 'Top 8 Decks' },
   { to: '/deck-builder', label: 'Deck Visualizer' },
@@ -64,7 +64,7 @@ const RENAMED_LABELS = {
   'Community Series': 'Explorer Series',
 }
 
-function normalizeLabels(labels) {
+export function normalizeLabels(labels) {
   let out = labels.map((l) => RENAMED_LABELS[l] || l)
   // Older saves held these because they used to be locked on the top bar
   if (!out.includes(PREFS_VERSION_MARK)) {

@@ -636,6 +636,33 @@ class UserProfileRepository:
         conn.close()
         return updated
 
+    def all_nav_preferences(self) -> tuple[list[list[str]], int]:
+        """Every saved top bar pick list (no user ids) and the number of profiles.
+
+        Only people who pressed Save in Customize have a row with
+        nav_preferences set, so the lists are active choices, not defaults.
+        """
+        conn = self._get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT nav_preferences FROM user_profiles WHERE nav_preferences IS NOT NULL AND nav_preferences != ''")
+            raw = [r[0] for r in cur.fetchall()]
+            cur.execute("SELECT COUNT(*) FROM user_profiles")
+            total = cur.fetchone()[0]
+        except sqlite3.OperationalError:
+            return [], 0  # table or column not created yet
+        finally:
+            conn.close()
+        saves = []
+        for value in raw:
+            try:
+                labels = json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(labels, list):
+                saves.append([str(l) for l in labels])
+        return saves, total
+
     @staticmethod
     def _both_ids(user_id) -> tuple[str, str]:
         """A player id as stored for Discord and for Google sign-ins."""

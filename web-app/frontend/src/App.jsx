@@ -130,6 +130,7 @@ const SeasonFeedback = lazyPage(() => import('@/pages/SeasonFeedback'))
 
 // Error pages
 import ErrorPage from '@/pages/ErrorPage'
+import usePolling from '@/hooks/usePolling'
 import NotFound from '@/pages/NotFound'
 
 function LazyPage({ children }) {
@@ -139,26 +140,30 @@ function LazyPage({ children }) {
 const SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36).slice(2)
 const USER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || null
 
+// Heartbeat for the admin "Active Now" / Active Connections / Session
+// Analytics numbers. Once a minute while the tab is visible and in use; it
+// stops while the tab is hidden or nobody has touched it for 15 minutes, and
+// starts again straight away when they come back.
 function useHeartbeat(user) {
   const location = useLocation()
-  useEffect(() => {
-    const send = () => {
-      const payload = { sid: SESSION_ID, path: location.pathname, timezone: USER_TZ }
-      if (user && user.id) {
-        payload.user_id = String(user.id)
-        payload.username = user.username || null
-      }
-      const body = JSON.stringify(payload)
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon('/api/analytics/heartbeat', new Blob([body], { type: 'application/json' }))
-      } else {
-        fetch('/api/analytics/heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
-      }
+  const send = () => {
+    const payload = { sid: SESSION_ID, path: location.pathname, timezone: USER_TZ }
+    if (user && user.id) {
+      payload.user_id = String(user.id)
+      payload.username = user.username || null
     }
-    send()
-    const id = setInterval(send, 30000)
-    return () => clearInterval(id)
-  }, [location.pathname, user])
+    const body = JSON.stringify(payload)
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/analytics/heartbeat', new Blob([body], { type: 'application/json' }))
+    } else {
+      fetch('/api/analytics/heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
+    }
+  }
+  usePolling(send, 60 * 1000, {
+    idleMs: 15 * 60 * 1000,
+    idleIntervalMs: 0,
+    deps: [location.pathname, user],
+  })
 }
 
 function usePageTracking(user) {

@@ -161,6 +161,7 @@ NOISE_ENDPOINTS = frozenset({
     "/api/match-report/pending",
     "/api/store/notifications",
     "/api/streamers/banner",
+    "/api/nav/checks",
     "/api/nav/new-content",
     "/api/nav/seen",
     "/api/health",

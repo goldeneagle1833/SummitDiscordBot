@@ -16,6 +16,14 @@ logger = logging.getLogger(__name__)
 _last_persist_time = 0
 _PERSIST_INTERVAL = 60
 
+# Browsers send a heartbeat every 60 s while the tab is visible and in use
+# (it stops while the tab is hidden or idle). A session counts as "active
+# now" if it checked in within ACTIVE_WINDOW_SECONDS, and ends once it has
+# been quiet for SESSION_EXPIRE_SECONDS.
+HEARTBEAT_INTERVAL_SECONDS = 60
+ACTIVE_WINDOW_SECONDS = 90
+SESSION_EXPIRE_SECONDS = 150
+
 
 # Site routes with ids in them (from frontend/src/App.jsx), most specific first.
 # Fixed pages that share a prefix are listed in _STATIC_PAGES so they keep their name.
@@ -281,16 +289,14 @@ class AnalyticsRepository:
                                 timezone = COALESCE(excluded.timezone, active_sessions.timezone)""",
                 (session_id, ip, user_agent, path, timezone),
             )
-            # Clean up stale sessions older than 2 minutes
-            conn.execute(
-                "DELETE FROM active_sessions WHERE last_seen < strftime('%Y-%m-%d %H:%M:%S', 'now', '-120 seconds')"
-            )
             conn.commit()
             conn.close()
         except Exception as e:
             logger.debug(f"Failed to record heartbeat: {e}")
 
-        # Persist expired sessions at most once per 60 seconds (separate transaction)
+        # Save ended sessions to completed_sessions and clear them from
+        # active_sessions, at most once per 60 seconds (separate transaction).
+        # Saving happens before clearing so Session Analytics gets every visit.
         now = time.monotonic()
         if now - _last_persist_time >= _PERSIST_INTERVAL:
             _last_persist_time = now
@@ -298,15 +304,26 @@ class AnalyticsRepository:
                 self.persist_expired_sessions()
             except Exception as e:
                 logger.debug(f"Failed to persist sessions: {e}")
+            # Safety net: if saving keeps failing, don't let the table grow forever.
+            try:
+                conn = self._connect()
+                conn.execute(
+                    "DELETE FROM active_sessions WHERE last_seen < strftime('%Y-%m-%d %H:%M:%S', 'now', '-1 day')"
+                )
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                logger.debug(f"Failed to clear old active sessions: {e}")
 
     def get_active_user_count(self) -> int:
-        """Get the number of active users (heartbeat within last 60 seconds)."""
+        """Get the number of active users (heartbeat within ACTIVE_WINDOW_SECONDS)."""
         try:
             self._ensure_active_sessions_table()
             conn = self._connect()
             cur = conn.cursor()
             cur.execute(
-                "SELECT COUNT(*) FROM active_sessions WHERE last_seen >= strftime('%Y-%m-%d %H:%M:%S', 'now', '-60 seconds')"
+                "SELECT COUNT(*) FROM active_sessions WHERE last_seen >= strftime('%Y-%m-%d %H:%M:%S', 'now', ?)",
+                (f"-{ACTIVE_WINDOW_SECONDS} seconds",),
             )
             count = cur.fetchone()[0]
             conn.close()
@@ -323,8 +340,9 @@ class AnalyticsRepository:
             cur.execute(
                 """SELECT session_id, first_seen, last_seen, ip, user_agent, path, timezone
                    FROM active_sessions
-                   WHERE last_seen >= strftime('%Y-%m-%d %H:%M:%S', 'now', '-120 seconds')
-                   ORDER BY last_seen DESC"""
+                   WHERE last_seen >= strftime('%Y-%m-%d %H:%M:%S', 'now', ?)
+                   ORDER BY last_seen DESC""",
+                (f"-{SESSION_EXPIRE_SECONDS} seconds",),
             )
             sessions = []
             for r in cur.fetchall():
@@ -533,7 +551,11 @@ class AnalyticsRepository:
     def persist_expired_sessions(self):
         """Move expired active sessions to completed_sessions for historical analysis.
 
-        Called during heartbeat cleanup. Sessions inactive for >2 minutes are persisted.
+        Called during heartbeat cleanup. Sessions quiet for SESSION_EXPIRE_SECONDS
+        are saved, then removed from active_sessions in the same transaction.
+        A visit that comes back later (tab hidden for a while, then reopened)
+        keeps its session id, so its time is added to the saved row rather
+        than replacing it.
         """
         try:
             self._ensure_completed_sessions_table()
@@ -541,11 +563,12 @@ class AnalyticsRepository:
             conn = self._connect()
             cur = conn.cursor()
 
-            # Find expired sessions (>2 min inactive)
+            # Find expired sessions
             cur.execute(
                 """SELECT session_id, first_seen, last_seen, ip, user_agent, timezone
                    FROM active_sessions
-                   WHERE last_seen < strftime('%Y-%m-%d %H:%M:%S', 'now', '-120 seconds')"""
+                   WHERE last_seen < strftime('%Y-%m-%d %H:%M:%S', 'now', ?)""",
+                (f"-{SESSION_EXPIRE_SECONDS} seconds",),
             )
             expired = cur.fetchall()
 
@@ -576,12 +599,22 @@ class AnalyticsRepository:
                     duration_secs = 0
 
                 conn.execute(
-                    """INSERT OR REPLACE INTO completed_sessions
+                    """INSERT INTO completed_sessions
                        (session_id, first_seen, last_seen, ip, user_agent, timezone,
                         page_count, duration_seconds, user_id, username)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(session_id) DO UPDATE SET
+                           last_seen = excluded.last_seen,
+                           page_count = excluded.page_count,
+                           duration_seconds = completed_sessions.duration_seconds + excluded.duration_seconds,
+                           user_id = COALESCE(excluded.user_id, completed_sessions.user_id),
+                           username = COALESCE(excluded.username, completed_sessions.username)""",
                     (sid, first_seen, last_seen, ip, ua, tz,
                      page_count, duration_secs, user_id, username),
+                )
+                conn.execute(
+                    "DELETE FROM active_sessions WHERE session_id = ? AND last_seen = ?",
+                    (sid, last_seen),
                 )
 
             conn.commit()

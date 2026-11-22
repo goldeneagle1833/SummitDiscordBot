@@ -8,6 +8,7 @@ import asyncio
 import sqlite3
 
 import config
+from repositories.tag_me_repo import send_with_tag_me
 from cogs.lfg import state as lfg_state
 from cogs.lfg.state import (
     lfg_queue,
@@ -4268,7 +4269,8 @@ class LFGCog(commands.Cog):
             # If DMs are disabled, send in a channel
             match_report_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
             if match_report_channel:
-                await match_report_channel.send(
+                await send_with_tag_me(
+                    match_report_channel,
                     f"<@{other_player_id}>", embed=confirm_embed, view=view
                 )
                 await ctx.send(
@@ -4476,7 +4478,8 @@ class LFGCog(commands.Cog):
         except discord.Forbidden:
             match_report_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
             if match_report_channel:
-                await match_report_channel.send(
+                await send_with_tag_me(
+                    match_report_channel,
                     f"<@{other_player_id}>", embed=confirm_embed, view=view
                 )
                 await ctx.send(sent_msg)

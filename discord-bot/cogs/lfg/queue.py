@@ -8,6 +8,7 @@ import sqlite3
 import time
 
 import config
+from repositories.tag_me_repo import send_with_tag_me
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
 from cogs.lfg.voice_offer import offer_no_voice_game
 from cogs.lfg.queue_definitions import queue_definition, queue_is_enabled
@@ -1432,7 +1433,8 @@ class JoinQueueButtons(discord.ui.View):
                                 )
 
                         # No deck line here: this channel is public.
-                        fb_msg = await dm_channel.send(
+                        fb_msg = await send_with_tag_me(
+                            dm_channel,
                             f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match Report**\n\n"
                             f"**Opponent:** {opponent_user.mention}\n\n"
                             f"Use the button below to report the result.\n\n"

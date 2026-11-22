@@ -4,6 +4,7 @@ import datetime
 import logging
 
 import config
+from repositories.tag_me_repo import send_with_tag_me
 from cogs.lfg.state import lfg_queue
 from cogs.lfg.persistent_confirm import create_match_card_view
 from cogs.lfg.pairing_messages import (
@@ -109,7 +110,8 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
 
             # Confirm in channel (find original context channel)
             if self.lfg_channel:
-                await self.lfg_channel.send(
+                await send_with_tag_me(
+                    self.lfg_channel,
                     f"{self.challenger.mention} has challenged {self.opponent.mention} to a match!"
                 )
 
@@ -117,14 +119,16 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
             # If DM fails, create a public thread
             if self.lfg_channel:
                 try:
-                    temp_msg = await self.lfg_channel.send(
+                    temp_msg = await send_with_tag_me(
+                        self.lfg_channel,
                         f"{self.opponent.mention} You have been challenged!"
                     )
                     thread = await temp_msg.create_thread(
                         name=f"Challenge from {self.challenger.display_name}",
                         auto_archive_duration=60,
                     )
-                    await thread.send(
+                    await send_with_tag_me(
+                        thread,
                         f"{self.opponent.mention} {challenger_global} has challenged you to a match!",
                         view=view,
                     )

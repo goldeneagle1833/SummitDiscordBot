@@ -9,20 +9,21 @@ vi.mock('@/api/client', () => ({ get: vi.fn() }))
 describe('countNavPicks', () => {
   it('counts each page once per person and applies renames', () => {
     const { rows, people, onlyDefaults } = countNavPicks([
-      ['Feedback', 'Community', '__v2'],
-      ['Feedback', 'Card Win Rates', 'Popular Cards', '__v2'],
-      ['Avatars', '__v2'],
+      ['Help', 'Community', '__v2'],
+      ['Help', 'Card Win Rates', 'Popular Cards', '__v2'],
+      ['Avatars', 'Feedback', '__v2'],
       // old save from before the __v2 change: locked links are dropped
-      ['Top 8 Decks', 'Feedback'],
+      ['Top 8 Decks', 'Help'],
     ])
     const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.count]))
     expect(people).toBe(4)
-    expect(byLabel.Feedback).toBe(3)
+    expect(byLabel.Help).toBe(3)
+    expect(byLabel.Feedback).toBeUndefined()
     expect(byLabel['Card Stats']).toBe(1)
     expect(byLabel['Top 8 Decks']).toBe(0)
     expect(byLabel.Avatars).toBeUndefined()
     expect(onlyDefaults).toBe(1)
-    expect(rows[0].label).toBe('Feedback')
+    expect(rows[0].label).toBe('Help')
   })
 })
 

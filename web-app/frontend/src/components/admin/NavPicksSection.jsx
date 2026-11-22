@@ -77,8 +77,8 @@ export default function NavPicksSection() {
       </div>
       <p className="text-xs text-text-muted">
         Counts people who pressed Save in Customize Nav Bar (the pencil by the top bar links), which needs a login.
-        People who never opened it just see the defaults and are not counted. {PERMANENT_LINKS.join(', ')} is always on
-        the top bar, so it is left out. % is out of the people who customized.
+        People who never opened it just see the defaults and are not counted. {PERMANENT_LINKS.join(' and ')}{' '}
+        {PERMANENT_LINKS.length > 1 ? 'are' : 'is'} always on the top bar, so {PERMANENT_LINKS.length > 1 ? 'they are' : 'it is'} left out. % is out of the people who customized.
       </p>
     </section>
   )

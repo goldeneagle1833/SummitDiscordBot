@@ -91,10 +91,9 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                   <td className="py-2 px-3">
                     {m.match_type === 'points' ? (
                       <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">Omens</span>
-                    ) : m.match_type === 'casual' ? (
+                    ) : m.match_type === 'casual' || m.match_type === 'testing' ? (
+                      // 'testing' is the bot's internal name for casual games
                       <span className="text-xs text-text-muted">Casual</span>
-                    ) : m.match_type === 'testing' ? (
-                      <span className="text-xs text-text-muted">Testing</span>
                     ) : (
                       <span className="text-xs text-text-muted">Ranked</span>
                     )}

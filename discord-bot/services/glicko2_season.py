@@ -61,6 +61,14 @@ TOP_CUT_MIN_GAMES = 8  # an entry needs this many games to count for top cut
 # not shown (they swing a lot while it settles). The rating shows from this
 # game on, and per-game changes from the game after it.
 PROVISIONAL_GAMES = TOP_CUT_MIN_GAMES
+# Inactivity decay (Avatar mode): an avatar entry nobody has played for a week
+# loses DECAY_PER_DAY points for each further day, until it plays again. It
+# stops at DECAY_FLOOR (the start rating), skips provisional entries, and stops
+# when the season ends. Only the season avatar rating decays: the player
+# ladder and lifetime ratings don't.
+DECAY_GRACE_DAYS = 7
+DECAY_PER_DAY = 10.0
+DECAY_FLOOR = START_RATING
 
 _SCALE = 173.7178
 _NON_RATED_TYPES = ("testing", "rumble", "points")
@@ -73,6 +81,7 @@ class Rating:
     rd: float = START_RD
     vol: float = START_VOL
     last_at: str | None = None  # ISO time of the last game (or reset)
+    decay: float = 0.0          # inactivity points already taken off since last_at
 
     @property
     def display(self) -> int:
@@ -95,6 +104,65 @@ def rd_at(entry: Rating, at: str) -> float:
     phi = entry.rd / _SCALE
     grown = math.sqrt(phi ** 2 + entry.vol ** 2 * days / PERIOD_DAYS) * _SCALE
     return min(grown, START_RD)
+
+
+def decay_owed(entry: Rating, games, until: str | None) -> float:
+    """Inactivity points the entry owes at ``until``, counted from its last game.
+
+    Nothing for the first DECAY_GRACE_DAYS full days, then DECAY_PER_DAY for
+    each further full day, never taking the rating below DECAY_FLOOR.
+    Provisional entries don't decay.
+    """
+    if not entry.last_at or not until or is_provisional(games):
+        return 0.0
+    idle = (_parse(until) - _parse(entry.last_at)).total_seconds() / 86400
+    days = max(int(idle) - DECAY_GRACE_DAYS, 0)
+    base = entry.rating + entry.decay  # the rating it finished its last game on
+    return max(0.0, min(days * DECAY_PER_DAY, base - DECAY_FLOOR))
+
+
+def decayed(entry: Rating, games, until: str | None) -> Rating:
+    """The entry with every inactivity point it owes at ``until`` taken off."""
+    owed = decay_owed(entry, games, until)
+    if owed == entry.decay:
+        return entry
+    return Rating(entry.rating + entry.decay - owed, entry.rd, entry.vol, entry.last_at, owed)
+
+
+def idle_days(last_at: str | None, until: str | None) -> int:
+    """Whole days since ``last_at``."""
+    if not last_at or not until:
+        return 0
+    return max(int((_parse(until) - _parse(last_at)).total_seconds() // 86400), 0)
+
+
+def decay_status(rating, games, last_at, decay, now: str | None = None) -> dict:
+    """What a page shows about an avatar entry's decay.
+
+    {"decay": points lost since its last game, "idle_days": whole days idle,
+     "decay_in_days": days until it starts losing points (only when 1-2 days
+     away and it would actually decay), else None}.
+    """
+    now = now or datetime.datetime.now().isoformat()
+    idle = idle_days(last_at, now)
+    decay = int(round(decay or 0))
+    left = DECAY_GRACE_DAYS + 1 - idle
+    soon = (not decay and 0 < left <= 2 and not is_provisional(games)
+            and (rating or 0) > DECAY_FLOOR)
+    return {"decay": decay, "idle_days": idle, "decay_in_days": left if soon else None}
+
+
+def decay_until(event: dict | None, now: str | None = None) -> str:
+    """The time decay is counted to: now, or the season's end once it has ended."""
+    now = now or datetime.datetime.now().isoformat()
+    end = (event or {}).get("end_date")
+    if end:
+        try:
+            if _parse(end) < _parse(now):
+                return str(end)
+        except ValueError:
+            pass
+    return now
 
 
 def _update(mu, phi, vol, mu_j, phi_j, score):
@@ -203,6 +271,7 @@ def ensure_elo_schema(conn: sqlite3.Connection) -> None:
         ("rating", "REAL"),
         ("rd", "REAL"),
         ("vol", "REAL"),
+        ("decay_points", "REAL DEFAULT 0"),  # inactivity points taken off since the last game
     ))
     conn.execute(
         """CREATE TABLE IF NOT EXISTS event_rating_adjustments (
@@ -407,15 +476,19 @@ def load_player(elo_conn, user_id) -> Rating:
     return Rating(row[0], row[1] or START_RD, row[2] or START_VOL, row[3])
 
 
+def _decay_col(elo_conn) -> str:
+    return "decay_points" if "decay_points" in _columns(elo_conn, "event_avatar_standings") else "0"
+
+
 def load_avatar(elo_conn, event_id, user_id, avatar) -> Rating:
     row = elo_conn.execute(
-        "SELECT rating, rd, vol, last_played_at FROM event_avatar_standings "
+        f"SELECT rating, rd, vol, last_played_at, {_decay_col(elo_conn)} FROM event_avatar_standings "
         "WHERE event_id = ? AND user_id = ? AND avatar = ?",
         (event_id, user_id, avatar),
     ).fetchone()
     if not row or row[0] is None:
         return Rating()
-    return Rating(row[0], row[1] or START_RD, row[2] or START_VOL, row[3])
+    return Rating(row[0], row[1] or START_RD, row[2] or START_VOL, row[3], row[4] or 0.0)
 
 
 def _save_player(elo_conn, user_id, name, entry: Rating, games_delta=1):
@@ -435,6 +508,12 @@ def _save_player(elo_conn, user_id, name, entry: Rating, games_delta=1):
 
 
 def _save_avatar(elo_conn, event_id, user_id, name, avatar, entry: Rating, games_delta=1):
+    if _decay_col(elo_conn) != "0":
+        elo_conn.execute(
+            "UPDATE event_avatar_standings SET decay_points = ? "
+            "WHERE event_id = ? AND user_id = ? AND avatar = ?",
+            (entry.decay, event_id, user_id, avatar),
+        )
     elo_conn.execute(
         """INSERT INTO event_avatar_standings
                (event_id, user_id, avatar, user_display_name, event_elo, games_played,
@@ -475,8 +554,11 @@ def apply_match(elo_conn, event, winner_id, winner_name, loser_id, loser_name, a
     }
     if event.get("elo_mode") == "avatar" and winner_avatar and loser_avatar:
         eid = event["event_id"]
-        wa_before = load_avatar(elo_conn, eid, winner_id, winner_avatar)
-        la_before = load_avatar(elo_conn, eid, loser_id, loser_avatar)
+        # Any inactivity decay still owed comes off before the game is rated
+        wa_before = decayed(load_avatar(elo_conn, eid, winner_id, winner_avatar),
+                            _avatar_games(elo_conn, eid, winner_id, winner_avatar), at)
+        la_before = decayed(load_avatar(elo_conn, eid, loser_id, loser_avatar),
+                            _avatar_games(elo_conn, eid, loser_id, loser_avatar), at)
         wa_after, la_after = play(wa_before, la_before, at)
         _save_avatar(elo_conn, eid, winner_id, winner_name, winner_avatar, wa_after)
         _save_avatar(elo_conn, eid, loser_id, loser_name, loser_avatar, la_after)
@@ -523,6 +605,45 @@ def add_adjustment(elo_conn, event, user_id, name, rating, avatar=None, at=None)
         _save_avatar(elo_conn, event["event_id"], user_id, name, avatar, entry, games_delta=0)
     else:
         _save_player(elo_conn, user_id, name, entry, games_delta=0)
+
+
+# --- Inactivity decay ---------------------------------------------------------
+
+
+def apply_decay(elo_conn, event, now: str | None = None) -> list[dict]:
+    """Take any inactivity decay now owed off the season's avatar entries.
+
+    Glicko-2 Avatar-mode seasons only. Safe to run as often as you like: each
+    entry stores what it has already lost since its last game, so only the
+    difference comes off. The same rule runs inside ``apply_match`` and
+    ``rebuild_season``, so a rebuild lands on the same numbers.
+    Returns [{user_id, avatar, before, after, decay}] for entries that moved.
+    Does not commit.
+    """
+    if not is_glicko2(event) or event.get("elo_mode") != "avatar":
+        return []
+    if _decay_col(elo_conn) == "0":
+        return []
+    until = decay_until(event, now)
+    rows = elo_conn.execute(
+        "SELECT user_id, avatar, rating, rd, vol, last_played_at, decay_points, games_played "
+        "FROM event_avatar_standings WHERE event_id = ? AND rating IS NOT NULL",
+        (event["event_id"],),
+    ).fetchall()
+    moved = []
+    for user_id, avatar, rating, rd, vol, last_at, paid, games in rows:
+        entry = Rating(rating, rd or START_RD, vol or START_VOL, last_at, paid or 0.0)
+        new = decayed(entry, games, until)
+        if new.decay == entry.decay:
+            continue
+        elo_conn.execute(
+            "UPDATE event_avatar_standings SET rating = ?, event_elo = ?, decay_points = ? "
+            "WHERE event_id = ? AND user_id = ? AND avatar = ?",
+            (new.rating, new.display, new.decay, event["event_id"], user_id, avatar),
+        )
+        moved.append({"user_id": user_id, "avatar": avatar, "before": entry.display,
+                      "after": new.display, "decay": new.decay})
+    return moved
 
 
 # --- Standing before each game -------------------------------------------------
@@ -610,7 +731,7 @@ def season_matches(match_conn, event) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def rebuild_season(elo_conn, match_conn, event) -> dict:
+def rebuild_season(elo_conn, match_conn, event, now: str | None = None) -> dict:
     """Replay a Glicko-2 season from its matches and admin resets, and rewrite it.
 
     Rewrites every player's season rating, the season's avatar entries and
@@ -664,8 +785,12 @@ def rebuild_season(elo_conn, match_conn, event) -> dict:
                   None, None, None, None, player_games[w], player_games[l], None, None]
         if avatar_mode and m["winner_avatar"] and m["loser_avatar"]:
             wk, lk = (w, m["winner_avatar"]), (l, m["loser_avatar"])
-            wa_before, la_before = avatars.get(wk, Rating()), avatars.get(lk, Rating())
-            entries = [(e.display, avatar_games.get(k, 0)) for k, e in avatars.items()]
+            # Inactivity decay owed at this game comes off first (as apply_match does)
+            at_ts = m["timestamp"]
+            wa_before = decayed(avatars.get(wk, Rating()), avatar_games.get(wk, 0), at_ts)
+            la_before = decayed(avatars.get(lk, Rating()), avatar_games.get(lk, 0), at_ts)
+            entries = [(decayed(e, avatar_games.get(k, 0), at_ts).display, avatar_games.get(k, 0))
+                       for k, e in avatars.items()]
             snapshot[4:] = [wa_before.display, la_before.display,
                             _rank_of(wa_before.display, avatar_games.get(wk, 0), entries, True),
                             _rank_of(la_before.display, avatar_games.get(lk, 0), entries, True)]
@@ -723,6 +848,10 @@ def rebuild_season(elo_conn, match_conn, event) -> dict:
     }
 
     if avatar_mode:
+        # Decay owed from each entry's last game up to now (or the season's end)
+        until = decay_until(event, now)
+        avatars = {k: decayed(e, avatar_games.get(k, 0), until) for k, e in avatars.items()}
+        decay_col = _decay_col(elo_conn) != "0"
         avatar_names = {
             (row[0], row[1]): row[2] for row in elo_conn.execute(
                 "SELECT user_id, avatar, user_display_name FROM event_avatar_standings WHERE event_id = ?",
@@ -742,6 +871,13 @@ def rebuild_season(elo_conn, match_conn, event) -> dict:
                 for (uid, avatar), entry in avatars.items()
             ],
         )
+        if decay_col:
+            elo_conn.executemany(
+                "UPDATE event_avatar_standings SET decay_points = ? "
+                "WHERE event_id = ? AND user_id = ? AND avatar = ?",
+                [(entry.decay, event_id, uid, avatar)
+                 for (uid, avatar), entry in avatars.items() if entry.decay],
+            )
 
     return {
         "matches": len(matches),

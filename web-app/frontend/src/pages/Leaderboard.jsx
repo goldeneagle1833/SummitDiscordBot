@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import LeaderboardTable from '@/components/leaderboard/LeaderboardTable'
+import { DECAY_RULE } from '@/components/common/DecayTag'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
 import { PreconLadder, preconSeasonText } from '@/components/leaderboard/PreconLadderContent'
 import Spinner from '@/components/ui/Spinner'
@@ -224,6 +225,11 @@ function CurrentEventBoard({ eventData }) {
         />
       ) : (
         <p className="text-text-muted text-center py-8">No matches played yet</p>
+      )}
+      {rows.some((r) => r.decay > 0 || r.decay_in_days > 0) && (
+        <p className="mt-2 text-xs text-text-muted" data-testid="decay-note">
+          <span className="text-amber-400">-N idle</span>: {DECAY_RULE}
+        </p>
       )}
     </section>
   )

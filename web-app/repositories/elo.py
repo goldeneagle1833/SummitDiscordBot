@@ -153,8 +153,11 @@ class EloRepository:
             )
             if not cur.fetchone():
                 return []
+            cols = {r[1] for r in cur.execute("PRAGMA table_info(event_avatar_standings)")}
+            decay = "COALESCE(decay_points, 0)" if "decay_points" in cols else "0"
             cur.execute(
-                """SELECT user_id, avatar, user_display_name, event_elo, games_played
+                f"""SELECT user_id, avatar, user_display_name, event_elo, games_played,
+                          last_played_at, {decay}
                    FROM event_avatar_standings
                    WHERE event_id = ? AND games_played > 0
                    ORDER BY event_elo DESC, games_played DESC, user_id ASC, avatar ASC""",
@@ -170,6 +173,9 @@ class EloRepository:
                 "display_name": row[2],
                 "event_elo": row[3],
                 "games_played": row[4],
+                "last_played_at": row[5],
+                # Inactivity points taken off since the entry's last game (Glicko-2)
+                "decay": int(round(row[6] or 0)),
             }
             for row in rows
         ]

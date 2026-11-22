@@ -1941,6 +1941,21 @@ def delete_user_profile(user_id):
     return jsonify({"success": True}), 200
 
 
+@admin_bp.route("/admin/nav-picks", methods=["GET"])
+@require_admin
+def nav_picks_summary():
+    """Saved top bar picks across accounts, for the Most Pinned Pages tile (admin only).
+
+    Returns each saved list of labels without user ids, shuffled, so the page
+    can apply the same rename/cleanup rules as the nav bar before counting.
+    """
+    import random
+
+    saves, total = UserProfileRepository().all_nav_preferences()
+    random.shuffle(saves)
+    return jsonify({"success": True, "saves": saves, "profiles": total})
+
+
 @admin_bp.route("/admin/data-exports", methods=["GET"])
 @require_admin
 def data_exports_summary():

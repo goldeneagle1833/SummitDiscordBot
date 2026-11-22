@@ -9,6 +9,7 @@ import BlockedUsersSection from '@/components/admin/BlockedUsersSection'
 import PlayerReportsSection from '@/components/admin/PlayerReportsSection'
 import PlayerKudosSection from '@/components/admin/PlayerKudosSection'
 import DataExportsSection from '@/components/admin/DataExportsSection'
+import NavPicksSection from '@/components/admin/NavPicksSection'
 import CardPointsSection from '@/components/admin/CardPointsSection'
 import ReactionRolesSection from '@/components/admin/ReactionRolesSection'
 import AuditLogTable from '@/components/admin/AuditLogTable'
@@ -32,6 +33,9 @@ export default function AuditLog() {
       </AdminCollapsible>
       <AdminCollapsible title="Dashboard" subtitle="Community health and site analytics at a glance" defaultOpen>
         <DashboardSection />
+      </AdminCollapsible>
+      <AdminCollapsible title="Most Pinned Pages" subtitle="Which pages people add to their top bar with Customize">
+        <NavPicksSection />
       </AdminCollapsible>
       <AdminCollapsible title="Matches with Notes" subtitle="All matches where players left a comment">
         <MatchNotesSection />

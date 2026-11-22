@@ -110,7 +110,7 @@ describe('MatchHistoryTable provisional Rating changes', () => {
 
 
 describe('MatchHistoryTable type column', () => {
-  it('labels casual, testing, Omens and ranked games by their own type', () => {
+  it('labels casual (and testing, the bot casual type) as Casual, plus Omens and ranked', () => {
     renderWithRouter(
       <MatchHistoryTable
         title="Match History"
@@ -126,7 +126,7 @@ describe('MatchHistoryTable type column', () => {
     const rows = screen.getAllByRole('row').slice(1)
     const typeCell = (row) => within(row).getAllByRole('cell')[2]
     expect(typeCell(rows[0])).toHaveTextContent('Casual')
-    expect(typeCell(rows[1])).toHaveTextContent('Testing')
+    expect(typeCell(rows[1])).toHaveTextContent('Casual')
     expect(typeCell(rows[2])).toHaveTextContent('Omens')
     expect(typeCell(rows[3])).toHaveTextContent('Ranked')
   })

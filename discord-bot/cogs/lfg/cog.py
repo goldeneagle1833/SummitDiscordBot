@@ -763,6 +763,11 @@ class LFGCog(commands.Cog):
             await release_voice_holds(self.bot)
         except Exception as e:
             logger.error(f"Error releasing voice holds: {e}", exc_info=True)
+        try:
+            from cogs.lfg.skill_match import release_skill_waits
+            await release_skill_waits(self.bot)
+        except Exception as e:
+            logger.error(f"Error pairing Skill matching players: {e}", exc_info=True)
 
     @release_voice_holds.before_loop
     async def before_release_voice_holds(self):
@@ -1339,7 +1344,8 @@ class LFGCog(commands.Cog):
         return "ranked"
 
     def check_if_someone_is_lfg(
-        self, ctx, queue_type="ranked", voice=DEFAULT_VOICE, voice_flexible=False, voice_hold=True
+        self, ctx, queue_type="ranked", voice=DEFAULT_VOICE, voice_flexible=False, voice_hold=True,
+        joiner_avatar=None, joiner_since=None,
     ):
         """Find a player in queue compatible with the given queue_type.
         All queue types use FIFO order (oldest first) with anti-rematch for ranked/limited.
@@ -1349,12 +1355,23 @@ class LFGCog(commands.Cog):
         that makes a voice match comes first. A no-voice match is never made for a
         voice-first, no-voice-OK player inside their voice hold: the joiner holds
         unless ``voice_hold`` is False (the hold sweep re-joining them).
+        Ranked only: if either player turned on Skill matching, their ratings
+        must be within a gap that widens the longer they wait
+        (cogs/lfg/skill_match.py). ``joiner_avatar`` / ``joiner_since`` give
+        the joiner's avatar and first join time for that check.
         Returns user_id if a valid match is found, None otherwise.
         """
         now = datetime.datetime.now()
         best_match = None
         best_key = None
+        best_skill = None
         joiner_holding = voice_hold and holding_for_voice(voice, voice_flexible, now, now)
+        from cogs.lfg.skill_match import build_gate
+
+        skill_gate = build_gate(
+            lfg_queue, ctx.author.id, queue_type, now,
+            joiner_avatar=joiner_avatar, joiner_since=joiner_since,
+        )
 
         # Casual (testing), rumble, limited, and omens (points) have no pairing restrictions
         is_casual = queue_type in ("testing", "rumble", "limited", "points", "precon")
@@ -1420,12 +1437,30 @@ class LFGCog(commands.Cog):
                 )
                 continue
 
+            skill = None
+            if skill_gate is not None:
+                ok, gap, allowed = skill_gate.check(user_id, entry)
+                if not ok:
+                    logger.info(
+                        f"Skipping {user_id} - Skill matching: rating gap {gap} > {allowed} "
+                        f"with {ctx.author.id}"
+                    )
+                    continue
+                if gap is not None:
+                    skill = (gap, allowed)
+
             # Voice matches first, then FIFO - match with oldest player
             key = (not makes_voice_match, timestamp)
             if best_key is None or key < best_key:
                 best_key = key
                 best_match = user_id
+                best_skill = skill
 
+        if best_match is not None and best_skill is not None:
+            logger.info(
+                f"Skill matching pair {ctx.author.id} with {best_match}: "
+                f"rating gap {best_skill[0]} (allowed {best_skill[1]})"
+            )
         return best_match
 
     @staticmethod
@@ -1438,7 +1473,7 @@ class LFGCog(commands.Cog):
     def add_to_lfg_queue(
         self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None, run_id=None,
         origin="discord", voice=DEFAULT_VOICE, avatar=None, alert_avatar=False, deck_avatar=None,
-        voice_flexible=False, precon=None,
+        voice_flexible=False, precon=None, queued_since=None,
     ):
         queue_entry = {
             "timestamp": datetime.datetime.now(),
@@ -1464,6 +1499,9 @@ class LFGCog(commands.Cog):
         if precon:
             # Precon queue: "lavamancer" or "frostmage"
             queue_entry["precon"] = precon
+        if queued_since:
+            # Re-joined by a sweep: when they first joined (Skill matching widens from then)
+            queue_entry["queued_since"] = queued_since
 
         if ctx.author.id not in lfg_queue:
             lfg_queue[ctx.author.id] = {"queues": {}}
@@ -1548,6 +1586,26 @@ class LFGCog(commands.Cog):
         else:
             current = await asyncio.to_thread(is_voice_only, ctx.author.id)
         await ctx.send(voice_only_text(current), view=VoiceOnlyToggleView(ctx.author.id, current))
+
+    @commands.command(aliases=["skillmatch"])
+    async def skill_match(self, ctx, setting: str = None):
+        """Opt in to skill-based matching in the Ranked queue (test).
+
+        Usage: !skill_match (shows your setting), !skill_match on, !skill_match off
+        """
+        from repositories.skill_match_repo import set_skill_match, wants_skill_match
+
+        choice = (setting or "").strip().lower()
+        if choice in ("on", "yes", "true"):
+            current = await asyncio.to_thread(set_skill_match, ctx.author.id, True, "command")
+        elif choice in ("off", "no", "false"):
+            current = await asyncio.to_thread(set_skill_match, ctx.author.id, False, "command")
+        elif choice:
+            await ctx.send("Use `!skill_match on`, `!skill_match off`, or just `!skill_match` to see your setting.")
+            return
+        else:
+            current = await asyncio.to_thread(wants_skill_match, ctx.author.id)
+        await ctx.send(skill_match_text(current))
 
     @commands.command(aliases=["tagme"])
     async def tag_me(self, ctx, setting: str = None):
@@ -2108,6 +2166,8 @@ class LFGCog(commands.Cog):
                 "\"want to play a no-voice game?\" DMs\n\n"
                 "`!tag_me on` / `!tag_me off` or `/tag-me` - Choose whether the match "
                 "announcement in the LFG channel pings you (on by default)\n\n"
+                "`!skill_match on` / `!skill_match off` or `/skill-match` - Test skill-based "
+                "matching in Ranked: only get paired with players near your rating (off by default)\n\n"
                 "**Tip:** Use the **Join Queue** button in the LFG channel to enter your deck URL and join the matchmaking queue!"
             ),
             inline=False,
@@ -5287,6 +5347,20 @@ class LFGCog(commands.Cog):
         except Exception as e:
             await ctx.send("An error occurred while forfeiting your run.")
             logger.error(f"Forfeit command failed for {ctx.author} ({user_id}): {e}")
+
+
+def skill_match_text(on):
+    """What the bot says about a player's "Skill matching" setting."""
+    if on:
+        return (
+            "🎯 Skill matching is **on** (test). In Ranked you're paired with players near "
+            "your rating: within 150 points at first, widening by 50 for each minute you "
+            "wait, up to 400. Waits may be a little longer. Turn it off with `!skill_match off`."
+        )
+    return (
+        "Skill matching is **off**. In Ranked you're paired with the next player in the "
+        "queue, whatever their rating. Turn it on with `!skill_match on`."
+    )
 
 
 def tag_me_text(tag_me):

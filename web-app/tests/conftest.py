@@ -46,6 +46,7 @@ def _patch_db_paths(elo_db, match_db, tmp_path):
     import repositories.blocked_users_repo
     import repositories.voice_only_repo
     import repositories.tag_me_repo
+    import repositories.skill_match_repo
     import repositories.player_reports_repo
     import repositories.player_kudos_repo
     import repositories.explorer
@@ -68,6 +69,7 @@ def _patch_db_paths(elo_db, match_db, tmp_path):
     repositories.blocked_users_repo.MATCH_RECORDS_DB_PATH = match_db
     repositories.voice_only_repo.MATCH_RECORDS_DB_PATH = match_db
     repositories.tag_me_repo.MATCH_RECORDS_DB_PATH = match_db
+    repositories.skill_match_repo.MATCH_RECORDS_DB_PATH = match_db
     repositories.player_reports_repo.MATCH_RECORDS_DB_PATH = match_db
     repositories.player_kudos_repo.MATCH_RECORDS_DB_PATH = match_db
     import services.spotlight

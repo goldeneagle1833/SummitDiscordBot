@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { getStreamerBanner } from '@/api/streamers'
+import { getNavChecks } from '@/api/nav'
+import usePolling from '@/hooks/usePolling'
 import { DECK_URL_PLACEHOLDER } from '@/utils/deckLinks'
 import { STORE_LIVE } from '@/utils/store'
 import SocialLinks from '@/components/layout/SocialLinks'
@@ -206,41 +208,62 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
   )
 }
 
-function NotificationBell({ user }) {
-  const [count, setCount] = useState(0)
-  const [open, setOpen] = useState(false)
+// One background check for the whole top bar. Logged in: a single
+// /api/nav/checks call brings match reports waiting on you, site
+// notifications and the "someone is live" dot (it used to be three separate
+// polls). Logged out: just the live dot, less often. Both only run while the
+// tab is visible, and slow right down when nobody has touched the page for
+// 10 minutes. Coming back to the tab refreshes straight away.
+export const NAV_CHECK_MS = 60 * 1000
+export const BANNER_CHECK_MS = 3 * 60 * 1000
+
+function useNavChecks(user, loading) {
+  const [streamer, setStreamer] = useState(null)
   const [confirmations, setConfirmations] = useState([])
   const [storeNotifs, setStoreNotifs] = useState([])
+  const userId = (user && (user.user_id || user.id)) || null
+
+  const refresh = () => {
+    if (userId) {
+      return getNavChecks()
+        .then((d) => {
+          setConfirmations(d.pending_confirmations || [])
+          setStoreNotifs(d.notifications || [])
+          setStreamer(d.streamer || null)
+        })
+        .catch(() => {})
+    }
+    return getStreamerBanner()
+      .then((data) => setStreamer(data.is_live ? data.streamer : null))
+      .catch(() => setStreamer(null))
+  }
+
+  useEffect(() => {
+    if (!userId) { setConfirmations([]); setStoreNotifs([]) }
+  }, [userId])
+
+  usePolling(refresh, userId ? NAV_CHECK_MS : BANNER_CHECK_MS, {
+    enabled: !loading,
+    idleMs: 10 * 60 * 1000,
+    idleIntervalMs: 10 * 60 * 1000,
+    deps: [userId],
+  })
+
+  return { streamer, confirmations, storeNotifs, setStoreNotifs, refresh }
+}
+
+function NotificationBell({ user, checks }) {
+  const [count, setCount] = useState(0)
+  const [open, setOpen] = useState(false)
+  const { confirmations, storeNotifs, setStoreNotifs, refresh: fetchPending } = checks
   const [acting, setActing] = useState({})
   const [feedback, setFeedback] = useState({})
   const [confirmModal, setConfirmModal] = useState(null)
   const ref = useRef(null)
 
-  const fetchPending = () => {
-    fetch('/api/match-report/pending', { credentials: 'include' })
-      .then((r) => r.ok ? r.json() : { pending_confirmations: [] })
-      .then((d) => {
-        const pending = d.pending_confirmations || []
-        setConfirmations(pending)
-      })
-      .catch(() => {})
-
-    fetch('/api/store/notifications', { credentials: 'include' })
-      .then((r) => r.ok ? r.json() : { notifications: [] })
-      .then((d) => setStoreNotifs(d.notifications || []))
-      .catch(() => {})
-  }
-
   useEffect(() => {
     setCount(confirmations.length + storeNotifs.length)
   }, [confirmations, storeNotifs])
-
-  useEffect(() => {
-    if (!user) return
-    fetchPending()
-    const interval = setInterval(fetchPending, 60000)
-    return () => clearInterval(interval)
-  }, [user])
 
   useEffect(() => {
     if (!open) return
@@ -511,20 +534,7 @@ function NavCustomizeModal({ activeLabels, onSave, onClose }) {
   )
 }
 
-function LiveIndicator() {
-  const [streamer, setStreamer] = useState(null)
-
-  useEffect(() => {
-    const fetch_ = () => {
-      getStreamerBanner()
-        .then((data) => setStreamer(data.is_live ? data.streamer : null))
-        .catch(() => setStreamer(null))
-    }
-    fetch_()
-    const interval = setInterval(fetch_, 120000)
-    return () => clearInterval(interval)
-  }, [])
-
+function LiveIndicator({ streamer }) {
   if (!streamer) return null
 
   return (
@@ -550,6 +560,7 @@ export default function Nav() {
   const [navLabels, setNavLabels] = useState(() => getNavPrefs() || DEFAULT_NAV_LABELS)
   const { user, loading } = useAuth()
   const location = useLocation()
+  const navChecks = useNavChecks(user, loading)
   // New-content dots: pages with something this person hasn't opened yet
   const newKeys = useNewContent(user, location.pathname)
   const isNew = (to) => newKeys.has(pageKeyForPath(to))
@@ -637,7 +648,7 @@ export default function Nav() {
 
           {/* Right */}
           <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
-            <LiveIndicator />
+            <LiveIndicator streamer={navChecks.streamer} />
 
             {/* Nav links - visible on desktop, with a light divider between each */}
             {activeNavLinks.map(({ to, href, label }, i) => [
@@ -698,7 +709,7 @@ export default function Nav() {
             )}
 
             {/* Notification bell - single instance, always visible */}
-            <NotificationBell user={user} />
+            <NotificationBell user={user} checks={navChecks} />
 
             {/* Mobile life counter */}
             <Link

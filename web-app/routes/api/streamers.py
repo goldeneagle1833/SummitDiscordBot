@@ -109,48 +109,45 @@ def list_streamers():
     return jsonify({"count": len(streamers), "streamers": streamers})
 
 
+def _is_local_request():
+    return request.host.startswith("127.0.0.1") or request.host.startswith("localhost")
+
+
+def banner_payload():
+    """The "someone is live" banner data (also sent inside /api/nav/checks)."""
+    # Force demo mode for localhost testing
+    if _is_local_request():
+        streamers = [DEMO_STREAMER]
+    else:
+        streamers = get_active_streamers()
+
+    if not streamers:
+        return {"is_live": False, "streamer": None}
+
+    # Return the most recent streamer for the banner
+    first_streamer = streamers[0]
+    return {
+        "is_live": True,
+        "count": len(streamers),
+        "streamer": {
+            "display_name": first_streamer["display_name"],
+            "avatar_url": first_streamer["avatar_url"],
+            "stream_url": first_streamer["stream_url"],
+            "stream_title": first_streamer["stream_title"],
+            "game_name": first_streamer["game_name"],
+            "platform": first_streamer["platform"],
+        },
+    }
+
+
 @streamers_bp.route("/streamers/banner")
 def streamer_banner():
     """Get a simplified response for the banner display.
 
     Returns only essential info for displaying a "someone is live" banner.
+    Browsers may reuse it for a minute (the live dot doesn't need to be
+    to-the-second), which saves repeat requests from the same tab/browser.
     """
-    # Force demo mode for localhost testing
-    if request.host.startswith("127.0.0.1") or request.host.startswith("localhost"):
-        streamer = DEMO_STREAMER
-        return jsonify(
-            {
-                "is_live": True,
-                "count": 1,
-                "streamer": {
-                    "display_name": streamer["display_name"],
-                    "avatar_url": streamer["avatar_url"],
-                    "stream_url": streamer["stream_url"],
-                    "stream_title": streamer["stream_title"],
-                    "game_name": streamer["game_name"],
-                    "platform": streamer["platform"],
-                },
-            }
-        )
-
-    streamers = get_active_streamers()
-
-    if not streamers:
-        return jsonify({"is_live": False, "streamer": None})
-
-    # Return the most recent streamer for the banner
-    first_streamer = streamers[0]
-    return jsonify(
-        {
-            "is_live": True,
-            "count": len(streamers),
-            "streamer": {
-                "display_name": first_streamer["display_name"],
-                "avatar_url": first_streamer["avatar_url"],
-                "stream_url": first_streamer["stream_url"],
-                "stream_title": first_streamer["stream_title"],
-                "game_name": first_streamer["game_name"],
-                "platform": first_streamer["platform"],
-            },
-        }
-    )
+    response = jsonify(banner_payload())
+    response.headers["Cache-Control"] = "private, max-age=60"
+    return response

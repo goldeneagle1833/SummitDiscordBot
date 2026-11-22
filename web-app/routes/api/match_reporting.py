@@ -276,6 +276,62 @@ def submit_match_report():
         }), 500
 
 
+def pending_confirmations_for_user(current_user_id):
+    """Pending match confirmations where this user is the opponent, with the
+    submitter's name/avatar added and deck URLs removed."""
+    service = MatchConfirmationService()
+    confirmation_repo = MatchConfirmationRepository()
+    user_profile_repo = UserProfileRepository()
+
+    # Get pending confirmations where user is the opponent
+    # IDs are stored as-is (with google_ prefix for Google users), so search with original ID
+    current_user_id_str = str(current_user_id)
+    confirmations = confirmation_repo.get_pending_confirmations(current_user_id_str)
+
+    # Also search with normalized ID in case of mixed storage
+    if current_user_id_str.startswith("google_"):
+        numeric_id = current_user_id_str[7:]
+        confirmations += confirmation_repo.get_pending_confirmations(numeric_id)
+    else:
+        confirmations += confirmation_repo.get_pending_confirmations(f"google_{current_user_id_str}")
+
+    # Deduplicate by confirmation ID
+    seen_ids = set()
+    unique_confirmations = []
+    for c in confirmations:
+        if c["id"] not in seen_ids:
+            seen_ids.add(c["id"])
+            unique_confirmations.append(c)
+    confirmations = unique_confirmations
+
+    # Enrich with submitter display names
+    enriched_confirmations = []
+    for confirmation in confirmations:
+        # Get submitter display name (handles both Discord and Google users)
+        # submitter_discord_id may have google_ prefix for Google users
+        submitter_id_str = str(confirmation["submitter_discord_id"])
+
+        # Use the service's display name resolver which handles all ID formats
+        submitter_display_name = service._get_display_name_for_user(submitter_id_str)
+        submitter_avatar = None
+
+        # Try to get avatar from profile
+        profile = user_profile_repo.get_by_user_id(submitter_id_str)
+        if profile:
+            submitter_avatar = profile.get("avatar")
+
+        # Add submitter info to confirmation
+        confirmation["submitter_display_name"] = submitter_display_name
+        confirmation["submitter_avatar"] = submitter_avatar
+
+        # Remove deck URLs from confirmation response - they should not be visible until after confirmation
+        confirmation.pop("winner_deck_url", None)
+        confirmation.pop("loser_deck_url", None)
+
+        enriched_confirmations.append(confirmation)
+    return enriched_confirmations
+
+
 @match_reporting_bp.route("/pending", methods=["GET"])
 def get_pending_confirmations():
     """
@@ -298,56 +354,7 @@ def get_pending_confirmations():
 
     try:
         current_user_id = session["user_id"]
-        service = MatchConfirmationService()
-        confirmation_repo = MatchConfirmationRepository()
-        user_profile_repo = UserProfileRepository()
-
-        # Get pending confirmations where user is the opponent
-        # IDs are stored as-is (with google_ prefix for Google users), so search with original ID
-        current_user_id_str = str(current_user_id)
-        confirmations = confirmation_repo.get_pending_confirmations(current_user_id_str)
-
-        # Also search with normalized ID in case of mixed storage
-        if current_user_id_str.startswith("google_"):
-            numeric_id = current_user_id_str[7:]
-            confirmations += confirmation_repo.get_pending_confirmations(numeric_id)
-        else:
-            confirmations += confirmation_repo.get_pending_confirmations(f"google_{current_user_id_str}")
-
-        # Deduplicate by confirmation ID
-        seen_ids = set()
-        unique_confirmations = []
-        for c in confirmations:
-            if c["id"] not in seen_ids:
-                seen_ids.add(c["id"])
-                unique_confirmations.append(c)
-        confirmations = unique_confirmations
-
-        # Enrich with submitter display names
-        enriched_confirmations = []
-        for confirmation in confirmations:
-            # Get submitter display name (handles both Discord and Google users)
-            # submitter_discord_id may have google_ prefix for Google users
-            submitter_id_str = str(confirmation["submitter_discord_id"])
-
-            # Use the service's display name resolver which handles all ID formats
-            submitter_display_name = service._get_display_name_for_user(submitter_id_str)
-            submitter_avatar = None
-
-            # Try to get avatar from profile
-            profile = user_profile_repo.get_by_user_id(submitter_id_str)
-            if profile:
-                submitter_avatar = profile.get("avatar")
-
-            # Add submitter info to confirmation
-            confirmation["submitter_display_name"] = submitter_display_name
-            confirmation["submitter_avatar"] = submitter_avatar
-
-            # Remove deck URLs from confirmation response - they should not be visible until after confirmation
-            confirmation.pop("winner_deck_url", None)
-            confirmation.pop("loser_deck_url", None)
-
-            enriched_confirmations.append(confirmation)
+        enriched_confirmations = pending_confirmations_for_user(current_user_id)
 
         logger.info(f"Fetched pending confirmations: user={current_user_id}, count={len(enriched_confirmations)}")
 

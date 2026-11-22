@@ -117,12 +117,11 @@ export function HonourAvatar({ avatar, place, size = 22 }) {
 
 /**
  * The hero card chip: the player's best honour (highest place, newest
- * season), plus how many more they hold. Hovering lists them all.
+ * season). Hovering lists them all; the Postseason tab has the full list.
  */
 export function AvatarHonourBadge({ honours = [], onClick }) {
   if (!honours.length) return null
   const best = honours.reduce((a, b) => (b.place < a.place ? b : a))
-  const more = honours.length - 1
   return (
     <button
       type="button"
@@ -133,7 +132,6 @@ export function AvatarHonourBadge({ honours = [], onClick }) {
       <span className="flex flex-wrap items-center gap-x-2 min-w-0">
         <strong className={`whitespace-nowrap ${PLACE_COLOURS[best.place]}`}>{best.label}</strong>
         <span className="text-text-muted whitespace-nowrap">{best.season}</span>
-        {more > 0 && <span className="text-text-muted">+{more}</span>}
       </span>
       <HonourAvatar avatar={best.avatar} place={best.place} size={36} />
     </button>

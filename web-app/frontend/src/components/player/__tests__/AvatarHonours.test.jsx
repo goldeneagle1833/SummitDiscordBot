@@ -19,11 +19,11 @@ describe('AvatarHonours', () => {
     resetAvatarFilesCache([])
   })
 
-  it('shows the best honour on the badge with a count of the rest', () => {
+  it('shows the best honour on the badge, without a count of the rest', () => {
     renderWithRouter(<AvatarHonourBadge honours={HONOURS} />)
     expect(screen.getByText('Top Imposter')).toBeInTheDocument()
     expect(screen.getByText('Gothic Season 7')).toBeInTheDocument()
-    expect(screen.getByText('+2')).toBeInTheDocument()
+    expect(screen.queryByText('+2')).toBeNull()
   })
 
   it('renders nothing without honours', () => {

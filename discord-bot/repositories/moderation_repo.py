@@ -101,6 +101,24 @@ def create_moderation_tables():
                 closed_by_name TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS moderation_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_id TEXT NOT NULL,
+                note TEXT NOT NULL,
+                by_id TEXT,
+                by_name TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_moderation_notes_target ON moderation_notes (target_id)
+        """)
+        for col in ("transcript TEXT", "message_count INTEGER"):
+            try:
+                conn.execute(f"ALTER TABLE moderation_group_chats ADD COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass
         if first_run:
             seeded = 0
             if _table_exists(conn, "blocked_users"):
@@ -328,12 +346,13 @@ def save_group_chat(*, target_id, channel_id, source_kind, source_ref, opened_by
         return cur.lastrowid
 
 
-def close_group_chat(channel_id, closed_by_name=None):
+def close_group_chat(channel_id, closed_by_name=None, transcript=None, message_count=None):
     with _get_connection() as conn:
         conn.execute(
-            "UPDATE moderation_group_chats SET closed_at = datetime('now'), closed_by_name = ? "
+            "UPDATE moderation_group_chats SET closed_at = datetime('now'), closed_by_name = ?, "
+            "transcript = COALESCE(?, transcript), message_count = COALESCE(?, message_count) "
             "WHERE channel_id = ? AND closed_at IS NULL",
-            (closed_by_name, str(channel_id)),
+            (closed_by_name, transcript, message_count, str(channel_id)),
         )
 
 
@@ -356,7 +375,8 @@ def get_player_record(target_id, limit: int = 10) -> dict:
     For the summary posted in the mod channel when a group chat opens.
     """
     target_id = str(target_id)
-    record = {"reports": [], "blocks": [], "actions": [], "report_total": 0, "block_total": 0}
+    record = {"reports": [], "blocks": [], "actions": [], "notes": [], "chats": [],
+              "report_total": 0, "block_total": 0}
     with _get_connection() as conn:
         if _table_exists(conn, "player_reports"):
             record["report_total"] = conn.execute(
@@ -385,4 +405,135 @@ def get_player_record(target_id, limit: int = 10) -> dict:
                 "FROM moderation_actions WHERE target_id = ? ORDER BY id DESC LIMIT ?",
                 (target_id, limit),
             ).fetchall()]
+        if _table_exists(conn, "moderation_notes"):
+            record["notes"] = [dict(r) for r in conn.execute(
+                "SELECT note, by_name, created_at FROM moderation_notes "
+                "WHERE target_id = ? ORDER BY id DESC LIMIT ?",
+                (target_id, limit),
+            ).fetchall()]
+        if _table_exists(conn, "moderation_group_chats"):
+            record["chats"] = [dict(r) for r in conn.execute(
+                "SELECT id, opened_by_name, created_at, closed_at, closed_by_name, message_count "
+                "FROM moderation_group_chats WHERE target_id = ? AND closed_at IS NOT NULL "
+                "ORDER BY id DESC LIMIT ?",
+                (target_id, 5),
+            ).fetchall()]
     return record
+
+
+# ── mod notes ──
+
+
+def add_moderation_note(target_id, note, by_id, by_name) -> int:
+    with _get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO moderation_notes (target_id, note, by_id, by_name) VALUES (?, ?, ?, ?)",
+            (str(target_id), note, str(by_id), by_name),
+        )
+        return cur.lastrowid
+
+
+# ── repeat-offender flags ──
+
+
+def count_recent_complaints(target_id, days: int) -> int:
+    """Reports plus blocks against the player in the last ``days`` days."""
+    target_id = str(target_id)
+    since = f"-{int(days)} days"
+    total = 0
+    with _get_connection() as conn:
+        if _table_exists(conn, "player_reports"):
+            total += conn.execute(
+                "SELECT COUNT(*) FROM player_reports WHERE reported_id = ? AND created_at >= datetime('now', ?)",
+                (target_id, since),
+            ).fetchone()[0]
+        if _table_exists(conn, "blocked_users"):
+            total += conn.execute(
+                "SELECT COUNT(*) FROM blocked_users WHERE blocked_user_id = ? AND created_at >= datetime('now', ?)",
+                (target_id, since),
+            ).fetchone()[0]
+    return total
+
+
+def recently_flagged(target_id, days: int) -> bool:
+    """Was a repeat-offender heads-up posted for this player in the last ``days`` days?"""
+    with _get_connection() as conn:
+        return conn.execute(
+            "SELECT 1 FROM moderation_alerts WHERE kind = 'repeat' AND ref LIKE ? "
+            "AND alerted_at >= datetime('now', ?)",
+            (f"{target_id}|%", f"-{int(days)} days"),
+        ).fetchone() is not None
+
+
+def mark_flagged(target_id):
+    with _get_connection() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO moderation_alerts (kind, ref) VALUES ('repeat', ?)",
+            (f"{target_id}|{conn.execute('SELECT datetime(\'now\')').fetchone()[0]}",),
+        )
+
+
+# ── weekly summary ──
+
+
+def weekly_sent(ref: str) -> bool:
+    with _get_connection() as conn:
+        return conn.execute(
+            "SELECT 1 FROM moderation_alerts WHERE kind = 'weekly' AND ref = ?", (ref,)
+        ).fetchone() is not None
+
+
+def mark_weekly_sent(ref: str):
+    with _get_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO moderation_alerts (kind, ref) VALUES ('weekly', ?)", (ref,))
+
+
+def get_weekly_stats(days: int = 7) -> dict:
+    """Counts for the weekly mod summary (last ``days`` days)."""
+    since = f"-{int(days)} days"
+    stats = {"reports": 0, "blocks": 0, "actions": [], "chats_opened": 0, "chats_closed": 0,
+             "open_chats": [], "top_players": [], "flagged": 0}
+    with _get_connection() as conn:
+        if _table_exists(conn, "player_reports"):
+            stats["reports"] = conn.execute(
+                "SELECT COUNT(*) FROM player_reports WHERE created_at >= datetime('now', ?)", (since,)
+            ).fetchone()[0]
+        if _table_exists(conn, "blocked_users"):
+            stats["blocks"] = conn.execute(
+                "SELECT COUNT(*) FROM blocked_users WHERE created_at >= datetime('now', ?)", (since,)
+            ).fetchone()[0]
+        complaints = []
+        if _table_exists(conn, "player_reports"):
+            complaints.append(
+                "SELECT reported_id AS target_id FROM player_reports WHERE created_at >= datetime('now', :since)"
+            )
+        if _table_exists(conn, "blocked_users"):
+            complaints.append(
+                "SELECT blocked_user_id AS target_id FROM blocked_users WHERE created_at >= datetime('now', :since)"
+            )
+        if complaints:
+            stats["top_players"] = [dict(r) for r in conn.execute(
+                "SELECT target_id, COUNT(*) AS n FROM (" + " UNION ALL ".join(complaints) + ") "
+                "GROUP BY target_id ORDER BY n DESC LIMIT 5",
+                {"since": since},
+            ).fetchall()]
+        stats["actions"] = [dict(r) for r in conn.execute(
+            "SELECT action, COUNT(*) AS n FROM moderation_actions "
+            "WHERE created_at >= datetime('now', ?) GROUP BY action ORDER BY n DESC",
+            (since,),
+        ).fetchall()]
+        stats["chats_opened"] = conn.execute(
+            "SELECT COUNT(*) FROM moderation_group_chats WHERE created_at >= datetime('now', ?)", (since,)
+        ).fetchone()[0]
+        stats["chats_closed"] = conn.execute(
+            "SELECT COUNT(*) FROM moderation_group_chats WHERE closed_at >= datetime('now', ?)", (since,)
+        ).fetchone()[0]
+        stats["open_chats"] = [dict(r) for r in conn.execute(
+            "SELECT target_id, channel_id, created_at FROM moderation_group_chats "
+            "WHERE closed_at IS NULL ORDER BY id"
+        ).fetchall()]
+        stats["flagged"] = conn.execute(
+            "SELECT COUNT(*) FROM moderation_alerts WHERE kind = 'repeat' AND alerted_at >= datetime('now', ?)",
+            (since,),
+        ).fetchone()[0]
+    return stats

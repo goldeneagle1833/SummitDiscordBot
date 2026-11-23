@@ -29,11 +29,18 @@ the same chat. The player only ever sees a neutral intro, never who reported
 or blocked them. A **Close chat** button in the chat removes the player and
 renames the channel ``closed-...`` so moderators keep the history. When a
 chat opens, the mod channel (never the chat) gets a summary of every report,
-block and past action against the player.
+block, note and past action against the player. Closing a chat saves the
+conversation on the player's record and posts it as a .txt in the mod channel.
+
+Also: a **Note** button for private mod notes; a heads-up in the mod channel
+when a player gets 3+ reports/blocks in 7 days (MODERATION_REPEAT_THRESHOLD /
+MODERATION_REPEAT_DAYS); and a weekly summary every Monday 9 AM Eastern.
 """
 
 import datetime
+import io
 import logging
+from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands, tasks
@@ -44,7 +51,9 @@ from repositories.audit_repo import log_admin_action
 from repositories.moderation_repo import (
     KIND_BLOCK,
     KIND_REPORT,
+    add_moderation_note,
     block_key,
+    count_recent_complaints,
     close_group_chat,
     get_group_chat_by_channel,
     get_history_counts,
@@ -55,11 +64,16 @@ from repositories.moderation_repo import (
     get_report,
     get_unsent_blocks,
     get_unsent_reports,
+    get_weekly_stats,
     is_site_moderator,
     log_moderation_action,
     mark_alerted,
+    mark_flagged,
+    mark_weekly_sent,
+    recently_flagged,
     mark_bot_done,
     save_group_chat,
+    weekly_sent,
 )
 from repositories.pairing_bans_repo import BAN_DURATIONS, get_pairing_ban
 
@@ -86,6 +100,16 @@ DEFAULT_ALERT_CHANNEL_ID = 1574423902254530713
 # Bruce's private category for group chats; config.MODERATION_CHAT_CATEGORY_ID overrides it.
 DEFAULT_CHAT_CATEGORY_ID = 1574425023563825192
 CHAT_CATEGORY_NAME = "Mod Chats"
+NOTE_PREFIX = "modnote:"
+EASTERN = ZoneInfo("America/New_York")
+TRANSCRIPT_LIMIT = 2000  # messages saved when a chat closes
+
+
+def repeat_rule() -> tuple[int, int]:
+    """(how many reports + blocks, within how many days) before the mod channel is warned."""
+    count = int(getattr(config, "MODERATION_REPEAT_THRESHOLD", 3) or 3)
+    days = int(getattr(config, "MODERATION_REPEAT_DAYS", 7) or 7)
+    return count, days
 CHAT_PREFIX = "modchat:"
 CHAT_CLOSE_ID = "modchat-close"
 
@@ -580,17 +604,17 @@ def _clip(text, n=120) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
-async def build_player_summary_embed(client, target_id, player_name: str, chat_channel) -> discord.Embed:
+async def build_player_summary_embed(client, target_id, player_name: str, chat_channel=None, *, title=None) -> discord.Embed:
     """Everything on record about the player, for the mod channel only.
 
     It names reporters and blockers, so it is never posted in the chat itself.
     """
     record = get_player_record(target_id)
     embed = discord.Embed(
-        title=f"Player summary: {player_name}",
+        title=title or f"Player summary: {player_name}",
         description=(
-            f"Group chat: {chat_channel.mention}\n"
-            f"{record['report_total']} report(s) and {record['block_total']} block(s) against them in total."
+            (f"Group chat: {chat_channel.mention}\n" if chat_channel is not None else "")
+            + f"{record['report_total']} report(s) and {record['block_total']} block(s) against them in total."
         ),
         color=discord.Color.orange(),
     )
@@ -646,7 +670,22 @@ async def build_player_summary_embed(client, target_id, player_name: str, chat_c
                 bits += f": {_clip(action['reason'], 60)}"
             lines.append(bits)
         embed.add_field(name="Past actions", value=_join_lines(lines), inline=False)
-    if not (record["reports"] or record["blocks"] or record["actions"]):
+    if record.get("notes"):
+        lines = [
+            f"{_short_date(n['created_at'])} {n.get('by_name') or '?'}: {_clip(n['note'], 150)}"
+            for n in record["notes"]
+        ]
+        embed.add_field(name="Mod notes", value=_join_lines(lines), inline=False)
+    if record.get("chats"):
+        lines = []
+        for chat in record["chats"]:
+            line = f"{_short_date(chat['created_at'])} opened by {chat.get('opened_by_name') or '?'}"
+            line += f", closed by {chat.get('closed_by_name') or '?'}"
+            if chat.get("message_count") is not None:
+                line += f" ({chat['message_count']} messages saved)"
+            lines.append(line)
+        embed.add_field(name="Past group chats", value=_join_lines(lines), inline=False)
+    if not (record["reports"] or record["blocks"] or record["actions"] or record.get("notes")):
         embed.add_field(name="Record", value="Nothing on record yet.", inline=False)
     embed.set_footer(text="Mod channel only. The player can't see this.")
     return embed
@@ -663,13 +702,18 @@ def _join_lines(lines) -> str:
     return "\n".join(out) or "-"
 
 
-async def _post_to_mod_channel(client, text: str, embed=None):
+async def _post_to_mod_channel(client, text: str, embed=None, file=None, view=None):
     channel_id = alert_channel_id()
     if not channel_id:
         return
     try:
         channel = client.get_channel(channel_id) or await client.fetch_channel(channel_id)
-        await channel.send(text, embed=embed, allowed_mentions=discord.AllowedMentions.none())
+        kwargs = {"embed": embed, "allowed_mentions": discord.AllowedMentions.none()}
+        if file is not None:
+            kwargs["file"] = file
+        if view is not None:
+            kwargs["view"] = view
+        await channel.send(text, **kwargs)
     except Exception as e:
         logger.warning(f"Moderation: could not post to mod channel: {e}")
 
@@ -828,6 +872,7 @@ class PersistentCloseChatButton(discord.ui.DynamicItem[discord.ui.Button], templ
             return
         await interaction.response.defer()
         by = _display(interaction.user)
+        transcript, message_count = await build_transcript(channel)
         try:
             guild = channel.guild
             player = guild.get_member(int(chat["target_id"])) or discord.Object(id=int(chat["target_id"]))
@@ -838,12 +883,92 @@ class PersistentCloseChatButton(discord.ui.DynamicItem[discord.ui.Button], templ
         except discord.HTTPException as e:
             await interaction.followup.send(f"Not done: Discord returned an error: {e}", ephemeral=True)
             return
-        close_group_chat(channel.id, by)
+        close_group_chat(channel.id, by, transcript=transcript, message_count=message_count)
         await interaction.followup.send(
-            f"Chat closed by **{by}**. The player can't see this channel any more; "
-            "moderators keep the history here. Delete the channel when you no longer need it."
+            f"Chat closed by **{by}**. The player can't see this channel any more. "
+            "The conversation is saved on their record (and posted in the mod channel), "
+            "so you can delete this channel whenever you like."
         )
-        await _post_to_mod_channel(interaction.client, f"**{by}** closed {channel.mention}.")
+        player_name = await resolve_name(interaction.client, chat["target_id"])
+        file = None
+        if transcript:
+            file = discord.File(
+                io.BytesIO(transcript.encode("utf-8")),
+                filename=f"{str(channel.name).removeprefix('closed-')}-{datetime.date.today()}.txt",
+            )
+        await _post_to_mod_channel(
+            interaction.client,
+            f"**{by}** closed the group chat with **{player_name}** ({message_count} messages saved).",
+            file=file,
+        )
+
+
+async def build_transcript(channel) -> tuple[str, int]:
+    """The chat as plain text, oldest first, for the player's record."""
+    lines = []
+    try:
+        async for message in channel.history(limit=TRANSCRIPT_LIMIT, oldest_first=True):
+            when = message.created_at.astimezone(EASTERN).strftime("%Y-%m-%d %I:%M %p")
+            who = _display(message.author)
+            parts = [message.content] if message.content else []
+            for embed in message.embeds or []:
+                parts.append(f"[{embed.title or 'embed'}]")
+            for attachment in message.attachments or []:
+                parts.append(f"[attachment: {attachment.url}]")
+            lines.append(f"[{when}] {who}: {' '.join(parts) or '-'}")
+    except Exception as e:
+        logger.warning(f"Could not read group chat history for transcript: {e}")
+    return "\n".join(lines), len(lines)
+
+
+class ModNoteModal(discord.ui.Modal):
+    """Private mod note on a player. Never shown to the player."""
+
+    def __init__(self, target_id: int, target_name: str):
+        super().__init__(title=f"Note on {target_name}"[:45], timeout=600)
+        self.target_id = str(target_id)
+        self.target_name = target_name
+        self.note = discord.ui.TextInput(
+            label="Note (only moderators see this)",
+            style=discord.TextStyle.paragraph,
+            placeholder="e.g. Talked to them in group chat, they apologised.",
+            required=True,
+            min_length=3,
+            max_length=1000,
+        )
+        self.add_item(self.note)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        text = self.note.value.strip()
+        by = _display(interaction.user)
+        add_moderation_note(self.target_id, text, interaction.user.id, by)
+        await interaction.response.send_message(f"Note saved on {self.target_name}.", ephemeral=True)
+        await _post_to_mod_channel(
+            interaction.client, f"**{by}** added a note on **{self.target_name}**: {_clip(text, 300)}"
+        )
+
+
+class PersistentNoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r"modnote:(?P<target>[\w-]+)"):
+    """Note button on alerts: adds a private mod note to the player's record."""
+
+    def __init__(self, target_id):
+        self.target_id = str(target_id)
+        super().__init__(
+            discord.ui.Button(
+                label="Note", style=discord.ButtonStyle.secondary, custom_id=f"{NOTE_PREFIX}{self.target_id}"
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(match["target"])
+
+    async def callback(self, interaction: discord.Interaction):
+        if not can_open_group_chat(interaction.client, interaction):
+            await interaction.response.send_message("Only moderators can use this button.", ephemeral=True)
+            return
+        name = await resolve_name(interaction.client, self.target_id)
+        await interaction.response.send_modal(ModNoteModal(self.target_id, name))
 
 
 def moderation_view(target_id, kind: str, ref) -> discord.ui.View:
@@ -854,6 +979,8 @@ def moderation_view(target_id, kind: str, ref) -> discord.ui.View:
         view.add_item(PersistentModerationButton("ban", int(target_id), kind, str(ref or "")))
         view.add_item(PersistentModerationButton("pblock", int(target_id), kind, str(ref or "")))
         view.add_item(PersistentGroupChatButton(int(target_id), kind, str(ref or "")))
+    if len(f"{NOTE_PREFIX}{target_id}") <= 100:
+        view.add_item(PersistentNoteButton(target_id))
     view.add_item(discord.ui.Button(label="Admin panel", style=discord.ButtonStyle.link, url=ADMIN_PAGE_URL))
     return view
 
@@ -928,10 +1055,12 @@ class ModerationAlertsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.send_alerts.start()
+        self.weekly_summary.start()
         logger.info("ModerationAlertsCog initialized")
 
     def cog_unload(self):
         self.send_alerts.cancel()
+        self.weekly_summary.cancel()
 
     async def _recipients(self):
         users = []
@@ -1020,7 +1149,96 @@ class ModerationAlertsCog(commands.Cog):
             await self._deliver(recipients, embed, view, channel)
             mark_alerted(KIND_BLOCK, block_key(block))
             count += 1
+
+        targets = [r["reported_id"] for r in reports] + [b["blocked_user_id"] for b in blocks]
+        for target_id in dict.fromkeys(str(t) for t in targets):
+            try:
+                await self.check_repeat_offender(target_id, recipients, channel)
+            except Exception as e:
+                logger.warning(f"Repeat-offender check failed for {target_id}: {e}")
         return count
+
+    async def check_repeat_offender(self, target_id, recipients=None, channel=None) -> bool:
+        """Warn the mod channel when a player passes the reports+blocks threshold.
+
+        At most once per window per player. Falls back to the DM recipients
+        when the mod channel is off.
+        """
+        threshold, days = repeat_rule()
+        n = count_recent_complaints(target_id, days)
+        if n < threshold or recently_flagged(target_id, days):
+            return False
+        name = await resolve_name(self.bot, target_id)
+        embed = await build_player_summary_embed(
+            self.bot, target_id, name,
+            title=f"Heads-up: {name} has {n} reports/blocks in the last {days} days",
+        )
+        embed.color = discord.Color.red()
+        view = moderation_view(target_id, KIND_BLOCK, "repeat")
+        if channel is not None:
+            await self._deliver([], embed, view, channel)
+        else:
+            await self._deliver(recipients or await self._recipients(), embed, view)
+        mark_flagged(target_id)
+        return True
+
+    async def build_weekly_embed(self, days: int = 7) -> discord.Embed:
+        stats = get_weekly_stats(days)
+        end = datetime.datetime.now(EASTERN).date()
+        start = end - datetime.timedelta(days=days)
+        embed = discord.Embed(
+            title=f"Weekly mod summary: {start:%b %d} to {end:%b %d}",
+            color=discord.Color.blurple(),
+        )
+        embed.add_field(name="Reports", value=str(stats["reports"]), inline=True)
+        embed.add_field(name="Blocks", value=str(stats["blocks"]), inline=True)
+        embed.add_field(name="Repeat flags", value=str(stats["flagged"]), inline=True)
+        labels = {"timeout": "Timeouts", "ban": "Bans", "pairing_block": "Pairing blocks",
+                  "remove_timeout": "Timeouts lifted", "unban": "Unbans", "lift_pairing_block": "Pairing blocks lifted"}
+        actions = [f"{labels.get(a['action'], a['action'])}: {a['n']}" for a in stats["actions"]]
+        embed.add_field(name="Actions taken", value="\n".join(actions) or "None", inline=False)
+        embed.add_field(
+            name="Group chats",
+            value=f"{stats['chats_opened']} opened, {stats['chats_closed']} closed, {len(stats['open_chats'])} still open",
+            inline=False,
+        )
+        if stats["open_chats"]:
+            lines = []
+            for chat in stats["open_chats"]:
+                who = await resolve_name(self.bot, chat["target_id"])
+                lines.append(f"<#{chat['channel_id']}> with {who} (since {_short_date(chat['created_at'])})")
+            embed.add_field(name="Still open", value=_join_lines(lines), inline=False)
+        if stats["top_players"]:
+            lines = []
+            for row in stats["top_players"]:
+                who = await resolve_name(self.bot, row["target_id"])
+                lines.append(f"{who}: {row['n']} report(s)/block(s)")
+            embed.add_field(name="Most reported this week", value=_join_lines(lines), inline=False)
+        embed.set_footer(text="Posted every Monday at 9 AM Eastern.")
+        return embed
+
+    async def post_weekly_summary(self, today=None) -> bool:
+        """Post the summary once per Monday (Eastern)."""
+        today = today or datetime.datetime.now(EASTERN).date()
+        if today.weekday() != 0 or weekly_sent(today.isoformat()):
+            return False
+        channel = await self._mod_channel()
+        if channel is None:
+            return False
+        await channel.send(embed=await self.build_weekly_embed(), allowed_mentions=discord.AllowedMentions.none())
+        mark_weekly_sent(today.isoformat())
+        return True
+
+    @tasks.loop(time=datetime.time(hour=9, minute=0, tzinfo=EASTERN))
+    async def weekly_summary(self):
+        try:
+            await self.post_weekly_summary()
+        except Exception as e:
+            logger.error(f"Weekly mod summary failed: {e}", exc_info=True)
+
+    @weekly_summary.before_loop
+    async def before_weekly_summary(self):
+        await self.bot.wait_until_ready()
 
     @tasks.loop(seconds=30)
     async def send_alerts(self):

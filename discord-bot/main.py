@@ -37,6 +37,7 @@ from cogs.moderation_alerts import (
     PersistentCloseChatButton,
     PersistentGroupChatButton,
     PersistentModerationButton,
+    PersistentNoteButton,
 )
 from repositories.moderation_repo import create_moderation_tables
 from repositories.pairing_bans_repo import create_pairing_bans_table
@@ -241,7 +242,7 @@ async def main():
             PersistentMatchCardReportButton, PersistentMatchCardCancelButton,
             PersistentPSOConfirmButton, PersistentPSODisputeButton,
             PersistentReportPlayerButton, PersistentModerationButton,
-            PersistentGroupChatButton, PersistentCloseChatButton,
+            PersistentGroupChatButton, PersistentCloseChatButton, PersistentNoteButton,
             PersistentKudosButton,
         )
         await setup_cogs()

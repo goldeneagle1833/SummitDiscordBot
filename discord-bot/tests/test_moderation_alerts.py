@@ -108,7 +108,7 @@ async def test_each_new_report_and_block_is_dmed_once_with_buttons():
     assert report_embed.title.startswith("Player report #")
     assert "rude, toxic" in str(report_embed.fields).lower()
     labels = [getattr(c, "item", c).label for c in report_call.kwargs["view"].children]
-    assert labels == ["Timeout", "Ban", "Pairing Block", "Group chat", "Admin panel"]
+    assert labels == ["Timeout", "Ban", "Pairing Block", "Group chat", "Note", "Admin panel"]
     assert block_call.kwargs["embed"].title == "Player blocked"
     assert "no show twice" in str(block_call.kwargs["embed"].fields)
 
@@ -133,7 +133,7 @@ async def test_closed_dms_dont_resend_forever():
 
 def test_google_only_accounts_get_no_timeout_or_ban_buttons():
     view = moderation_view("google_12345", "block", REPORTER)
-    assert [getattr(c, "item", c).label for c in view.children] == ["Admin panel"]
+    assert [getattr(c, "item", c).label for c in view.children] == ["Note", "Admin panel"]
 
 
 def test_button_custom_id_round_trips_through_the_template():
@@ -693,3 +693,129 @@ def test_summary_field_stays_under_discords_limit():
     lines = [f"line {i} " + "x" * 90 for i in range(30)]
     joined = mod._join_lines(lines)
     assert len(joined) <= 1024 and joined.endswith("…")
+
+
+# ── notes, transcripts, repeat flags, weekly summary ─────────────────
+
+import datetime as _dt
+
+
+class _History:
+    def __init__(self, messages):
+        self.messages = messages
+
+    def __call__(self, **kw):
+        async def gen():
+            for m in self.messages:
+                yield m
+        return gen()
+
+
+def _msg(author, content, minute):
+    m = MagicMock(content=content, embeds=[], attachments=[])
+    m.author = author
+    m.created_at = _dt.datetime(2026, 11, 23, 14, minute, tzinfo=_dt.timezone.utc)
+    return m
+
+
+@pytest.mark.asyncio
+async def test_closing_saves_the_transcript_on_the_record_and_posts_it():
+    create_moderation_tables()
+    client, guild, channel, granted, player, mod1, mod2, modch = _chat_world()
+    await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="report", ref="1", moderator=mod1)
+    channel.history = _History([_msg(mod1, "Hi, can we talk about Saturday?", 1), _msg(player, "sorry about that", 2)])
+
+    close = mod.PersistentCloseChatButton()
+    interaction = MagicMock(channel=channel, client=client, user=mod1)
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    await close.callback(interaction)
+
+    conn = sqlite3.connect("match_records.db")
+    transcript, count = conn.execute(
+        "SELECT transcript, message_count FROM moderation_group_chats WHERE channel_id = '777'"
+    ).fetchone()
+    conn.close()
+    assert count == 2
+    assert "[2026-11-23 09:01 AM] Bruce: Hi, can we talk about Saturday?" in transcript
+    assert "Opponent: sorry about that" in transcript
+    posted = modch.send.await_args
+    assert "2 messages saved" in posted.args[0]
+    assert posted.kwargs["file"].filename.endswith(".txt")
+    # The summary shows the past chat
+    record = mod.get_player_record(REPORTED)
+    assert record["chats"][0]["message_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_note_button_saves_a_private_note_shown_in_the_summary():
+    create_moderation_tables()
+    button = mod.PersistentNoteButton(REPORTED)
+    match = mod.PersistentNoteButton.__discord_ui_compiled_template__.fullmatch(button.item.custom_id)
+    assert match and match["target"] == str(REPORTED)
+
+    interaction = MagicMock()
+    interaction.user = MagicMock(id=OWNER, global_name="Bruce")
+    interaction.channel_id = MODCH
+    interaction.client.get_user.return_value = MagicMock(global_name="Opponent")
+    interaction.response.send_modal = AsyncMock()
+    await button.callback(interaction)
+    modal = interaction.response.send_modal.await_args.args[0]
+    assert isinstance(modal, mod.ModNoteModal)
+
+    interaction.response.send_message = AsyncMock()
+    interaction.client.get_channel.return_value.send = AsyncMock()
+    with patch.object(type(modal.note), "value", property(lambda self: "Talked to them, they apologised")):
+        await modal.on_submit(interaction)
+    assert "Note saved" in interaction.response.send_message.await_args.args[0]
+    record = mod.get_player_record(REPORTED)
+    assert record["notes"][0]["note"] == "Talked to them, they apologised"
+    embed = await mod.build_player_summary_embed(MagicMock(), REPORTED, "Opponent")
+    assert any(f.name == "Mod notes" and "apologised" in f.value for f in embed.fields)
+
+
+@pytest.mark.asyncio
+async def test_three_complaints_in_a_week_flag_the_player_once():
+    create_moderation_tables()
+    bot, owner = _bot()
+    cog = _cog(bot)
+    _report()
+    await cog.run_once()
+    _report(reporter_id=444, reporter_name="Two")
+    await cog.run_once()
+    heads_ups = [c for c in bot.mod_channel.send.await_args_list
+                 if c.kwargs["embed"].title.startswith("Heads-up")]
+    assert heads_ups == []
+
+    _block(REPORTER, REPORTED, reason="rude again")
+    await cog.run_once()
+    heads_ups = [c for c in bot.mod_channel.send.await_args_list
+                 if c.kwargs["embed"].title.startswith("Heads-up")]
+    assert len(heads_ups) == 1
+    assert "3 reports/blocks in the last 7 days" in heads_ups[0].kwargs["embed"].title
+    labels = [getattr(c, "item", c).label for c in heads_ups[0].kwargs["view"].children]
+    assert "Group chat" in labels and "Note" in labels
+
+    # A 4th one in the same week doesn't flag again
+    _report(reporter_id=555, reporter_name="Three")
+    await cog.run_once()
+    heads_ups = [c for c in bot.mod_channel.send.await_args_list
+                 if c.kwargs["embed"].title.startswith("Heads-up")]
+    assert len(heads_ups) == 1
+
+
+@pytest.mark.asyncio
+async def test_weekly_summary_posts_on_monday_once():
+    create_moderation_tables()
+    _report()
+    _block(REPORTER, REPORTED)
+    bot, owner = _bot()
+    cog = _cog(bot)
+    assert not await cog.post_weekly_summary(today=_dt.date(2026, 11, 24))  # Tuesday
+    assert await cog.post_weekly_summary(today=_dt.date(2026, 11, 23))  # Monday
+    assert not await cog.post_weekly_summary(today=_dt.date(2026, 11, 23))
+    embed = bot.mod_channel.send.await_args.kwargs["embed"]
+    fields = {f.name: f.value for f in embed.fields}
+    assert embed.title.startswith("Weekly mod summary")
+    assert fields["Reports"] == "1" and fields["Blocks"] == "1"
+    assert "2 report(s)/block(s)" in fields["Most reported this week"]

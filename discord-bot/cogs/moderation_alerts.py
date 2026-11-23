@@ -83,7 +83,12 @@ from repositories.pairing_bans_repo import BAN_DURATIONS, get_pairing_ban
 
 logger = logging.getLogger("discord_bot")
 
-ADMIN_PAGE_URL = "https://sorcererssummit.com/admin/audit-log"
+MOD_TOOLS_URL = "https://sorcererssummit.com/mod-tools"
+
+
+def mod_page_url(target_id) -> str:
+    """The player's page on the website's Mod Tools."""
+    return f"{MOD_TOOLS_URL}/player/{target_id}"
 MOD_PREFIX = "mod:"
 
 # (minutes, label). Discord caps a timeout at 28 days.
@@ -981,7 +986,7 @@ class PersistentNoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r
 
 
 def moderation_view(target_id, kind: str, ref) -> discord.ui.View:
-    """Buttons for one alert. A non-Discord account gets only the admin link."""
+    """Buttons for one alert. A non-Discord account gets only Note and the Mod Tools link."""
     view = discord.ui.View(timeout=None)
     if is_discord_id(target_id):
         view.add_item(PersistentModerationButton("timeout", int(target_id), kind, str(ref or "")))
@@ -990,7 +995,7 @@ def moderation_view(target_id, kind: str, ref) -> discord.ui.View:
         view.add_item(PersistentGroupChatButton(int(target_id), kind, str(ref or "")))
     if len(f"{NOTE_PREFIX}{target_id}") <= 100:
         view.add_item(PersistentNoteButton(target_id))
-    view.add_item(discord.ui.Button(label="Admin panel", style=discord.ButtonStyle.link, url=ADMIN_PAGE_URL))
+    view.add_item(discord.ui.Button(label="Mod Tools", style=discord.ButtonStyle.link, url=mod_page_url(target_id)))
     return view
 
 

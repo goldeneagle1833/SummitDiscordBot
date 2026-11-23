@@ -810,7 +810,7 @@ export default function Nav() {
         </div>
 
         {/* Staff tools */}
-        {(user?.is_admin || user?.is_explorer_admin || user?.is_store_admin || user?.is_store_staff || user?.is_article_reviewer) && (
+        {(user?.is_admin || user?.is_moderator || user?.is_explorer_admin || user?.is_store_admin || user?.is_store_staff || user?.is_article_reviewer) && (
           <div className="border-b border-border">
             {user?.is_admin && (
               <Link
@@ -837,6 +837,9 @@ export default function Nav() {
             )}
             {(user?.is_article_reviewer || user?.is_admin) && (
               <SidebarLink to="/admin/articles" label="Article Review" location={location} onClick={close} />
+            )}
+            {(user?.is_moderator || user?.is_admin) && (
+              <SidebarLink to="/mod-tools" label="Mod Tools" location={location} onClick={close} />
             )}
           </div>
         )}
@@ -953,6 +956,11 @@ function UserMenu({ user }) {
           {(user.is_store_admin || user.is_store_staff) && (
             <Link role="menuitem" to="/admin/store" className={itemCls} onClick={close}>
               Store Admin
+            </Link>
+          )}
+          {(user.is_moderator || user.is_admin) && (
+            <Link role="menuitem" to="/mod-tools" className={itemCls} onClick={close}>
+              Mod Tools
             </Link>
           )}
           <button

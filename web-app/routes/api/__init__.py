@@ -53,6 +53,7 @@ from routes.api.nav import nav_bp
 from routes.api.event_finder import event_finder_bp
 from routes.api.precon import precon_bp
 from routes.api.standings_hub import standings_hub_bp
+from routes.api.mod_tools import mod_tools_bp
 
 api_bp.register_blueprint(leaderboard_bp)
 api_bp.register_blueprint(matches_bp)
@@ -66,6 +67,7 @@ api_bp.register_blueprint(external_matches_bp)
 api_bp.register_blueprint(partner_blocks_bp)
 api_bp.register_blueprint(partner_kudos_bp)
 api_bp.register_blueprint(admin_bp)
+api_bp.register_blueprint(mod_tools_bp)
 api_bp.register_blueprint(match_reporting_bp, url_prefix="/match-report")
 api_bp.register_blueprint(curios_bp, url_prefix="/curios")
 api_bp.register_blueprint(limited_bp, url_prefix="/limited")

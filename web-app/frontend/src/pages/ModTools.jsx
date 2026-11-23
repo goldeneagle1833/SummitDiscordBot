@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { get, post, del } from '@/api/client'
 import { useAuth } from '@/context/AuthContext'
 import usePageTitle from '@/hooks/usePageTitle'
 import Spinner from '@/components/ui/Spinner'
 import ModerationActions, { moderationSummary } from '@/components/admin/ModerationActions'
 import { REASON_LABELS } from '@/components/admin/PlayerReportsSection'
+import PlayerPicker from '@/components/admin/PlayerPicker'
 
 // Mod Tools: player reports, player lookup and timeouts / bans for
 // moderators. Shows report and moderation data only (no profile links);
@@ -148,7 +150,8 @@ function ReportsTab({ focus, onClearFocus }) {
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-text-primary break-all">{e.reported_name}</span>
+                    <Link to={`/mod-tools/player/${encodeURIComponent(e.reported_id)}`}
+                      className="font-semibold text-text-primary break-all hover:underline">{e.reported_name}</Link>
                     {e.reports_against > 1 && (
                       <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent-red/15 text-accent-red">
                         {e.reports_against} reports
@@ -193,6 +196,8 @@ function ReportsTab({ focus, onClearFocus }) {
                   moderation={e.moderation} status={e.status} sourceKind="report" sourceRef={e.id}
                   playerReason={reasonText(e.reasons)} endpoint={ENDPOINT}
                 />
+                <Link to={`/mod-tools/player/${encodeURIComponent(e.reported_id)}`}
+                  className="text-xs underline text-text-muted hover:text-text-primary">Mod page</Link>
                 {!focus && e.reports_against > 1 && (
                   <button onClick={() => onClearFocus({ user_id: e.reported_id, name: e.reported_name })}
                     className="text-xs underline text-text-muted hover:text-text-primary">
@@ -245,7 +250,8 @@ function PlayersTab({ onShowReports }) {
             {players.map(p => (
               <li key={p.user_id} className="bg-bg-raised border border-border rounded-lg p-4 space-y-3">
                 <div>
-                  <div className="font-semibold text-text-primary break-all">{p.name}</div>
+                  <Link to={`/mod-tools/player/${encodeURIComponent(p.user_id)}`}
+                    className="font-semibold text-text-primary break-all hover:underline">{p.name}</Link>
                   <div className="text-xs text-text-muted font-mono">{p.user_id}</div>
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
@@ -257,6 +263,8 @@ function PlayersTab({ onShowReports }) {
                 <div className="flex flex-wrap items-end justify-between gap-2 border-t border-border/60 pt-3">
                   <ModerationActions userId={p.user_id} userName={p.name} canModerate={p.can_moderate}
                     moderation={p.moderation} status={p.status} playerReason="" endpoint={ENDPOINT} />
+                  <Link to={`/mod-tools/player/${encodeURIComponent(p.user_id)}`}
+                    className="text-xs underline text-text-muted hover:text-text-primary">Mod page</Link>
                   {p.reports_against > 0 && (
                     <button onClick={() => onShowReports({ user_id: p.user_id, name: p.name })}
                       className="text-xs underline text-text-muted hover:text-text-primary">View reports</button>
@@ -318,6 +326,18 @@ function ModeratorsTab() {
   }, [])
   useEffect(() => { load() }, [load])
 
+  const addId = (discordId, name) => {
+    if (!/^\d{15,25}$/.test(String(discordId || ''))) {
+      setError(`${name || 'That player'} signed in with Google, not Discord. Moderators need a Discord account.`)
+      return
+    }
+    setBusy(true)
+    setError(null)
+    post('/api/mod/moderators', { discord_id: String(discordId), display_name: name })
+      .then(() => load())
+      .catch(err => setError(err.message))
+      .finally(() => setBusy(false))
+  }
   const add = (e) => {
     e.preventDefault()
     setBusy(true)
@@ -335,8 +355,12 @@ function ModeratorsTab() {
     <div className="space-y-4">
       <p className="text-sm text-text-muted">
         Moderators see this page only: player reports, player search, and timeouts, bans and pairing blocks.
-        They can't open any other admin page. Find a Discord ID by right-clicking someone in Discord and choosing Copy User ID.
+        They can't open any other admin page.
       </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <PlayerPicker label="Add a Summit player" onPick={(p) => addId(p.user_id, p.display_name)} />
+        <span className="text-xs text-text-muted">or by Discord ID:</span>
+      </div>
       <form onSubmit={add} className="flex gap-2">
         <input value={id} onChange={e => setId(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
           placeholder="Discord ID" aria-label="Discord ID" className={`${inputCls} flex-1 font-mono`} />

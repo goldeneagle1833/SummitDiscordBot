@@ -248,6 +248,150 @@ def mod_action():
     return jsonify(body), status
 
 
+# ── one player's mod page ────────────────────────────────────────────
+
+PLAYER_ID = re.compile(r"^[\w-]{1,64}$")
+
+
+@mod_tools_bp.route("/mod/players/<user_id>/record", methods=["GET"])
+@require_moderator
+def mod_player_record(user_id):
+    """Everything on record for one player: reports, blocks, actions, mod
+    notes, group chats (with saved transcripts) and repeat-offender flags.
+
+    Moderation data only: no profile, deck or match data.
+    """
+    from repositories.mod_record_repo import ModRecordRepository
+    from repositories.moderation_repo import ModerationRepository
+    from services.discord_moderation import is_discord_id
+
+    if not PLAYER_ID.match(user_id or ""):
+        return jsonify({"success": False, "error": "Unknown player"}), 404
+    resolve = _resolver()
+    record = ModRecordRepository().record(user_id)
+    for r in record["reports"]:
+        r["reporter_name"] = resolve(str(r["reporter_id"]), r.get("reporter_name"))
+    for b in record["blocks"]:
+        b["blocker_name"] = resolve(str(b["user_id"]))
+    fallback = record["reports"][0].get("reported_name") if record["reports"] else None
+    repo = ModerationRepository()
+    return jsonify({
+        "success": True,
+        "player": {
+            "user_id": user_id,
+            "name": resolve(user_id, fallback),
+            "can_moderate": is_discord_id(user_id),
+            "moderation": repo.latest_by_target([user_id]).get(user_id),
+            "status": repo.status_by_target([user_id]).get(user_id),
+        },
+        **record,
+    }), 200
+
+
+@mod_tools_bp.route("/mod/players/<user_id>/notes", methods=["POST"])
+@require_moderator
+def mod_add_note(user_id):
+    """Add a private mod note to a player (the bot's Note button writes the same table)."""
+    from repositories.mod_record_repo import ModRecordRepository
+
+    if not PLAYER_ID.match(user_id or ""):
+        return jsonify({"success": False, "error": "Unknown player"}), 404
+    note = str((request.get_json(silent=True) or {}).get("note") or "").strip()
+    if len(note) < 3:
+        return jsonify({"success": False, "error": "Write at least a few words"}), 400
+    if len(note) > 1000:
+        return jsonify({"success": False, "error": "Keep notes under 1000 characters"}), 400
+    by_id, by_name = _me()
+    label = by_name if _role() == "admin" else f"{by_name} (moderator)"
+    note_id = ModRecordRepository().add_note(user_id, note, by_id, label)
+    return jsonify({"success": True, "id": note_id}), 201
+
+
+@mod_tools_bp.route("/mod/players/<user_id>/send-summary", methods=["POST"])
+@require_moderator
+def mod_send_summary(user_id):
+    """Ask the bot to post this player's summary, with all the mod buttons,
+    in the Discord mod channel (it checks every 30 seconds)."""
+    from repositories.mod_record_repo import ModRequestsRepository
+
+    if not PLAYER_ID.match(user_id or ""):
+        return jsonify({"success": False, "error": "Unknown player"}), 404
+    by_id, by_name = _me()
+    ModRequestsRepository().request_summary(user_id, by_id, by_name)
+    return jsonify({"success": True}), 201
+
+
+@mod_tools_bp.route("/mod/players/<user_id>/matches", methods=["GET"])
+@require_admin
+def mod_player_matches(user_id):
+    """The player's matches this season, for flipping results (admins only)."""
+    from repositories.mod_record_repo import ModRequestsRepository
+    from utils.match_tables import live_matches
+
+    if not PLAYER_ID.match(user_id or ""):
+        return jsonify({"success": False, "error": "Unknown player"}), 404
+    repo = ModRequestsRepository()
+    flips = repo.flips_for(user_id)
+    latest = {}
+    for f in flips:  # newest first: keep each match's latest flip
+        latest.setdefault(f["match_id"], f)
+    matches = []
+    for m in repo.player_matches(user_id, live_matches()):
+        won = str(m["winner_id"]) == str(user_id)
+        matches.append({
+            "id": m["id"],
+            "timestamp": m["timestamp"],
+            "won": won,
+            "opponent_id": str(m["losser_id"] if won else m["winner_id"]),
+            "opponent_name": m["losser_display_name"] if won else m["winner_display_name"],
+            "match_type": m.get("match_type"),
+            "source": m.get("source"),
+            "avatar": m.get("winner_avatar") if won else m.get("loser_avatar"),
+            "flip": latest.get(m["id"]),
+        })
+    return jsonify({"success": True, "matches": matches, "flips": flips}), 200
+
+
+@mod_tools_bp.route("/mod/players/<user_id>/flip-matches", methods=["POST"])
+@require_admin
+def mod_flip_matches(user_id):
+    """Flip the result of some of the player's matches (admins only).
+
+    The bot does it (same as !correct_match): winner and loser swap and every
+    later rated game of both players is recalculated. Body: match_ids, confirm.
+    """
+    from repositories.mod_record_repo import ModRequestsRepository
+    from utils.match_tables import live_matches
+
+    if not PLAYER_ID.match(user_id or ""):
+        return jsonify({"success": False, "error": "Unknown player"}), 404
+    data = request.get_json(silent=True) or {}
+    if data.get("confirm") is not True:
+        return jsonify({"success": False, "error": "Confirmation required"}), 400
+    try:
+        wanted = {int(m) for m in data.get("match_ids") or []}
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "Bad match list"}), 400
+    if not wanted or len(wanted) > 100:
+        return jsonify({"success": False, "error": "Pick between 1 and 100 matches"}), 400
+    repo = ModRequestsRepository()
+    theirs = {m["id"] for m in repo.player_matches(user_id, live_matches(), limit=100000)}
+    if not wanted <= theirs:
+        return jsonify({"success": False, "error": "Some of those matches aren't this player's"}), 400
+    by_id, by_name = _me()
+    added = repo.request_flips(user_id, sorted(wanted), by_id, by_name)
+    try:
+        from repositories.audit import AuditRepository
+        AuditRepository().log_action(
+            by_id, by_name, "web_flip_matches", target_id=str(user_id),
+            new_state={"match_ids": sorted(wanted)},
+            details=f"Asked the bot to flip {added} match result(s) from Mod Tools",
+        )
+    except Exception as e:
+        logger.warning(f"Match flip request not audit-logged: {e}")
+    return jsonify({"success": True, "queued": added}), 201
+
+
 # ── moderator list (admins only) ─────────────────────────────────────
 
 @mod_tools_bp.route("/mod/moderators", methods=["GET"])

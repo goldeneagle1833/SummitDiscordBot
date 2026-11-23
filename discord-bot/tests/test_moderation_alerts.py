@@ -108,7 +108,7 @@ async def test_each_new_report_and_block_is_dmed_once_with_buttons():
     assert report_embed.title.startswith("Player report #")
     assert "rude, toxic" in str(report_embed.fields).lower()
     labels = [getattr(c, "item", c).label for c in report_call.kwargs["view"].children]
-    assert labels == ["Timeout", "Ban", "Pairing Block", "Group chat", "Note", "Admin panel"]
+    assert labels == ["Timeout", "Ban", "Pairing Block", "Group chat", "Note", "Mod Tools"]
     assert block_call.kwargs["embed"].title == "Player blocked"
     assert "no show twice" in str(block_call.kwargs["embed"].fields)
 
@@ -133,7 +133,7 @@ async def test_closed_dms_dont_resend_forever():
 
 def test_google_only_accounts_get_no_timeout_or_ban_buttons():
     view = moderation_view("google_12345", "block", REPORTER)
-    assert [getattr(c, "item", c).label for c in view.children] == ["Note", "Admin panel"]
+    assert [getattr(c, "item", c).label for c in view.children] == ["Note", "Mod Tools"]
 
 
 def test_button_custom_id_round_trips_through_the_template():
@@ -886,3 +886,10 @@ async def test_website_match_flips_use_correct_match_and_record_the_outcome():
     assert "Winner is now Reporter" in text and "ended season" in text
     bot.get_cog.return_value.update_leaderboard.assert_awaited()
     assert await cog.run_match_flips() == 0
+
+
+def test_mod_tools_button_opens_the_players_mod_page():
+    view = moderation_view(REPORTED, "report", "1")
+    link = view.children[-1]
+    assert link.label == "Mod Tools"
+    assert link.url == f"https://sorcererssummit.com/mod-tools/player/{REPORTED}"

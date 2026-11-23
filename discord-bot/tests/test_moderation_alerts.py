@@ -609,9 +609,9 @@ async def test_anyone_in_the_mod_channel_can_press_group_chat_but_not_elsewhere(
     interaction.user.id = 999
     interaction.client.get_guild.return_value.get_member.return_value = None
     interaction.channel_id = MODCH
-    assert mod.can_open_group_chat(interaction.client, interaction)
+    assert mod.can_use_mod_buttons(interaction.client, interaction)
     interaction.channel_id = 123
-    assert not mod.can_open_group_chat(interaction.client, interaction)
+    assert not mod.can_use_mod_buttons(interaction.client, interaction)
 
     button = mod.PersistentGroupChatButton(REPORTED, "report", "1")
     interaction.response.send_message = AsyncMock()
@@ -893,3 +893,34 @@ def test_mod_tools_button_opens_the_players_mod_page():
     link = view.children[-1]
     assert link.label == "Mod Tools"
     assert link.url == f"https://sorcererssummit.com/mod-tools/player/{REPORTED}"
+
+
+@pytest.mark.asyncio
+async def test_anyone_in_the_mod_channel_can_use_timeout_ban_and_pairing_block():
+    create_moderation_tables()
+    for action in ("timeout", "ban"):
+        button = PersistentModerationButton(action, REPORTED, "report", "1")
+        interaction = MagicMock()
+        interaction.user.id = 999  # not an admin, not on the website list
+        interaction.channel_id = MODCH
+        interaction.client.get_guild.return_value.get_member.return_value = None
+        interaction.client.get_user.return_value = MagicMock(global_name="Opponent")
+        interaction.response.send_modal = AsyncMock()
+        await button.callback(interaction)
+        assert isinstance(interaction.response.send_modal.await_args.args[0], ModerationReasonModal)
+
+    # Submitting the form from the mod channel works too
+    modal = ModerationReasonModal(action="ban", target_id=REPORTED, target_name="Opponent",
+                                  source_kind="report", source_ref="1")
+    interaction = MagicMock()
+    interaction.user = MagicMock(id=999, global_name="Helper")
+    interaction.channel_id = MODCH
+    interaction.client.get_guild.return_value.get_member.return_value = None
+    interaction.response.defer = AsyncMock()
+    interaction.response.send_message = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    with patch.object(mod, "perform_moderation", AsyncMock(return_value=(True, "Banned."))) as do, \
+         patch.object(type(modal.reason), "value", property(lambda self: "Harassment")):
+        await modal.on_submit(interaction)
+    do.assert_awaited_once()
+    interaction.response.send_message.assert_not_awaited()

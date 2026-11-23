@@ -49,6 +49,14 @@ GUILD_ID = 000000000000000000  # Your test server (guild) ID
 SUMMIT_GUILD_ID = 000000000000000000  # Same as GUILD_ID for testing
 # Who gets block/report DMs with Timeout/Ban buttons (defaults to [OWNER_ID])
 # MODERATION_ALERT_USER_IDS = [000000000000000000]
+# Moderator channel that also gets every block/report alert (0 turns it off;
+# defaults to the Summit mod channel)
+# MODERATION_ALERT_CHANNEL_ID = 000000000000000000
+# Private category for "Group chat" channels (defaults to the Summit one, else finds/makes "Mod Chats")
+# MODERATION_CHAT_CATEGORY_ID = 000000000000000000
+# Heads-up in the mod channel at this many reports+blocks within this many days
+# MODERATION_REPEAT_THRESHOLD = 3
+# MODERATION_REPEAT_DAYS = 7
 LEADER_ROLE_ID = 000000000000000000  # Create test roles in your test server
 FART_PLAYER_ROLE_ID = 000000000000000000  # Given to anyone who uses a fart game command
 DM_DISABLED_ROLE_ID = 000000000000000000

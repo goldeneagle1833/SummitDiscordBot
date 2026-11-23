@@ -492,9 +492,10 @@ def recently_flagged(target_id, days: int) -> bool:
 
 def mark_flagged(target_id):
     with _get_connection() as conn:
+        now = conn.execute("SELECT datetime('now')").fetchone()[0]
         conn.execute(
             "INSERT OR IGNORE INTO moderation_alerts (kind, ref) VALUES ('repeat', ?)",
-            (f"{target_id}|{conn.execute('SELECT datetime(\'now\')').fetchone()[0]}",),
+            (f"{target_id}|{now}",),
         )
 
 

@@ -241,3 +241,79 @@ class ModRequestsRepository:
             return added
         finally:
             conn.close()
+
+    # ── Partner (Play Sorcery Online) match corrections ──────────────
+
+    def find_match(self, table: str, match_id=None, pairing_id=None) -> list[dict]:
+        """A match by its ID (the rowid) or by the Summit pairing ID it was played for.
+
+        A pairing can, rarely, have more than one recorded match, so this
+        returns every hit, newest first.
+        """
+        conn = self._connect()
+        try:
+            cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            if not cols:
+                return []
+            pairing_col = "pairing_id" if "pairing_id" in cols else "NULL AS pairing_id"
+            opt = ", ".join(c if c in cols else f"NULL AS {c}" for c in ("match_type", "source"))
+            sql = (
+                f"SELECT rowid AS id, timestamp, CAST(winner_id AS TEXT) AS winner_id, winner_display_name, "
+                f"CAST(losser_id AS TEXT) AS loser_id, losser_display_name AS loser_display_name, "
+                f"{pairing_col}, {opt} FROM {table} WHERE "
+            )
+            if match_id is not None:
+                rows = conn.execute(sql + "rowid = ?", (int(match_id),)).fetchall()
+            elif "pairing_id" in cols:
+                rows = conn.execute(sql + "pairing_id = ? ORDER BY timestamp DESC", (int(pairing_id),)).fetchall()
+            else:
+                rows = []
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def queue_flip(self, match_id, target_id, by_id, by_name) -> tuple[int, bool]:
+        """Queue one flip. Returns (request id, newly queued); an already
+        pending flip of the same match is reused, never doubled."""
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT id FROM moderation_match_flips WHERE match_id = ? AND status = 'pending' "
+                "ORDER BY id LIMIT 1",
+                (int(match_id),),
+            ).fetchone()
+            if row:
+                return row["id"], False
+            cur = conn.execute(
+                "INSERT INTO moderation_match_flips (match_id, target_id, requested_by_id, requested_by_name) "
+                "VALUES (?, ?, ?, ?)",
+                (int(match_id), str(target_id), str(by_id), by_name),
+            )
+            conn.commit()
+            return cur.lastrowid, True
+        finally:
+            conn.close()
+
+    def pending_flip_for_match(self, match_id) -> dict | None:
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT id, match_id, status, result, requested_by_id, requested_by_name, created_at, done_at "
+                "FROM moderation_match_flips WHERE match_id = ? AND status = 'pending' ORDER BY id LIMIT 1",
+                (int(match_id),),
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def get_flip(self, flip_id) -> dict | None:
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT id, match_id, target_id, status, result, requested_by_id, requested_by_name, "
+                "created_at, done_at FROM moderation_match_flips WHERE id = ?",
+                (int(flip_id),),
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()

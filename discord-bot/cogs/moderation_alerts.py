@@ -1238,7 +1238,11 @@ class ModerationAlertsCog(commands.Cog):
                     new_state={"winner_name": result["new_winner_name"],
                                "loser_name": result["new_loser_name"],
                                "recalculated_matches": result["recalculated_count"]},
-                    details=f"Flipped match #{row['match_id']} from the Mod Tools page",
+                    details=(
+                        f"Flipped match #{row['match_id']} at Play Sorcery Online's request"
+                        if row.get("requested_by_id") == "sorcery-online"
+                        else f"Flipped match #{row['match_id']} from the Mod Tools page"
+                    ),
                 )
             except Exception as e:
                 logger.error(f"Match flip done but not logged: {e}", exc_info=True)
@@ -1252,7 +1256,9 @@ class ModerationAlertsCog(commands.Cog):
             name = await resolve_name(self.bot, target_id)
             await _post_to_mod_channel(
                 self.bot,
-                f"**{by}** flipped match results for **{name}** from the website:\n" + _join_lines(lines),
+                (f"**{by}** corrected a match result (winner is now **{name}**):\n"
+                 if by == "Play Sorcery Online"
+                 else f"**{by}** flipped match results for **{name}** from the website:\n") + _join_lines(lines),
             )
         return len(pending)
 

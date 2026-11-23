@@ -1191,7 +1191,8 @@ class ModerationAlertsCog(commands.Cog):
         return done
 
     async def thank_reporters(self, target_id) -> int:
-        """DM each reporter once: thanks, action has been taken. Never says what.
+        """DM each reporter once: thanks, action has been taken. Never says what,
+        and never names the player.
 
         Each report is thanked once, so a later ban only thanks newer reports.
         People who only blocked the player get nothing (blocks are private).
@@ -1210,7 +1211,7 @@ class ModerationAlertsCog(commands.Cog):
             embed = discord.Embed(
                 title="Thank you for your report",
                 description=(
-                    f"Thank you for your report on **{name}**. Our moderators have looked into it "
+                    "Thank you for your recent player report. Our moderators have looked into it "
                     "and action has been taken.\n\nReports like yours help keep the Summit a good "
                     "place to play."
                 ),

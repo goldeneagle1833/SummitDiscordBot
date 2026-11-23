@@ -977,7 +977,8 @@ async def test_ban_thanks_each_reporter_once_and_never_says_what_happened():
     dms = _thanks_dms(bot)
     assert len(dms) == 2
     text = dms[0].kwargs["embed"].description
-    assert "report on **Opponent**" in text and "action has been taken" in text
+    assert "Thank you for your recent player report" in text and "action has been taken" in text
+    assert "Opponent" not in text and str(REPORTED) not in text
     assert "ban" not in text.lower() and "timeout" not in text.lower()
     assert "Thanked 2 of 2" in bot.mod_channel.send.await_args.args[0]
 

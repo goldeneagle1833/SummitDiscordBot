@@ -601,3 +601,75 @@ def finish_match_flip(flip_id: int, status: str, result: str):
             "UPDATE moderation_match_flips SET status = ?, result = ?, done_at = datetime('now') WHERE id = ?",
             (status, result, int(flip_id)),
         )
+
+
+# ── thanking reporters when a player is banned or pairing-blocked ──
+# moderation_alerts rows: kind 'thanks' (report id thanked), 'thanks_action'
+# (moderation_actions id handled), 'thanks_pban' (pairing_bans user|banned_at
+# handled), 'thanks_seeded' (bans before this feature are skipped).
+
+
+def _seed_thanks(conn):
+    if conn.execute("SELECT 1 FROM moderation_alerts WHERE kind = 'thanks_seeded'").fetchone():
+        return
+    conn.execute(
+        "INSERT OR IGNORE INTO moderation_alerts (kind, ref) "
+        "SELECT 'thanks_action', CAST(id AS TEXT) FROM moderation_actions"
+    )
+    if _table_exists(conn, "pairing_bans"):
+        conn.execute(
+            "INSERT OR IGNORE INTO moderation_alerts (kind, ref) "
+            "SELECT 'thanks_pban', user_id || '|' || banned_at FROM pairing_bans"
+        )
+    conn.execute("INSERT OR IGNORE INTO moderation_alerts (kind, ref) VALUES ('thanks_seeded', '1')")
+
+
+def get_new_ban_targets() -> list[tuple[str, str]]:
+    """Players banned or pairing-blocked since last time: [(key, target_id)].
+
+    Covers alert buttons, the website and ``!ban``. Bans from before this
+    feature are skipped. Call ``mark_ban_handled(key)`` after each.
+    """
+    out = []
+    with _get_connection() as conn:
+        _seed_thanks(conn)
+        for row in conn.execute(
+            "SELECT id, target_id FROM moderation_actions a WHERE action IN ('ban', 'pairing_block') "
+            "AND NOT EXISTS (SELECT 1 FROM moderation_alerts m WHERE m.kind = 'thanks_action' "
+            "AND m.ref = CAST(a.id AS TEXT)) ORDER BY id"
+        ).fetchall():
+            out.append((f"thanks_action:{row['id']}", str(row["target_id"])))
+        if _table_exists(conn, "pairing_bans"):
+            for row in conn.execute(
+                "SELECT user_id, banned_at FROM pairing_bans p WHERE NOT EXISTS (SELECT 1 FROM moderation_alerts m "
+                "WHERE m.kind = 'thanks_pban' AND m.ref = p.user_id || '|' || p.banned_at)"
+            ).fetchall():
+                out.append((f"thanks_pban:{row['user_id']}|{row['banned_at']}", str(row["user_id"])))
+    return out
+
+
+def mark_ban_handled(key: str):
+    kind, ref = key.split(":", 1)
+    with _get_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO moderation_alerts (kind, ref) VALUES (?, ?)", (kind, ref))
+
+
+def get_unthanked_reports(target_id) -> list[dict]:
+    """Reports against the player whose reporter hasn't been thanked yet."""
+    with _get_connection() as conn:
+        if not _table_exists(conn, "player_reports"):
+            return []
+        return [dict(r) for r in conn.execute(
+            "SELECT id, reporter_id, reported_name FROM player_reports r WHERE reported_id = ? "
+            "AND NOT EXISTS (SELECT 1 FROM moderation_alerts m WHERE m.kind = 'thanks' "
+            "AND m.ref = CAST(r.id AS TEXT)) ORDER BY id",
+            (str(target_id),),
+        ).fetchall()]
+
+
+def mark_reports_thanked(report_ids):
+    with _get_connection() as conn:
+        conn.executemany(
+            "INSERT OR IGNORE INTO moderation_alerts (kind, ref) VALUES ('thanks', ?)",
+            [(str(i),) for i in report_ids],
+        )

@@ -58,6 +58,7 @@ from repositories.moderation_repo import (
     close_group_chat,
     get_group_chat_by_channel,
     get_history_counts,
+    get_new_ban_targets,
     get_open_group_chat,
     get_pending_match_flips,
     get_pending_summary_requests,
@@ -67,10 +68,13 @@ from repositories.moderation_repo import (
     get_report,
     get_unsent_blocks,
     get_unsent_reports,
+    get_unthanked_reports,
     get_weekly_stats,
     is_site_moderator,
     log_moderation_action,
     mark_alerted,
+    mark_ban_handled,
+    mark_reports_thanked,
     mark_flagged,
     mark_summary_done,
     mark_weekly_sent,
@@ -1141,6 +1145,7 @@ class ModerationAlertsCog(commands.Cog):
         await self.follow_up_web_pairing_blocks()
         await self.post_requested_summaries()
         await self.run_match_flips()
+        await self.thank_reporters_for_new_bans()
         reports = get_unsent_reports()
         blocks = get_unsent_blocks()
         if not reports and not blocks:
@@ -1173,6 +1178,65 @@ class ModerationAlertsCog(commands.Cog):
             except Exception as e:
                 logger.warning(f"Repeat-offender check failed for {target_id}: {e}")
         return count
+
+    async def thank_reporters_for_new_bans(self) -> int:
+        """After a ban or pairing block, thank everyone who reported that player."""
+        done = 0
+        for key, target_id in get_new_ban_targets():
+            try:
+                done += await self.thank_reporters(target_id)
+            except Exception as e:
+                logger.warning(f"Thanking reporters of {target_id} failed: {e}")
+            mark_ban_handled(key)
+        return done
+
+    async def thank_reporters(self, target_id) -> int:
+        """DM each reporter once: thanks, action has been taken. Never says what.
+
+        Each report is thanked once, so a later ban only thanks newer reports.
+        People who only blocked the player get nothing (blocks are private).
+        Returns how many reporters were DMed.
+        """
+        reports = get_unthanked_reports(target_id)
+        if not reports:
+            return 0
+        name = await resolve_name(self.bot, target_id, reports[-1].get("reported_name"))
+        reporters = dict.fromkeys(
+            str(r["reporter_id"]) for r in reports
+            if is_discord_id(r["reporter_id"]) and str(r["reporter_id"]) != str(target_id)
+        )
+        sent = 0
+        for reporter_id in reporters:
+            embed = discord.Embed(
+                title="Thank you for your report",
+                description=(
+                    f"Thank you for your report on **{name}**. Our moderators have looked into it "
+                    "and action has been taken.\n\nReports like yours help keep the Summit a good "
+                    "place to play."
+                ),
+                color=discord.Color.green(),
+            )
+            embed.set_footer(text="Sorcerers Summit moderators")
+            if await _dm_player(self.bot, int(reporter_id), embed) is not None:
+                sent += 1
+        mark_reports_thanked([r["id"] for r in reports])
+        if reporters:
+            await _post_to_mod_channel(
+                self.bot,
+                f"Thanked {sent} of {len(reporters)} reporter(s) of **{name}** by DM "
+                f"(action taken){'' if sent == len(reporters) else '; the rest have DMs closed'}.",
+            )
+        return sent
+
+    @commands.Cog.listener()
+    async def on_member_ban(self, guild, user):
+        """A ban done straight in Discord (not through the bot) thanks reporters too."""
+        if getattr(guild, "id", None) != _guild_id():
+            return
+        try:
+            await self.thank_reporters(user.id)
+        except Exception as e:
+            logger.warning(f"Thanking reporters after Discord ban of {user.id} failed: {e}")
 
     async def post_requested_summaries(self) -> int:
         """Player summaries a moderator asked for from the website's Mod Tools page."""

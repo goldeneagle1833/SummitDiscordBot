@@ -924,3 +924,88 @@ async def test_anyone_in_the_mod_channel_can_use_timeout_ban_and_pairing_block()
         await modal.on_submit(interaction)
     do.assert_awaited_once()
     interaction.response.send_message.assert_not_awaited()
+
+
+# ── thanking reporters after a ban ───────────────────────────────────
+
+
+def _action(action, target=REPORTED):
+    from repositories.moderation_repo import log_moderation_action
+    log_moderation_action(target_id=target, target_name="Opponent", action=action, reason="x",
+                          source_kind="report", source_ref="1", by_id=OWNER, by_name="Bruce", via="discord")
+
+
+def _thanks_dms(bot):
+    return [c for c in bot._dm.send.await_args_list if c.kwargs["embed"].title == "Thank you for your report"]
+
+
+def _thanks_bot():
+    bot, owner = _bot()
+    reporter_dm = MagicMock()
+    reporter_dm.send = AsyncMock(return_value=MagicMock())
+    player = MagicMock(global_name="Opponent")
+    bot.get_user.side_effect = lambda uid: owner if uid == OWNER else player if uid == REPORTED else reporter_dm
+    bot._dm = reporter_dm
+    return bot
+
+
+@pytest.mark.asyncio
+async def test_old_bans_dont_thank_anyone():
+    create_moderation_tables()
+    _report()
+    _action("ban")
+    bot = _thanks_bot()
+    assert await _cog(bot).thank_reporters_for_new_bans() == 0
+    assert _thanks_dms(bot) == []
+
+
+@pytest.mark.asyncio
+async def test_ban_thanks_each_reporter_once_and_never_says_what_happened():
+    create_moderation_tables()
+    _report()
+    _report(reasons=["stalling"])  # same reporter twice
+    _report(reporter_id=777777777777777777, reporter_name="Two")
+    _block(888888888888888888, REPORTED)  # blockers aren't DMed
+    bot = _thanks_bot()
+    cog = _cog(bot)
+    await cog.thank_reporters_for_new_bans()  # seeds; nothing banned yet
+    _action("timeout")
+    assert await cog.thank_reporters_for_new_bans() == 0  # timeouts don't count
+
+    _action("ban")
+    assert await cog.thank_reporters_for_new_bans() == 2
+    dms = _thanks_dms(bot)
+    assert len(dms) == 2
+    text = dms[0].kwargs["embed"].description
+    assert "report on **Opponent**" in text and "action has been taken" in text
+    assert "ban" not in text.lower() and "timeout" not in text.lower()
+    assert "Thanked 2 of 2" in bot.mod_channel.send.await_args.args[0]
+
+    # A pairing block later doesn't thank the same reports again
+    _action("pairing_block")
+    assert await cog.thank_reporters_for_new_bans() == 0
+    # ...but a new report after that is thanked on the next ban
+    _report(reporter_id=999999999999999999, reporter_name="Three")
+    _action("ban")
+    assert await cog.thank_reporters_for_new_bans() == 1
+
+
+@pytest.mark.asyncio
+async def test_bang_command_and_discord_bans_thank_reporters():
+    create_moderation_tables()
+    _report()
+    bot = _thanks_bot()
+    cog = _cog(bot)
+    await cog.thank_reporters_for_new_bans()
+    from repositories.pairing_bans_repo import create_pairing_bans_table
+    create_pairing_bans_table()
+    conn = sqlite3.connect("match_records.db")
+    conn.execute("INSERT INTO pairing_bans (user_id, banned_by_id, reason, duration_label, banned_at) "
+                 "VALUES (?, '1', 'x', '24 hours', '2026-11-23 19:00:00')", (str(REPORTED),))
+    conn.commit()
+    conn.close()
+    assert await cog.thank_reporters_for_new_bans() == 1
+
+    _report(reporter_id=777777777777777777, reporter_name="Two")
+    await cog.on_member_ban(MagicMock(id=GUILD), MagicMock(id=REPORTED))
+    assert len(_thanks_dms(bot)) == 2

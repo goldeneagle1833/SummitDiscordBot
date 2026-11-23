@@ -1,6 +1,6 @@
-"""Opt-in skill-based matchmaking for the Ranked queue ("Skill matching" setting).
+"""Opt-in skill-based matchmaking for the Ranked and Casual queues ("Skill matching" setting).
 
-When either player in a possible Ranked pairing has turned Skill matching on,
+When either player in a possible Ranked or Casual pairing has turned Skill matching on,
 the pair is only made if their ratings are within an allowed gap. The gap
 starts at ``START_GAP`` and widens by ``WIDEN_STEP`` every ``WIDEN_EVERY_SECONDS``
 the longer-waiting of the two has been in the queue, up to ``MAX_GAP``
@@ -8,9 +8,10 @@ the longer-waiting of the two has been in the queue, up to ``MAX_GAP``
 of real queue joins (Nov 8-22, 2026) with a similar rule had most players
 waiting about 20 seconds longer, the top and bottom of the ladder 1.5-2 minutes.
 
-The rating used is the one the game would be played for: the player's season
-rating on the avatar they queued with in Avatar mode, otherwise their season
-rating. Players with no games yet count as the starting rating.
+The rating used is the one the game would be played for: in Ranked, the
+player's season rating on the avatar they queued with in Avatar mode,
+otherwise their season rating. Casual games aren't rated, so Casual uses the
+player's season rating. Players with no games yet count as the starting rating.
 
 Matching normally happens only when someone joins, so as gaps widen two
 waiting players can become a fair pair with nobody new joining. The sweep at
@@ -26,7 +27,8 @@ from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users
 
 logger = logging.getLogger("discord_bot")
 
-SKILL_QUEUE = "ranked"
+# Ranked, and Casual (queue type "testing")
+SKILL_QUEUES = ("ranked", "testing")
 START_GAP = 120
 WIDEN_STEP = 10
 WIDEN_EVERY_SECONDS = 10
@@ -116,12 +118,12 @@ class SkillGate:
 
 
 def build_gate(lfg_cog_queue, joiner_id, queue_type, now, joiner_avatar=None, joiner_since=None, **kw):
-    """A SkillGate for a Ranked check, or None for other queues.
+    """A SkillGate for a Ranked or Casual check, or None for other queues.
 
     When the joiner is still in the queue (a sweep re-checking a waiting
     player) their own entry gives their join time and avatar.
     """
-    if queue_type != SKILL_QUEUE:
+    if queue_type not in SKILL_QUEUES:
         return None
     own = lfg_cog_queue.get(joiner_id, {}).get("queues", {}).get(queue_type)
     if own:
@@ -145,9 +147,9 @@ class _Ctx:
 
 
 def skill_players_ready(lfg_cog, now=None):
-    """(user_id, entry) for waiting Skill-matching players who now have a fair partner.
+    """(user_id, queue_type, entry) for waiting Skill-matching players who now have a fair partner.
 
-    Takes each such player out of the Ranked queue; the caller re-joins them.
+    Takes each such player out of that queue; the caller re-joins them.
     Call with ``lfg_queue_lock`` held.
     """
     from cogs.lfg.voice import (
@@ -159,40 +161,45 @@ def skill_players_ready(lfg_cog, now=None):
     from repositories.skill_match_repo import skill_match_ids
 
     now = now or datetime.datetime.now()
-    waiting = {
-        uid: data["queues"][SKILL_QUEUE]
-        for uid, data in lfg_queue.items()
-        if SKILL_QUEUE in data.get("queues", {}) and uid not in matching_web_users
-    }
-    if len(waiting) < 2:
+    in_skill_queue = [
+        uid for uid, data in lfg_queue.items()
+        if uid not in matching_web_users and any(q in data.get("queues", {}) for q in SKILL_QUEUES)
+    ]
+    if len(in_skill_queue) < 2:
         return []
     try:
-        opted = skill_match_ids(list(waiting))
+        opted = skill_match_ids(in_skill_queue)
     except Exception as e:
         logger.warning(f"Skill matching sweep: could not read settings: {e}")
         return []
     ready = []
-    taken = set()
-    for uid in sorted(opted, key=lambda u: waiting[u]["timestamp"] if u in waiting else now):
-        entry = waiting.get(uid)
-        if not entry or uid in taken or entry.get("ladder_info"):
-            continue
-        if (now - entry["timestamp"]).total_seconds() >= entry["timeframe"] * 60:
-            continue
-        voice = normalize_voice_preference(entry.get("voice")) or DEFAULT_VOICE
-        flexible = entry_voice_flexible(entry)
-        partner = lfg_cog.check_if_someone_is_lfg(
-            _Ctx(uid), SKILL_QUEUE, voice=voice, voice_flexible=flexible,
-            voice_hold=holding_for_voice(voice, flexible, entry["timestamp"], now),
-        )
-        if partner is None or partner in taken:
-            continue
-        taken.update({uid, partner})
-        user_data = lfg_queue.get(uid, {})
-        user_data.get("queues", {}).pop(SKILL_QUEUE, None)
-        if not user_data.get("queues"):
-            lfg_queue.pop(uid, None)
-        ready.append((uid, dict(entry)))
+    taken = set()  # a pair takes both players out of every queue
+    for queue_type in SKILL_QUEUES:
+        waiting = {
+            uid: lfg_queue[uid]["queues"][queue_type]
+            for uid in in_skill_queue
+            if uid in lfg_queue and queue_type in lfg_queue[uid].get("queues", {})
+        }
+        for uid in sorted((u for u in opted if u in waiting), key=lambda u: waiting[u]["timestamp"]):
+            entry = waiting[uid]
+            if uid in taken or entry.get("ladder_info"):
+                continue
+            if (now - entry["timestamp"]).total_seconds() >= entry["timeframe"] * 60:
+                continue
+            voice = normalize_voice_preference(entry.get("voice")) or DEFAULT_VOICE
+            flexible = entry_voice_flexible(entry)
+            partner = lfg_cog.check_if_someone_is_lfg(
+                _Ctx(uid), queue_type, voice=voice, voice_flexible=flexible,
+                voice_hold=holding_for_voice(voice, flexible, entry["timestamp"], now),
+            )
+            if partner is None or partner in taken:
+                continue
+            taken.update({uid, partner})
+            user_data = lfg_queue.get(uid, {})
+            user_data.get("queues", {}).pop(queue_type, None)
+            if not user_data.get("queues"):
+                lfg_queue.pop(uid, None)
+            ready.append((uid, queue_type, dict(entry)))
     return ready
 
 
@@ -220,7 +227,7 @@ async def release_skill_waits(bot):
     from services.matchmaking_api import WebsiteInteraction
 
     guild = bot.get_guild(config.GUILD_ID)
-    for user_id, entry in ready:
+    for user_id, queue_type, entry in ready:
         member = guild.get_member(user_id) if guild else None
         if member is None and guild:
             try:
@@ -237,12 +244,12 @@ async def release_skill_waits(bot):
         voice = normalize_voice_preference(entry.get("voice")) or DEFAULT_VOICE
         flexible = entry_voice_flexible(entry)
         minutes = max(MIN_REJOIN_MINUTES, round(_minutes_left(entry, now)))
-        logger.info(f"Skill matching: range widened for {user_id}; pairing")
+        logger.info(f"Skill matching: range widened for {user_id} in {queue_type}; pairing")
         try:
             await _process_queue_join(
                 bot,
                 interaction,
-                SKILL_QUEUE,
+                queue_type,
                 minutes,
                 entry.get("deck_url"),
                 origin=origin,

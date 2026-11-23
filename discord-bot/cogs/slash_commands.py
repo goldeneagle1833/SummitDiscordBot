@@ -201,7 +201,7 @@ class SlashCommandsCog(commands.Cog):
 
     @app_commands.command(
         name="skill-match",
-        description="Test skill-based matching in the Ranked queue",
+        description="Test skill-based matching in the Ranked and Casual queues",
     )
     @app_commands.describe(setting="Turn Skill matching on or off (leave empty to see your setting)")
     @app_commands.choices(setting=[

@@ -1590,7 +1590,7 @@ class LFGCog(commands.Cog):
 
     @commands.command(aliases=["skillmatch"])
     async def skill_match(self, ctx, setting: str = None):
-        """Opt in to skill-based matching in the Ranked queue (test).
+        """Opt in to skill-based matching in the Ranked and Casual queues (test).
 
         Usage: !skill_match (shows your setting), !skill_match on, !skill_match off
         """
@@ -2168,7 +2168,7 @@ class LFGCog(commands.Cog):
                 "`!tag_me on` / `!tag_me off` or `/tag-me` - Choose whether the match "
                 "announcement in the LFG channel pings you (on by default)\n\n"
                 "`!skill_match on` / `!skill_match off` or `/skill-match` - Test skill-based "
-                "matching in Ranked: only get paired with players near your rating (off by default)\n\n"
+                "matching in Ranked and Casual: only get paired with players near your rating (off by default)\n\n"
                 "**Tip:** Use the **Join Queue** button in the LFG channel to enter your deck URL and join the matchmaking queue!"
             ),
             inline=False,
@@ -5356,12 +5356,12 @@ def skill_match_text(on):
     """What the bot says about a player's "Skill matching" setting."""
     if on:
         return (
-            "🎯 Skill matching is **on** (test). In Ranked you're paired with players near "
+            "🎯 Skill matching is **on** (test). In Ranked and Casual you're paired with players near "
             "your rating: within 120 points at first, widening by 10 every 10 seconds "
             "you wait, up to 400. Waits may be a little longer. Turn it off with `!skill_match off`."
         )
     return (
-        "Skill matching is **off**. In Ranked you're paired with the next player in the "
+        "Skill matching is **off**. In Ranked and Casual you're paired with the next player in the "
         "queue, whatever their rating. Turn it on with `!skill_match on`."
     )
 

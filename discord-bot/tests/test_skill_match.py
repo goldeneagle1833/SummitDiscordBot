@@ -123,10 +123,20 @@ def test_queued_since_keeps_the_original_join_time(lfg_cog, ctx):
     assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked") == 222
 
 
+def test_casual_queue_uses_the_setting_too(lfg_cog, ctx):
+    set_skill_match(222, True)
+    lfg_queue[222] = entry(10, queue_type="testing")  # 300 apart
+    assert lfg_cog.check_if_someone_is_lfg(ctx, "testing") is None
+    lfg_queue[333] = entry(5, queue_type="testing")  # 50 apart, no setting
+    assert lfg_cog.check_if_someone_is_lfg(ctx, "testing") == 333
+
+
 def test_other_queues_ignore_the_setting(lfg_cog, ctx):
     set_skill_match(222, True)
-    lfg_queue[222] = entry(0, queue_type="testing")
-    assert lfg_cog.check_if_someone_is_lfg(ctx, "testing") == 222
+    for queue_type in ("limited", "rumble", "points"):
+        lfg_queue.clear()
+        lfg_queue[222] = entry(0, queue_type=queue_type)
+        assert lfg_cog.check_if_someone_is_lfg(ctx, queue_type) == 222
 
 
 def test_unreadable_rating_never_blocks_a_game(lfg_cog, ctx):
@@ -156,7 +166,7 @@ class TestSweep:
         lfg_queue[111] = entry(5 * 60)  # 300 apart from 222, allowed 400 now
         lfg_queue[222] = entry(30)
         ready = skill_players_ready(lfg_cog)
-        assert [uid for uid, _ in ready] == [111]
+        assert [(uid, q) for uid, q, _ in ready] == [(111, "ranked")]
         assert 111 not in lfg_queue and 222 in lfg_queue
 
     def test_leaves_players_alone_while_still_too_far_apart(self, lfg_cog):
@@ -181,6 +191,12 @@ class TestSweep:
             await release_skill_waits(bot)
         assert join.await_args.args[2] == "ranked"
         assert join.await_args.kwargs["queued_since"] == first
+
+    def test_sweep_covers_casual(self, lfg_cog):
+        set_skill_match(111, True)
+        lfg_queue[111] = entry(5 * 60, queue_type="testing")
+        lfg_queue[222] = entry(30, queue_type="testing")
+        assert [(uid, q) for uid, q, _ in skill_players_ready(lfg_cog)] == [(111, "testing")]
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 """The "Skill matching" queue setting in match_records.db (web app side).
 
-Opt-in test of skill-based matchmaking in the Discord Ranked queue: players
+Opt-in test of skill-based matchmaking in the Discord Ranked and Casual queues: players
 who turn it on are only paired with opponents near their rating (the gap
 widens the longer they wait). Only players who turned it ON are stored, so
 everyone with no row is unaffected. The bot reads and writes the same table

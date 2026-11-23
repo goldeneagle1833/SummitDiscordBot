@@ -1,6 +1,6 @@
 """The "Skill matching" queue setting in match_records.db (Discord bot side).
 
-Opt-in test of skill-based matchmaking for the Ranked queue. A player who turns
+Opt-in test of skill-based matchmaking for the Ranked and Casual queues. A player who turns
 it on is only paired with opponents whose rating is close to theirs; the
 allowed gap starts small and widens the longer either player has waited (see
 cogs/lfg/skill_match.py). Players who never turned it on pair as before.

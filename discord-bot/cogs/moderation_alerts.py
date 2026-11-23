@@ -381,7 +381,7 @@ class ModerationReasonModal(discord.ui.Modal):
         return DEFAULT_TIMEOUT_MINUTES
 
     async def on_submit(self, interaction: discord.Interaction):
-        if not can_moderate(interaction.client, interaction.user):
+        if not can_use_mod_buttons(interaction.client, interaction):
             await interaction.response.send_message("Only admins and moderators can do this.", ephemeral=True)
             return
         await interaction.response.defer()
@@ -488,7 +488,7 @@ class PersistentModerationButton(
         return cls(match["action"], int(match["target"]), match["kind"], match["ref"])
 
     async def callback(self, interaction: discord.Interaction):
-        if not can_moderate(interaction.client, interaction.user):
+        if not can_use_mod_buttons(interaction.client, interaction):
             await interaction.response.send_message(
                 "Only admins and moderators can use these buttons.", ephemeral=True
             )
@@ -547,9 +547,9 @@ CHAT_MEMBER_PERMS = dict(
 )
 
 
-def can_open_group_chat(client, interaction) -> bool:
-    """Anyone pressing it in the moderator channel (only mods can see it),
-    plus everyone who can use the other alert buttons."""
+def can_use_mod_buttons(client, interaction) -> bool:
+    """Anyone pressing a button in the moderator channel (only mods can see
+    it), plus admins, website moderators and the DM recipients anywhere."""
     channel_id = alert_channel_id()
     if channel_id and getattr(interaction, "channel_id", None) == channel_id:
         return True
@@ -852,7 +852,7 @@ class PersistentGroupChatButton(
         return cls(int(match["target"]), match["kind"], match["ref"])
 
     async def callback(self, interaction: discord.Interaction):
-        if not can_open_group_chat(interaction.client, interaction):
+        if not can_use_mod_buttons(interaction.client, interaction):
             await interaction.response.send_message("Only moderators can use this button.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
@@ -978,7 +978,7 @@ class PersistentNoteButton(discord.ui.DynamicItem[discord.ui.Button], template=r
         return cls(match["target"])
 
     async def callback(self, interaction: discord.Interaction):
-        if not can_open_group_chat(interaction.client, interaction):
+        if not can_use_mod_buttons(interaction.client, interaction):
             await interaction.response.send_message("Only moderators can use this button.", ephemeral=True)
             return
         name = await resolve_name(interaction.client, self.target_id)

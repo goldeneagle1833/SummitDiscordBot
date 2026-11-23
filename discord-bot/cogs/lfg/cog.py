@@ -5354,8 +5354,8 @@ def skill_match_text(on):
     if on:
         return (
             "🎯 Skill matching is **on** (test). In Ranked you're paired with players near "
-            "your rating: within 150 points at first, widening by 50 for each minute you "
-            "wait, up to 400. Waits may be a little longer. Turn it off with `!skill_match off`."
+            "your rating: within 120 points at first, widening by 10 every 10 seconds "
+            "you wait, up to 400. Waits may be a little longer. Turn it off with `!skill_match off`."
         )
     return (
         "Skill matching is **off**. In Ranked you're paired with the next player in the "

@@ -2,11 +2,11 @@
 
 When either player in a possible Ranked pairing has turned Skill matching on,
 the pair is only made if their ratings are within an allowed gap. The gap
-starts at ``START_GAP`` and widens by ``WIDEN_PER_MINUTE`` for every minute the
-longer-waiting of the two has been in the queue, up to ``MAX_GAP``. These
-numbers come from a replay of two weeks of real queue joins (Nov 8-22, 2026):
-most players wait about 20 seconds longer, the top and bottom of the ladder
-about 1.5-2 minutes.
+starts at ``START_GAP`` and widens by ``WIDEN_STEP`` every ``WIDEN_EVERY_SECONDS``
+the longer-waiting of the two has been in the queue, up to ``MAX_GAP``
+(Bruce's pick: 120, plus 10 every 10 seconds, up to 400). A replay of two weeks
+of real queue joins (Nov 8-22, 2026) with a similar rule had most players
+waiting about 20 seconds longer, the top and bottom of the ladder 1.5-2 minutes.
 
 The rating used is the one the game would be played for: the player's season
 rating on the avatar they queued with in Avatar mode, otherwise their season
@@ -27,15 +27,16 @@ from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users
 logger = logging.getLogger("discord_bot")
 
 SKILL_QUEUE = "ranked"
-START_GAP = 150
-WIDEN_PER_MINUTE = 50
+START_GAP = 120
+WIDEN_STEP = 10
+WIDEN_EVERY_SECONDS = 10
 MAX_GAP = 400
 
 
 def allowed_gap(waited_seconds: float) -> int:
     """Largest rating gap allowed after waiting this long."""
-    minutes = max(0.0, waited_seconds) / 60
-    return int(min(MAX_GAP, START_GAP + WIDEN_PER_MINUTE * minutes))
+    steps = int(max(0.0, waited_seconds) // WIDEN_EVERY_SECONDS)
+    return min(MAX_GAP, START_GAP + WIDEN_STEP * steps)
 
 
 def queue_rating(user_id, avatar=None, event=None, elo_db="elo.db"):

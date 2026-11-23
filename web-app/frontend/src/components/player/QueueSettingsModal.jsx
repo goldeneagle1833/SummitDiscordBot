@@ -71,7 +71,7 @@ export default function QueueSettingsModal({ playerId, onClose }) {
               checked={skillMatch}
               onToggle={() => setSkillMatch((v) => !v)}
               title="🎯 Skill matching (test)"
-              detail="In Ranked, only pair me with players near my season rating: within 150 points at first, widening by 50 for each minute I wait, up to 400. Waits may be a little longer, mostly near the top or bottom of the ladder."
+              detail="In Ranked, only pair me with players near my season rating: within 120 points at first, widening by 10 every 10 seconds I wait (60 a minute), up to 400. Waits may be a little longer, mostly near the top or bottom of the ladder."
             />
           </div>
         )}

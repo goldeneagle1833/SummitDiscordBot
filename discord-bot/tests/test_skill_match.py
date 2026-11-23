@@ -76,10 +76,13 @@ def test_setting_is_off_by_default_and_round_trips():
     assert wants_skill_match(10) is False
 
 
-def test_gap_starts_at_150_widens_50_a_minute_and_caps_at_400():
-    assert allowed_gap(0) == START_GAP == 150
-    assert allowed_gap(60) == 200
-    assert allowed_gap(150) == 275
+def test_gap_starts_at_120_widens_10_every_10_seconds_and_caps_at_400():
+    assert allowed_gap(0) == START_GAP == 120
+    assert allowed_gap(9) == 120
+    assert allowed_gap(10) == 130
+    assert allowed_gap(60) == 180
+    assert allowed_gap(180) == 300
+    assert allowed_gap(280) == 400
     assert allowed_gap(3600) == MAX_GAP == 400
 
 
@@ -90,7 +93,7 @@ def test_players_without_the_setting_pair_as_before(lfg_cog, ctx):
 
 def test_waiting_player_with_setting_on_skips_a_far_joiner(lfg_cog, ctx):
     set_skill_match(222, True)
-    lfg_queue[222] = entry(10)  # 300 apart, gap allowed ~158
+    lfg_queue[222] = entry(10)  # 300 apart, gap allowed 130
     assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked") is None
 
 
@@ -109,7 +112,7 @@ def test_close_player_is_picked_over_an_older_far_one(lfg_cog, ctx):
 
 def test_gap_widens_with_the_longer_wait(lfg_cog, ctx):
     set_skill_match(222, True)
-    lfg_queue[222] = entry(4 * 60)  # waited 4 min: gap allowed 350 >= 300
+    lfg_queue[222] = entry(4 * 60)  # waited 4 min: gap allowed 360 >= 300
     assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked") == 222
 
 

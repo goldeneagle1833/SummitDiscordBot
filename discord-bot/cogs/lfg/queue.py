@@ -649,9 +649,12 @@ class PreconQueueModal(discord.ui.Modal, title="Join Precon (LM/FM) Queue"):
 async def _process_queue_join(
     bot, interaction, queue_type, timeframe_value, deck_url, run_id=None, origin="discord",
     voice=DEFAULT_VOICE, alert_avatar=False, deck_avatar=None, voice_flexible=False, voice_hold=True,
-    precon=None,
+    precon=None, queued_since=None,
 ):
     """Handle queue join flow after modal validation.
+
+    ``queued_since``: when a sweep re-joins a waiting player, the time they
+    first joined, so Skill matching keeps widening their range from then.
 
     ``alert_avatar``: the player ticked "Alert my avatar's channel"; when the
     match is made the bot posts in that avatar's channel. ``deck_avatar`` is
@@ -721,7 +724,8 @@ async def _process_queue_join(
 
         lfg_cog.clean_expired_lfg()
         matched_user_id = lfg_cog.check_if_someone_is_lfg(
-            ctx, queue_type, voice=voice, voice_flexible=voice_flexible, voice_hold=voice_hold
+            ctx, queue_type, voice=voice, voice_flexible=voice_flexible, voice_hold=voice_hold,
+            joiner_avatar=join_avatar, joiner_since=queued_since,
         )
 
         if matched_user_id and matched_user_id != interaction.user.id:
@@ -816,6 +820,7 @@ async def _process_queue_join(
                 deck_avatar=deck_avatar,
                 voice_flexible=voice_flexible,
                 precon=precon,
+                queued_since=queued_since,
             )
             # Who's waiting with which voice answer, so a "we didn't pair" report can be checked
             logger.info(

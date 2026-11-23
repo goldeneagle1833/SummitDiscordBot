@@ -5,6 +5,8 @@ export default function QueueSettingsModal({ playerId, onClose }) {
   const [voiceOnly, setVoiceOnly] = useState(false)
   // On unless the player turned it off
   const [tagMe, setTagMe] = useState(true)
+  // Opt-in test: off unless the player turned it on
+  const [skillMatch, setSkillMatch] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -14,6 +16,7 @@ export default function QueueSettingsModal({ playerId, onClose }) {
       .then((data) => {
         setVoiceOnly(Boolean(data.voice_only))
         setTagMe(data.tag_me !== false)
+        setSkillMatch(Boolean(data.skill_match))
       })
       .catch((err) => setError(err.message || 'Failed to load settings'))
       .finally(() => setLoading(false))
@@ -29,7 +32,7 @@ export default function QueueSettingsModal({ playerId, onClose }) {
     setSaving(true)
     setError(null)
     try {
-      await setQueueSettings(playerId, { voice_only: voiceOnly, tag_me: tagMe })
+      await setQueueSettings(playerId, { voice_only: voiceOnly, tag_me: tagMe, skill_match: skillMatch })
       onClose()
     } catch (err) {
       setError(err.message || 'Failed to save settings')
@@ -64,12 +67,19 @@ export default function QueueSettingsModal({ playerId, onClose }) {
               title="🔔 Tag me"
               detail="Ping me in the LFG channel when I'm matched with someone. When off, the match post still shows my name but doesn't notify me."
             />
+            <SettingRow
+              checked={skillMatch}
+              onToggle={() => setSkillMatch((v) => !v)}
+              title="🎯 Skill matching (test)"
+              detail="In Ranked, only pair me with players near my season rating: within 120 points at first, widening by 10 every 10 seconds I wait (60 a minute), up to 400. Waits may be a little longer, mostly near the top or bottom of the ladder."
+            />
           </div>
         )}
 
         <p className="text-xs text-text-muted mt-3">
           You can also use <code>/voice-only</code> or <code>!voice_only on</code> / <code>off</code>, and{' '}
-          <code>/tag-me</code> or <code>!tag_me on</code> / <code>off</code> in Discord.
+          <code>/tag-me</code> or <code>!tag_me on</code> / <code>off</code>, and{' '}
+          <code>/skill-match</code> or <code>!skill_match on</code> / <code>off</code> in Discord.
         </p>
 
         <div className="flex justify-end gap-2 mt-4">

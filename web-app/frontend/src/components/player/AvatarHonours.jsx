@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getAvatarHonours } from '@/api/avatarHonours'
+import { useAvatarImage } from '@/components/player/EventAvatarBadges'
 
 /**
  * Season avatar honours: the top three entries on each avatar's Elo ladder
@@ -89,25 +90,50 @@ export function Medal({ place, size = 15 }) {
   )
 }
 
+const RING_CLASSES = { 1: 'honour-ring-1', 2: 'honour-ring-2', 3: 'honour-ring-3' }
+
+/**
+ * The avatar's portrait cut into a small circle, ringed in the place's
+ * colour (gold, silver, bronze). Falls back
+ * to the medal when the avatar has no picture on file.
+ */
+export function HonourAvatar({ avatar, place, size = 22 }) {
+  const src = useAvatarImage(avatar)
+  if (!src) return <Medal place={place} size={Math.round(size * 0.75)} />
+  return (
+    <span className={`honour-ring ${RING_CLASSES[place] || ''}`} aria-hidden="true">
+      <img
+        src={src}
+        alt=""
+        width={size}
+        height={size}
+        loading="lazy"
+        style={{ width: size, height: size }}
+        className="object-cover object-top"
+      />
+    </span>
+  )
+}
+
 /**
  * The hero card chip: the player's best honour (highest place, newest
- * season), plus how many more they hold. Hovering lists them all.
+ * season). Hovering lists them all; the Postseason tab has the full list.
  */
 export function AvatarHonourBadge({ honours = [], onClick }) {
   if (!honours.length) return null
   const best = honours.reduce((a, b) => (b.place < a.place ? b : a))
-  const more = honours.length - 1
   return (
     <button
       type="button"
       onClick={onClick}
       title={honours.map((h) => h.title).join('\n')}
-      className="inline-flex flex-wrap items-center gap-x-2 px-3 py-1 rounded-2xl bg-bg-raised border border-secondary/40 text-sm hover:border-secondary text-left"
+      className="inline-flex items-center gap-3 pl-3 pr-1.5 py-1 rounded-2xl bg-bg-raised border border-secondary/40 text-sm hover:border-secondary text-left"
     >
-      <Medal place={best.place} />
-      <strong className={`whitespace-nowrap ${PLACE_COLOURS[best.place]}`}>{best.label}</strong>
-      <span className="text-text-muted whitespace-nowrap">{best.season}</span>
-      {more > 0 && <span className="text-text-muted">+{more}</span>}
+      <span className="flex flex-wrap items-center gap-x-2 min-w-0">
+        <strong className={`whitespace-nowrap ${PLACE_COLOURS[best.place]}`}>{best.label}</strong>
+        <span className="text-text-muted whitespace-nowrap">{best.season}</span>
+      </span>
+      <HonourAvatar avatar={best.avatar} place={best.place} size={36} />
     </button>
   )
 }
@@ -138,7 +164,7 @@ export function AvatarHonoursSection({ honours = [] }) {
                   key={`${h.avatar}-${h.place}`}
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-bg-raised border border-border text-sm"
                 >
-                  <Medal place={h.place} />
+                  <HonourAvatar avatar={h.avatar} place={h.place} size={24} />
                   <strong className={PLACE_COLOURS[h.place]}>{h.label}</strong>
                   <span className="text-text-muted tabular-nums">
                     {h.elo} Rating

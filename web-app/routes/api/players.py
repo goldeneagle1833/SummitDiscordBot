@@ -19,6 +19,7 @@ from repositories.user_profiles import UserProfileRepository
 from repositories.blocked_users_repo import BlockedUsersRepository
 from repositories.voice_only_repo import VoiceOnlyRepository
 from repositories.tag_me_repo import TagMeRepository
+from repositories.skill_match_repo import SkillMatchRepository
 from utils.auth import is_admin, require_auth
 from utils.card_images import attach_images, resolve_card_image
 from services.curiosa import deck_url_source, is_deck_url, normalize_deck_url
@@ -3847,7 +3848,7 @@ def _queue_settings_key(player_id) -> tuple[str | None, str | None]:
 
 @players_bp.route("/player/<player_id>/queue-settings", methods=["GET"])
 def get_queue_settings(player_id):
-    """A player's Discord queue settings (owner only): voice only, tag me."""
+    """A player's Discord queue settings (owner only): voice only, tag me, skill matching."""
     if session.get("user_id") is None:
         return jsonify({"error": "Authentication required"}), 401
     key, error = _queue_settings_key(player_id)
@@ -3856,17 +3857,18 @@ def get_queue_settings(player_id):
     return jsonify({
         "voice_only": VoiceOnlyRepository().is_voice_only(key),
         "tag_me": TagMeRepository().wants_tag(key),
+        "skill_match": SkillMatchRepository().wants_skill_match(key),
     })
 
 
-_QUEUE_SETTINGS = ("voice_only", "tag_me")
+_QUEUE_SETTINGS = ("voice_only", "tag_me", "skill_match")
 
 
 @players_bp.route("/player/<player_id>/queue-settings", methods=["POST"])
 def set_queue_settings(player_id):
     """Save a player's Discord queue settings (owner only).
 
-    Send any of voice_only / tag_me; settings left out are unchanged.
+    Send any of voice_only / tag_me / skill_match; settings left out are unchanged.
     """
     if session.get("user_id") is None:
         return jsonify({"error": "Authentication required"}), 401
@@ -3876,7 +3878,7 @@ def set_queue_settings(player_id):
     data = request.get_json(silent=True) or {}
     sent = [name for name in _QUEUE_SETTINGS if name in data]
     if not sent:
-        return jsonify({"error": "Send voice_only or tag_me"}), 400
+        return jsonify({"error": "Send voice_only, tag_me or skill_match"}), 400
     for name in sent:
         if not isinstance(data[name], bool):
             return jsonify({"error": f"{name} must be true or false"}), 400
@@ -3885,6 +3887,8 @@ def set_queue_settings(player_id):
         result["voice_only"] = VoiceOnlyRepository().set_voice_only(key, data["voice_only"])
     if "tag_me" in data:
         result["tag_me"] = TagMeRepository().set_tag_me(key, data["tag_me"])
+    if "skill_match" in data:
+        result["skill_match"] = SkillMatchRepository().set_skill_match(key, data["skill_match"])
     return jsonify(result)
 
 

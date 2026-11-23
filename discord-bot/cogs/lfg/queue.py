@@ -8,6 +8,7 @@ import sqlite3
 import time
 
 import config
+from repositories.tag_me_repo import send_with_tag_me
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
 from cogs.lfg.voice_offer import offer_no_voice_game
 from cogs.lfg.queue_definitions import queue_definition, queue_is_enabled
@@ -648,9 +649,12 @@ class PreconQueueModal(discord.ui.Modal, title="Join Precon (LM/FM) Queue"):
 async def _process_queue_join(
     bot, interaction, queue_type, timeframe_value, deck_url, run_id=None, origin="discord",
     voice=DEFAULT_VOICE, alert_avatar=False, deck_avatar=None, voice_flexible=False, voice_hold=True,
-    precon=None,
+    precon=None, queued_since=None,
 ):
     """Handle queue join flow after modal validation.
+
+    ``queued_since``: when a sweep re-joins a waiting player, the time they
+    first joined, so Skill matching keeps widening their range from then.
 
     ``alert_avatar``: the player ticked "Alert my avatar's channel"; when the
     match is made the bot posts in that avatar's channel. ``deck_avatar`` is
@@ -720,7 +724,8 @@ async def _process_queue_join(
 
         lfg_cog.clean_expired_lfg()
         matched_user_id = lfg_cog.check_if_someone_is_lfg(
-            ctx, queue_type, voice=voice, voice_flexible=voice_flexible, voice_hold=voice_hold
+            ctx, queue_type, voice=voice, voice_flexible=voice_flexible, voice_hold=voice_hold,
+            joiner_avatar=join_avatar, joiner_since=queued_since,
         )
 
         if matched_user_id and matched_user_id != interaction.user.id:
@@ -815,6 +820,7 @@ async def _process_queue_join(
                 deck_avatar=deck_avatar,
                 voice_flexible=voice_flexible,
                 precon=precon,
+                queued_since=queued_since,
             )
             # Who's waiting with which voice answer, so a "we didn't pair" report can be checked
             logger.info(
@@ -1432,7 +1438,8 @@ class JoinQueueButtons(discord.ui.View):
                                 )
 
                         # No deck line here: this channel is public.
-                        fb_msg = await dm_channel.send(
+                        fb_msg = await send_with_tag_me(
+                            dm_channel,
                             f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match Report**\n\n"
                             f"**Opponent:** {opponent_user.mention}\n\n"
                             f"Use the button below to report the result.\n\n"

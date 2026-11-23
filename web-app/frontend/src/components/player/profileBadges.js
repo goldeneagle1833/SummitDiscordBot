@@ -12,6 +12,27 @@ export const DEFAULT_SHOWN = 3
 const FINISH_WEIGHT = { Champion: 10, Winner: 12, Finalist: 20, 'Top 4': 30, 'Top 8': 40, 'Top 16': 50 }
 const finishWeight = (label) => FINISH_WEIGHT[label] ?? (/^Top \d+/.test(label || '') ? 55 : 60)
 
+// "Summit Gothic Season 4" -> { set: 'gothic', num: '4' }
+function seasonOf(name) {
+  const m = /(?:([a-z]+)\s+)?season\s+(\d+)/i.exec(name || '')
+  return m ? { set: (m[1] || '').toLowerCase(), num: m[2] } : null
+}
+
+/**
+ * A paper result for one of Summit's own seasons (an event on the Top 8 page
+ * like "Summit Gothic Season 4") repeats the postseason bracket finish the
+ * player already has for that season, so the badges show it only once.
+ */
+function repeatsPostseason(finish, marks) {
+  if (!/summit|tts/i.test(finish.event || '')) return false
+  const season = seasonOf(finish.event)
+  if (!season) return false
+  return (marks?.entries || []).some((e) => {
+    const s = seasonOf(e.name)
+    return s && s.num === season.num && (!s.set || !season.set || s.set === season.set)
+  })
+}
+
 export function profileBadges({ marks, honours = [], paperFinishes = [], eventBadges = [] }) {
   const out = []
   if (marks?.best_label) {
@@ -40,6 +61,7 @@ export function profileBadges({ marks, honours = [], paperFinishes = [], eventBa
     out.push({ kind: 'event', avatar: b.avatar, title: b.title, key: eventBadgeKey(b), group: 'Top avatar at an event', label: b.label, detail: b.event, weight: 18 })
   }
   for (const f of paperFinishes) {
+    if (repeatsPostseason(f, marks)) continue
     out.push({ kind: 'paper', title: f.title || `${f.label} · ${f.event}`, key: paperBadgeKey(f), group: 'Paper tournament finishes', label: f.label, detail: f.event, weight: finishWeight(f.label) + 1 })
   }
   // Best first; ties keep the order above (newest first within each kind)

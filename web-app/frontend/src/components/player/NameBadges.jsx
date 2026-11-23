@@ -2,15 +2,17 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getProfileBadgePrefs } from '@/api/players'
 import { FINISH_COLOURS as POSTSEASON_COLOURS, Yurt, useBracketMarks } from '@/components/player/BracketMarks'
-import { Medal, useAvatarHonours } from '@/components/player/AvatarHonours'
+import { useAvatarHonours } from '@/components/player/AvatarHonours'
 import { Trophy, usePaperFinishes } from '@/components/player/PaperFinishes'
 import { FoilAvatar, useEventAvatarBadges } from '@/components/player/EventAvatarBadges'
 import { heroBadgeKeys, profileBadges } from '@/components/player/profileBadges'
 
 /**
  * A player's achievements beside their name on the leaderboards: the same
- * badges their profile shows (their best 3, or the ones they picked), as
- * small icons. Hover (or long-press) names each one; a tap opens the
+ * event finishes their profile shows (their best 3, or the ones they
+ * picked), as small icons, then "+N" for the rest of their profile badges.
+ * Season avatar honours show on the profile only (counted in the +N).
+ * Hover (or long-press) names each one; a tap opens the
  * player's Postseason tab. Postseason finishes are badges here too (the
  * leaderboards no longer colour names): a champion shows the yurt, other
  * finishes a trophy in that finish's colour.
@@ -68,21 +70,24 @@ function Icon({ badge }) {
     return <Trophy size={14} className={POSTSEASON_COLOURS[badge.label] || 'text-text-muted'} />
   }
   if (badge.kind === 'event') return <FoilAvatar avatar={badge.avatar} size={20} id={`nb-${badge.key}`} />
-  if (badge.kind === 'honour') return <Medal place={badge.place} size={15} />
   return <Trophy label={badge.label} size={14} />
 }
 
 export default function NameBadges({ playerId, className = '' }) {
   const marks = useBracketMarks(playerId)
-  const honours = useAvatarHonours(playerId)
   const paperFinishes = usePaperFinishes(playerId)
   const eventBadges = useEventAvatarBadges(playerId)
+  const honours = useAvatarHonours(playerId)
   const pref = useBadgePref(playerId)
 
-  const all = profileBadges({ marks, honours, paperFinishes, eventBadges })
+  // Season avatar honours stay on the profile: the avatar leaderboard already
+  // shows each avatar's current standing, so names here carry event finishes only.
+  const all = profileBadges({ marks, paperFinishes, eventBadges })
   const keys = heroBadgeKeys(all, pref?.shown ?? null, pref?.hidden || [])
   const shown = all.filter((b) => keys.has(b.key))
-  if (!shown.length) return null
+  // "+N": everything else on their profile (each season honour counts once).
+  const more = all.length - shown.length + honours.length
+  if (!shown.length && !more) return null
 
   // Postseason hover lists every placement, as the coloured name used to.
   const placements = (marks?.entries || []).map((e) => `${e.label}: ${e.name}`).join('\n')
@@ -106,6 +111,16 @@ export default function NameBadges({ playerId, className = '' }) {
           <Icon badge={b} />
         </Link>
       ))}
+      {more > 0 && (
+        <Link
+          to={`/player/${playerId}?tab=postseason`}
+          title={`${more} more on their profile`}
+          aria-label={`${more} more on their profile`}
+          className="text-[11px] font-semibold text-text-muted hover:text-secondary tabular-nums"
+        >
+          +{more}
+        </Link>
+      )}
     </span>
   )
 }

@@ -7,6 +7,7 @@ import random
 import sqlite3
 
 import config
+from repositories.tag_me_repo import send_with_tag_me
 from cogs.lfg.state import (
     active_ladder_challenges,
     ladder_challenge_lock,
@@ -671,7 +672,8 @@ async def _resolve_ladder_challenge(bot, challenger_id):
     except discord.Forbidden:
         dm_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
         if dm_channel:
-            await dm_channel.send(
+            await send_with_tag_me(
+                dm_channel,
                 scrub_urls(
                     f"<@{challenger_id}> **Ladder Challenge Match!** Your opponent is **{selected_global}**!\n\n"
                     f"{stakes_text}\n\nReport the match result below:"
@@ -693,7 +695,8 @@ async def _resolve_ladder_challenge(bot, challenger_id):
     except discord.Forbidden:
         dm_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
         if dm_channel:
-            await dm_channel.send(
+            await send_with_tag_me(
+                dm_channel,
                 scrub_urls(
                     f"<@{selected_id}> **You've been selected for a Ladder Challenge!**\n\n"
                     f"You're playing against **{challenger_global}** (Top 16)!\n\n"
@@ -706,7 +709,8 @@ async def _resolve_ladder_challenge(bot, challenger_id):
     # Announce in channel
     if channel:
         try:
-            await channel.send(
+            await send_with_tag_me(
+                channel,
                 f"**Ladder Challenge!** <@{challenger_id}> (Top 16) vs <@{selected_id}>! "
                 f"{'Normal stakes.' if winner_mult == 1.0 else 'Special stakes: 2x/0.5x ELO!'}"
             )

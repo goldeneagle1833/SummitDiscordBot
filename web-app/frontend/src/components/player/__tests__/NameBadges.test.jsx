@@ -29,7 +29,8 @@ describe('NameBadges', () => {
 
   it('shows the best 3 badges as icons, postseason included', async () => {
     renderWithRouter(<NameBadges playerId="1" />)
-    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(3))
+    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(4))
+    expect(screen.getByLabelText('2 more on their profile')).toHaveTextContent('+2')
     expect(screen.getByLabelText('Postseason · Champion Champion: Season 8 Top Cut')).toBeInTheDocument()
     expect(screen.getByLabelText('Top Druid · Avatar of the Realm')).toHaveAttribute('href', '/player/1?tab=postseason')
     expect(screen.getByLabelText('Top 8 · Event 1')).toBeInTheDocument()
@@ -38,12 +39,25 @@ describe('NameBadges', () => {
   it("follows the player's own pick", async () => {
     resetBadgePrefsCache({ 1: { shown: ['paper:E3'], hidden: [] } })
     renderWithRouter(<NameBadges playerId="1" />)
-    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1))
+    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(2))
+    expect(screen.getByLabelText('4 more on their profile')).toBeInTheDocument()
     expect(screen.getByLabelText('Top 8 · Event 3')).toBeInTheDocument()
   })
 
   it('renders nothing for a player without badges', () => {
     const { container } = renderWithRouter(<NameBadges playerId="2" />)
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('leaves season avatar honours to the profile', async () => {
+    const honour = { season: 'Gothic Season 8', avatar: 'Harbinger', place: 1, label: 'Top Harbinger', title: 'Gothic Season 8 Top Harbinger' }
+    resetAvatarHonoursCache({ 3: [honour] })
+    resetPaperFinishesCache({ 3: [paper(4)] })
+    resetBadgePrefsCache({ 3: { shown: ['avatar_honours', 'paper:E4'], hidden: [] } })
+    renderWithRouter(<NameBadges playerId="3" />)
+    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(2))
+    expect(screen.getByLabelText('Top 8 · Event 4')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Top Harbinger/)).toBeNull()
+    expect(screen.getByLabelText('1 more on their profile')).toHaveTextContent('+1')
   })
 })

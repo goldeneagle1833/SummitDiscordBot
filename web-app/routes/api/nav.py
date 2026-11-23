@@ -5,6 +5,7 @@ import logging
 from flask import Blueprint, jsonify, request, session
 
 from repositories.nav_seen import NavSeenRepository
+from utils.auth import require_auth
 from services.new_content import PAGE_SOURCES
 from services.new_content import get_new_content as load_new_content
 
@@ -45,3 +46,38 @@ def mark_seen():
         return jsonify({"error": "unknown page"}), 400
     seen_at = NavSeenRepository().mark_seen(str(user_id), pages)
     return jsonify({"success": True, "seen_at": seen_at, "pages": pages})
+
+
+@nav_bp.route("/nav/checks", methods=["GET"])
+@require_auth
+def nav_checks():
+    """Everything the top bar checks for a logged-in person, in one request:
+    match reports waiting on their confirmation, their site notifications
+    (store orders, Explorer decisions) and the "someone is live" banner.
+
+    Replaces three separate background polls (/api/match-report/pending,
+    /api/store/notifications, /api/streamers/banner). Those endpoints still
+    work unchanged. Each part fails on its own, so one broken part never
+    blanks the others.
+    """
+    from routes.api.match_reporting import pending_confirmations_for_user
+    from routes.api.store import _repo as store_repo
+    from routes.api.streamers import banner_payload
+
+    user_id = session.get("user_id")
+    result = {"pending_confirmations": [], "notifications": [], "streamer": None}
+    if user_id:
+        try:
+            result["pending_confirmations"] = pending_confirmations_for_user(user_id)
+        except Exception:
+            logger.warning("nav checks: pending confirmations failed", exc_info=True)
+        try:
+            result["notifications"] = store_repo().list_web_notifications(str(user_id))
+        except Exception:
+            logger.warning("nav checks: notifications failed", exc_info=True)
+    try:
+        banner = banner_payload()
+        result["streamer"] = banner["streamer"] if banner.get("is_live") else None
+    except Exception:
+        logger.warning("nav checks: streamer banner failed", exc_info=True)
+    return jsonify(result)

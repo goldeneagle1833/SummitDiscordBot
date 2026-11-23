@@ -13,6 +13,7 @@ import logging
 import sqlite3
 
 import config
+from repositories.tag_me_repo import send_with_tag_me, tag_me_mentions_for
 from cogs.lfg.state import pending_match_reports, processed_matches, processed_matches_lock
 from cogs.lfg.helpers import (
     correction_tip,
@@ -506,7 +507,8 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         except discord.Forbidden:
             match_report_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
             if match_report_channel:
-                await match_report_channel.send(
+                await send_with_tag_me(
+                    match_report_channel,
                     scrub_urls(
                         f"<@{data['reporter_id']}> {data['opponent_global']} has confirmed your match report! "
                         f"Match has been recorded.{stakes_msg}{correct_match_tip}"
@@ -899,7 +901,8 @@ async def reset_report_after_dispute(bot, data: dict) -> bool:
         try:
             channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
             if channel:
-                msg = await channel.send(
+                msg = await send_with_tag_me(
+                    channel,
                     scrub_urls(
                         _dispute_reset_message(
                             in_public_channel=True, self_mention=user.mention, **message_kwargs
@@ -985,7 +988,8 @@ async def _execute_match_dispute(interaction: discord.Interaction, confirmation_
     except discord.Forbidden:
         match_report_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
         if match_report_channel:
-            await match_report_channel.send(
+            await send_with_tag_me(
+                match_report_channel,
                 scrub_urls(
                     f"<@{data['reporter_id']}> {data['opponent_global']} has disputed your match report. "
                     f"The dispute did not log an entry.\n\n"
@@ -1573,7 +1577,11 @@ async def edit_match_card_messages(bot, pairing_id: int, match_type: str, result
             message = await channel.fetch_message(msg_id)
             # Keep Report Player on the card; drop Report Result / Cancel.
             content = with_opponent_mention(result_text, card.get("player2_id"))
-            await message.edit(content=content, view=report_player_only_view(message))
+            await message.edit(
+                content=content,
+                view=report_player_only_view(message),
+                allowed_mentions=tag_me_mentions_for(content),
+            )
         except Exception as e:
             logger.warning("Could not edit match card message %s in channel %s: %s", msg_id, ch_id, e)
 

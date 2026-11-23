@@ -102,6 +102,7 @@ const AdminHub = lazyPage(() => import('@/pages/admin/AdminHub'))
 const AuditLog = lazyPage(() => import('@/pages/admin/AuditLog'))
 const StoreAdmin = lazyPage(() => import('@/pages/admin/StoreAdmin'))
 const ModTools = lazyPage(() => import('@/pages/ModTools'))
+const ModPlayer = lazyPage(() => import('@/pages/ModPlayer'))
 const StoreOrderPrint = lazyPage(() => import('@/pages/admin/StoreOrderPrint'))
 const StoreOrderBulkPrint = lazyPage(() => import('@/pages/admin/StoreOrderBulkPrint'))
 const ActiveConnections = lazyPage(() => import('@/pages/admin/ActiveConnections'))
@@ -334,6 +335,7 @@ const router = createBrowserRouter([
       { path: '/store/apply', element: <Navigate to="/store" replace /> },
       { path: '/admin/store', element: <StoreAdminGuard><StoreAdmin /></StoreAdminGuard> },
       { path: '/mod-tools', element: <ModeratorGuard><ModTools /></ModeratorGuard> },
+      { path: '/mod-tools/player/:userId', element: <ModeratorGuard><ModPlayer /></ModeratorGuard> },
       { path: '/admin', element: <AdminGuard><AdminHub /></AdminGuard> },
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
       { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },

@@ -186,3 +186,119 @@ class TestPlayerSearch:
         d = mod_session.get(f"/api/mod/players?q={TARGET}").get_json()
         assert d["players"][0]["user_id"] == TARGET
         assert mod_session.get("/api/mod/players?q=a").status_code == 400
+
+
+class TestPlayerRecord:
+    def _bot_tables(self, match_db):
+        """The tables the Discord bot writes (group chats, notes, alerts)."""
+        conn = sqlite3.connect(str(match_db))
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS moderation_alerts (
+                kind TEXT NOT NULL, ref TEXT NOT NULL,
+                alerted_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (kind, ref));
+            CREATE TABLE IF NOT EXISTS moderation_group_chats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, target_id TEXT NOT NULL, channel_id TEXT NOT NULL,
+                source_kind TEXT, source_ref TEXT, opened_by_id TEXT, opened_by_name TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')), closed_at TEXT, closed_by_name TEXT,
+                transcript TEXT, message_count INTEGER);
+        """)
+        conn.execute("INSERT INTO moderation_alerts (kind, ref) VALUES ('repeat', ?)", (f"{TARGET}|2026-11-20 10:00:00",))
+        conn.execute(
+            "INSERT INTO moderation_group_chats (target_id, channel_id, source_kind, source_ref, opened_by_name, "
+            "closed_at, closed_by_name, transcript, message_count) VALUES (?, '777', 'report', '1', 'Bruce', "
+            "datetime('now'), 'Bruce', '[2026-11-23 09:01 AM] Bruce: hi', 1)",
+            (TARGET,),
+        )
+        conn.execute(
+            "INSERT INTO blocked_users (user_id, blocked_user_id, reason) VALUES (?, ?, 'no show')",
+            (REPORTER, TARGET),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_regular_users_cant_see_it(self, user_session):
+        assert user_session.get(f"/api/mod/players/{TARGET}/record").status_code == 403
+        assert user_session.post(f"/api/mod/players/{TARGET}/notes", json={"note": "hello"}).status_code == 403
+
+    def test_record_has_everything(self, mod_session, match_db):
+        from repositories.blocked_users_repo import BlockedUsersRepository
+        BlockedUsersRepository(db_path=match_db)
+        _report(match_db)
+        self._bot_tables(match_db)
+        assert mod_session.post(f"/api/mod/players/{TARGET}/notes",
+                                json={"note": "Talked to them, they apologised"}).status_code == 201
+
+        data = mod_session.get(f"/api/mod/players/{TARGET}/record").get_json()
+        assert data["success"]
+        assert data["player"]["user_id"] == TARGET and data["player"]["can_moderate"]
+        assert data["reports"][0]["reasons"] == ["toxic"]
+        assert data["blocks"][0]["reason"] == "no show"
+        assert data["notes"][0]["note"] == "Talked to them, they apologised"
+        assert data["notes"][0]["by_name"] == "ModUser (moderator)"
+        assert data["chats"][0]["transcript"].endswith("Bruce: hi")
+        assert data["chats"][0]["message_count"] == 1
+        assert len(data["flags"]) == 1
+        # Moderation data only
+        assert "deck" not in str(data).lower()
+
+    def test_fresh_database_returns_empty_record(self, mod_session):
+        data = mod_session.get("/api/mod/players/google_123/record").get_json()
+        assert data["success"] and data["reports"] == [] and data["chats"] == []
+        assert data["player"]["can_moderate"] is False
+
+    def test_note_validation(self, mod_session):
+        assert mod_session.post(f"/api/mod/players/{TARGET}/notes", json={"note": "x"}).status_code == 400
+        assert mod_session.post(f"/api/mod/players/{TARGET}/notes", json={"note": "y" * 1001}).status_code == 400
+        assert mod_session.get("/api/mod/players/bad%20id!/record").status_code == 404
+
+
+class TestSummaryAndFlips:
+    def _matches(self, match_db):
+        conn = sqlite3.connect(str(match_db))
+        rows = [
+            ("1", TARGET, "Opponent", REPORTER, "Reporter", "2026-11-20 10:00:00"),
+            ("2", REPORTER, "Reporter", TARGET, "Opponent", "2026-11-21 10:00:00"),
+            ("3", "999999999999999999", "Other", REPORTER, "Reporter", "2026-11-22 10:00:00"),
+        ]
+        for mid, w, wn, l, ln, ts in rows:
+            conn.execute(
+                "INSERT INTO match_records (match_id, winner_id, winner_display_name, losser_id, "
+                "losser_display_name, timestamp, winner_elo_change, loser_elo_change) VALUES (?, ?, ?, ?, ?, ?, 16, -16)",
+                (mid, w, wn, l, ln, ts),
+            )
+        conn.commit()
+        conn.close()
+
+    def test_moderator_can_send_a_summary_to_the_mod_channel(self, mod_session, match_db):
+        assert mod_session.post(f"/api/mod/players/{TARGET}/send-summary").status_code == 201
+        conn = sqlite3.connect(str(match_db))
+        row = conn.execute("SELECT target_id, requested_by_name, done_at FROM moderation_summary_requests").fetchone()
+        conn.close()
+        assert row == (TARGET, "ModUser", None)
+
+    def test_matches_and_flips_are_admin_only(self, mod_session, match_db):
+        assert mod_session.get(f"/api/mod/players/{TARGET}/matches").status_code == 403
+        assert mod_session.post(f"/api/mod/players/{TARGET}/flip-matches",
+                                json={"match_ids": [1], "confirm": True}).status_code == 403
+
+    def test_admin_lists_matches_and_queues_flips(self, admin_session, match_db):
+        self._matches(match_db)
+        data = admin_session.get(f"/api/mod/players/{TARGET}/matches").get_json()
+        got = {m["id"]: m for m in data["matches"]}
+        assert set(got) == {1, 2}
+        assert got[1]["won"] is True and got[1]["opponent_name"] == "Reporter"
+        assert got[2]["won"] is False
+
+        # Needs confirm, only their matches
+        assert admin_session.post(f"/api/mod/players/{TARGET}/flip-matches", json={"match_ids": [1]}).status_code == 400
+        assert admin_session.post(f"/api/mod/players/{TARGET}/flip-matches",
+                                  json={"match_ids": [3], "confirm": True}).status_code == 400
+
+        r = admin_session.post(f"/api/mod/players/{TARGET}/flip-matches", json={"match_ids": [1], "confirm": True})
+        assert r.status_code == 201 and r.get_json()["queued"] == 1
+        # Asking again while pending doesn't queue it twice
+        r = admin_session.post(f"/api/mod/players/{TARGET}/flip-matches", json={"match_ids": [1], "confirm": True})
+        assert r.get_json()["queued"] == 0
+        data = admin_session.get(f"/api/mod/players/{TARGET}/matches").get_json()
+        flip = {m["id"]: m for m in data["matches"]}[1]["flip"]
+        assert flip["status"] == "pending" and flip["requested_by_name"] == "AdminUser"

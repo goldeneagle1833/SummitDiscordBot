@@ -6,6 +6,7 @@ import usePageTitle from '@/hooks/usePageTitle'
 import Spinner from '@/components/ui/Spinner'
 import ModerationActions, { moderationSummary } from '@/components/admin/ModerationActions'
 import { REASON_LABELS } from '@/components/admin/PlayerReportsSection'
+import PlayerPicker from '@/components/admin/PlayerPicker'
 
 // Mod Tools: player reports, player lookup and timeouts / bans for
 // moderators. Shows report and moderation data only (no profile links);
@@ -325,6 +326,18 @@ function ModeratorsTab() {
   }, [])
   useEffect(() => { load() }, [load])
 
+  const addId = (discordId, name) => {
+    if (!/^\d{15,25}$/.test(String(discordId || ''))) {
+      setError(`${name || 'That player'} signed in with Google, not Discord. Moderators need a Discord account.`)
+      return
+    }
+    setBusy(true)
+    setError(null)
+    post('/api/mod/moderators', { discord_id: String(discordId), display_name: name })
+      .then(() => load())
+      .catch(err => setError(err.message))
+      .finally(() => setBusy(false))
+  }
   const add = (e) => {
     e.preventDefault()
     setBusy(true)
@@ -342,8 +355,12 @@ function ModeratorsTab() {
     <div className="space-y-4">
       <p className="text-sm text-text-muted">
         Moderators see this page only: player reports, player search, and timeouts, bans and pairing blocks.
-        They can't open any other admin page. Find a Discord ID by right-clicking someone in Discord and choosing Copy User ID.
+        They can't open any other admin page.
       </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <PlayerPicker label="Add a Summit player" onPick={(p) => addId(p.user_id, p.display_name)} />
+        <span className="text-xs text-text-muted">or by Discord ID:</span>
+      </div>
       <form onSubmit={add} className="flex gap-2">
         <input value={id} onChange={e => setId(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
           placeholder="Discord ID" aria-label="Discord ID" className={`${inputCls} flex-1 font-mono`} />

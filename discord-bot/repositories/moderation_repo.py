@@ -348,3 +348,41 @@ def is_site_moderator(user_id) -> bool:
         return conn.execute(
             "SELECT 1 FROM moderators WHERE discord_user_id = ?", (str(user_id),)
         ).fetchone() is not None
+
+
+def get_player_record(target_id, limit: int = 10) -> dict:
+    """A player's reports, blocks and past moderation actions, newest first.
+
+    For the summary posted in the mod channel when a group chat opens.
+    """
+    target_id = str(target_id)
+    record = {"reports": [], "blocks": [], "actions": [], "report_total": 0, "block_total": 0}
+    with _get_connection() as conn:
+        if _table_exists(conn, "player_reports"):
+            record["report_total"] = conn.execute(
+                "SELECT COUNT(*) FROM player_reports WHERE reported_id = ?", (target_id,)
+            ).fetchone()[0]
+            for row in conn.execute(
+                "SELECT id, reporter_id, reporter_name, match_type, reasons, details, created_at "
+                "FROM player_reports WHERE reported_id = ? ORDER BY id DESC LIMIT ?",
+                (target_id, limit),
+            ).fetchall():
+                entry = dict(row)
+                entry["reasons"] = _reasons(row["reasons"])
+                record["reports"].append(entry)
+        if _table_exists(conn, "blocked_users"):
+            record["block_total"] = conn.execute(
+                "SELECT COUNT(*) FROM blocked_users WHERE blocked_user_id = ?", (target_id,)
+            ).fetchone()[0]
+            record["blocks"] = [dict(r) for r in conn.execute(
+                "SELECT user_id, reason, created_at FROM blocked_users "
+                "WHERE blocked_user_id = ? ORDER BY created_at DESC LIMIT ?",
+                (target_id, limit),
+            ).fetchall()]
+        if _table_exists(conn, "moderation_actions"):
+            record["actions"] = [dict(r) for r in conn.execute(
+                "SELECT action, duration_minutes, duration_label, reason, by_name, created_at "
+                "FROM moderation_actions WHERE target_id = ? ORDER BY id DESC LIMIT ?",
+                (target_id, limit),
+            ).fetchall()]
+    return record

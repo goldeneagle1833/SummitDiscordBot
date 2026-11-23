@@ -27,7 +27,9 @@ with the blocked / reported player and whoever pressed it; anyone who presses
 it later (on that alert or any other alert about the same player) is added to
 the same chat. The player only ever sees a neutral intro, never who reported
 or blocked them. A **Close chat** button in the chat removes the player and
-renames the channel ``closed-...`` so moderators keep the history.
+renames the channel ``closed-...`` so moderators keep the history. When a
+chat opens, the mod channel (never the chat) gets a summary of every report,
+block and past action against the player.
 """
 
 import datetime
@@ -48,6 +50,7 @@ from repositories.moderation_repo import (
     get_history_counts,
     get_open_group_chat,
     get_pending_web_pairing_blocks,
+    get_player_record,
     get_profile_name,
     get_report,
     get_unsent_blocks,
@@ -80,6 +83,8 @@ SOURCE_LABELS = {"sorcery-online": "Play Sorcery Online"}
 # Bruce's moderator channel; config.MODERATION_ALERT_CHANNEL_ID overrides it
 # (set it to 0 to turn the channel copy off).
 DEFAULT_ALERT_CHANNEL_ID = 1574423902254530713
+# Bruce's private category for group chats; config.MODERATION_CHAT_CATEGORY_ID overrides it.
+DEFAULT_CHAT_CATEGORY_ID = 1574425023563825192
 CHAT_CATEGORY_NAME = "Mod Chats"
 CHAT_PREFIX = "modchat:"
 CHAT_CLOSE_ID = "modchat-close"
@@ -541,7 +546,7 @@ def chat_intro_embed(player_name: str, kind: str) -> discord.Embed:
 
 async def _chat_category(guild):
     """The private category for group chats: config id, else "Mod Chats", made if missing."""
-    cat_id = int(getattr(config, "MODERATION_CHAT_CATEGORY_ID", 0) or 0)
+    cat_id = int(getattr(config, "MODERATION_CHAT_CATEGORY_ID", DEFAULT_CHAT_CATEGORY_ID) or 0)
     if cat_id:
         category = guild.get_channel(cat_id)
         if category is not None:
@@ -566,13 +571,105 @@ async def _member(guild, user_id):
     return member
 
 
-async def _post_to_mod_channel(client, text: str):
+def _short_date(value) -> str:
+    return str(value or "")[:10] or "?"
+
+
+def _clip(text, n=120) -> str:
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= n else text[: n - 1] + "…"
+
+
+async def build_player_summary_embed(client, target_id, player_name: str, chat_channel) -> discord.Embed:
+    """Everything on record about the player, for the mod channel only.
+
+    It names reporters and blockers, so it is never posted in the chat itself.
+    """
+    record = get_player_record(target_id)
+    embed = discord.Embed(
+        title=f"Player summary: {player_name}",
+        description=(
+            f"Group chat: {chat_channel.mention}\n"
+            f"{record['report_total']} report(s) and {record['block_total']} block(s) against them in total."
+        ),
+        color=discord.Color.orange(),
+    )
+    reasons = {}
+    for report in record["reports"]:
+        for r in report["reasons"]:
+            label = REASON_LABELS.get(r, r)
+            reasons[label] = reasons.get(label, 0) + 1
+    if reasons:
+        common = sorted(reasons.items(), key=lambda kv: -kv[1])
+        embed.add_field(
+            name="Most reported for",
+            value="\n".join(f"- {label} ({n})" for label, n in common[:6])[:1024],
+            inline=False,
+        )
+    if record["reports"]:
+        lines = []
+        for report in record["reports"]:
+            who = report.get("reporter_name") or report["reporter_id"]
+            what = ", ".join(REASON_LABELS.get(r, r) for r in report["reasons"]) or "-"
+            line = f"**#{report['id']}** {_short_date(report['created_at'])} by {who}: {what}"
+            if report.get("details"):
+                line += f" · \"{_clip(report['details'], 80)}\""
+            lines.append(line)
+        more = record["report_total"] - len(record["reports"])
+        if more > 0:
+            lines.append(f"…and {more} older")
+        embed.add_field(name="Reports (newest first)", value=_join_lines(lines), inline=False)
+    if record["blocks"]:
+        lines = []
+        for block in record["blocks"]:
+            who = await resolve_name(client, block["user_id"])
+            lines.append(f"{_short_date(block['created_at'])} by {who}: {_clip(block.get('reason') or '-', 80)}")
+        more = record["block_total"] - len(record["blocks"])
+        if more > 0:
+            lines.append(f"…and {more} older")
+        embed.add_field(name="Blocks (newest first)", value=_join_lines(lines), inline=False)
+    if record["actions"]:
+        lines = []
+        for action in record["actions"]:
+            name = {"timeout": "Timeout", "ban": "Ban", "pairing_block": "Pairing block"}.get(
+                action["action"], str(action["action"]).replace("_", " ").capitalize()
+            )
+            length = action.get("duration_label") or (
+                format_duration(action["duration_minutes"]) if action.get("duration_minutes") else ""
+            )
+            bits = f"{_short_date(action['created_at'])} {name}"
+            if length:
+                bits += f" ({length})"
+            if action.get("by_name"):
+                bits += f" by {action['by_name']}"
+            if action.get("reason"):
+                bits += f": {_clip(action['reason'], 60)}"
+            lines.append(bits)
+        embed.add_field(name="Past actions", value=_join_lines(lines), inline=False)
+    if not (record["reports"] or record["blocks"] or record["actions"]):
+        embed.add_field(name="Record", value="Nothing on record yet.", inline=False)
+    embed.set_footer(text="Mod channel only. The player can't see this.")
+    return embed
+
+
+def _join_lines(lines) -> str:
+    """Join lines into one embed field (1024 max), dropping the tail if needed."""
+    out = []
+    for line in lines:
+        if len("\n".join(out + [line])) > 1000:
+            out.append("…")
+            break
+        out.append(line)
+    return "\n".join(out) or "-"
+
+
+async def _post_to_mod_channel(client, text: str, embed=None):
     channel_id = alert_channel_id()
     if not channel_id:
         return
     try:
         channel = client.get_channel(channel_id) or await client.fetch_channel(channel_id)
-        await channel.send(text, allowed_mentions=discord.AllowedMentions.none())
+        await channel.send(text, embed=embed, allowed_mentions=discord.AllowedMentions.none())
     except Exception as e:
         logger.warning(f"Moderation: could not post to mod channel: {e}")
 
@@ -663,8 +760,13 @@ async def open_or_join_group_chat(client, *, target_id, kind, ref, moderator) ->
         )
     except Exception as e:
         logger.error(f"Group chat opened but not logged: {e}", exc_info=True)
+    try:
+        summary = await build_player_summary_embed(client, target_id, player_name, channel)
+    except Exception as e:
+        logger.error(f"Group chat summary failed: {e}", exc_info=True)
+        summary = None
     await _post_to_mod_channel(
-        client, f"**{by}** opened a group chat with **{player_name}** ({tag}): {channel.mention}"
+        client, f"**{by}** opened a group chat with **{player_name}** ({tag}): {channel.mention}", embed=summary
     )
     return True, f"Opened a private chat with {player_name}: {channel.mention}"
 

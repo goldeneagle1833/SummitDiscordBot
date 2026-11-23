@@ -52,7 +52,7 @@ SUMMIT_GUILD_ID = 000000000000000000  # Same as GUILD_ID for testing
 # Moderator channel that also gets every block/report alert (0 turns it off;
 # defaults to the Summit mod channel)
 # MODERATION_ALERT_CHANNEL_ID = 000000000000000000
-# Private category for "Group chat" channels (defaults to finding/making "Mod Chats")
+# Private category for "Group chat" channels (defaults to the Summit one, else finds/makes "Mod Chats")
 # MODERATION_CHAT_CATEGORY_ID = 000000000000000000
 LEADER_ROLE_ID = 000000000000000000  # Create test roles in your test server
 FART_PLAYER_ROLE_ID = 000000000000000000  # Given to anyone who uses a fart game command

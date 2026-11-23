@@ -647,3 +647,49 @@ async def test_close_chat_removes_the_player_and_keeps_history():
     # A new press after closing starts a fresh chat
     await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="report", ref="2", moderator=mod2)
     assert guild.create_text_channel.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_opening_a_chat_posts_the_players_record_in_the_mod_channel_only():
+    create_moderation_tables()
+    _report(reasons=["toxic"], details="called me names")
+    _report(reasons=["toxic", "slow"], details="")
+    _block(REPORTER, REPORTED, reason="no show twice")
+    client, guild, channel, granted, player, mod1, mod2, modch = _chat_world()
+
+    await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="report", ref="2", moderator=mod1)
+
+    summary = modch.send.await_args.kwargs["embed"]
+    text = summary.title + summary.description + str([(f.name, f.value) for f in summary.fields])
+    assert summary.title == "Player summary: Opponent"
+    assert "2 report(s) and 1 block(s)" in summary.description
+    assert "Reporter" in text and "called me names" in text and "no show twice" in text
+    assert "<#777>" in summary.description
+    # The chat itself never gets the summary or the reporter's name
+    for call in channel.send.await_args_list:
+        embed = call.kwargs.get("embed")
+        assert embed is None or "Reporter" not in (embed.description or "")
+
+    # Joining later doesn't post the summary again
+    modch.send.reset_mock()
+    await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="report", ref="2", moderator=mod2)
+    assert modch.send.await_args.kwargs.get("embed") is None
+
+
+@pytest.mark.asyncio
+async def test_chats_go_in_the_summit_category_by_default():
+    create_moderation_tables()
+    client, guild, channel, *_rest = _chat_world()
+    mod1 = _rest[2]
+    category = MagicMock()
+    guild.get_channel.side_effect = lambda cid: category if cid == mod.DEFAULT_CHAT_CATEGORY_ID else None
+    with patch.object(mod, "config", MagicMock(spec=["SUMMIT_GUILD_ID", "OWNER_ID"], SUMMIT_GUILD_ID=GUILD, OWNER_ID=OWNER)):
+        await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="report", ref="1", moderator=mod1)
+    assert guild.create_text_channel.await_args.kwargs["category"] is category
+    guild.create_category.assert_not_awaited()
+
+
+def test_summary_field_stays_under_discords_limit():
+    lines = [f"line {i} " + "x" * 90 for i in range(30)]
+    joined = mod._join_lines(lines)
+    assert len(joined) <= 1024 and joined.endswith("…")

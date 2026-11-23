@@ -819,3 +819,70 @@ async def test_weekly_summary_posts_on_monday_once():
     assert embed.title.startswith("Weekly mod summary")
     assert fields["Reports"] == "1" and fields["Blocks"] == "1"
     assert "2 report(s)/block(s)" in fields["Most reported this week"]
+
+
+# ── website requests ─────────────────────────────────────────────────
+
+
+def test_player_kind_buttons_round_trip_and_start_with_an_empty_reason():
+    for item in (mod.PersistentModerationButton("ban", REPORTED, "player", "web"),
+                 mod.PersistentGroupChatButton(REPORTED, "player", "web")):
+        assert type(item).__discord_ui_compiled_template__.fullmatch(item.item.custom_id)
+    assert mod.PersistentModerationButton("timeout", REPORTED, "player", "web")._player_reason() == ""
+
+
+@pytest.mark.asyncio
+async def test_website_summary_request_posts_summary_with_buttons_once():
+    create_moderation_tables()
+    _report()
+    conn = sqlite3.connect("match_records.db")
+    conn.execute("INSERT INTO moderation_summary_requests (target_id, requested_by_name) VALUES (?, 'Bruce')",
+                 (str(REPORTED),))
+    conn.commit()
+    conn.close()
+    bot, owner = _bot()
+    cog = _cog(bot)
+    await cog.run_once()
+    calls = [c for c in bot.mod_channel.send.await_args_list if c.args and "Mod Tools page" in c.args[0]]
+    assert len(calls) == 1
+    assert calls[0].kwargs["embed"].title.startswith("Player summary")
+    labels = [getattr(c, "item", c).label for c in calls[0].kwargs["view"].children]
+    assert labels[:5] == ["Timeout", "Ban", "Pairing Block", "Group chat", "Note"]
+    await cog.run_once()
+    calls = [c for c in bot.mod_channel.send.await_args_list if c.args and "Mod Tools page" in c.args[0]]
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_website_match_flips_use_correct_match_and_record_the_outcome():
+    create_moderation_tables()
+    conn = sqlite3.connect("match_records.db")
+    conn.execute("INSERT INTO moderation_match_flips (match_id, target_id, requested_by_name) VALUES (9, ?, 'Bruce')",
+                 (str(REPORTED),))
+    conn.execute("INSERT INTO moderation_match_flips (match_id, target_id, requested_by_name) VALUES (4, ?, 'Bruce')",
+                 (str(REPORTED),))
+    conn.commit()
+    conn.close()
+    bot, owner = _bot()
+    bot.get_cog.return_value.update_leaderboard = AsyncMock()
+    cog = _cog(bot)
+    calls = []
+
+    def fake_correct(match_id):
+        calls.append(match_id)
+        if match_id == 9:
+            raise ValueError("Match ID #9 is from an ended season and can't be changed.")
+        return {"new_winner_name": "Reporter", "original_winner_name": "Opponent",
+                "new_loser_name": "Opponent", "original_loser_name": "Reporter", "recalculated_count": 3}
+
+    with patch("utils.database.correct_match_record", side_effect=fake_correct):
+        assert await cog.run_match_flips() == 2
+    assert calls == [4, 9]  # oldest match first
+    conn = sqlite3.connect("match_records.db")
+    rows = dict(conn.execute("SELECT match_id, status FROM moderation_match_flips").fetchall())
+    conn.close()
+    assert rows == {4: "done", 9: "error"}
+    text = bot.mod_channel.send.await_args.args[0]
+    assert "Winner is now Reporter" in text and "ended season" in text
+    bot.get_cog.return_value.update_leaderboard.assert_awaited()
+    assert await cog.run_match_flips() == 0

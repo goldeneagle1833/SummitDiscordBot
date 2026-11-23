@@ -54,10 +54,13 @@ from repositories.moderation_repo import (
     add_moderation_note,
     block_key,
     count_recent_complaints,
+    finish_match_flip,
     close_group_chat,
     get_group_chat_by_channel,
     get_history_counts,
     get_open_group_chat,
+    get_pending_match_flips,
+    get_pending_summary_requests,
     get_pending_web_pairing_blocks,
     get_player_record,
     get_profile_name,
@@ -69,6 +72,7 @@ from repositories.moderation_repo import (
     log_moderation_action,
     mark_alerted,
     mark_flagged,
+    mark_summary_done,
     mark_weekly_sent,
     recently_flagged,
     mark_bot_done,
@@ -93,6 +97,9 @@ DEFAULT_TIMEOUT_MINUTES = 1440
 TIMEOUT_LABELS = dict(TIMEOUT_CHOICES)
 
 SOURCE_LABELS = {"sorcery-online": "Play Sorcery Online"}
+
+# Alerts that aren't about one report or block (website summary, repeat flag)
+KIND_PLAYER = "player"
 
 # Bruce's moderator channel; config.MODERATION_ALERT_CHANNEL_ID overrides it
 # (set it to 0 to turn the channel copy off).
@@ -451,7 +458,7 @@ BUTTON_LABELS = {"timeout": "Timeout", "ban": "Ban", "pblock": "Pairing Block"}
 
 class PersistentModerationButton(
     discord.ui.DynamicItem[discord.ui.Button],
-    template=r"mod:(?P<action>timeout|ban|pblock):(?P<target>\d+):(?P<kind>block|report):(?P<ref>[\w-]*)",
+    template=r"mod:(?P<action>timeout|ban|pblock):(?P<target>\d+):(?P<kind>block|report|player):(?P<ref>[\w-]*)",
 ):
     """Timeout / Ban button on a block or report DM.
 
@@ -521,6 +528,8 @@ class PersistentModerationButton(
                 labels = [REASON_LABELS.get(r, r).replace("Opponent ", "") for r in report["reasons"]]
                 return "Reported after a match: " + "; ".join(labels)
             return "Reported after a match"
+        if self.kind == KIND_PLAYER:
+            return ""
         return "Blocked by other players"
 
 
@@ -741,7 +750,7 @@ async def open_or_join_group_chat(client, *, target_id, kind, ref, moderator) ->
 
     player_name = await resolve_name(client, target_id, _display(player))
     by = _display(moderator)
-    tag = f"report #{ref}" if kind == KIND_REPORT else "block"
+    tag = {KIND_REPORT: f"report #{ref}", KIND_BLOCK: "block"}.get(kind, "from a player summary")
 
     try:
         existing = get_open_group_chat(target_id)
@@ -817,7 +826,7 @@ async def open_or_join_group_chat(client, *, target_id, kind, ref, moderator) ->
 
 class PersistentGroupChatButton(
     discord.ui.DynamicItem[discord.ui.Button],
-    template=r"modchat:(?P<target>\d+):(?P<kind>block|report):(?P<ref>[\w-]*)",
+    template=r"modchat:(?P<target>\d+):(?P<kind>block|report|player):(?P<ref>[\w-]*)",
 ):
     """Group chat button on a block / report alert."""
 
@@ -1125,6 +1134,8 @@ class ModerationAlertsCog(commands.Cog):
     async def run_once(self) -> int:
         """Send every unsent block and report. Returns how many were sent."""
         await self.follow_up_web_pairing_blocks()
+        await self.post_requested_summaries()
+        await self.run_match_flips()
         reports = get_unsent_reports()
         blocks = get_unsent_blocks()
         if not reports and not blocks:
@@ -1158,6 +1169,88 @@ class ModerationAlertsCog(commands.Cog):
                 logger.warning(f"Repeat-offender check failed for {target_id}: {e}")
         return count
 
+    async def post_requested_summaries(self) -> int:
+        """Player summaries a moderator asked for from the website's Mod Tools page."""
+        pending = get_pending_summary_requests()
+        if not pending:
+            return 0
+        channel = await self._mod_channel()
+        for row in pending:
+            try:
+                if channel is not None:
+                    name = await resolve_name(self.bot, row["target_id"])
+                    embed = await build_player_summary_embed(self.bot, row["target_id"], name)
+                    who = row.get("requested_by_name") or "A moderator"
+                    await channel.send(
+                        f"**{who}** sent this from the website's Mod Tools page.",
+                        embed=embed,
+                        view=moderation_view(row["target_id"], KIND_PLAYER, "web"),
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+            except Exception as e:
+                logger.warning(f"Summary request {row['id']} failed: {e}")
+            mark_summary_done(row["id"])
+        return len(pending)
+
+    async def run_match_flips(self) -> int:
+        """Match results an admin flipped from the website's Mod Tools page.
+
+        Same as ``!correct_match``: the winner and loser swap and every later
+        rated game of both players is recalculated.
+        """
+        pending = get_pending_match_flips()
+        if not pending:
+            return 0
+        from utils.database import correct_match_record
+
+        done: dict[tuple, list[str]] = {}
+        for row in pending:
+            by = row.get("requested_by_name") or "an admin"
+            lines = done.setdefault((row["target_id"], by), [])
+            try:
+                result = correct_match_record(int(row["match_id"]))
+            except ValueError as e:
+                finish_match_flip(row["id"], "error", str(e))
+                lines.append(f"#{row['match_id']}: not changed ({e})")
+                continue
+            except Exception as e:
+                logger.error(f"Match flip #{row['match_id']} failed: {e}", exc_info=True)
+                finish_match_flip(row["id"], "error", f"Something went wrong: {e}")
+                lines.append(f"#{row['match_id']}: not changed (error)")
+                continue
+            text = (
+                f"Winner is now {result['new_winner_name']} (was {result['original_winner_name']}); "
+                f"{result['recalculated_count']} later games recalculated"
+            )
+            finish_match_flip(row["id"], "done", text)
+            lines.append(f"#{row['match_id']}: {text}")
+            try:
+                log_admin_action(
+                    row.get("requested_by_id") or 0, by, "correct_match",
+                    target_id=row["match_id"],
+                    previous_state={"winner_name": result["original_winner_name"],
+                                    "loser_name": result["original_loser_name"]},
+                    new_state={"winner_name": result["new_winner_name"],
+                               "loser_name": result["new_loser_name"],
+                               "recalculated_matches": result["recalculated_count"]},
+                    details=f"Flipped match #{row['match_id']} from the Mod Tools page",
+                )
+            except Exception as e:
+                logger.error(f"Match flip done but not logged: {e}", exc_info=True)
+        lfg = self.bot.get_cog("LFGCog")
+        if lfg is not None and hasattr(lfg, "update_leaderboard"):
+            try:
+                await lfg.update_leaderboard()
+            except Exception as e:
+                logger.warning(f"Leaderboard refresh after match flips failed: {e}")
+        for (target_id, by), lines in done.items():
+            name = await resolve_name(self.bot, target_id)
+            await _post_to_mod_channel(
+                self.bot,
+                f"**{by}** flipped match results for **{name}** from the website:\n" + _join_lines(lines),
+            )
+        return len(pending)
+
     async def check_repeat_offender(self, target_id, recipients=None, channel=None) -> bool:
         """Warn the mod channel when a player passes the reports+blocks threshold.
 
@@ -1174,7 +1267,7 @@ class ModerationAlertsCog(commands.Cog):
             title=f"Heads-up: {name} has {n} reports/blocks in the last {days} days",
         )
         embed.color = discord.Color.red()
-        view = moderation_view(target_id, KIND_BLOCK, "repeat")
+        view = moderation_view(target_id, KIND_PLAYER, "repeat")
         if channel is not None:
             await self._deliver([], embed, view, channel)
         else:

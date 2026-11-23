@@ -114,6 +114,31 @@ def create_moderation_tables():
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_moderation_notes_target ON moderation_notes (target_id)
         """)
+        # Website Mod Tools page asks the bot to post a player summary in the mod
+        # channel, and (admins) to flip match results; the bot works the queue.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS moderation_summary_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_id TEXT NOT NULL,
+                requested_by_id TEXT,
+                requested_by_name TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                done_at TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS moderation_match_flips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id INTEGER NOT NULL,
+                target_id TEXT NOT NULL,
+                requested_by_id TEXT,
+                requested_by_name TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                result TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                done_at TEXT
+            )
+        """)
         for col in ("transcript TEXT", "message_count INTEGER"):
             try:
                 conn.execute(f"ALTER TABLE moderation_group_chats ADD COLUMN {col}")
@@ -537,3 +562,41 @@ def get_weekly_stats(days: int = 7) -> dict:
             (since,),
         ).fetchone()[0]
     return stats
+
+
+# ── website requests (summary posts, match flips) ──
+
+
+def get_pending_summary_requests(limit: int = 10) -> list[dict]:
+    with _get_connection() as conn:
+        if not _table_exists(conn, "moderation_summary_requests"):
+            return []
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM moderation_summary_requests WHERE done_at IS NULL ORDER BY id LIMIT ?", (limit,)
+        ).fetchall()]
+
+
+def mark_summary_done(request_id: int):
+    with _get_connection() as conn:
+        conn.execute(
+            "UPDATE moderation_summary_requests SET done_at = datetime('now') WHERE id = ?", (int(request_id),)
+        )
+
+
+def get_pending_match_flips(limit: int = 25) -> list[dict]:
+    """Pending flips, oldest match first (so each replay builds on the last)."""
+    with _get_connection() as conn:
+        if not _table_exists(conn, "moderation_match_flips"):
+            return []
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM moderation_match_flips WHERE status = 'pending' ORDER BY match_id, id LIMIT ?",
+            (limit,),
+        ).fetchall()]
+
+
+def finish_match_flip(flip_id: int, status: str, result: str):
+    with _get_connection() as conn:
+        conn.execute(
+            "UPDATE moderation_match_flips SET status = ?, result = ?, done_at = datetime('now') WHERE id = ?",
+            (status, result, int(flip_id)),
+        )

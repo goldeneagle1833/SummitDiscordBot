@@ -1956,6 +1956,70 @@ def nav_picks_summary():
     return jsonify({"success": True, "saves": saves, "profiles": total})
 
 
+# Queue settings players set in profile Queue Settings or with bot commands.
+# Each table only stores players who changed the setting from its default.
+_QUEUE_SETTING_TABLES = (
+    # key, label, table, default_on
+    ("voice_only", "Voice-only player", "voice_only_players", False),
+    ("tag_me", "Tag me", "no_tag_players", True),
+    ("skill_match", "Skill matching (test)", "skill_match_players", False),
+)
+
+
+@admin_bp.route("/admin/queue-settings", methods=["GET"])
+@require_admin
+def queue_settings_summary():
+    """How many players have each Discord queue setting on or off (admin only).
+
+    Players count = Discord players with a rating row in elo.db. Everyone who
+    never changed a setting has its default, so "changed" rows come from the
+    setting's table and the rest are counted at the default.
+    """
+    try:
+        econn = sqlite3.connect(str(ELO_DB_PATH))
+        try:
+            ids = {
+                str(r[0]) for r in econn.execute("SELECT user_id FROM overall_standings")
+                if str(r[0]).isdigit()
+            }
+        finally:
+            econn.close()
+    except sqlite3.OperationalError:
+        ids = set()
+
+    resolve_name = _player_name_resolver()
+    week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+    conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    settings = []
+    try:
+        for key, label, table, default_on in _QUEUE_SETTING_TABLES:
+            try:
+                rows = conn.execute(
+                    f"SELECT user_id, set_at, source FROM {table} ORDER BY set_at DESC"
+                ).fetchall()
+            except sqlite3.OperationalError:
+                rows = []  # table not created yet
+            changed = [str(r[0]) for r in rows]
+            total = len(ids | set(changed))
+            on = total - len(changed) if default_on else len(changed)
+            settings.append({
+                "key": key,
+                "label": label,
+                "default_on": default_on,
+                "on": on,
+                "off": total - on,
+                "changed_last_7_days": sum(1 for r in rows if (r[1] or "") >= week_ago),
+                # The players who changed it from the default (newest first)
+                "players": [
+                    {"user_id": str(r[0]), "name": resolve_name(str(r[0])), "set_at": r[1], "source": r[2]}
+                    for r in rows[:200]
+                ],
+            })
+    finally:
+        conn.close()
+    return jsonify({"success": True, "players": len(ids), "settings": settings})
+
+
 @admin_bp.route("/admin/data-exports", methods=["GET"])
 @require_admin
 def data_exports_summary():

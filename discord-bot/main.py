@@ -32,7 +32,12 @@ from cogs.content_monitor import ContentMonitorCog
 from cogs.health_monitor import HealthMonitorCog
 from cogs.pairing_bans import PairingBanCog
 from cogs.precon_ladder import PreconLadderCog
-from cogs.moderation_alerts import ModerationAlertsCog, PersistentModerationButton
+from cogs.moderation_alerts import (
+    ModerationAlertsCog,
+    PersistentCloseChatButton,
+    PersistentGroupChatButton,
+    PersistentModerationButton,
+)
 from repositories.moderation_repo import create_moderation_tables
 from repositories.pairing_bans_repo import create_pairing_bans_table
 from repositories.voice_only_repo import create_voice_only_table
@@ -236,6 +241,7 @@ async def main():
             PersistentMatchCardReportButton, PersistentMatchCardCancelButton,
             PersistentPSOConfirmButton, PersistentPSODisputeButton,
             PersistentReportPlayerButton, PersistentModerationButton,
+            PersistentGroupChatButton, PersistentCloseChatButton,
             PersistentKudosButton,
         )
         await setup_cogs()

@@ -19,6 +19,15 @@ reasoning is DMed to the player. Every action is logged to
 ``moderation_actions`` (shown on the website's admin panel) and the admin
 audit log. Pairing blocks set from the website are followed up here too:
 the player is pulled out of the LFG queue and DMed.
+
+The same alert is also posted in the moderator channel
+(``MODERATION_ALERT_CHANNEL_ID``). Every alert has a **Group chat** button:
+the first press makes a private channel in a private "Mod Chats" category
+with the blocked / reported player and whoever pressed it; anyone who presses
+it later (on that alert or any other alert about the same player) is added to
+the same chat. The player only ever sees a neutral intro, never who reported
+or blocked them. A **Close chat** button in the chat removes the player and
+renames the channel ``closed-...`` so moderators keep the history.
 """
 
 import datetime
@@ -34,15 +43,20 @@ from repositories.moderation_repo import (
     KIND_BLOCK,
     KIND_REPORT,
     block_key,
+    close_group_chat,
+    get_group_chat_by_channel,
     get_history_counts,
+    get_open_group_chat,
     get_pending_web_pairing_blocks,
     get_profile_name,
     get_report,
     get_unsent_blocks,
     get_unsent_reports,
+    is_site_moderator,
     log_moderation_action,
     mark_alerted,
     mark_bot_done,
+    save_group_chat,
 )
 from repositories.pairing_bans_repo import BAN_DURATIONS, get_pairing_ban
 
@@ -63,11 +77,27 @@ TIMEOUT_LABELS = dict(TIMEOUT_CHOICES)
 
 SOURCE_LABELS = {"sorcery-online": "Play Sorcery Online"}
 
+# Bruce's moderator channel; config.MODERATION_ALERT_CHANNEL_ID overrides it
+# (set it to 0 to turn the channel copy off).
+DEFAULT_ALERT_CHANNEL_ID = 1574423902254530713
+CHAT_CATEGORY_NAME = "Mod Chats"
+CHAT_PREFIX = "modchat:"
+CHAT_CLOSE_ID = "modchat-close"
+
 
 def alert_recipient_ids() -> list[int]:
     """Who gets the DMs: MODERATION_ALERT_USER_IDS, else the owner."""
     ids = getattr(config, "MODERATION_ALERT_USER_IDS", None) or [getattr(config, "OWNER_ID", 0)]
     return [int(i) for i in ids if i]
+
+
+def alert_channel_id() -> int:
+    """The moderator channel that gets a copy of every alert (0 = none)."""
+    value = getattr(config, "MODERATION_ALERT_CHANNEL_ID", DEFAULT_ALERT_CHANNEL_ID)
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _guild_id() -> int:
@@ -80,9 +110,14 @@ def is_discord_id(value) -> bool:
 
 
 def can_moderate(client, user) -> bool:
-    """The alert recipients, plus server admins / Bot Admin / Judge."""
+    """The alert recipients, website moderators, and server admins / Bot Admin / Judge."""
     if user.id in alert_recipient_ids():
         return True
+    try:
+        if is_site_moderator(user.id):
+            return True
+    except Exception as e:
+        logger.warning(f"Moderator list check failed: {e}")
     guild = client.get_guild(_guild_id()) if client else None
     member = guild.get_member(user.id) if guild else None
     if member is None:
@@ -306,7 +341,7 @@ class ModerationReasonModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         if not can_moderate(interaction.client, interaction.user):
-            await interaction.response.send_message("Only admins can do this.", ephemeral=True)
+            await interaction.response.send_message("Only admins and moderators can do this.", ephemeral=True)
             return
         await interaction.response.defer()
         ok, message = await perform_moderation(
@@ -413,7 +448,9 @@ class PersistentModerationButton(
 
     async def callback(self, interaction: discord.Interaction):
         if not can_moderate(interaction.client, interaction.user):
-            await interaction.response.send_message("Only admins can use these buttons.", ephemeral=True)
+            await interaction.response.send_message(
+                "Only admins and moderators can use these buttons.", ephemeral=True
+            )
             return
         if self.action == "pblock":
             if interaction.client.get_cog("PairingBanCog") is None:
@@ -458,6 +495,255 @@ class PersistentModerationButton(
         return "Blocked by other players"
 
 
+# ── group chat ───────────────────────────────────────────────────────
+
+
+CHAT_MEMBER_PERMS = dict(
+    view_channel=True, send_messages=True, read_message_history=True,
+    attach_files=True, embed_links=True, add_reactions=True,
+)
+
+
+def can_open_group_chat(client, interaction) -> bool:
+    """Anyone pressing it in the moderator channel (only mods can see it),
+    plus everyone who can use the other alert buttons."""
+    channel_id = alert_channel_id()
+    if channel_id and getattr(interaction, "channel_id", None) == channel_id:
+        return True
+    return can_moderate(client, interaction.user)
+
+
+def chat_channel_name(player_name: str) -> str:
+    slug = "".join(c if c.isalnum() else "-" for c in str(player_name).lower())
+    slug = "-".join(part for part in slug.split("-") if part)[:80] or "player"
+    return f"mod-chat-{slug}"
+
+
+def chat_intro_embed(player_name: str, kind: str) -> discord.Embed:
+    """What the player sees when the chat opens. Never names who reported or blocked them."""
+    about = (
+        "a player report from one of your recent matches"
+        if kind == KIND_REPORT
+        else "some of your recent games"
+    )
+    embed = discord.Embed(
+        title="A Summit moderator would like to talk with you",
+        description=(
+            f"Hi {player_name}, a moderator from the Sorcerers Summit would like to chat about {about}.\n\n"
+            "This channel is private: only you and the Summit moderators in it can see it. "
+            "Please reply here when you get a chance."
+        ),
+        color=discord.Color.blurple(),
+    )
+    embed.set_footer(text="Moderators: press Close chat when you're done.")
+    return embed
+
+
+async def _chat_category(guild):
+    """The private category for group chats: config id, else "Mod Chats", made if missing."""
+    cat_id = int(getattr(config, "MODERATION_CHAT_CATEGORY_ID", 0) or 0)
+    if cat_id:
+        category = guild.get_channel(cat_id)
+        if category is not None:
+            return category
+    for category in getattr(guild, "categories", []) or []:
+        if str(category.name).lower() == CHAT_CATEGORY_NAME.lower():
+            return category
+    return await guild.create_category(
+        CHAT_CATEGORY_NAME,
+        overwrites={
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            guild.me: discord.PermissionOverwrite(view_channel=True, manage_channels=True),
+        },
+        reason="Private category for moderator group chats",
+    )
+
+
+async def _member(guild, user_id):
+    member = guild.get_member(int(user_id))
+    if member is None:
+        member = await guild.fetch_member(int(user_id))
+    return member
+
+
+async def _post_to_mod_channel(client, text: str):
+    channel_id = alert_channel_id()
+    if not channel_id:
+        return
+    try:
+        channel = client.get_channel(channel_id) or await client.fetch_channel(channel_id)
+        await channel.send(text, allowed_mentions=discord.AllowedMentions.none())
+    except Exception as e:
+        logger.warning(f"Moderation: could not post to mod channel: {e}")
+
+
+async def open_or_join_group_chat(client, *, target_id, kind, ref, moderator) -> tuple[bool, str]:
+    """Make the player's private chat (or reuse the open one) and add ``moderator``.
+
+    Returns (ok, message for the moderator).
+    """
+    guild = client.get_guild(_guild_id())
+    if guild is None:
+        return False, "I can't find the Summit server right now. Try again in a minute."
+    if int(target_id) == int(moderator.id):
+        return False, "You can't open a group chat with yourself."
+    try:
+        player = await _member(guild, target_id)
+    except discord.NotFound:
+        return False, "They're not in the Summit server any more, so I can't add them to a chat."
+    except discord.HTTPException as e:
+        return False, f"Discord returned an error: {e}"
+    try:
+        mod_member = await _member(guild, moderator.id)
+    except discord.HTTPException:
+        return False, "You need to be in the Summit server to join the chat."
+
+    player_name = await resolve_name(client, target_id, _display(player))
+    by = _display(moderator)
+    tag = f"report #{ref}" if kind == KIND_REPORT else "block"
+
+    try:
+        existing = get_open_group_chat(target_id)
+        channel = guild.get_channel(int(existing["channel_id"])) if existing else None
+        if existing and channel is None:
+            # Someone deleted the channel by hand; start a fresh one.
+            close_group_chat(existing["channel_id"], "channel deleted")
+            existing = None
+
+        if channel is not None:
+            overwrite = channel.overwrites_for(mod_member)
+            if overwrite.view_channel:
+                return True, f"You're already in the chat with {player_name}: {channel.mention}"
+            await channel.set_permissions(
+                mod_member, overwrite=discord.PermissionOverwrite(**CHAT_MEMBER_PERMS),
+                reason=f"Moderator joined group chat ({tag})",
+            )
+            await channel.send(f"{mod_member.mention} joined the chat.")
+            await _post_to_mod_channel(
+                client, f"**{by}** joined the group chat with **{player_name}** ({tag}): {channel.mention}"
+            )
+            return True, f"Added you to the chat with {player_name}: {channel.mention}"
+
+        category = await _chat_category(guild)
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            guild.me: discord.PermissionOverwrite(manage_channels=True, **CHAT_MEMBER_PERMS),
+            player: discord.PermissionOverwrite(**CHAT_MEMBER_PERMS),
+            mod_member: discord.PermissionOverwrite(**CHAT_MEMBER_PERMS),
+        }
+        channel = await guild.create_text_channel(
+            chat_channel_name(player_name),
+            category=category,
+            overwrites=overwrites,
+            reason=f"Moderator group chat with {player_name} ({tag}, opened by {by})",
+        )
+        save_group_chat(
+            target_id=target_id, channel_id=channel.id, source_kind=kind, source_ref=ref,
+            opened_by_id=moderator.id, opened_by_name=by,
+        )
+        view = discord.ui.View(timeout=None)
+        view.add_item(PersistentCloseChatButton())
+        await channel.send(
+            content=f"{player.mention} {mod_member.mention}",
+            embed=chat_intro_embed(player_name, kind),
+            view=view,
+        )
+    except discord.Forbidden:
+        return False, (
+            "Discord refused. The bot needs the Manage Channels and Manage Roles permissions "
+            "to make the private chat."
+        )
+    except discord.HTTPException as e:
+        return False, f"Discord returned an error: {e}"
+
+    try:
+        log_admin_action(
+            moderator.id, by, "moderation_group_chat",
+            target_id=target_id, target_name=player_name, details=f"{tag}, channel {channel.id}",
+        )
+    except Exception as e:
+        logger.error(f"Group chat opened but not logged: {e}", exc_info=True)
+    await _post_to_mod_channel(
+        client, f"**{by}** opened a group chat with **{player_name}** ({tag}): {channel.mention}"
+    )
+    return True, f"Opened a private chat with {player_name}: {channel.mention}"
+
+
+class PersistentGroupChatButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"modchat:(?P<target>\d+):(?P<kind>block|report):(?P<ref>[\w-]*)",
+):
+    """Group chat button on a block / report alert."""
+
+    def __init__(self, target_id: int, kind: str, ref: str = ""):
+        self.target_id = int(target_id)
+        self.kind = kind
+        self.ref = str(ref or "")
+        super().__init__(
+            discord.ui.Button(
+                label="Group chat",
+                style=discord.ButtonStyle.primary,
+                custom_id=f"{CHAT_PREFIX}{self.target_id}:{kind}:{self.ref}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match["target"]), match["kind"], match["ref"])
+
+    async def callback(self, interaction: discord.Interaction):
+        if not can_open_group_chat(interaction.client, interaction):
+            await interaction.response.send_message("Only moderators can use this button.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        ok, message = await open_or_join_group_chat(
+            interaction.client, target_id=self.target_id, kind=self.kind, ref=self.ref,
+            moderator=interaction.user,
+        )
+        await interaction.followup.send(message if ok else f"Not done: {message}", ephemeral=True)
+
+
+class PersistentCloseChatButton(discord.ui.DynamicItem[discord.ui.Button], template=r"modchat-close"):
+    """Close chat button inside a group chat. Any moderator in the chat can press it."""
+
+    def __init__(self):
+        super().__init__(
+            discord.ui.Button(label="Close chat", style=discord.ButtonStyle.secondary, custom_id=CHAT_CLOSE_ID)
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls()
+
+    async def callback(self, interaction: discord.Interaction):
+        channel = interaction.channel
+        chat = get_group_chat_by_channel(getattr(channel, "id", 0))
+        if chat is None or chat.get("closed_at"):
+            await interaction.response.send_message("This chat is already closed.", ephemeral=True)
+            return
+        if str(interaction.user.id) == str(chat["target_id"]):
+            await interaction.response.send_message("Only a moderator can close this chat.", ephemeral=True)
+            return
+        await interaction.response.defer()
+        by = _display(interaction.user)
+        try:
+            guild = channel.guild
+            player = guild.get_member(int(chat["target_id"])) or discord.Object(id=int(chat["target_id"]))
+            await channel.set_permissions(player, overwrite=None, reason=f"Group chat closed by {by}")
+            name = str(channel.name)
+            if not name.startswith("closed-"):
+                await channel.edit(name=f"closed-{name}"[:100], reason=f"Group chat closed by {by}")
+        except discord.HTTPException as e:
+            await interaction.followup.send(f"Not done: Discord returned an error: {e}", ephemeral=True)
+            return
+        close_group_chat(channel.id, by)
+        await interaction.followup.send(
+            f"Chat closed by **{by}**. The player can't see this channel any more; "
+            "moderators keep the history here. Delete the channel when you no longer need it."
+        )
+        await _post_to_mod_channel(interaction.client, f"**{by}** closed {channel.mention}.")
+
+
 def moderation_view(target_id, kind: str, ref) -> discord.ui.View:
     """Buttons for one alert. A non-Discord account gets only the admin link."""
     view = discord.ui.View(timeout=None)
@@ -465,6 +751,7 @@ def moderation_view(target_id, kind: str, ref) -> discord.ui.View:
         view.add_item(PersistentModerationButton("timeout", int(target_id), kind, str(ref or "")))
         view.add_item(PersistentModerationButton("ban", int(target_id), kind, str(ref or "")))
         view.add_item(PersistentModerationButton("pblock", int(target_id), kind, str(ref or "")))
+        view.add_item(PersistentGroupChatButton(int(target_id), kind, str(ref or "")))
     view.add_item(discord.ui.Button(label="Admin panel", style=discord.ButtonStyle.link, url=ADMIN_PAGE_URL))
     return view
 
@@ -553,8 +840,24 @@ class ModerationAlertsCog(commands.Cog):
                 logger.warning(f"Moderation alerts: can't find recipient {user_id}: {e}")
         return users
 
-    async def _deliver(self, recipients, embed, view) -> bool:
+    async def _mod_channel(self):
+        channel_id = alert_channel_id()
+        if not channel_id:
+            return None
+        try:
+            return self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+        except Exception as e:
+            logger.warning(f"Moderation alerts: can't find mod channel {channel_id}: {e}")
+            return None
+
+    async def _deliver(self, recipients, embed, view, channel=None) -> bool:
         sent = False
+        if channel is not None:
+            try:
+                await channel.send(embed=embed, view=view, allowed_mentions=discord.AllowedMentions.none())
+                sent = True
+            except Exception as e:
+                logger.warning(f"Moderation alerts: post to mod channel failed: {e}")
         for user in recipients:
             try:
                 await user.send(embed=embed, view=view)
@@ -596,7 +899,8 @@ class ModerationAlertsCog(commands.Cog):
         if not reports and not blocks:
             return 0
         recipients = await self._recipients()
-        if not recipients:
+        channel = await self._mod_channel()
+        if not recipients and channel is None:
             return 0
 
         count = 0
@@ -605,13 +909,13 @@ class ModerationAlertsCog(commands.Cog):
             view = moderation_view(report["reported_id"], KIND_REPORT, report["id"])
             # Mark as sent even if every DM failed, so one closed DM box
             # doesn't make the bot retry the same alert forever.
-            await self._deliver(recipients, embed, view)
+            await self._deliver(recipients, embed, view, channel)
             mark_alerted(KIND_REPORT, str(report["id"]))
             count += 1
         for block in blocks:
             embed = await build_block_embed(self.bot, block)
             view = moderation_view(block["blocked_user_id"], KIND_BLOCK, block["user_id"])
-            await self._deliver(recipients, embed, view)
+            await self._deliver(recipients, embed, view, channel)
             mark_alerted(KIND_BLOCK, block_key(block))
             count += 1
         return count

@@ -87,6 +87,20 @@ def create_moderation_tables():
             CREATE INDEX IF NOT EXISTS idx_moderation_actions_target
             ON moderation_actions (target_id)
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS moderation_group_chats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_id TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                source_kind TEXT,
+                source_ref TEXT,
+                opened_by_id TEXT,
+                opened_by_name TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                closed_at TEXT,
+                closed_by_name TEXT
+            )
+        """)
         if first_run:
             seeded = 0
             if _table_exists(conn, "blocked_users"):
@@ -275,3 +289,62 @@ def get_history_counts(target_id) -> dict:
                 "SELECT COUNT(*) FROM blocked_users WHERE blocked_user_id = ?", (target_id,)
             ).fetchone()[0]
         return {"reports": reports, "blocks": blocks}
+
+
+# ── group chats (private channel with the player + moderators who join) ──
+
+
+def get_open_group_chat(target_id) -> dict | None:
+    """The player's open group chat, if any. One open chat per player."""
+    with _get_connection() as conn:
+        if not _table_exists(conn, "moderation_group_chats"):
+            return None
+        row = conn.execute(
+            "SELECT * FROM moderation_group_chats WHERE target_id = ? AND closed_at IS NULL "
+            "ORDER BY id DESC LIMIT 1",
+            (str(target_id),),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_group_chat_by_channel(channel_id) -> dict | None:
+    with _get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM moderation_group_chats WHERE channel_id = ? ORDER BY id DESC LIMIT 1",
+            (str(channel_id),),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def save_group_chat(*, target_id, channel_id, source_kind, source_ref, opened_by_id, opened_by_name) -> int:
+    with _get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO moderation_group_chats "
+            "(target_id, channel_id, source_kind, source_ref, opened_by_id, opened_by_name) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (str(target_id), str(channel_id), source_kind, str(source_ref or ""),
+             str(opened_by_id), opened_by_name),
+        )
+        return cur.lastrowid
+
+
+def close_group_chat(channel_id, closed_by_name=None):
+    with _get_connection() as conn:
+        conn.execute(
+            "UPDATE moderation_group_chats SET closed_at = datetime('now'), closed_by_name = ? "
+            "WHERE channel_id = ? AND closed_at IS NULL",
+            (closed_by_name, str(channel_id)),
+        )
+
+
+def is_site_moderator(user_id) -> bool:
+    """Moderators Bruce adds on the website's Mod Tools page (by Discord ID).
+
+    The table belongs to the web app; until it exists nobody is listed.
+    """
+    with _get_connection() as conn:
+        if not _table_exists(conn, "moderators"):
+            return False
+        return conn.execute(
+            "SELECT 1 FROM moderators WHERE discord_user_id = ?", (str(user_id),)
+        ).fetchone() is not None

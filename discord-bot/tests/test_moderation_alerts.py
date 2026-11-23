@@ -22,6 +22,7 @@ from repositories.blocked_users_repo import create_blocked_users_table
 from repositories.moderation_repo import (
     create_moderation_tables,
     get_actions_for_target,
+    get_open_group_chat as get_open_chat,
     get_unsent_blocks,
     get_unsent_reports,
 )
@@ -31,6 +32,8 @@ OWNER = 111111111111111111
 REPORTED = 222222222222222222
 REPORTER = 333333333333333333
 GUILD = 444444444444444444
+MODCH = 555555555555555555
+MOD2 = 666666666666666666
 
 
 @pytest.fixture(autouse=True)
@@ -39,7 +42,9 @@ def _tables():
     create_blocked_users_table()
     with patch.object(mod.config, "OWNER_ID", OWNER, create=True), \
          patch.object(mod.config, "SUMMIT_GUILD_ID", GUILD, create=True), \
-         patch.object(mod.config, "MODERATION_ALERT_USER_IDS", None, create=True):
+         patch.object(mod.config, "MODERATION_ALERT_USER_IDS", None, create=True), \
+         patch.object(mod.config, "MODERATION_ALERT_CHANNEL_ID", MODCH, create=True), \
+         patch.object(mod.config, "MODERATION_CHAT_CATEGORY_ID", 0, create=True):
         yield
 
 
@@ -66,6 +71,10 @@ def _bot():
     owner = MagicMock(id=OWNER)
     owner.send = AsyncMock()
     bot.get_user.side_effect = lambda uid: owner if uid == OWNER else MagicMock(global_name=f"user{uid}")
+    channel = MagicMock(id=MODCH)
+    channel.send = AsyncMock()
+    bot.get_channel.side_effect = lambda cid: channel if cid == MODCH else None
+    bot.mod_channel = channel
     return bot, owner
 
 
@@ -99,13 +108,16 @@ async def test_each_new_report_and_block_is_dmed_once_with_buttons():
     assert report_embed.title.startswith("Player report #")
     assert "rude, toxic" in str(report_embed.fields).lower()
     labels = [getattr(c, "item", c).label for c in report_call.kwargs["view"].children]
-    assert labels == ["Timeout", "Ban", "Pairing Block", "Admin panel"]
+    assert labels == ["Timeout", "Ban", "Pairing Block", "Group chat", "Admin panel"]
     assert block_call.kwargs["embed"].title == "Player blocked"
     assert "no show twice" in str(block_call.kwargs["embed"].fields)
 
     # Second pass: nothing new
     assert await cog.run_once() == 0
     assert owner.send.await_count == 2
+    # The mod channel got the same two alerts
+    assert bot.mod_channel.send.await_count == 2
+    assert bot.mod_channel.send.await_args_list[0].kwargs["embed"] is report_embed
 
 
 @pytest.mark.asyncio
@@ -423,3 +435,215 @@ async def test_website_pairing_blocks_are_followed_up_once():
     pairing_cog._remove_from_queue.assert_awaited_once_with(REPORTED)
     assert "pairing service" in player.send.await_args.kwargs["embed"].title
     assert await cog.follow_up_web_pairing_blocks() == 0
+
+
+# ── mod channel copy ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_mod_channel_failing_still_dms_the_owner():
+    create_moderation_tables()
+    _report()
+    bot, owner = _bot()
+    bot.mod_channel.send.side_effect = discord.Forbidden(MagicMock(status=403), "no access")
+    cog = _cog(bot)
+    assert await cog.run_once() == 1
+    assert owner.send.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_channel_id_zero_turns_the_channel_copy_off():
+    create_moderation_tables()
+    _report()
+    bot, owner = _bot()
+    with patch.object(mod.config, "MODERATION_ALERT_CHANNEL_ID", 0):
+        assert await _cog(bot).run_once() == 1
+    assert owner.send.await_count == 1
+    bot.mod_channel.send.assert_not_awaited()
+
+
+def test_default_channel_is_the_summit_mod_channel():
+    with patch.object(mod, "config", MagicMock(spec=[])):
+        assert mod.alert_channel_id() == 1574423902254530713
+
+
+def test_website_moderators_can_use_the_buttons():
+    create_moderation_tables()
+    conn = sqlite3.connect("match_records.db")
+    conn.execute("CREATE TABLE IF NOT EXISTS moderators (discord_user_id TEXT PRIMARY KEY, display_name TEXT)")
+    conn.execute("INSERT OR IGNORE INTO moderators VALUES (?, 'Mod')", (str(MOD2),))
+    conn.commit()
+    conn.close()
+    client = MagicMock()
+    client.get_guild.return_value.get_member.return_value = None
+    assert mod.can_moderate(client, MagicMock(id=MOD2))
+    assert not mod.can_moderate(client, MagicMock(id=999))
+
+
+# ── group chat ───────────────────────────────────────────────────────
+
+
+def test_group_chat_custom_id_round_trips():
+    button = mod.PersistentGroupChatButton(REPORTED, "block", "google_999")
+    match = mod.PersistentGroupChatButton.__discord_ui_compiled_template__.fullmatch(button.item.custom_id)
+    assert match and match["target"] == str(REPORTED) and match["ref"] == "google_999"
+    assert len(button.item.custom_id) <= 100
+
+
+def _chat_world():
+    """A fake Summit server with the player, two moderators and no chats yet."""
+    guild = MagicMock()
+    guild.categories = []
+    player = MagicMock(id=REPORTED, global_name="Opponent", mention=f"<@{REPORTED}>")
+    mod1 = MagicMock(id=OWNER, global_name="Bruce", mention=f"<@{OWNER}>")
+    mod2 = MagicMock(id=MOD2, global_name="Helper", mention=f"<@{MOD2}>")
+    members = {REPORTED: player, OWNER: mod1, MOD2: mod2}
+    guild.get_member.side_effect = members.get
+    guild.create_category = AsyncMock(return_value=MagicMock(name="Mod Chats"))
+
+    channel = MagicMock(id=777, mention="<#777>")
+    channel.name = "mod-chat-opponent"
+    channel.guild = guild
+    channel.send = AsyncMock()
+    channel.set_permissions = AsyncMock()
+    channel.edit = AsyncMock()
+    granted = {}
+
+    async def create_text_channel(name, *, category, overwrites, reason):
+        channel.name = name
+        granted.update({m: o for m, o in overwrites.items()})
+        return channel
+
+    async def set_permissions(member, *, overwrite, reason=None):
+        granted[member] = overwrite
+
+    channel.set_permissions.side_effect = set_permissions
+    channel.overwrites_for.side_effect = lambda m: granted.get(m) or discord.PermissionOverwrite()
+    guild.create_text_channel = AsyncMock(side_effect=create_text_channel)
+    guild.get_channel.side_effect = lambda cid: channel if cid == 777 else None
+
+    client = MagicMock()
+    client.get_guild.return_value = guild
+    modch = MagicMock(id=MODCH)
+    modch.send = AsyncMock()
+    client.get_channel.side_effect = lambda cid: modch if cid == MODCH else None
+    client.get_user.side_effect = lambda uid: members.get(uid)
+    return client, guild, channel, granted, player, mod1, mod2, modch
+
+
+@pytest.mark.asyncio
+async def test_first_press_makes_a_private_chat_with_only_the_player_and_presser():
+    create_moderation_tables()
+    _report()
+    client, guild, channel, granted, player, mod1, mod2, modch = _chat_world()
+
+    ok, msg = await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="report", ref="1", moderator=mod1)
+
+    assert ok and "<#777>" in msg
+    guild.create_category.assert_awaited_once()
+    assert channel.name == "mod-chat-opponent"
+    assert granted[guild.default_role].view_channel is False
+    assert granted[player].view_channel and granted[mod1].view_channel
+    assert mod2 not in granted
+    intro = channel.send.await_args.kwargs
+    assert f"<@{REPORTED}>" in intro["content"]
+    text = intro["embed"].title + intro["embed"].description
+    assert "Reporter" not in text and str(REPORTER) not in text
+    assert "player report" in text
+    assert [c.item.label for c in intro["view"].children] == ["Close chat"]
+    assert "opened a group chat" in modch.send.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_later_presses_join_the_same_chat():
+    create_moderation_tables()
+    client, guild, channel, granted, player, mod1, mod2, modch = _chat_world()
+    await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="block", ref=str(REPORTER), moderator=mod1)
+
+    ok, msg = await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="report", ref="5", moderator=mod2)
+    assert ok and "Added you" in msg
+    assert guild.create_text_channel.await_count == 1
+    assert granted[mod2].view_channel
+    assert "joined the chat" in channel.send.await_args.args[0]
+
+    ok, msg = await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="report", ref="5", moderator=mod2)
+    assert ok and "already in" in msg
+
+
+@pytest.mark.asyncio
+async def test_block_intro_doesnt_mention_a_report_or_the_blocker():
+    create_moderation_tables()
+    client, guild, channel, *_rest = _chat_world()
+    mod1 = _rest[2]
+    await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="block", ref=str(REPORTER), moderator=mod1)
+    embed = channel.send.await_args.kwargs["embed"]
+    assert "report" not in embed.description.lower()
+    assert str(REPORTER) not in embed.description
+
+
+@pytest.mark.asyncio
+async def test_deleted_chat_channel_gets_replaced():
+    create_moderation_tables()
+    client, guild, channel, granted, player, mod1, mod2, modch = _chat_world()
+    await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="report", ref="1", moderator=mod1)
+    guild.get_channel.side_effect = lambda cid: None
+    await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="report", ref="1", moderator=mod2)
+    assert guild.create_text_channel.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_player_who_left_cant_be_added():
+    create_moderation_tables()
+    client, guild, *_ = _chat_world()
+    guild.get_member.side_effect = lambda uid: None
+    guild.fetch_member = AsyncMock(side_effect=discord.NotFound(MagicMock(status=404), "gone"))
+    ok, msg = await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="report", ref="1",
+                                                moderator=MagicMock(id=OWNER))
+    assert not ok and "not in the Summit server" in msg
+    guild.create_text_channel.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_anyone_in_the_mod_channel_can_press_group_chat_but_not_elsewhere():
+    interaction = MagicMock()
+    interaction.user.id = 999
+    interaction.client.get_guild.return_value.get_member.return_value = None
+    interaction.channel_id = MODCH
+    assert mod.can_open_group_chat(interaction.client, interaction)
+    interaction.channel_id = 123
+    assert not mod.can_open_group_chat(interaction.client, interaction)
+
+    button = mod.PersistentGroupChatButton(REPORTED, "report", "1")
+    interaction.response.send_message = AsyncMock()
+    await button.callback(interaction)
+    assert "Only moderators" in interaction.response.send_message.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_close_chat_removes_the_player_and_keeps_history():
+    create_moderation_tables()
+    client, guild, channel, granted, player, mod1, mod2, modch = _chat_world()
+    await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="report", ref="1", moderator=mod1)
+
+    close = mod.PersistentCloseChatButton()
+    interaction = MagicMock()
+    interaction.channel = channel
+    interaction.client = client
+    interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+
+    interaction.user = player  # the player can't close it
+    await close.callback(interaction)
+    assert "Only a moderator" in interaction.response.send_message.await_args.args[0]
+
+    interaction.user = mod1
+    await close.callback(interaction)
+    assert granted[player] is None
+    assert channel.edit.await_args.kwargs["name"] == "closed-mod-chat-opponent"
+    assert get_open_chat(REPORTED) is None
+    assert "Chat closed" in interaction.followup.send.await_args.args[0]
+
+    # A new press after closing starts a fresh chat
+    await mod.open_or_join_group_chat(client, target_id=REPORTED, kind="report", ref="2", moderator=mod2)
+    assert guild.create_text_channel.await_count == 2

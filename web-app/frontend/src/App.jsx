@@ -5,6 +5,7 @@ import Nav from '@/components/layout/Nav'
 import Footer from '@/components/layout/Footer'
 import AdminGuard from '@/components/layout/AdminGuard'
 import StoreAdminGuard from '@/components/layout/StoreAdminGuard'
+import ModeratorGuard from '@/components/layout/ModeratorGuard'
 import LoginGuard from '@/components/layout/LoginGuard'
 import ExplorerAdminGuard from '@/components/layout/ExplorerAdminGuard'
 import ArticleReviewerGuard from '@/components/layout/ArticleReviewerGuard'
@@ -100,6 +101,7 @@ const ExplorerStandings = lazyPage(() => import('@/pages/ExplorerStandings'))
 const AdminHub = lazyPage(() => import('@/pages/admin/AdminHub'))
 const AuditLog = lazyPage(() => import('@/pages/admin/AuditLog'))
 const StoreAdmin = lazyPage(() => import('@/pages/admin/StoreAdmin'))
+const ModTools = lazyPage(() => import('@/pages/ModTools'))
 const StoreOrderPrint = lazyPage(() => import('@/pages/admin/StoreOrderPrint'))
 const StoreOrderBulkPrint = lazyPage(() => import('@/pages/admin/StoreOrderBulkPrint'))
 const ActiveConnections = lazyPage(() => import('@/pages/admin/ActiveConnections'))
@@ -331,6 +333,7 @@ const router = createBrowserRouter([
       // Storefront applications are closed; old links land on the store
       { path: '/store/apply', element: <Navigate to="/store" replace /> },
       { path: '/admin/store', element: <StoreAdminGuard><StoreAdmin /></StoreAdminGuard> },
+      { path: '/mod-tools', element: <ModeratorGuard><ModTools /></ModeratorGuard> },
       { path: '/admin', element: <AdminGuard><AdminHub /></AdminGuard> },
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
       { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },

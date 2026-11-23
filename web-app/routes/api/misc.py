@@ -11,7 +11,7 @@ from webapp_config import (
     COMMUNITY_DB_PATH,
     ADMINS,
 )
-from utils.auth import is_admin, is_explorer_admin, is_rumble_admin, is_card_points_admin, require_admin
+from utils.auth import is_admin, is_moderator, is_explorer_admin, is_rumble_admin, is_card_points_admin, require_admin
 from utils.store_auth import is_store_admin
 
 misc_bp = Blueprint("misc", __name__)
@@ -38,6 +38,7 @@ def me():
         "is_store_staff": _is_store_staff(str(user_id)),
         "is_bracket_organizer": _is_bracket_organizer(),
         "is_article_reviewer": _is_article_reviewer(),
+        "is_moderator": is_moderator(),
     })
 
 

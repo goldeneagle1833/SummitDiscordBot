@@ -1681,11 +1681,15 @@ def _add_moderation(entries: list[dict], target_key: str):
     from repositories.moderation_repo import ModerationRepository
     from services.discord_moderation import is_discord_id
 
-    latest = ModerationRepository().latest_by_target(e[target_key] for e in entries)
+    repo = ModerationRepository()
+    targets = [e[target_key] for e in entries]
+    latest = repo.latest_by_target(targets)
+    status = repo.status_by_target(targets)
     for entry in entries:
         target = str(entry[target_key])
         entry["can_moderate"] = is_discord_id(target)
         entry["moderation"] = latest.get(target)
+        entry["status"] = status.get(target)
 
 
 @admin_bp.route("/admin/moderation", methods=["POST"])
@@ -1693,102 +1697,25 @@ def _add_moderation(entries: list[dict], target_key: str):
 def moderate_player():
     """Time out, ban or pairing-block a blocked/reported player (admin only).
 
-    Body: action ("timeout" | "ban" | "pairing_block"), user_id, minutes
+    Body: action ("timeout" | "ban" | "pairing_block", or the undo actions
+    "remove_timeout" | "unban" | "lift_pairing_block"), user_id, minutes
     (timeout), duration ("24h" | "48h" | "72h" | "lifetime", pairing block),
     reason (required, 3+ characters; the player is DMed it, and for a
     timeout or ban it also goes in the Discord audit log),
     source_kind ("block" | "report"), source_ref, and confirm: true.
     The admin panel only sends confirm after its confirmation dialog.
+    Mod Tools uses the same code (services/moderation_actions.py).
     """
-    from repositories.moderation_repo import (
-        PAIRING_BLOCK_DURATIONS, ModerationRepository, set_pairing_block,
-    )
-    from services.discord_moderation import (
-        ModerationError, ban_user, delete_dm, is_discord_id, player_dm_embed,
-        send_dm, timeout_member,
-    )
+    from services.moderation_actions import run_moderation
 
     data = request.get_json(silent=True) or {}
-    if data.get("confirm") is not True:
-        return jsonify({"success": False, "error": "Confirmation required"}), 400
-
-    action = data.get("action")
-    if action not in ("timeout", "ban", "pairing_block"):
-        return jsonify({"success": False, "error": "action must be timeout, ban or pairing_block"}), 400
-    user_id = str(data.get("user_id") or "").strip()
-    reason = str(data.get("reason") or "").strip()[:1000] or None
-    source_kind = data.get("source_kind") if data.get("source_kind") in ("block", "report") else None
-    source_ref = str(data.get("source_ref") or "")[:64] or None
-    minutes = None
-    if action == "timeout":
-        try:
-            minutes = int(data.get("minutes"))
-        except (TypeError, ValueError):
-            return jsonify({"success": False, "error": "minutes is required for a timeout"}), 400
-
-    if not reason or len(reason) < 3:
-        return jsonify({"success": False, "error": "A reason is required; it is sent to the player"}), 400
-
     admin_id, admin_name = _get_admin_info()
-    target_name = _player_name_resolver()(user_id)
-    duration_label = None
-    bot_done = True
-    dm_sent = None
-
-    if action == "pairing_block":
-        duration = data.get("duration")
-        if duration not in PAIRING_BLOCK_DURATIONS:
-            return jsonify({"success": False, "error": "Pick 24 hours, 48 hours, 72 hours or lifetime"}), 400
-        if not is_discord_id(user_id):
-            return jsonify({"success": False, "error": "Not a Discord account."}), 400
-        duration_label = set_pairing_block(
-            None, user_id=user_id, user_name=target_name,
-            by_id=admin_id, by_name=admin_name, reason=reason, duration_key=duration,
-        )
-        bot_done = False  # the bot pulls them from the queue and DMs them
-    else:
-        tag = f"report #{source_ref}, " if source_kind == "report" and (source_ref or "").isdigit() else ""
-        suffix = f" ({tag}by {admin_name} on the website)"
-        audit_reason = reason[: 400 - len(suffix)] + suffix
-        sent = None
-        try:
-            if action == "timeout":
-                timeout_member(user_id, minutes, audit_reason)
-                sent = send_dm(user_id, player_dm_embed("timeout", reason, minutes))
-            else:
-                if not is_discord_id(user_id):
-                    raise ModerationError("Not a Discord account.")
-                # DM first: once banned they share no server with the bot.
-                sent = send_dm(user_id, player_dm_embed("ban", reason))
-                try:
-                    ban_user(user_id, audit_reason)
-                except ModerationError:
-                    delete_dm(sent)
-                    raise
-        except ModerationError as e:
-            return jsonify({"success": False, "error": str(e)}), 400
-        dm_sent = sent is not None
-
-    repo = ModerationRepository()
-    repo.log_action(
-        target_id=user_id, target_name=target_name, action=action,
-        duration_minutes=minutes, duration_label=duration_label, reason=reason,
-        source_kind=source_kind, source_ref=source_ref, by_id=admin_id,
-        by_name=admin_name, via="web", bot_done=bot_done,
+    user_id = str(data.get("user_id") or "").strip()
+    body, status = run_moderation(
+        data, by_id=admin_id, by_name=admin_name,
+        target_name=_player_name_resolver()(user_id) if user_id else "", role="admin",
     )
-    AuditRepository().log_action(
-        admin_id, admin_name,
-        "web_pairing_ban" if action == "pairing_block" else f"web_discord_{action}",
-        target_id=user_id, target_name=target_name,
-        new_state={"minutes": minutes, "duration_label": duration_label},
-        details=reason,
-    )
-    logger.info("Admin %s: %s %s (%s)", admin_name, action, user_id, minutes or duration_label)
-    return jsonify({
-        "success": True,
-        "moderation": repo.latest_by_target([user_id]).get(user_id),
-        "dm_sent": dm_sent,
-    }), 200
+    return jsonify(body), status
 
 
 # ---------------------------------------------------------------------------

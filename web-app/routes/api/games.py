@@ -10,6 +10,9 @@ from webapp_config import MATCH_RECORDS_DB_PATH
 from services.curiosa import CuriosaService, is_deck_url, normalize_deck_url
 from utils.auth import require_auth
 
+# Player history shows past-season (archived) bot games as rowid + this offset
+ARCHIVE_ID_OFFSET = 1_000_000_000
+
 logger = logging.getLogger(__name__)
 
 games_bp = Blueprint("games", __name__)
@@ -253,10 +256,19 @@ def update_match_deck():
                         (deck_url, json_deck_data, str(match_id)),
                     )
             else:
-                # Bot matches use INTEGER rowid and normalized user_id
+                # Bot matches use INTEGER rowid and normalized user_id.
+                # Past-season games sit in match_records_archive and the
+                # player page shows them as rowid + 1_000_000_000.
+                numeric_id = int(match_id)
+                if numeric_id >= ARCHIVE_ID_OFFSET:
+                    table = "match_records_archive"
+                    row_id = numeric_id - ARCHIVE_ID_OFFSET
+                else:
+                    table = live_matches()
+                    row_id = numeric_id
                 cur.execute(
-                    f"SELECT winner_id, losser_id FROM {live_matches()} WHERE rowid = ?",
-                    (int(match_id),),
+                    f"SELECT winner_id, losser_id FROM {table} WHERE rowid = ?",
+                    (row_id,),
                 )
                 row = cur.fetchone()
                 if not row:
@@ -274,13 +286,13 @@ def update_match_deck():
 
                 if is_winner:
                     cur.execute(
-                        f"UPDATE {live_matches()} SET curiosa_url_winner = ?, json_deck_data_winner = ? WHERE rowid = ?",
-                        (deck_url, json_deck_data, int(match_id)),
+                        f"UPDATE {table} SET curiosa_url_winner = ?, json_deck_data_winner = ? WHERE rowid = ?",
+                        (deck_url, json_deck_data, row_id),
                     )
                 else:
                     cur.execute(
-                        f"UPDATE {live_matches()} SET curiosa_url_loser = ?, json_deck_data_loser = ? WHERE rowid = ?",
-                        (deck_url, json_deck_data, int(match_id)),
+                        f"UPDATE {table} SET curiosa_url_loser = ?, json_deck_data_loser = ? WHERE rowid = ?",
+                        (deck_url, json_deck_data, row_id),
                     )
 
             conn.commit()

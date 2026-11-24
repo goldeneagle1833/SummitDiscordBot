@@ -443,6 +443,26 @@ async def start_matchmaking_api(bot):
             raise web.HTTPServiceUnavailable(text="Summit bot is starting")
         return web.json_response(payload)
 
+    async def match_correction_request(request):
+        """A player asked to flip one of their matches from the website's match
+        history; DM the other player Confirm / Deny (same as !correct_match)."""
+        from cogs.lfg.persistent_confirm import send_correction_request
+
+        try:
+            payload = await request.json()
+        except ValueError:
+            raise web.HTTPBadRequest(text="Request body must be JSON")
+        try:
+            match_id = int(payload.get("match_id"))
+            requester_id = int(payload.get("requester_id"))
+        except (TypeError, ValueError):
+            return web.json_response({"status": "bad_request",
+                                      "message": "match_id and requester_id are required"}, status=400)
+        requester_name = str(payload.get("requester_name") or "A player")[:100]
+        result = await send_correction_request(bot, match_id, requester_id, requester_name, from_website=True)
+        result.pop("correction_id", None)
+        return web.json_response(result)
+
     async def pso_match_notify(request):
         """Send a Discord DM to the loser with confirm/dispute buttons for a PSO ranked match."""
         from cogs.lfg.persistent_confirm import PersistentPSOMatchView
@@ -692,6 +712,7 @@ async def start_matchmaking_api(bot):
     )
     app.router.add_get("/voice", voice)
     app.router.add_post("/pso-match-notify", pso_match_notify)
+    app.router.add_post("/match-correction-request", match_correction_request)
     app.router.add_post("/bracket-match-notify", bracket_match_notify)
     app.router.add_post("/meta-report-notify", meta_report_notify)
     app.router.add_post("/meta-report-dm", meta_report_dm)

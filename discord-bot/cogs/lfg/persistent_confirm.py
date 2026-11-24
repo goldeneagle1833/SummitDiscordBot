@@ -1966,6 +1966,106 @@ def delete_pending_correction(correction_id: int):
     conn.close()
 
 
+def pending_correction_for_match(match_id: int):
+    """The waiting correction request for this match, or None."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT * FROM pending_corrections WHERE match_id = ? ORDER BY id LIMIT 1", (int(match_id),)
+        ).fetchone()
+    finally:
+        conn.close()
+    return dict(row) if row else None
+
+
+async def send_correction_request(bot, match_id: int, requester_id: int, requester_name: str,
+                                  *, from_website: bool = False) -> dict:
+    """A player asks to flip a match they played; the other player confirms by DM.
+
+    Used by ``!correct_match`` (non-admins) and the Correct button on the
+    website's match history. Returns ``{"status": ...}``: ``sent`` (DM),
+    ``sent_to_channel`` (their DMs are off, posted in the fallback channel),
+    ``not_found``, ``not_in_match``, ``already_pending``, ``cannot_dm`` or
+    ``error``, plus ``other_player_name`` / ``message`` where useful.
+    """
+    from utils.database import get_match_players
+
+    try:
+        match_info = get_match_players(match_id)
+    except ValueError as e:
+        return {"status": "not_found", "message": str(e)}
+
+    winner_id, loser_id = match_info["winner_id"], match_info["loser_id"]
+    if str(requester_id) not in (str(winner_id), str(loser_id)):
+        return {"status": "not_in_match", "message": "You were not a part of that match."}
+
+    if str(requester_id) == str(winner_id):
+        other_player_id, other_player_name = loser_id, match_info["loser_name"]
+    else:
+        other_player_id, other_player_name = winner_id, match_info["winner_name"]
+
+    ensure_pending_corrections_table()
+    waiting = pending_correction_for_match(match_id)
+    if waiting:
+        return {
+            "status": "already_pending",
+            "other_player_name": waiting["other_player_name"],
+            "message": f"A correction request for Match #{match_id} is already waiting for "
+                       f"{waiting['other_player_name']} to answer.",
+        }
+
+    try:
+        other_player_int = int(other_player_id)
+    except (TypeError, ValueError):
+        return {"status": "cannot_dm", "other_player_name": other_player_name,
+                "message": f"{other_player_name} has no Discord account we can message. Ask an admin."}
+
+    correction_id = save_pending_correction({
+        "match_id": match_id,
+        "requester_id": int(requester_id),
+        "requester_name": requester_name,
+        "other_player_id": other_player_int,
+        "other_player_name": other_player_name,
+    })
+
+    where = " from the Summit website" if from_website else ""
+    confirm_embed = discord.Embed(
+        title="Match Correction Request",
+        description=(
+            f"**{requester_name}** is requesting to correct Match #{match_id}{where}.\n\n"
+            f"**Current Result:**\n"
+            f"Winner: {match_info['winner_name']}\n"
+            f"Loser: {match_info['loser_name']}\n\n"
+            f"**If corrected, the result will be flipped:**\n"
+            f"Winner: {match_info['loser_name']}\n"
+            f"Loser: {match_info['winner_name']}\n\n"
+            f"Do you confirm this correction?"
+        ),
+        color=discord.Color.orange(),
+    )
+    view = PersistentCorrectionConfirmView(correction_id)
+
+    try:
+        other_user = await bot.fetch_user(other_player_int)
+        await other_user.send(embed=confirm_embed, view=view)
+        return {"status": "sent", "other_player_name": other_player_name, "correction_id": correction_id}
+    except discord.Forbidden:
+        channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+        if channel:
+            await send_with_tag_me(channel, f"<@{other_player_int}>", embed=confirm_embed, view=view)
+            return {"status": "sent_to_channel", "other_player_name": other_player_name,
+                    "correction_id": correction_id}
+        delete_pending_correction(correction_id)
+        return {"status": "cannot_dm", "other_player_name": other_player_name,
+                "message": "Could not send the correction request. The other player has DMs disabled "
+                           "and no fallback channel is configured."}
+    except Exception as e:
+        logger.error(f"Failed to send correction request: {e}", exc_info=True)
+        delete_pending_correction(correction_id)
+        return {"status": "error", "message": f"An error occurred while sending the correction request: {e}"}
+
+
 class PersistentCorrectionConfirmButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"pcorrect_confirm:(?P<id>\d+)",

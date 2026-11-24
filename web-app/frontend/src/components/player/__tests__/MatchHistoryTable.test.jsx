@@ -64,14 +64,14 @@ describe('MatchHistoryTable column order', () => {
     expect(headers()).toEqual(['ID', 'Result', 'Type', 'Voice', 'Opponent', 'Rating', 'Replay', 'Play/Draw', 'Time', 'Date'])
   })
 
-  it('puts Notes last for the owner', () => {
+  it('puts Notes then Correct last for the owner', () => {
     renderWithRouter(
       <MatchHistoryTable title="Ranked Match History" matches={[match(1, true)]} isOwner />
     )
     const h = headers()
     expect(h.indexOf('Replay')).toBe(h.indexOf('Rating') + 1)
     expect(h.indexOf('Play/Draw')).toBe(h.indexOf('Replay') + 1)
-    expect(h[h.length - 1]).toBe('Notes')
+    expect(h.slice(-2)).toEqual(['Notes', 'Correct'])
   })
 })
 
@@ -129,5 +129,43 @@ describe('MatchHistoryTable type column', () => {
     expect(typeCell(rows[1])).toHaveTextContent('Casual')
     expect(typeCell(rows[2])).toHaveTextContent('Omens')
     expect(typeCell(rows[3])).toHaveTextContent('Ranked')
+  })
+})
+
+describe('MatchHistoryTable Correct button', () => {
+  it('is only shown to the owner, for this season\'s bot matches', () => {
+    const { unmount } = renderWithRouter(
+      <MatchHistoryTable title="Ranked Match History" matches={[{ ...match(1, true), match_source: 'bot' }]} isOwner={false} />
+    )
+    expect(screen.queryByRole('columnheader', { name: 'Correct' })).not.toBeInTheDocument()
+    unmount()
+    renderWithRouter(
+      <MatchHistoryTable
+        title="Ranked Match History"
+        matches={[
+          { ...match(1, true), match_source: 'bot' },
+          { ...match(2, true), match_source: 'web' },
+          { ...match(1000000005, true), match_source: 'bot' },
+        ]}
+        isOwner
+      />
+    )
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(within(rows[0]).getByRole('button', { name: 'Correct' })).toBeInTheDocument()
+    expect(within(rows[1]).queryByRole('button', { name: 'Correct' })).not.toBeInTheDocument()
+    expect(within(rows[2]).queryByRole('button', { name: 'Correct' })).not.toBeInTheDocument()
+  })
+
+  it('asks before sending and explains the opponent must confirm', async () => {
+    const { fireEvent } = await import('@testing-library/react')
+    renderWithRouter(
+      <MatchHistoryTable title="Ranked Match History" matches={[{ ...match(7, true), match_source: 'bot' }]} isOwner />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Correct' }))
+    const dialog = screen.getByRole('dialog', { name: 'Correct match' })
+    expect(dialog).toHaveTextContent('Switch it to a loss?')
+    expect(dialog).toHaveTextContent('Opp 7 gets a Discord DM to confirm')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

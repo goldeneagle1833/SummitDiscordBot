@@ -4191,12 +4191,7 @@ class LFGCog(commands.Cog):
     @commands.command()
     async def correct_match(self, ctx, match_id: int = None):
         """Correct a match by flipping outcome and cascade-recalculating ELO. Usage: !correct_match <match_id>"""
-        from cogs.lfg.persistent_confirm import (
-            ensure_pending_corrections_table,
-            save_pending_correction,
-            PersistentCorrectionConfirmView,
-        )
-        from utils.database import get_match_players
+        from cogs.lfg.persistent_confirm import send_correction_request
 
         if match_id is None:
             await ctx.send("Please provide a match ID. Usage: `!correct_match <match_id>`")
@@ -4268,81 +4263,13 @@ class LFGCog(commands.Cog):
             return
 
         # Non-admin flow - verify participant and send confirmation to other player
-        try:
-            match_info = get_match_players(match_id)
-        except ValueError as e:
-            await ctx.send(str(e))
-            return
-
-        author_id = ctx.author.id
-        winner_id = match_info["winner_id"]
-        loser_id = match_info["loser_id"]
-
-        # Check if user was part of this match
-        if author_id != winner_id and author_id != loser_id:
-            await ctx.send("You were not a part of that match.")
-            return
-
-        # Determine the other player
-        if author_id == winner_id:
-            other_player_id = loser_id
-            other_player_name = match_info["loser_name"]
-        else:
-            other_player_id = winner_id
-            other_player_name = match_info["winner_name"]
-
-        # Save the pending correction request
-        ensure_pending_corrections_table()
-        correction_id = save_pending_correction({
-            "match_id": match_id,
-            "requester_id": author_id,
-            "requester_name": ctx.author.display_name,
-            "other_player_id": other_player_id,
-            "other_player_name": other_player_name,
-        })
-
-        # Send confirmation request to the other player
-        confirm_embed = discord.Embed(
-            title="Match Correction Request",
-            description=(
-                f"**{ctx.author.display_name}** is requesting to correct Match #{match_id}.\n\n"
-                f"**Current Result:**\n"
-                f"Winner: {match_info['winner_name']}\n"
-                f"Loser: {match_info['loser_name']}\n\n"
-                f"**If corrected, the result will be flipped:**\n"
-                f"Winner: {match_info['loser_name']}\n"
-                f"Loser: {match_info['winner_name']}\n\n"
-                f"Do you confirm this correction?"
-            ),
-            color=discord.Color.orange(),
-        )
-
-        view = PersistentCorrectionConfirmView(correction_id)
-
-        try:
-            other_user = await self.bot.fetch_user(other_player_id)
-            await other_user.send(embed=confirm_embed, view=view)
+        result = await send_correction_request(self.bot, match_id, ctx.author.id, ctx.author.display_name)
+        if result["status"] in ("sent", "sent_to_channel"):
             await ctx.send(
-                f"A correction request for Match #{match_id} has been sent to **{other_player_name}** for confirmation."
+                f"A correction request for Match #{match_id} has been sent to **{result['other_player_name']}** for confirmation."
             )
-        except discord.Forbidden:
-            # If DMs are disabled, send in a channel
-            match_report_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
-            if match_report_channel:
-                await send_with_tag_me(
-                    match_report_channel,
-                    f"<@{other_player_id}>", embed=confirm_embed, view=view
-                )
-                await ctx.send(
-                    f"A correction request for Match #{match_id} has been sent to **{other_player_name}** for confirmation."
-                )
-            else:
-                await ctx.send(
-                    "Could not send the correction request. The other player has DMs disabled and no fallback channel is configured."
-                )
-        except Exception as e:
-            logger.error(f"Failed to send correction request: {e}")
-            await ctx.send(f"An error occurred while sending the correction request: {e}")
+        else:
+            await ctx.send(result.get("message") or "Could not send the correction request.")
 
     @correct_match.error
     async def correct_match_error(self, ctx, error):

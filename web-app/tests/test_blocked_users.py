@@ -231,13 +231,13 @@ class TestPartnerBlocksRoutes:
     HEADERS = {"X-API-Key": "test-api-key-123"}
 
     def _body(self, **overrides):
-        body = {"user_id": "100", "blocked_user_id": "200", "reason": "Rude in chat"}
+        body = {"user_id": "111111111111111111", "blocked_user_id": "222222222222222222", "reason": "Rude in chat"}
         body.update(overrides)
         return body
 
     def test_requires_api_key(self, client):
         assert client.post("/api/blocks", json=self._body()).status_code == 401
-        assert client.delete("/api/blocks/100/200").status_code == 401
+        assert client.delete("/api/blocks/111111111111111111/222222222222222222").status_code == 401
         bad = {"X-API-Key": "nope"}
         assert client.post("/api/blocks", json=self._body(), headers=bad).status_code == 401
 
@@ -246,8 +246,8 @@ class TestPartnerBlocksRoutes:
         assert resp.status_code == 201
         assert resp.get_json() == {"success": True, "added": True}
 
-        blocked = BlockedUsersRepository(db_path=match_db).get_blocked_users("100")
-        assert blocked == [{"blocked_user_id": "200", "reason": "Rude in chat"}]
+        blocked = BlockedUsersRepository(db_path=match_db).get_blocked_users("111111111111111111")
+        assert blocked == [{"blocked_user_id": "222222222222222222", "reason": "Rude in chat"}]
 
     def test_add_block_twice(self, client):
         client.post("/api/blocks", json=self._body(), headers=self.HEADERS)
@@ -260,7 +260,7 @@ class TestPartnerBlocksRoutes:
         assert resp.status_code == 400
 
     def test_add_block_self_rejected(self, client):
-        resp = client.post("/api/blocks", json=self._body(blocked_user_id="100"), headers=self.HEADERS)
+        resp = client.post("/api/blocks", json=self._body(blocked_user_id="111111111111111111"), headers=self.HEADERS)
         assert resp.status_code == 400
 
     def test_add_block_missing_ids(self, client):
@@ -268,13 +268,30 @@ class TestPartnerBlocksRoutes:
         assert resp.status_code == 400
 
     def test_remove_block(self, client, match_db):
-        BlockedUsersRepository(db_path=match_db).block_user("100", "200", reason="x")
-        resp = client.delete("/api/blocks/100/200", headers=self.HEADERS)
+        BlockedUsersRepository(db_path=match_db).block_user("111111111111111111", "222222222222222222", reason="x")
+        resp = client.delete("/api/blocks/111111111111111111/222222222222222222", headers=self.HEADERS)
         assert resp.get_json() == {"success": True, "removed": True}
-        assert BlockedUsersRepository(db_path=match_db).get_blocked_users("100") == []
+        assert BlockedUsersRepository(db_path=match_db).get_blocked_users("111111111111111111") == []
 
-        resp = client.delete("/api/blocks/100/200", headers=self.HEADERS)
+        resp = client.delete("/api/blocks/111111111111111111/222222222222222222", headers=self.HEADERS)
         assert resp.get_json()["removed"] is False
+
+    def test_numeric_ids_rejected(self, client, match_db):
+        """A JSON number loses a Discord ID's last digits, so it is refused, not saved wrong."""
+        body = self._body(user_id=111111111111111111)
+        resp = client.post("/api/blocks", json=body, headers=self.HEADERS)
+        assert resp.status_code == 400
+        assert "string" in resp.get_json()["error"]
+        assert BlockedUsersRepository(db_path=match_db).get_all_blocks()[1] == 0
+
+    def test_non_discord_ids_rejected(self, client, match_db):
+        for bad in ("200", "pso-abc123", "google_1234567890123456"):
+            resp = client.post(
+                "/api/blocks", json=self._body(blocked_user_id=bad), headers=self.HEADERS
+            )
+            assert resp.status_code == 400, bad
+            assert "Discord user ID" in resp.get_json()["error"]
+        assert BlockedUsersRepository(db_path=match_db).get_all_blocks()[1] == 0
 
 
 class TestPartnerPlayerReports:

@@ -22,6 +22,8 @@ from utils.database import (
     delete_ladder_challenge,
     get_user_event_elo,
     create_ladder_challenge_table,
+    is_blocked_pair,
+    is_pairing_banned,
 )
 
 logger = logging.getLogger("discord_bot")
@@ -46,6 +48,13 @@ class LadderChallengeJoinButton(discord.ui.View):
         """Handle a player joining the ladder challenge queue"""
         user_id = interaction.user.id
         user_global = interaction.user.global_name or interaction.user.display_name
+
+        # Pairing bans and player blocks (either direction) keep a player out
+        if is_pairing_banned(user_id) or is_blocked_pair(self.challenger_id, user_id):
+            await interaction.response.send_message(
+                "You can't join this ladder challenge.", ephemeral=True
+            )
+            return
 
         # Can't join your own challenge
         if user_id == self.challenger_id:
@@ -527,7 +536,11 @@ async def _resolve_ladder_challenge(bot, challenger_id):
     if not challenge_data:
         return
 
-    joiners = challenge_data["joiners"]
+    # Drop anyone a block or pairing ban now rules out (it may have landed after they joined)
+    joiners = [
+        j for j in challenge_data["joiners"]
+        if not is_pairing_banned(j["user_id"]) and not is_blocked_pair(challenger_id, j["user_id"])
+    ]
     challenger_global = challenge_data["challenger_global"]
     challenge_id = challenge_data["challenge_id"]
     channel = challenge_data["channel"]

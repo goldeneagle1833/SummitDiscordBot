@@ -1663,6 +1663,15 @@ class LFGCog(commands.Cog):
                 delete_after=30,
             )
             return
+        # Player blocks apply to challenges too (either direction). Blocks are
+        # private, so the message doesn't say who blocked whom.
+        if is_blocked_pair(ctx.author.id, opponent.id):
+            logger.info(f"Challenge {ctx.author.id} -> {opponent.id} refused - block list conflict")
+            await ctx.send(
+                f"{ctx.author.mention}, you can't challenge that player.",
+                delete_after=30,
+            )
+            return
 
         # Direct challenges are ranked games, so brand-new players can't use them yet
         new_player_message = ranked_block_message(ctx.author.id)

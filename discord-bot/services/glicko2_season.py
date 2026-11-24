@@ -272,6 +272,7 @@ def ensure_elo_schema(conn: sqlite3.Connection) -> None:
         ("rd", "REAL"),
         ("vol", "REAL"),
         ("decay_points", "REAL DEFAULT 0"),  # inactivity points taken off since the last game
+        ("decay_warned_for", "TEXT"),  # last_played_at the 24-hour decay DM was sent for
     ))
     conn.execute(
         """CREATE TABLE IF NOT EXISTS event_rating_adjustments (
@@ -646,6 +647,46 @@ def apply_decay(elo_conn, event, now: str | None = None) -> list[dict]:
     return moved
 
 
+def decay_warnings(elo_conn, event, now: str | None = None) -> list[dict]:
+    """Avatar entries that start decaying within 24 hours and haven't been told yet.
+
+    An entry qualifies once it has gone DECAY_GRACE_DAYS full days without a
+    game (decay starts a day later), would actually decay (settled, above
+    DECAY_FLOOR) and hasn't had a warning for this idle stretch. A bot that was
+    down past the start skips the warning: the decay itself shows by then.
+    Returns [{user_id, avatar, rating, last_played_at, starts_at}].
+    """
+    if not is_glicko2(event) or event.get("elo_mode") != "avatar" or event.get("end_date"):
+        return []
+    if "decay_warned_for" not in _columns(elo_conn, "event_avatar_standings"):
+        return []
+    now = now or datetime.datetime.now().isoformat()
+    rows = elo_conn.execute(
+        "SELECT user_id, avatar, event_elo, games_played, last_played_at, decay_warned_for "
+        "FROM event_avatar_standings WHERE event_id = ? AND rating IS NOT NULL",
+        (event["event_id"],),
+    ).fetchall()
+    out = []
+    for user_id, avatar, elo, games, last_at, warned_for in rows:
+        if not last_at or warned_for == last_at or is_provisional(games) or (elo or 0) <= DECAY_FLOOR:
+            continue
+        if idle_days(last_at, now) != DECAY_GRACE_DAYS:
+            continue
+        starts = _parse(last_at) + datetime.timedelta(days=DECAY_GRACE_DAYS + 1)
+        out.append({"user_id": user_id, "avatar": avatar, "rating": elo,
+                    "last_played_at": last_at, "starts_at": starts.isoformat()})
+    return out
+
+
+def mark_decay_warned(elo_conn, event, warnings) -> None:
+    """Record that these warnings went out (once per idle stretch). Does not commit."""
+    elo_conn.executemany(
+        "UPDATE event_avatar_standings SET decay_warned_for = ? "
+        "WHERE event_id = ? AND user_id = ? AND avatar = ?",
+        [(w["last_played_at"], event["event_id"], w["user_id"], w["avatar"]) for w in warnings],
+    )
+
+
 # --- Standing before each game -------------------------------------------------
 
 
@@ -858,6 +899,15 @@ def rebuild_season(elo_conn, match_conn, event, now: str | None = None) -> dict:
                 (event_id,),
             ).fetchall()
         }
+        warned = {}
+        if "decay_warned_for" in _columns(elo_conn, "event_avatar_standings"):
+            warned = {
+                (row[0], row[1]): row[2] for row in elo_conn.execute(
+                    "SELECT user_id, avatar, decay_warned_for FROM event_avatar_standings "
+                    "WHERE event_id = ? AND decay_warned_for IS NOT NULL",
+                    (event_id,),
+                ).fetchall()
+            }
         elo_conn.execute("DELETE FROM event_avatar_standings WHERE event_id = ?", (event_id,))
         elo_conn.executemany(
             """INSERT INTO event_avatar_standings
@@ -871,6 +921,12 @@ def rebuild_season(elo_conn, match_conn, event, now: str | None = None) -> dict:
                 for (uid, avatar), entry in avatars.items()
             ],
         )
+        if warned:
+            elo_conn.executemany(
+                "UPDATE event_avatar_standings SET decay_warned_for = ? "
+                "WHERE event_id = ? AND user_id = ? AND avatar = ?",
+                [(w, event_id, uid, avatar) for (uid, avatar), w in warned.items()],
+            )
         if decay_col:
             elo_conn.executemany(
                 "UPDATE event_avatar_standings SET decay_points = ? "

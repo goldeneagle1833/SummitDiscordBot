@@ -231,3 +231,55 @@ async def test_elo_avatar_seasons_do_not_decay():
     before = _entry(A, "Seer")["event_elo"]
     assert run_decay(now=_shift(datetime.datetime.now().isoformat(), -20)) == []
     assert _entry(A, "Seer")["event_elo"] == before
+
+
+# ── 24-hour warning DM ──
+
+
+def _warnings(now):
+    from cogs.rating_decay import take_warnings
+    return take_warnings(now=now)[1]
+
+
+@pytest.mark.asyncio
+async def test_warning_goes_out_once_a_day_before_decay():
+    await _settled_seer()
+    last = _entry(A, "Seer")["last_played_at"]
+    assert _warnings(_shift(last, -6.9)) == []          # 6 days idle: too early
+    due = _warnings(_shift(last, -7.1))                # 7 days idle: decay starts in < 24 h
+    assert [(w["user_id"], w["avatar"]) for w in due] == [(A, "Seer")]  # Witch is below 1500
+    assert due[0]["starts_at"] == _shift(last, -8)
+    assert _warnings(_shift(last, -7.5)) == []          # only once
+
+
+@pytest.mark.asyncio
+async def test_warning_resets_after_playing_and_survives_a_rebuild():
+    await _settled_seer()
+    last = _entry(A, "Seer")["last_played_at"]
+    assert _warnings(_shift(last, -7.1))
+    _rebuild(now=_shift(last, -7.2))
+    assert _warnings(_shift(last, -7.3)) == []          # a rebuild doesn't re-send it
+    await _record(A, C, "Seer", "Druid")                # played again: next idle stretch warns again
+    new_last = _entry(A, "Seer")["last_played_at"]
+    assert [w["avatar"] for w in _warnings(_shift(new_last, -7.1))] == ["Seer"]
+
+
+@pytest.mark.asyncio
+async def test_no_warning_when_already_decaying_or_provisional():
+    await _settled_seer(games=g2.PROVISIONAL_GAMES - 1)
+    last = _entry(A, "Seer")["last_played_at"]
+    assert _warnings(_shift(last, -7.1)) == []          # provisional
+    await _record(A, B, "Seer", "Witch")
+    last = _entry(A, "Seer")["last_played_at"]
+    assert _warnings(_shift(last, -9)) == []            # bot was down past the start: no late warning
+
+
+def test_warning_text_names_each_avatar():
+    from cogs.rating_decay import warning_text
+    text = warning_text({"event_name": "Gothic Season 9"}, [
+        {"avatar": "Seer", "rating": 1720, "starts_at": "2026-11-25T12:00:00"},
+        {"avatar": "Witch", "rating": 1650, "starts_at": "2026-11-25T09:00:00"},
+    ])
+    assert "Gothic Season 9" in text and "10 points a day" in text
+    assert text.index("Witch") < text.index("Seer")  # soonest first
+    assert "<t:" in text

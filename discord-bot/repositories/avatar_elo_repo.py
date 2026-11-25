@@ -165,8 +165,11 @@ def get_avatar_standings(event_id: int) -> list[dict]:
     """Every (player, avatar) entry of an event, best first."""
     conn = _connect()
     try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(event_avatar_standings)")}
+        decay = "COALESCE(decay_points, 0)" if "decay_points" in cols else "0"
         rows = conn.execute(
-            """SELECT user_id, avatar, user_display_name, event_elo, games_played, last_played_at
+            f"""SELECT user_id, avatar, user_display_name, event_elo, games_played, last_played_at,
+                      {decay} AS decay_points
                FROM event_avatar_standings
                WHERE event_id = ? AND games_played > 0
                ORDER BY event_elo DESC, games_played DESC, user_id ASC, avatar ASC""",

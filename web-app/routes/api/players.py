@@ -2155,6 +2155,9 @@ def player_api(player_id):
         if entry and "provisional" in entry:
             perf["event_provisional"] = entry["provisional"]
             perf["event_provisional_games"] = entry["provisional_games"]
+        if entry and "decay" in entry:
+            perf["event_decay"] = entry["decay"]
+            perf["event_decay_in_days"] = entry["decay_in_days"]
 
     def _matchup_rows(counts):
         result = []

@@ -39,6 +39,7 @@ from cogs.moderation_alerts import (
     PersistentModerationButton,
     PersistentNoteButton,
 )
+from cogs.rating_decay import RatingDecayCog
 from repositories.moderation_repo import create_moderation_tables
 from repositories.pairing_bans_repo import create_pairing_bans_table
 from repositories.voice_only_repo import create_voice_only_table
@@ -215,6 +216,7 @@ async def setup_cogs():
     await bot.add_cog(HealthMonitorCog(bot))  # Periodic API health checks, DMs owner on degradation
     await bot.add_cog(PairingBanCog(bot))  # !ban / !unban: block players from the pairing service
     await bot.add_cog(ModerationAlertsCog(bot))  # DM owner on blocks/reports with Timeout/Ban
+    await bot.add_cog(RatingDecayCog(bot))  # Glicko-2 Avatar mode: -10/day after a week idle
 
 
 async def main():

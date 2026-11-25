@@ -479,8 +479,22 @@ def _avatar_rank_lines(active_event, user_id) -> str:
         if rank is None:
             lines.append(f"- **{entry['avatar']}:** {g2.provisional_label(entry['games_played'])}")
         else:
-            lines.append(f"- **{entry['avatar']}:** {entry['event_elo']} (Rank #{rank}, {games})")
+            lines.append(f"- **{entry['avatar']}:** {entry['event_elo']} (Rank #{rank}, {games})"
+                         + (_decay_note(entry) if glicko2 else ""))
     return header + "\n" + "\n".join(lines)
+
+
+def _decay_note(entry) -> str:
+    """!rank: how far an avatar entry has decayed, or how soon it starts."""
+    status = g2.decay_status(entry.get("event_elo"), entry.get("games_played"),
+                             entry.get("last_played_at"), entry.get("decay_points"))
+    per_day = int(g2.DECAY_PER_DAY)
+    if status["decay"]:
+        return f" — ⏳ inactive, -{status['decay']} so far (-{per_day}/day until you play it)"
+    left = status["decay_in_days"]
+    if left:
+        return f" — ⏳ starts losing {per_day}/day in {left} day{'s' if left != 1 else ''} unless played"
+    return ""
 
 
 def _lifetime_avatar_lines(user_id, elo_db: str = "elo.db") -> str:

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { DecayTag } from '@/components/common/DecayTag'
 import PostseasonName, { useBracketMarks } from '@/components/player/BracketMarks'
 import { AvatarHonourBadge, useAvatarHonours } from '@/components/player/AvatarHonours'
 import { PaperFinishChips, usePaperFinishes } from '@/components/player/PaperFinishes'
@@ -221,6 +222,7 @@ export default function PlayerHeader({
                   {entry.event_elo}{entry.rank != null && ` · #${entry.rank}`}
                 </span>
               )}
+              {!provisionalOf(entry) && <DecayTag decay={entry.decay} inDays={entry.decay_in_days} />}
             </li>
           ))}
         </ul>

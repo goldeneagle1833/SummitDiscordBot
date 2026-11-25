@@ -17,9 +17,17 @@ export function formatBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
+// The server sends each time as `at`, with its UTC offset, so it shows in the
+// viewer's own time. A time without a zone (older server) is read as UTC.
+export function parseServerTime(value) {
+  if (!value) return new Date(NaN)
+  const hasZone = /([zZ]|[+-]\d\d:?\d\d)$/.test(value)
+  return new Date(hasZone ? value : `${value.replace(' ', 'T')}Z`)
+}
+
 function formatWhen(value) {
   if (!value) return '-'
-  const d = new Date(value)
+  const d = parseServerTime(value)
   if (isNaN(d.getTime())) return value
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
@@ -52,7 +60,7 @@ export default function DataExportsSection() {
   const s = data?.summary
   const rangeLabel = RANGES.find((r) => r.days === days)?.label ?? `${days} days`
   const since = days >= 3650 ? null : Date.now() - days * 86400000
-  const rows = (data?.entries ?? []).filter((e) => !since || new Date(e.timestamp).getTime() >= since)
+  const rows = (data?.entries ?? []).filter((e) => !since || parseServerTime(e.at ?? e.timestamp).getTime() >= since)
 
   return (
     <section className="space-y-4">
@@ -120,7 +128,7 @@ export default function DataExportsSection() {
                           <Link to={`/player/${e.user_id}`} className="text-text-primary hover:text-secondary">{e.name}</Link>
                           <div className="text-xs text-text-muted font-mono">{e.user_id}</div>
                         </td>
-                        <td className="px-4 py-2 text-xs text-text-muted whitespace-nowrap">{formatWhen(e.timestamp)}</td>
+                        <td className="px-4 py-2 text-xs text-text-muted whitespace-nowrap">{formatWhen(e.at ?? e.timestamp)}</td>
                         <td className="px-4 py-2 whitespace-nowrap">
                           {e.ok ? formatBytes(e.bytes) : <span className="text-accent-red text-xs">Failed</span>}
                         </td>

@@ -271,3 +271,8 @@ class TestAdminDataExportsTile:
         assert latest_ok["matches"] == 3 and latest_ok["bytes"] > 0
         assert "matches" in latest_ok["sections"]
         assert body["entries"][0]["ok"] is False  # newest first
+        # Times go out with the server's UTC offset so browsers show local time
+        from datetime import datetime as _dt
+        at = _dt.fromisoformat(latest_ok["at"])
+        assert at.tzinfo is not None
+        assert at.replace(tzinfo=None) == _dt.fromisoformat(latest_ok["timestamp"])

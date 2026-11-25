@@ -419,7 +419,14 @@ export default function Player() {
       )}
 
       {activeTab === 'limited' && (
-        <LimitedArena limited={data.limited} playerId={playerId} open />
+        <LimitedArena
+          limited={data.limited}
+          playerId={playerId}
+          isOwner={data.is_owner}
+          profileVisibility={vis}
+          onMatchUpdate={refreshCurrentPage}
+          open
+        />
       )}
 
       {activeTab === 'precon' && <PreconStandings data={precon} />}

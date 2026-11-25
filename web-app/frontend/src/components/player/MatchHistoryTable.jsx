@@ -30,7 +30,7 @@ function ElementIcons({ elements, small = false }) {
   )
 }
 
-export default function MatchHistoryTable({ title, subtitle, matches, pagination, playerId, isOwner, profileVisibility, perPage, perPageOptions, onPageChange, onPerPageChange, onEditDeck, onMatchUpdate, emptyText = 'No matches recorded.' }) {
+export default function MatchHistoryTable({ title, subtitle, matches, pagination, playerId, isOwner, profileVisibility, perPage, perPageOptions, onPageChange, onPerPageChange, onEditDeck, onMatchUpdate, emptyText = 'No matches recorded.', showReplay = true, showChangeResult = true, headingLevel = 3 }) {
   const showDeckUrls = isOwner || profileVisibility?.deck_urls
   const showSnapshots = isOwner || profileVisibility?.deck_snapshots
   const [noteModal, setNoteModal] = useState(null)
@@ -48,10 +48,16 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
   // Below Tailwind's lg breakpoint (phones, small tablets) the table becomes a list of cards
   const isPhone = useMediaQuery('(max-width: 1023px)')
 
+  const Heading = headingLevel === 4 ? 'h4' : 'h3'
+  const headingClass = headingLevel === 4 ? 'text-sm font-semibold text-text-muted' : 'text-lg font-semibold text-text-primary'
+  // Owners can edit a game's time and note; archived Limited games come without a source and stay read-only
+  const canEdit = (m) => isOwner && (m.match_type !== 'limited' || Boolean(m.match_source))
+  const rowKey = (m) => (m.archived ? `archived-${m.match_id}` : m.match_id)
+
   if (!matches?.length) {
     return (
       <section>
-        <h3 className="text-lg font-semibold text-text-primary mb-3">{title}</h3>
+        <Heading className={`${headingClass} mb-3`}>{title}</Heading>
         <p className="text-text-muted text-sm py-4 text-center">{emptyText}</p>
       </section>
     )
@@ -74,6 +80,8 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
   const typeLabel = (m) => (
     m.match_type === 'points' ? (
       <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">Omens</span>
+    ) : m.match_type === 'limited' ? (
+      <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400">Limited</span>
     ) : m.match_type === 'casual' || m.match_type === 'testing' ? (
       // 'testing' is the bot's internal name for casual games
       <span className="text-xs text-text-muted">Casual</span>
@@ -82,7 +90,8 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
     )
   )
   const voiceIcon = (m) => (
-    m.voice === true ? (
+    // Limited games never saved a voice flag, so they leave the key out and show nothing
+    m.voice === undefined ? null : m.voice === true ? (
       <span role="img" aria-label="Voice" title="Voice">🔊</span>
     ) : m.voice === false ? (
       <span role="img" aria-label="No voice" title="No voice">🔇</span>
@@ -108,7 +117,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
     ) : <span className="text-text-muted">-</span>
   )
   const matchTime = (m) => (
-    isOwner && editingTimeId === m.match_id ? (
+    canEdit(m) && editingTimeId === m.match_id ? (
       <form
         className="flex items-center gap-1"
         onSubmit={async (e) => {
@@ -138,7 +147,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
         <button type="submit" disabled={editTimeSaving} className="text-xs text-accent-green hover:opacity-80">&#10003;</button>
         <button type="button" onClick={() => setEditingTimeId(null)} className="text-xs text-text-muted hover:text-text-primary">&times;</button>
       </form>
-    ) : isOwner ? (
+    ) : canEdit(m) ? (
       <button
         onClick={() => { setEditingTimeId(m.match_id); setEditTimeValue(m.match_time || '') }}
         className="text-text-muted hover:text-secondary bg-transparent border-none p-0 cursor-pointer text-xs whitespace-nowrap"
@@ -172,21 +181,23 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
   }
   const snapshotLink = (m) => (
     m.has_deck_json ? (
-      <Link to={`/deck-snapshot/${m.match_id}/${playerId}`} className="text-secondary hover:underline text-xs">Snapshot</Link>
+      <Link to={`/deck-snapshot/${m.match_id}/${playerId}${m.match_type === 'limited' ? '?mode=limited' : ''}`} className="text-secondary hover:underline text-xs">Snapshot</Link>
     ) : null
   )
   const noteButton = (m) => (
     m.match_comment ? (
       <button
-        onClick={() => { setNoteModal({ matchId: m.match_id, comment: m.match_comment, matchSource: m.match_source }); setEditingNote(false); setEditError(null) }}
+        onClick={() => { setNoteModal({ matchId: m.match_id, comment: m.match_comment, matchSource: m.match_source, editable: canEdit(m) }); setEditingNote(false); setEditError(null) }}
         className="text-left truncate block max-w-[90px] text-secondary hover:underline cursor-pointer bg-transparent border-none p-0 text-xs"
         title="Click to view/edit note"
       >
         {m.match_comment.split(/\s+/).slice(0, 3).join(' ')}{m.match_comment.split(/\s+/).length > 3 ? '...' : ''}
       </button>
+    ) : !canEdit(m) ? (
+      <span className="text-text-muted text-xs">-</span>
     ) : (
       <button
-        onClick={() => { setNoteModal({ matchId: m.match_id, comment: '', matchSource: m.match_source }); setEditingNote(true); setEditText(''); setEditError(null) }}
+        onClick={() => { setNoteModal({ matchId: m.match_id, comment: '', matchSource: m.match_source, editable: true }); setEditingNote(true); setEditText(''); setEditError(null) }}
         className="text-text-muted hover:text-secondary text-xs bg-transparent border-none p-0 cursor-pointer whitespace-nowrap"
         title="Add a note"
       >
@@ -210,16 +221,16 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
 
   return (
     <section>
-      <h3 className="text-lg font-semibold text-text-primary mb-1">{title}</h3>
+      <Heading className={`${headingClass} mb-1`}>{title}</Heading>
       {subtitle && <p className="text-xs text-text-muted mb-3">{subtitle}</p>}
       {isPhone ? (
         // Phone: one card per match, so nothing needs sideways scrolling
         <ul className="divide-y divide-border/50 border-y border-border/50" data-testid="match-cards">
           {matches.map((m) => {
             const snap = showSnapshots && snapshotLink(m)
-            const change = isOwner && changeResult(m)
+            const change = isOwner && showChangeResult && changeResult(m)
             return (
-              <li key={m.match_id} className="py-2.5 space-y-1 text-sm">
+              <li key={rowKey(m)} className="py-2.5 space-y-1 text-sm">
                 <div className="flex items-center gap-2">
                   {resultBadge(m)}
                   {typeLabel(m)}
@@ -243,7 +254,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                   <span>{shortDate(m.date)}</span>
                   {matchTime(m)}
                   {m.first_player && <span>{m.first_player}</span>}
-                  {m.replay_url && replayLink(m)}
+                  {showReplay && m.replay_url && replayLink(m)}
                   <span>#{m.match_id}</span>
                 </div>
                 {(showDeckUrls || snap || isOwner) && (
@@ -268,17 +279,17 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                 {isOwner && <th className={th}>Avatar</th>}
                 <th className={th}>Opponent</th>
                 <th className={th}>Rating</th>
-                <th className={th}>Replay</th>
+                {showReplay && <th className={th}>Replay</th>}
                 <th className={th}>Play/Draw</th>
                 <th className={th}>Date</th>
                 {(showDeckUrls || showSnapshots) && <th className={th}>Deck</th>}
                 {isOwner && <th className={th}>Notes</th>}
-                {isOwner && <th className={`${th} whitespace-nowrap`}>Change Result</th>}
+                {isOwner && showChangeResult && <th className={`${th} whitespace-nowrap`}>Change Result</th>}
               </tr>
             </thead>
             <tbody>
               {matches.map((m) => (
-                <tr key={m.match_id} className="border-b border-border/50 hover:bg-bg-surface/50">
+                <tr key={rowKey(m)} className="border-b border-border/50 hover:bg-bg-surface/50">
                   <td className={td}>
                     {resultBadge(m)}
                     {matchId(m)}
@@ -307,7 +318,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                     )}
                   </td>
                   <td className={`${td} font-medium`}>{ratingChange(m)}</td>
-                  <td className={`${td} text-text-muted`}>{replayLink(m)}</td>
+                  {showReplay && <td className={`${td} text-text-muted`}>{replayLink(m)}</td>}
                   <td className={`${td} text-text-muted text-xs`}>{m.first_player || '-'}</td>
                   <td className={`${td} text-text-muted`}>
                     <div className="text-xs whitespace-nowrap">{shortDate(m.date)}</div>
@@ -320,7 +331,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                     </td>
                   )}
                   {isOwner && <td className={`${td} text-text-muted`}>{noteButton(m)}</td>}
-                  {isOwner && <td className={td}>{changeResult(m) || <span className="text-text-muted">-</span>}</td>}
+                  {isOwner && showChangeResult && <td className={td}>{changeResult(m) || <span className="text-text-muted">-</span>}</td>}
                 </tr>
               ))}
             </tbody>
@@ -491,14 +502,14 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
             ) : (
               <>
                 <p className="text-sm text-text-secondary whitespace-pre-wrap break-words">{noteModal.comment || <span className="text-text-muted italic">No notes</span>}</p>
-                <div className="flex justify-end mt-3">
+                {noteModal.editable && <div className="flex justify-end mt-3">
                   <button
                     onClick={() => { setEditingNote(true); setEditText(noteModal.comment || ''); setEditError(null) }}
                     className="px-3 py-1 text-xs rounded border border-border text-text-muted hover:text-text-primary hover:border-secondary/50"
                   >
                     Edit
                   </button>
-                </div>
+                </div>}
               </>
             )}
           </div>

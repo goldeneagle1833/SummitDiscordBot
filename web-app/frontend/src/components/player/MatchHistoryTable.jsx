@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { editMatchComment, editMatchTime, requestMatchCorrection } from '@/api/games'
 import { HiddenChange } from '@/components/common/Provisional'
 import { isHidden, isNum } from '@/utils/provisional'
+import useMediaQuery from '@/hooks/useMediaQuery'
 
 // Bot matches from this season can be corrected; archived ones show as rowid + this
 const ARCHIVED_MATCH_OFFSET = 1000000000
@@ -16,14 +17,14 @@ const ELEMENT_FILE = {
   Air: 'wind.png',
 }
 
-function ElementIcons({ elements }) {
+function ElementIcons({ elements, small = false }) {
   if (!elements?.length) return '-'
   return (
-    <span className="flex gap-0.5">
+    <span className="inline-flex gap-0.5 align-middle">
       {elements.map((el) => {
         const file = ELEMENT_FILE[el]
         if (!file) return <span key={el} className="text-xs">{el}</span>
-        return <img key={el} src={`${ELEMENT_IMG}${file}`} alt={el} title={el} className="w-5 h-5" />
+        return <img key={el} src={`${ELEMENT_IMG}${file}`} alt={el} title={el} className={small ? 'w-4 h-4' : 'w-5 h-5'} />
       })}
     </span>
   )
@@ -44,6 +45,8 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
   const [correctSending, setCorrectSending] = useState(false)
   const [correctError, setCorrectError] = useState(null)
   const [correctionsSent, setCorrectionsSent] = useState({})
+  // Below Tailwind's lg breakpoint (phones, small tablets) the table becomes a list of cards
+  const isPhone = useMediaQuery('(max-width: 1023px)')
 
   if (!matches?.length) {
     return (
@@ -54,241 +57,276 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
     )
   }
 
+  const th = 'py-2 px-1.5 text-text-muted font-semibold text-xs'
+  const td = 'py-1.5 px-1.5 align-middle'
+  const shortDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: '2-digit' }) : '-')
+  const deckUrlOf = (m) => (m.player_deck_url && m.player_deck_url !== 'No URL provided' && m.player_deck_url !== 'Admin reported match'
+    ? m.player_deck_url : null)
+
+  const resultBadge = (m) => (
+    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${m.result === 'Win' ? 'bg-accent-green/20 text-accent-green' : 'bg-accent-red/20 text-accent-red'}`}>
+      {m.result}
+    </span>
+  )
+  const matchId = (m) => (
+    <span className="block max-w-[4.5rem] truncate text-[11px] text-text-muted" title={`#${m.match_id}`}>#{m.match_id}</span>
+  )
+  const typeLabel = (m) => (
+    m.match_type === 'points' ? (
+      <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">Omens</span>
+    ) : m.match_type === 'casual' || m.match_type === 'testing' ? (
+      // 'testing' is the bot's internal name for casual games
+      <span className="text-xs text-text-muted">Casual</span>
+    ) : (
+      <span className="text-xs text-text-muted">Ranked</span>
+    )
+  )
+  const voiceIcon = (m) => (
+    m.voice === true ? (
+      <span role="img" aria-label="Voice" title="Voice">🔊</span>
+    ) : m.voice === false ? (
+      <span role="img" aria-label="No voice" title="No voice">🔇</span>
+    ) : (
+      <span className="text-text-muted">-</span>
+    )
+  )
+  const avatarLink = (name) => (
+    name ? (
+      <Link to={`/avatar/${encodeURIComponent(name)}`} className="text-secondary hover:underline">{name}</Link>
+    ) : <span className="text-text-muted">-</span>
+  )
+  const ratingChange = (m) => (
+    isHidden(m, 'elo_change') ? <HiddenChange /> : (
+      <span className={m.result === 'Win' ? 'text-accent-green' : 'text-accent-red'}>
+        {isNum(m.elo_change) ? <>{m.result === 'Win' ? '+' : ''}{m.elo_change}</> : '-'}
+      </span>
+    )
+  )
+  const replayLink = (m) => (
+    m.replay_url ? (
+      <a href={m.replay_url} target="_blank" rel="noopener noreferrer" className="text-secondary hover:underline text-xs">Watch</a>
+    ) : <span className="text-text-muted">-</span>
+  )
+  const matchTime = (m) => (
+    isOwner && editingTimeId === m.match_id ? (
+      <form
+        className="flex items-center gap-1"
+        onSubmit={async (e) => {
+          e.preventDefault()
+          const val = parseInt(editTimeValue, 10)
+          if (isNaN(val) || val < 0 || val > 999) return
+          setEditTimeSaving(true)
+          try {
+            await editMatchTime(m.match_id, m.match_source, val)
+            onMatchUpdate?.()
+          } catch { /* ignore */ }
+          setEditTimeSaving(false)
+          setEditingTimeId(null)
+        }}
+      >
+        <input
+          type="number"
+          min="0"
+          max="999"
+          value={editTimeValue}
+          onChange={(e) => setEditTimeValue(e.target.value)}
+          className="w-14 text-xs bg-bg-raised border border-border rounded px-1 py-0.5 text-text-primary"
+          autoFocus
+          disabled={editTimeSaving}
+          onKeyDown={(e) => { if (e.key === 'Escape') setEditingTimeId(null) }}
+        />
+        <button type="submit" disabled={editTimeSaving} className="text-xs text-accent-green hover:opacity-80">&#10003;</button>
+        <button type="button" onClick={() => setEditingTimeId(null)} className="text-xs text-text-muted hover:text-text-primary">&times;</button>
+      </form>
+    ) : isOwner ? (
+      <button
+        onClick={() => { setEditingTimeId(m.match_id); setEditTimeValue(m.match_time || '') }}
+        className="text-text-muted hover:text-secondary bg-transparent border-none p-0 cursor-pointer text-xs whitespace-nowrap"
+        title="Click to edit match time"
+      >
+        {m.match_time ? `${m.match_time} min` : '+ Time'}
+      </button>
+    ) : (
+      <span className="text-xs whitespace-nowrap">{m.match_time ? `${m.match_time} min` : '-'}</span>
+    )
+  )
+  const deckLink = (m) => {
+    const deckUrl = deckUrlOf(m)
+    return (
+      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+        {deckUrl ? (
+          <a href={deckUrl} target="_blank" rel="noopener noreferrer" className="text-secondary hover:underline text-xs">Deck</a>
+        ) : <span className="text-text-muted text-xs">No deck</span>}
+        {onEditDeck && (
+          <button
+            onClick={() => onEditDeck(m.match_id, deckUrl || '')}
+            className="text-text-muted hover:text-secondary text-xs"
+            title="Edit deck link"
+            aria-label="Edit deck link"
+          >
+            &#9998;
+          </button>
+        )}
+      </span>
+    )
+  }
+  const snapshotLink = (m) => (
+    m.has_deck_json ? (
+      <Link to={`/deck-snapshot/${m.match_id}/${playerId}`} className="text-secondary hover:underline text-xs">Snapshot</Link>
+    ) : null
+  )
+  const noteButton = (m) => (
+    m.match_comment ? (
+      <button
+        onClick={() => { setNoteModal({ matchId: m.match_id, comment: m.match_comment, matchSource: m.match_source }); setEditingNote(false); setEditError(null) }}
+        className="text-left truncate block max-w-[90px] text-secondary hover:underline cursor-pointer bg-transparent border-none p-0 text-xs"
+        title="Click to view/edit note"
+      >
+        {m.match_comment.split(/\s+/).slice(0, 3).join(' ')}{m.match_comment.split(/\s+/).length > 3 ? '...' : ''}
+      </button>
+    ) : (
+      <button
+        onClick={() => { setNoteModal({ matchId: m.match_id, comment: '', matchSource: m.match_source }); setEditingNote(true); setEditText(''); setEditError(null) }}
+        className="text-text-muted hover:text-secondary text-xs bg-transparent border-none p-0 cursor-pointer whitespace-nowrap"
+        title="Add a note"
+      >
+        + Note
+      </button>
+    )
+  )
+  const changeResult = (m) => (
+    correctionsSent[m.match_id] ? (
+      <span className="text-xs text-text-muted" title="Waiting for your opponent to confirm">Sent</span>
+    ) : canCorrect(m) ? (
+      <button
+        onClick={() => { setCorrectModal(m); setCorrectError(null) }}
+        className="text-xs px-1.5 py-0.5 rounded border border-border text-text-muted hover:text-secondary hover:border-secondary/50 bg-transparent cursor-pointer whitespace-nowrap"
+        title="Ask your opponent to switch who won"
+      >
+        Change Result
+      </button>
+    ) : null
+  )
+
   return (
     <section>
       <h3 className="text-lg font-semibold text-text-primary mb-1">{title}</h3>
       {subtitle && <p className="text-xs text-text-muted mb-3">{subtitle}</p>}
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm" style={{ minWidth: isOwner ? 1180 : 760 }}>
-          <thead>
-            <tr className="border-b border-border text-left">
-              <th className="py-2 px-2 text-text-muted font-semibold w-16">ID</th>
-              <th className="py-2 px-3 text-text-muted font-semibold">Result</th>
-              <th className="py-2 px-3 text-text-muted font-semibold">Type</th>
-              <th className="py-2 px-3 text-text-muted font-semibold">Voice</th>
-              {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Avatar</th>}
-              {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Elements</th>}
-              <th className="py-2 px-3 text-text-muted font-semibold">Opponent</th>
-              {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Opp. Avatar</th>}
-              {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Opp. Elements</th>}
-              <th className="py-2 px-3 text-text-muted font-semibold">Rating</th>
-              <th className="py-2 px-3 text-text-muted font-semibold">Replay</th>
-              <th className="py-2 px-3 text-text-muted font-semibold">Play/Draw</th>
-              <th className="py-2 px-3 text-text-muted font-semibold">Time</th>
-              <th className="py-2 px-3 text-text-muted font-semibold">Date</th>
-              {showDeckUrls && <th className="py-2 px-3 text-text-muted font-semibold">Deck Link</th>}
-              {showSnapshots && <th className="py-2 px-3 text-text-muted font-semibold">Snapshot</th>}
-              {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Notes</th>}
-              {isOwner && <th className="py-2 px-3 text-text-muted font-semibold whitespace-nowrap">Change Result</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {matches.map((m) => {
-              const isWin = m.result === 'Win'
-              const deckUrl = m.player_deck_url && m.player_deck_url !== 'No URL provided' && m.player_deck_url !== 'Admin reported match'
-                ? m.player_deck_url : null
-              return (
+      {isPhone ? (
+        // Phone: one card per match, so nothing needs sideways scrolling
+        <ul className="divide-y divide-border/50 border-y border-border/50" data-testid="match-cards">
+          {matches.map((m) => {
+            const snap = showSnapshots && snapshotLink(m)
+            const change = isOwner && changeResult(m)
+            return (
+              <li key={m.match_id} className="py-2.5 space-y-1 text-sm">
+                <div className="flex items-center gap-2">
+                  {resultBadge(m)}
+                  {typeLabel(m)}
+                  {voiceIcon(m)}
+                  <span className="ml-auto font-medium">{ratingChange(m)}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span className="text-text-muted text-xs">vs</span>
+                  <Link to={`/player/${m.opponent_id}`} className="text-secondary hover:underline font-medium">{m.opponent}</Link>
+                  {isOwner && m.opponent_avatar && <span className="text-xs">({avatarLink(m.opponent_avatar)})</span>}
+                  {isOwner && <ElementIcons elements={m.opponent_elements} small />}
+                </div>
+                {isOwner && (
+                  <div className="flex flex-wrap items-center gap-x-1.5 text-xs">
+                    <span className="text-text-muted">You:</span>
+                    {avatarLink(m.player_avatar)}
+                    <ElementIcons elements={m.deck_elements} small />
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
+                  <span>{shortDate(m.date)}</span>
+                  {matchTime(m)}
+                  {m.first_player && <span>{m.first_player}</span>}
+                  {m.replay_url && replayLink(m)}
+                  <span>#{m.match_id}</span>
+                </div>
+                {(showDeckUrls || snap || isOwner) && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {showDeckUrls && deckLink(m)}
+                    {snap}
+                    {isOwner && noteButton(m)}
+                    {change}
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <th className={th}>Result</th>
+                <th className={th}>Type</th>
+                {isOwner && <th className={th}>Avatar</th>}
+                <th className={th}>Opponent</th>
+                <th className={th}>Rating</th>
+                <th className={th}>Replay</th>
+                <th className={th}>Play/Draw</th>
+                <th className={th}>Date</th>
+                {(showDeckUrls || showSnapshots) && <th className={th}>Deck</th>}
+                {isOwner && <th className={th}>Notes</th>}
+                {isOwner && <th className={`${th} whitespace-nowrap`}>Change Result</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {matches.map((m) => (
                 <tr key={m.match_id} className="border-b border-border/50 hover:bg-bg-surface/50">
-                  <td className="py-2 px-2 text-text-muted">
-                    <span className="block max-w-[4rem] truncate" title={`#${m.match_id}`}>#{m.match_id}</span>
+                  <td className={td}>
+                    {resultBadge(m)}
+                    {matchId(m)}
                   </td>
-                  <td className="py-2 px-3">
-                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${isWin ? 'bg-accent-green/20 text-accent-green' : 'bg-accent-red/20 text-accent-red'}`}>
-                      {m.result}
+                  <td className={td}>
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                      {typeLabel(m)}
+                      {voiceIcon(m)}
                     </span>
                   </td>
-                  <td className="py-2 px-3">
-                    {m.match_type === 'points' ? (
-                      <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">Omens</span>
-                    ) : m.match_type === 'casual' || m.match_type === 'testing' ? (
-                      // 'testing' is the bot's internal name for casual games
-                      <span className="text-xs text-text-muted">Casual</span>
-                    ) : (
-                      <span className="text-xs text-text-muted">Ranked</span>
-                    )}
-                  </td>
-                  <td className="py-2 px-3 whitespace-nowrap">
-                    {m.voice === true ? (
-                      <span role="img" aria-label="Voice" title="Voice">🔊</span>
-                    ) : m.voice === false ? (
-                      <span role="img" aria-label="No voice" title="No voice">🔇</span>
-                    ) : (
-                      <span className="text-text-muted">-</span>
-                    )}
-                  </td>
                   {isOwner && (
-                    <td className="py-2 px-3 text-sm">
-                      {m.player_avatar ? (
-                        <Link to={`/avatar/${encodeURIComponent(m.player_avatar)}`} className="text-secondary hover:underline">
-                          {m.player_avatar}
-                        </Link>
-                      ) : '-'}
+                    <td className={`${td} text-xs`}>
+                      <div>{avatarLink(m.player_avatar)}</div>
+                      <ElementIcons elements={m.deck_elements} small />
                     </td>
                   )}
-                  {isOwner && (
-                    <td className="py-2 px-3">
-                      <ElementIcons elements={m.deck_elements} />
-                    </td>
-                  )}
-                  <td className="py-2 px-3">
-                    <Link to={`/player/${m.opponent_id}`} className="text-secondary hover:underline">
+                  <td className={td}>
+                    <Link to={`/player/${m.opponent_id}`} className="text-secondary hover:underline break-words">
                       {m.opponent}
                     </Link>
-                  </td>
-                  {isOwner && (
-                    <td className="py-2 px-3 text-sm">
-                      {m.opponent_avatar ? (
-                        <Link to={`/avatar/${encodeURIComponent(m.opponent_avatar)}`} className="text-secondary hover:underline">
-                          {m.opponent_avatar}
-                        </Link>
-                      ) : '-'}
-                    </td>
-                  )}
-                  {isOwner && (
-                    <td className="py-2 px-3">
-                      <ElementIcons elements={m.opponent_elements} />
-                    </td>
-                  )}
-                  {isHidden(m, 'elo_change') ? (
-                    <td className="py-2 px-3 font-medium"><HiddenChange /></td>
-                  ) : (
-                    <td className={`py-2 px-3 font-medium ${isWin ? 'text-accent-green' : 'text-accent-red'}`}>
-                      {isNum(m.elo_change) ? <>{isWin ? '+' : ''}{m.elo_change}</> : '-'}
-                    </td>
-                  )}
-                  <td className="py-2 px-3 text-text-muted">
-                    {m.replay_url ? (
-                      <a
-                        href={m.replay_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-secondary hover:underline text-xs"
-                      >
-                        Watch
-                      </a>
-                    ) : '-'}
-                  </td>
-                  <td className="py-2 px-3 text-text-muted">{m.first_player || '-'}</td>
-                  <td className="py-2 px-3 text-text-muted">
-                    {isOwner && editingTimeId === m.match_id ? (
-                      <form
-                        className="flex items-center gap-1"
-                        onSubmit={async (e) => {
-                          e.preventDefault()
-                          const val = parseInt(editTimeValue, 10)
-                          if (isNaN(val) || val < 0 || val > 999) return
-                          setEditTimeSaving(true)
-                          try {
-                            await editMatchTime(m.match_id, m.match_source, val)
-                            onMatchUpdate?.()
-                          } catch { /* ignore */ }
-                          setEditTimeSaving(false)
-                          setEditingTimeId(null)
-                        }}
-                      >
-                        <input
-                          type="number"
-                          min="0"
-                          max="999"
-                          value={editTimeValue}
-                          onChange={(e) => setEditTimeValue(e.target.value)}
-                          className="w-14 text-xs bg-bg-raised border border-border rounded px-1 py-0.5 text-text-primary"
-                          autoFocus
-                          disabled={editTimeSaving}
-                          onKeyDown={(e) => { if (e.key === 'Escape') setEditingTimeId(null) }}
-                        />
-                        <button type="submit" disabled={editTimeSaving} className="text-xs text-accent-green hover:opacity-80">&#10003;</button>
-                        <button type="button" onClick={() => setEditingTimeId(null)} className="text-xs text-text-muted hover:text-text-primary">&times;</button>
-                      </form>
-                    ) : isOwner ? (
-                      <button
-                        onClick={() => { setEditingTimeId(m.match_id); setEditTimeValue(m.match_time || '') }}
-                        className="text-text-muted hover:text-secondary bg-transparent border-none p-0 cursor-pointer text-sm"
-                        title="Click to edit match time"
-                      >
-                        {m.match_time ? `${m.match_time} min` : '+ Add'}
-                      </button>
-                    ) : (
-                      m.match_time ? `${m.match_time} min` : '-'
+                    {isOwner && (
+                      <div className="flex flex-wrap items-center gap-x-1 text-xs">
+                        {m.opponent_avatar && avatarLink(m.opponent_avatar)}
+                        <ElementIcons elements={m.opponent_elements} small />
+                      </div>
                     )}
                   </td>
-                  <td className="py-2 px-3 text-text-muted whitespace-nowrap">{m.date ? new Date(m.date).toLocaleDateString() : '-'}</td>
-                  {showDeckUrls && (
-                    <td className="py-2 px-3">
-                      <span className="flex items-center gap-1">
-                        {deckUrl ? (
-                          <a href={deckUrl} target="_blank" rel="noopener noreferrer" className="text-secondary hover:underline text-xs">
-                            View
-                          </a>
-                        ) : '-'}
-                        {onEditDeck && (
-                          <button
-                            onClick={() => onEditDeck(m.match_id, deckUrl || '')}
-                            className="text-text-muted hover:text-secondary text-xs ml-1"
-                            title="Edit deck link"
-                          >
-                            &#9998;
-                          </button>
-                        )}
-                      </span>
+                  <td className={`${td} font-medium`}>{ratingChange(m)}</td>
+                  <td className={`${td} text-text-muted`}>{replayLink(m)}</td>
+                  <td className={`${td} text-text-muted text-xs`}>{m.first_player || '-'}</td>
+                  <td className={`${td} text-text-muted`}>
+                    <div className="text-xs whitespace-nowrap">{shortDate(m.date)}</div>
+                    {matchTime(m)}
+                  </td>
+                  {(showDeckUrls || showSnapshots) && (
+                    <td className={td}>
+                      {showDeckUrls && <div>{deckLink(m)}</div>}
+                      {showSnapshots && <div>{snapshotLink(m) || (!showDeckUrls && <span className="text-text-muted">-</span>)}</div>}
                     </td>
                   )}
-                  {showSnapshots && (
-                    <td className="py-2 px-3">
-                      {m.has_deck_json ? (
-                        <Link
-                          to={`/deck-snapshot/${m.match_id}/${playerId}`}
-                          className="text-secondary hover:underline text-xs"
-                        >
-                          View
-                        </Link>
-                      ) : '-'}
-                    </td>
-                  )}
-                  {isOwner && (
-                    <td className="py-2 px-3 text-text-muted max-w-[100px]">
-                      {m.match_comment ? (
-                        <button
-                          onClick={() => { setNoteModal({ matchId: m.match_id, comment: m.match_comment, matchSource: m.match_source }); setEditingNote(false); setEditError(null) }}
-                          className="text-left truncate block max-w-[100px] text-secondary hover:underline cursor-pointer bg-transparent border-none p-0 text-sm"
-                          title="Click to view/edit note"
-                        >
-                          {m.match_comment.split(/\s+/).slice(0, 3).join(' ')}{m.match_comment.split(/\s+/).length > 3 ? '...' : ''}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => { setNoteModal({ matchId: m.match_id, comment: '', matchSource: m.match_source }); setEditingNote(true); setEditText(''); setEditError(null) }}
-                          className="text-text-muted hover:text-secondary text-xs bg-transparent border-none p-0 cursor-pointer"
-                          title="Add a note"
-                        >
-                          + Add
-                        </button>
-                      )}
-                    </td>
-                  )}
-                  {isOwner && (
-                    <td className="py-2 px-3 whitespace-nowrap">
-                      {correctionsSent[m.match_id] ? (
-                        <span className="text-xs text-text-muted" title="Waiting for your opponent to confirm">Sent</span>
-                      ) : canCorrect(m) ? (
-                        <button
-                          onClick={() => { setCorrectModal(m); setCorrectError(null) }}
-                          className="text-xs px-2 py-0.5 rounded border border-border text-text-muted hover:text-secondary hover:border-secondary/50 bg-transparent cursor-pointer"
-                          title="Ask your opponent to switch who won"
-                        >
-                          Change Result
-                        </button>
-                      ) : (
-                        <span className="text-text-muted">-</span>
-                      )}
-                    </td>
-                  )}
+                  {isOwner && <td className={`${td} text-text-muted`}>{noteButton(m)}</td>}
+                  {isOwner && <td className={td}>{changeResult(m) || <span className="text-text-muted">-</span>}</td>}
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {perPageOptions && onPerPageChange && (
         <div className="flex items-center gap-2 mt-3 text-xs text-text-muted">

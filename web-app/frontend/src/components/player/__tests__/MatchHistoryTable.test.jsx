@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
 import MatchHistoryTable from '../MatchHistoryTable'
@@ -15,11 +15,11 @@ const match = (id, voice) => ({
 })
 
 describe('MatchHistoryTable voice column', () => {
-  it('shows the Voice column to visitors, not just the owner', () => {
+  it('shows the voice icon to visitors, not just the owner', () => {
     renderWithRouter(
       <MatchHistoryTable title="Ranked Match History" matches={[match(1, true)]} isOwner={false} />
     )
-    expect(screen.getByRole('columnheader', { name: 'Voice' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Voice' })).toBeInTheDocument()
   })
 
   it('shows the voice emojis for voice, no-voice and untracked matches', () => {
@@ -61,7 +61,7 @@ describe('MatchHistoryTable column order', () => {
     renderWithRouter(
       <MatchHistoryTable title="Ranked Match History" matches={[match(1, true)]} isOwner={false} />
     )
-    expect(headers()).toEqual(['ID', 'Result', 'Type', 'Voice', 'Opponent', 'Rating', 'Replay', 'Play/Draw', 'Time', 'Date'])
+    expect(headers()).toEqual(['Result', 'Type', 'Opponent', 'Rating', 'Replay', 'Play/Draw', 'Date'])
   })
 
   it('puts Notes then Change Result last for the owner', () => {
@@ -72,6 +72,62 @@ describe('MatchHistoryTable column order', () => {
     expect(h.indexOf('Replay')).toBe(h.indexOf('Rating') + 1)
     expect(h.indexOf('Play/Draw')).toBe(h.indexOf('Replay') + 1)
     expect(h.slice(-2)).toEqual(['Notes', 'Change Result'])
+  })
+
+  it('fits the owner view in 11 columns with no forced minimum width', () => {
+    renderWithRouter(
+      <MatchHistoryTable
+        title="Match History"
+        matches={[{ ...match(1, true), player_avatar: 'Druid', opponent_avatar: 'Seer', deck_elements: ['Fire'], opponent_elements: ['Water'], match_time: 12 }]}
+        isOwner
+        onEditDeck={() => {}}
+      />
+    )
+    expect(headers()).toEqual(['Result', 'Type', 'Avatar', 'Opponent', 'Rating', 'Replay', 'Play/Draw', 'Date', 'Deck', 'Notes', 'Change Result'])
+    expect(screen.getByRole('table').style.minWidth).toBe('')
+    const row = screen.getAllByRole('row')[1]
+    expect(within(row).getByRole('link', { name: 'Druid' })).toBeInTheDocument()
+    expect(within(row).getByRole('link', { name: 'Seer' })).toBeInTheDocument()
+    expect(within(row).getByAltText('Fire')).toBeInTheDocument()
+    expect(within(row).getByAltText('Water')).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: '12 min' })).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Edit deck link' })).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: '+ Note' })).toBeInTheDocument()
+    expect(row).toHaveTextContent('#1')
+  })
+})
+
+describe('MatchHistoryTable on a phone', () => {
+  afterEach(() => { delete window.matchMedia })
+
+  it('shows one card per match instead of a wide table, with every action', () => {
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
+      matches: query.includes('max-width: 1023px'),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    renderWithRouter(
+      <MatchHistoryTable
+        title="Match History"
+        matches={[{ ...match(3, false), match_source: 'bot', player_avatar: 'Druid', opponent_avatar: 'Seer', replay_url: 'https://x/replay/1', first_player: 'Play', has_deck_json: true }]}
+        isOwner
+        playerId="9"
+        onEditDeck={() => {}}
+      />
+    )
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    const card = screen.getByTestId('match-cards')
+    expect(within(card).getByText('Win')).toBeInTheDocument()
+    expect(within(card).getByRole('img', { name: 'No voice' })).toBeInTheDocument()
+    expect(within(card).getByRole('link', { name: 'Opp 3' })).toBeInTheDocument()
+    expect(within(card).getByRole('link', { name: 'Watch' })).toBeInTheDocument()
+    expect(within(card).getByRole('link', { name: 'Snapshot' })).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Edit deck link' })).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: '+ Note' })).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Change Result' })).toBeInTheDocument()
+    expect(card).toHaveTextContent('Play')
+    expect(card).toHaveTextContent('+12')
   })
 })
 
@@ -124,7 +180,7 @@ describe('MatchHistoryTable type column', () => {
       />
     )
     const rows = screen.getAllByRole('row').slice(1)
-    const typeCell = (row) => within(row).getAllByRole('cell')[2]
+    const typeCell = (row) => within(row).getAllByRole('cell')[1]
     expect(typeCell(rows[0])).toHaveTextContent('Casual')
     expect(typeCell(rows[1])).toHaveTextContent('Casual')
     expect(typeCell(rows[2])).toHaveTextContent('Omens')

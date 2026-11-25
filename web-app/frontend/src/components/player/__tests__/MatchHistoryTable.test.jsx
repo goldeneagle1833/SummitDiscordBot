@@ -64,14 +64,14 @@ describe('MatchHistoryTable column order', () => {
     expect(headers()).toEqual(['ID', 'Result', 'Type', 'Voice', 'Opponent', 'Rating', 'Replay', 'Play/Draw', 'Time', 'Date'])
   })
 
-  it('puts Notes then Correct last for the owner', () => {
+  it('puts Notes then Change Result last for the owner', () => {
     renderWithRouter(
       <MatchHistoryTable title="Ranked Match History" matches={[match(1, true)]} isOwner />
     )
     const h = headers()
     expect(h.indexOf('Replay')).toBe(h.indexOf('Rating') + 1)
     expect(h.indexOf('Play/Draw')).toBe(h.indexOf('Replay') + 1)
-    expect(h.slice(-2)).toEqual(['Notes', 'Correct'])
+    expect(h.slice(-2)).toEqual(['Notes', 'Change Result'])
   })
 })
 
@@ -132,12 +132,12 @@ describe('MatchHistoryTable type column', () => {
   })
 })
 
-describe('MatchHistoryTable Correct button', () => {
+describe('MatchHistoryTable Change Result button', () => {
   it('is only shown to the owner, for this season\'s bot matches', () => {
     const { unmount } = renderWithRouter(
       <MatchHistoryTable title="Ranked Match History" matches={[{ ...match(1, true), match_source: 'bot' }]} isOwner={false} />
     )
-    expect(screen.queryByRole('columnheader', { name: 'Correct' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Change Result' })).not.toBeInTheDocument()
     unmount()
     renderWithRouter(
       <MatchHistoryTable
@@ -151,9 +151,9 @@ describe('MatchHistoryTable Correct button', () => {
       />
     )
     const rows = screen.getAllByRole('row').slice(1)
-    expect(within(rows[0]).getByRole('button', { name: 'Correct' })).toBeInTheDocument()
-    expect(within(rows[1]).queryByRole('button', { name: 'Correct' })).not.toBeInTheDocument()
-    expect(within(rows[2]).queryByRole('button', { name: 'Correct' })).not.toBeInTheDocument()
+    expect(within(rows[0]).getByRole('button', { name: 'Change Result' })).toBeInTheDocument()
+    expect(within(rows[1]).queryByRole('button', { name: 'Change Result' })).not.toBeInTheDocument()
+    expect(within(rows[2]).queryByRole('button', { name: 'Change Result' })).not.toBeInTheDocument()
   })
 
   it('asks before sending and explains the opponent must confirm', async () => {
@@ -161,8 +161,8 @@ describe('MatchHistoryTable Correct button', () => {
     renderWithRouter(
       <MatchHistoryTable title="Ranked Match History" matches={[{ ...match(7, true), match_source: 'bot' }]} isOwner />
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Correct' }))
-    const dialog = screen.getByRole('dialog', { name: 'Correct match' })
+    fireEvent.click(screen.getByRole('button', { name: 'Change Result' }))
+    const dialog = screen.getByRole('dialog', { name: 'Change result' })
     expect(dialog).toHaveTextContent('Switch it to a loss?')
     expect(dialog).toHaveTextContent('Opp 7 gets a Discord DM to confirm')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))

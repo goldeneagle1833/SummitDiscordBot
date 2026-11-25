@@ -59,7 +59,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
       <h3 className="text-lg font-semibold text-text-primary mb-1">{title}</h3>
       {subtitle && <p className="text-xs text-text-muted mb-3">{subtitle}</p>}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm" style={{ minWidth: isOwner ? 1140 : 760 }}>
+        <table className="w-full text-sm" style={{ minWidth: isOwner ? 1180 : 760 }}>
           <thead>
             <tr className="border-b border-border text-left">
               <th className="py-2 px-2 text-text-muted font-semibold w-16">ID</th>
@@ -79,7 +79,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
               {showDeckUrls && <th className="py-2 px-3 text-text-muted font-semibold">Deck Link</th>}
               {showSnapshots && <th className="py-2 px-3 text-text-muted font-semibold">Snapshot</th>}
               {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Notes</th>}
-              {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Correct</th>}
+              {isOwner && <th className="py-2 px-3 text-text-muted font-semibold whitespace-nowrap">Change Result</th>}
             </tr>
           </thead>
           <tbody>
@@ -276,7 +276,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                           className="text-xs px-2 py-0.5 rounded border border-border text-text-muted hover:text-secondary hover:border-secondary/50 bg-transparent cursor-pointer"
                           title="Ask your opponent to switch who won"
                         >
-                          Correct
+                          Change Result
                         </button>
                       ) : (
                         <span className="text-text-muted">-</span>
@@ -345,9 +345,9 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
       )}
       {correctModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => !correctSending && setCorrectModal(null)}>
-          <div role="dialog" aria-label="Correct match" className="bg-bg-surface border border-border rounded-lg shadow-xl max-w-md w-full mx-4 p-5" onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-label="Change result" className="bg-bg-surface border border-border rounded-lg shadow-xl max-w-md w-full mx-4 p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold text-text-primary">Correct Match #{correctModal.match_id}</h4>
+              <h4 className="text-sm font-semibold text-text-primary">Change Result: Match #{correctModal.match_id}</h4>
               <button onClick={() => setCorrectModal(null)} disabled={correctSending} className="text-text-muted hover:text-text-primary text-lg leading-none">&times;</button>
             </div>
             {correctModal.sentMessage ? (

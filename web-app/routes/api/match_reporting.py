@@ -635,6 +635,75 @@ def auto_confirm_match(confirmation_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+LIMITED_DECK_SUFFIX = " | Winner deck:"
+
+
+def _merge_own_note(old_comment, new_comment, is_reporter):
+    """Swap this player's half of a "reporter | Opponent: confirmer" note."""
+    other_part = ""
+    if " | Opponent: " in old_comment:
+        reporter_part, confirmer_part = old_comment.split(" | Opponent: ", 1)
+        other_part = confirmer_part if is_reporter else reporter_part
+    elif old_comment.startswith("Opponent: "):
+        other_part = old_comment[len("Opponent: "):] if is_reporter else ""
+    elif old_comment not in ("Web-confirmed match", "") and not is_reporter:
+        other_part = old_comment
+    reporter_text, confirmer_text = (new_comment, other_part) if is_reporter else (other_part, new_comment)
+    if reporter_text and confirmer_text:
+        return f"{reporter_text} | Opponent: {confirmer_text}"
+    if reporter_text:
+        return reporter_text
+    if confirmer_text:
+        return f"Opponent: {confirmer_text}"
+    return ""
+
+
+def _edit_limited_match(match_id, field, value):
+    """Edit the note or time on one of the logged-in player's live Limited games."""
+    user_id = str(session["user_id"])
+    if user_id.startswith("google_"):
+        user_id = user_id[7:]
+    try:
+        match_id = int(match_id)
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "match_id must be a number"}), 400
+    conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    try:
+        try:
+            row = conn.execute(
+                "SELECT winner_id, loser_id, match_comment, reporter_id FROM limited_match_records WHERE match_id = ?",
+                (match_id,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            row = None
+        if not row:
+            return jsonify({"success": False, "error": "Match not found"}), 404
+        winner_id, loser_id, old_comment, reporter_id = row
+        if user_id not in (str(winner_id), str(loser_id)):
+            return jsonify({"success": False, "error": "Not authorized to edit this match"}), 403
+        if field == "match_time":
+            conn.execute("UPDATE limited_match_records SET match_time = ? WHERE match_id = ?", (value, match_id))
+            conn.commit()
+            return jsonify({"success": True, "match_time": value})
+        # Notes: keep the bot's "| Winner deck: ... | Loser deck: ..." tail as it was
+        old_comment = old_comment or ""
+        tail = ""
+        if LIMITED_DECK_SUFFIX in old_comment:
+            idx = old_comment.index(LIMITED_DECK_SUFFIX)
+            old_comment, tail = old_comment[:idx].strip(), old_comment[idx:]
+        elif old_comment.startswith("Winner deck:"):
+            old_comment, tail = "", old_comment
+        is_reporter = reporter_id is not None and str(reporter_id) == user_id
+        merged = _merge_own_note(old_comment, value, is_reporter)
+        if tail:
+            merged = f"{merged}{tail}" if merged else tail.removeprefix(" | ")
+        conn.execute("UPDATE limited_match_records SET match_comment = ? WHERE match_id = ?", (merged, match_id))
+        conn.commit()
+        return jsonify({"success": True, "comment": value})
+    finally:
+        conn.close()
+
+
 @match_reporting_bp.route("/edit-comment", methods=["POST"])
 def edit_match_comment():
     """Edit the logged-in user's match comment/note.
@@ -652,11 +721,14 @@ def edit_match_comment():
     match_source = data.get("match_source")
     new_comment = (data.get("new_comment") or "").strip()
 
-    if not match_id or match_source not in ("web", "bot"):
-        return jsonify({"success": False, "error": "match_id and match_source (web/bot) required"}), 400
+    if not match_id or match_source not in ("web", "bot", "limited"):
+        return jsonify({"success": False, "error": "match_id and match_source (web/bot/limited) required"}), 400
 
     if len(new_comment) > 500:
         return jsonify({"success": False, "error": "Comment must be 500 characters or fewer"}), 400
+
+    if match_source == "limited":
+        return _edit_limited_match(match_id, "match_comment", new_comment)
 
     current_user_id = str(session["user_id"])
     auth_provider = session.get("auth_provider", "discord")
@@ -815,11 +887,14 @@ def edit_match_time():
     except (ValueError, TypeError):
         return jsonify({"success": False, "error": "match_time must be a number"}), 400
 
-    if not match_id or match_source not in ("web", "bot"):
-        return jsonify({"success": False, "error": "match_id and match_source (web/bot) required"}), 400
+    if not match_id or match_source not in ("web", "bot", "limited"):
+        return jsonify({"success": False, "error": "match_id and match_source (web/bot/limited) required"}), 400
 
     if match_time < 0 or match_time > 999:
         return jsonify({"success": False, "error": "Match time must be between 0 and 999 minutes"}), 400
+
+    if match_source == "limited":
+        return _edit_limited_match(match_id, "match_time", match_time)
 
     current_user_id = str(session["user_id"])
     auth_provider = session.get("auth_provider", "discord")

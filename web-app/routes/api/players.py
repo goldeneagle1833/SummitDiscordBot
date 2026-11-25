@@ -143,6 +143,30 @@ def _extract_deck_info(deck_json):
     return avatar_name, elements
 
 
+def _own_match_note(comment, reporter_id, player_id):
+    """Extract the current player's own comment, stripping metadata and opponent's notes."""
+    if not comment:
+        return None
+    if comment in ("Web-confirmed match", ""):
+        return None
+    # Strip deck URL metadata: "User comment | Winner deck: ... | Loser deck: ..."
+    parts = comment.split(" | Winner deck:")
+    comment = parts[0].strip() if len(parts) > 1 else comment
+    if comment.startswith("Winner deck:"):
+        return None
+    # Merged format from _merge_comments: "reporter comment | Opponent: confirmer comment"
+    # Split and return only the current player's portion
+    player_is_reporter = str(reporter_id) == str(player_id)
+    if " | Opponent: " in comment:
+        reporter_part, confirmer_part = comment.split(" | Opponent: ", 1)
+        return reporter_part.strip() if player_is_reporter else confirmer_part.strip()
+    if comment.startswith("Opponent: "):
+        # Only the confirmer commented
+        return comment[len("Opponent: "):].strip() if not player_is_reporter else None
+    # Only the reporter commented (or bot match with single comment)
+    return comment if player_is_reporter else None
+
+
 LIFETIME_CHANGE_COLUMNS = ("winner_lifetime_elo_change", "loser_lifetime_elo_change")
 
 
@@ -293,8 +317,11 @@ def deck_snapshot(match_id, player_id):
             return jsonify({"error": "Unauthorized"}), 403
 
     try:
-        service = MatchService()
-        result = service.get_deck_snapshot(match_id, player_id)
+        if request.args.get("mode") == "limited":
+            result = _limited_deck_snapshot(match_id, player_id)
+        else:
+            service = MatchService()
+            result = service.get_deck_snapshot(match_id, player_id)
 
         if result is None:
             return jsonify({"error": "Match not found"}), 404
@@ -927,7 +954,162 @@ def _lifetime_avatar_entry(player_id, avatar):
     return entries[0] if entries else None
 
 
-def _get_limited_stats(player_id: str, event_filter: str = "current", is_owner: bool = False) -> dict:
+# Columns read for each Limited match (live and archive tables share them)
+LIMITED_DETAIL_COLUMNS = (
+    "winner_id, winner_display_name, loser_id, loser_display_name, "
+    "timestamp, winner_elo_change, loser_elo_change, match_time, "
+    "first_player, winner_went_first, loser_went_first, "
+    "curiosa_url_winner, curiosa_url_loser, match_comment, reporter_id, "
+    "json_deck_data_winner, json_deck_data_loser, winner_run_id, loser_run_id"
+)
+
+
+def _has_deck_json(deck_json):
+    return bool(deck_json) and deck_json not in ("{}", "")
+
+
+def _limited_run_decks(cur, matches):
+    """Deck JSON saved on each live arena run, by run id.
+
+    Limited matches usually carry no deck JSON of their own, but the run the
+    player entered with does, and a run plays one deck throughout. Archived
+    runs keep no deck JSON, and their ids can repeat, so only live runs count.
+    """
+    run_ids = {rid for m in matches if not m[-1] for rid in (m[18], m[19]) if rid}
+    if not run_ids:
+        return {}
+    marks = ",".join("?" * len(run_ids))
+    try:
+        cur.execute(
+            f"SELECT run_id, json_deck_data FROM limited_arena_runs WHERE run_id IN ({marks})",
+            tuple(run_ids),
+        )
+    except sqlite3.OperationalError:
+        return {}
+    return {r[0]: r[1] for r in cur.fetchall() if _has_deck_json(r[1])}
+
+
+def _limited_on_play(went_first, winner_went_first, loser_went_first, did_win):
+    """True on the play, False on the draw, None when unknown.
+
+    Admin-reported games save "n" for both players, which means nobody knows.
+    """
+    w = str(winner_went_first or "").lower()
+    lo = str(loser_went_first or "").lower()
+    if w in ("y", "n") and lo in ("y", "n"):
+        if w == lo:
+            return None
+        return (w == "y") if did_win else (lo == "y")
+    return None
+
+
+def _limited_match_entry(m, player_id, run_decks, is_owner, visibility):
+    """One Limited match in the same shape as a Match History entry.
+
+    Limited games save no voice flag and no replay link, and only this
+    season's games can be edited.
+    """
+    archived = m[-1]
+    did_win = str(m[1]) == str(player_id)
+    winner_url, loser_url = m[12], m[13]
+    winner_json, loser_json = m[16], m[17]
+    if not archived:
+        if not _has_deck_json(winner_json):
+            winner_json = run_decks.get(m[18])
+        if not _has_deck_json(loser_json):
+            loser_json = run_decks.get(m[19])
+    my_json, opp_json = (winner_json, loser_json) if did_win else (loser_json, winner_json)
+    my_url = winner_url if did_win else loser_url
+    my_avatar, my_elements = _extract_deck_info(my_json)
+    opp_avatar, opp_elements = _extract_deck_info(opp_json)
+
+    visibility = visibility or {}
+    show_urls = is_owner or visibility.get("deck_urls", False)
+    show_snapshots = is_owner or visibility.get("deck_snapshots", False)
+    on_play = _limited_on_play(m[9], m[10], m[11], did_win)
+    elo_change = (m[6] if did_win else m[7]) or 0
+
+    return {
+        # Fields the Limited tab used before (kept for anything reading them)
+        "match_id": m[0],
+        "winner_id": str(m[1]),
+        "winner_name": m[2] or "Unknown",
+        "loser_id": str(m[3]),
+        "loser_name": m[4] or "Unknown",
+        "timestamp": m[5],
+        "winner_elo_change": m[6] or 0,
+        "loser_elo_change": m[7] or 0,
+        # Match History fields
+        "opponent": (m[4] if did_win else m[2]) or "Unknown",
+        "opponent_id": str(m[3]) if did_win else str(m[1]),
+        "result": "Win" if did_win else "Loss",
+        "elo_change": elo_change,
+        "date": m[5],
+        "match_time": m[8] or None,
+        "first_player": "Play" if on_play else "Draw" if on_play is False else None,
+        "match_type": "limited",
+        "player_avatar": my_avatar,
+        "deck_elements": my_elements,
+        "opponent_avatar": opp_avatar,
+        "opponent_elements": opp_elements,
+        "player_deck_url": my_url if show_urls and my_url and is_deck_url(str(my_url)) else None,
+        # Snapshot links look up live games, so archived ones (ids can repeat) get none
+        "has_deck_json": bool(show_snapshots and not archived and _has_deck_json(my_json)),
+        "match_comment": _own_match_note(m[14], m[15], player_id) if is_owner else None,
+        # Only this season's games can have their note or time edited
+        "match_source": "limited" if is_owner and not archived else None,
+        "archived": bool(archived),
+    }
+
+
+def _limited_deck_snapshot(match_id, player_id):
+    """Deck snapshot for one player in a live Limited match (the match's own
+    deck JSON, else the arena run's). Same shape as MatchService.get_deck_snapshot."""
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                f"SELECT match_id, {LIMITED_DETAIL_COLUMNS} FROM limited_match_records WHERE match_id = ?",
+                (match_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            row = (*row, False)
+            run_decks = _limited_run_decks(cur, [row])
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        return None
+    pid = str(player_id)
+    if pid == str(row[1]):
+        deck_json = row[16] if _has_deck_json(row[16]) else run_decks.get(row[18])
+        player_name, opponent_name, result = row[2], row[4], "Win"
+    elif pid == str(row[3]):
+        deck_json = row[17] if _has_deck_json(row[17]) else run_decks.get(row[19])
+        player_name, opponent_name, result = row[4], row[2], "Loss"
+    else:
+        return {"error": "Player not found in this match"}
+    if not _has_deck_json(deck_json):
+        return {"error": "No deck data available for this match"}
+    try:
+        deck = json.loads(deck_json)
+    except (json.JSONDecodeError, TypeError):
+        return {"error": "Invalid deck data"}
+    return {
+        "match_id": match_id,
+        "player_name": player_name,
+        "opponent_name": opponent_name,
+        "result": result,
+        "date": row[5],
+        "deck": deck,
+        "mode": "limited",
+    }
+
+
+def _get_limited_stats(player_id: str, event_filter: str = "current", is_owner: bool = False,
+                       visibility: dict | None = None) -> dict:
     """Fetch limited arena stats for a player from match_records.db and elo.db.
 
     When event_filter is "lifetime", uses lifetime_elo and includes archived data.
@@ -999,27 +1181,25 @@ def _get_limited_stats(player_id: str, event_filter: str = "current", is_owner: 
 
         # Recent limited matches (live)
         cur.execute(
-            """SELECT match_id, winner_id, winner_display_name, loser_id, loser_display_name,
-                      timestamp, winner_elo_change, loser_elo_change, match_time
+            f"""SELECT match_id, {LIMITED_DETAIL_COLUMNS}
                FROM limited_match_records
                WHERE winner_id = ? OR loser_id = ?
                ORDER BY timestamp DESC LIMIT 20""",
             (player_id, player_id),
         )
-        matches = list(cur.fetchall())
+        matches = [(*r, False) for r in cur.fetchall()]
 
         # Include archived matches for lifetime view
         if show_lifetime:
             try:
                 cur.execute(
-                    """SELECT original_match_id, winner_id, winner_display_name, loser_id, loser_display_name,
-                              timestamp, winner_elo_change, loser_elo_change, match_time
+                    f"""SELECT original_match_id, {LIMITED_DETAIL_COLUMNS}
                        FROM limited_match_records_archive
                        WHERE winner_id = ? OR loser_id = ?
                        ORDER BY timestamp DESC""",
                     (player_id, player_id),
                 )
-                matches += list(cur.fetchall())
+                matches += [(*r, True) for r in cur.fetchall()]
                 matches.sort(key=lambda m: m[5] or "", reverse=True)
                 matches = matches[:20]
             except sqlite3.OperationalError:
@@ -1064,18 +1244,9 @@ def _get_limited_stats(player_id: str, event_filter: str = "current", is_owner: 
             result["total_losses"] = total_losses
             result["total_matches"] = total
             result["win_rate"] = round(total_wins / total * 100, 1) if total > 0 else 0
+            run_decks = _limited_run_decks(cur, matches)
             result["recent_matches"] = [
-                {
-                    "match_id": m[0],
-                    "winner_id": str(m[1]),
-                    "winner_name": m[2] or "Unknown",
-                    "loser_id": str(m[3]),
-                    "loser_name": m[4] or "Unknown",
-                    "timestamp": m[5],
-                    "winner_elo_change": m[6] or 0,
-                    "loser_elo_change": m[7] or 0,
-                    "match_time": m[8] or 0,
-                }
+                _limited_match_entry(m, player_id, run_decks, is_owner, visibility)
                 for m in matches
             ]
 
@@ -2459,28 +2630,7 @@ def player_api(player_id):
     casual_end_idx = casual_start_idx + per_page
     paginated_casual_rows = [] if combined else casual_rows[casual_start_idx:casual_end_idx]
 
-    def _clean_match_comment(comment, reporter_id, player_id):
-        """Extract the current player's own comment, stripping metadata and opponent's notes."""
-        if not comment:
-            return None
-        if comment in ("Web-confirmed match", ""):
-            return None
-        # Strip deck URL metadata: "User comment | Winner deck: ... | Loser deck: ..."
-        parts = comment.split(" | Winner deck:")
-        comment = parts[0].strip() if len(parts) > 1 else comment
-        if comment.startswith("Winner deck:"):
-            return None
-        # Merged format from _merge_comments: "reporter comment | Opponent: confirmer comment"
-        # Split and return only the current player's portion
-        player_is_reporter = str(reporter_id) == str(player_id)
-        if " | Opponent: " in comment:
-            reporter_part, confirmer_part = comment.split(" | Opponent: ", 1)
-            return reporter_part.strip() if player_is_reporter else confirmer_part.strip()
-        if comment.startswith("Opponent: "):
-            # Only the confirmer commented
-            return comment[len("Opponent: "):].strip() if not player_is_reporter else None
-        # Only the reporter commented (or bot match with single comment)
-        return comment if player_is_reporter else None
+    _clean_match_comment = _own_match_note
 
     def _top_cut_note(comment):
         """A bracket game's note is site-written, not a player's, so both players
@@ -2879,7 +3029,7 @@ def player_api(player_id):
     has_custom_display_name = bool(profile and profile.get("custom_display_name")) if profile else False
 
     # Fetch limited arena stats
-    limited_stats = _get_limited_stats(player_id_normalized, event_filter, is_owner=is_owner)
+    limited_stats = _get_limited_stats(player_id_normalized, event_filter, is_owner=is_owner, visibility=visibility)
 
     # Fetch pending match confirmations for this player
     pending_match_entries = []

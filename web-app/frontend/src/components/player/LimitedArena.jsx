@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import CollapsibleSection from './CollapsibleSection'
 import StatCard from './StatCard'
+import MatchHistoryTable from './MatchHistoryTable'
 import { getRunMatchups } from '@/api/leaderboard'
 
 function RunMatchups({ runId, userId }) {
@@ -75,7 +76,7 @@ function RunMatchups({ runId, userId }) {
   )
 }
 
-export default function LimitedArena({ limited, playerId, open, onToggle }) {
+export default function LimitedArena({ limited, playerId, isOwner = false, profileVisibility, onMatchUpdate, open, onToggle }) {
   if (!limited?.has_data) return null
 
   return (
@@ -138,46 +139,20 @@ export default function LimitedArena({ limited, playerId, open, onToggle }) {
       )}
 
       {limited.recent_matches?.length > 0 && (
-        <>
-          <h4 className="text-sm font-semibold text-text-muted mb-2">Recent Limited Matches</h4>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="py-2 px-3 text-text-muted font-semibold">Match ID</th>
-                  <th className="py-2 px-3 text-text-muted font-semibold">Result</th>
-                  <th className="py-2 px-3 text-text-muted font-semibold">Opponent</th>
-                  <th className="py-2 px-3 text-text-muted font-semibold">Rating</th>
-                  <th className="py-2 px-3 text-text-muted font-semibold">Time</th>
-                  <th className="py-2 px-3 text-text-muted font-semibold">Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {limited.recent_matches.map((m) => {
-                  const isWin = m.winner_id === playerId
-                  return (
-                    <tr key={m.match_id} className="border-b border-border/50">
-                      <td className="py-2 px-3 text-text-muted text-xs">#{m.match_id}</td>
-                      <td className="py-2 px-3">
-                        <span className={isWin ? 'text-accent-green' : 'text-accent-red'}>{isWin ? 'Win' : 'Loss'}</span>
-                      </td>
-                      <td className="py-2 px-3">
-                        <Link to={`/player/${isWin ? m.loser_id : m.winner_id}`} className="text-secondary hover:underline">
-                          {isWin ? m.loser_name : m.winner_name}
-                        </Link>
-                      </td>
-                      <td className={`py-2 px-3 ${isWin ? 'text-accent-green' : 'text-accent-red'}`}>
-                        {isWin ? `+${m.winner_elo_change}` : m.loser_elo_change}
-                      </td>
-                      <td className="py-2 px-3 text-text-muted">{m.match_time ? `${m.match_time} min` : '-'}</td>
-                      <td className="py-2 px-3 text-text-muted">{m.timestamp ? new Date(m.timestamp).toLocaleDateString() : '-'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
+        // Same layout as Match History. Limited games save no voice flag or
+        // replay link, and their results are changed through Discord, so
+        // those parts are left out.
+        <MatchHistoryTable
+          title="Recent Limited Matches"
+          headingLevel={4}
+          matches={limited.recent_matches}
+          playerId={playerId}
+          isOwner={isOwner}
+          profileVisibility={profileVisibility}
+          onMatchUpdate={onMatchUpdate}
+          showReplay={false}
+          showChangeResult={false}
+        />
       )}
     </CollapsibleSection>
   )

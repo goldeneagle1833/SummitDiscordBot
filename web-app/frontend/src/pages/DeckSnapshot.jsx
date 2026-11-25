@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useSearchParams, Link } from 'react-router-dom'
 import Spinner from '@/components/ui/Spinner'
 import CardImagePopup from '@/components/deck/CardImagePopup'
 import DeckVisualizer from '@/components/deck/DeckVisualizer'
@@ -116,6 +116,9 @@ function CardSection({ title, cards, onHover, onLeave }) {
 
 export default function DeckSnapshot() {
   const { matchId, playerId } = useParams()
+  // Limited games have their own match ids, so their snapshot links say so
+  const [searchParams] = useSearchParams()
+  const mode = searchParams.get('mode') === 'limited' ? 'limited' : null
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -126,11 +129,11 @@ export default function DeckSnapshot() {
 
   useEffect(() => {
     setLoading(true)
-    get(`/api/deck-snapshot/${matchId}/${playerId}`)
+    get(`/api/deck-snapshot/${matchId}/${playerId}${mode ? `?mode=${mode}` : ''}`)
       .then(setData)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [matchId, playerId])
+  }, [matchId, playerId, mode])
 
   const handleHover = useCallback((image, rect) => setHoverCard({ image, rect }), [])
   const handleLeave = useCallback(() => setHoverCard({ image: null, rect: null }), [])

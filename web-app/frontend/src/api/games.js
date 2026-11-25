@@ -17,3 +17,6 @@ export const editMatchComment = (matchId, matchSource, newComment) =>
 
 export const editMatchTime = (matchId, matchSource, matchTime) =>
   post('/api/match-report/edit-match-time', { match_id: matchId, match_source: matchSource, match_time: matchTime })
+
+export const requestMatchCorrection = (matchId) =>
+  post('/api/match-report/request-correction', { match_id: matchId })

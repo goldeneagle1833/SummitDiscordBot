@@ -5,6 +5,8 @@ import logging
 import sqlite3
 from flask import Blueprint, jsonify, request, session
 
+from utils.auth import require_auth
+
 from services.match_confirmation import MatchConfirmationService
 from repositories.user_profiles import UserProfileRepository
 from repositories.match_confirmation import MatchConfirmationRepository
@@ -891,3 +893,70 @@ def edit_match_time():
             exc_info=True,
         )
         return jsonify({"success": False, "error": f"Failed to update match time: {e}"}), 500
+
+
+ARCHIVED_MATCH_OFFSET = 1_000_000_000  # player page shows archived bot matches as rowid + this
+CORRECTION_STATUS_CODES = {
+    "sent": 200, "sent_to_channel": 200,
+    "already_pending": 409, "not_found": 404, "not_in_match": 403,
+    "cannot_dm": 422, "bad_request": 400, "error": 502,
+}
+
+
+@match_reporting_bp.route("/request-correction", methods=["POST"])
+@require_auth
+def request_match_correction():
+    """Ask to flip the result of one of your own matches.
+
+    Same as a player typing ``!correct_match <id>``: the bot DMs the other
+    player Confirm / Deny, and only their Confirm flips the match (ratings
+    recalculated). Body: match_id (a current-season bot match).
+    """
+    from routes.api.matchmaking import relay_to_bot
+
+    if "user_id" not in session:
+        return jsonify({"success": False, "error": "Log in first"}), 401
+    if session.get("auth_provider", "discord") != "discord":
+        return jsonify({"success": False, "error": "Log in with Discord to correct a match"}), 403
+    try:
+        match_id = int((request.get_json(silent=True) or {}).get("match_id"))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "match_id is required"}), 400
+    if match_id <= 0 or match_id >= ARCHIVED_MATCH_OFFSET:
+        return jsonify({"success": False, "error": "Only this season's matches can be corrected"}), 400
+
+    import webapp_config
+
+    user_id = str(session["user_id"])
+    conn = sqlite3.connect(str(webapp_config.MATCH_RECORDS_DB_PATH))
+    try:
+        row = conn.execute(
+            f"SELECT CAST(winner_id AS TEXT), CAST(losser_id AS TEXT) FROM {live_matches()} WHERE rowid = ?",
+            (match_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"success": False, "error": "Match not found this season"}), 404
+    if user_id not in row:
+        return jsonify({"success": False, "error": "You weren't in that match"}), 403
+
+    body, status = relay_to_bot(
+        "POST", "/match-correction-request",
+        {"match_id": match_id, "requester_id": user_id,
+         "requester_name": session.get("username") or "A player"},
+        unavailable_body={"status": "unavailable"},
+    )
+    result = body.get("status") if isinstance(body, dict) else None
+    if status >= 500 or result == "unavailable" or result is None:
+        return jsonify({"success": False, "error": "The Summit bot is unavailable right now. Try again in a few minutes."}), 503
+    code = CORRECTION_STATUS_CODES.get(result, 502)
+    if code == 200:
+        other = body.get("other_player_name") or "your opponent"
+        how = "a Discord DM" if result == "sent" else "a message in Discord (their DMs are off)"
+        return jsonify({
+            "success": True, "status": result, "other_player_name": other,
+            "message": f"Sent {other} {how} to confirm. The result switches once they confirm.",
+        }), 200
+    return jsonify({"success": False, "status": result,
+                    "error": body.get("message") or "Could not send the correction request"}), code

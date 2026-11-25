@@ -25,6 +25,26 @@ logger = logging.getLogger(__name__)
 # Most legacy events are Constructed; explicit overrides always take precedence.
 EVENT_FORMATS = ("Constructed", "Sealed", "Draft", "Peasant", "Unknown")
 
+# sorcerytcg.com deck owners with no handle set come back with an empty
+# username, or with the sign-in provider's name in its place.
+PLACEHOLDER_USERNAMES = {"discord", "google"}
+
+
+def usable_username(name) -> str:
+    """The deck owner's handle, or "" when it is blank or a placeholder."""
+    name = (name or "").strip() if isinstance(name, str) else ""
+    return "" if name.lower() in PLACEHOLDER_USERNAMES else name
+
+
+def deck_player_name(deck: dict, history_names: dict | None = None) -> str:
+    """Name to show for a deck: its owner's handle, else the name the player
+    registered for the event under (from the saved match history)."""
+    name = usable_username(deck.get("username"))
+    if name:
+        return name
+    fallback = (history_names or {}).get(deck.get("id") or "")
+    return fallback or "Unknown"
+
 
 def canonical_event_format(value: str | None) -> str:
     if isinstance(value, str):
@@ -489,7 +509,11 @@ class EventRepository:
                         if top8_json is not None and data:
                             try:
                                 first_deck = data[0]
-                                winner_username = first_deck.get("username")
+                                winner_username = usable_username(
+                                    first_deck.get("username")
+                                ) or deck_player_name(
+                                    first_deck, self._history_names(folder.name)
+                                )
                                 avatar_list = first_deck.get("avatar", [])
                                 if avatar_list:
                                     winner_avatar = avatar_list[0].get("name")
@@ -574,6 +598,7 @@ class EventRepository:
 
             decks: list[dict] = []
             seen: set[str] = set()
+            history_names = self._history_names(folder.name)
             for path, is_top8 in ((top8_json, True), (full_json, False)):
                 if path is None or (not is_top8 and path == top8_json):
                     continue
@@ -602,7 +627,7 @@ class EventRepository:
                     decks.append({
                         # Top 8 list order is the finishing order.
                         "place": i + 1 if is_top8 else None,
-                        "player": deck.get("username") or "Unknown",
+                        "player": deck_player_name(deck, history_names),
                         "avatar": avatar or "Unknown",
                         "elements": self._get_deck_elements(deck),
                         "deck_id": deck_id,
@@ -755,6 +780,7 @@ class EventRepository:
         top8_decks = []
         all_decks = []
         seen_ids = set()
+        history_names = self._history_names(event_folder)
 
         if top8_json:
             try:
@@ -762,7 +788,7 @@ class EventRepository:
                     data = json.load(f)
                     for deck in data[:8]:
                         deck_entry = {
-                            "player": deck.get("username", "Unknown"),
+                            "player": deck_player_name(deck, history_names),
                             "avatar": deck.get("avatar", [{}])[0].get(
                                 "name", "Unknown"
                             ),
@@ -786,7 +812,7 @@ class EventRepository:
                         if deck_id and deck_id in seen_ids:
                             continue
                         deck_entry = {
-                            "player": deck.get("username", "Unknown"),
+                            "player": deck_player_name(deck, history_names),
                             "avatar": deck.get("avatar", [{}])[0].get(
                                 "name", "Unknown"
                             ),
@@ -1114,6 +1140,20 @@ class EventRepository:
         except Exception as e:
             logger.error(f"Failed to read match history for {event_folder}: {e}")
             return None
+
+    def _history_names(self, event_folder: str) -> dict[str, str]:
+        """deck id -> the name each player registered under, from the saved
+        match history. Fills in decks whose owner has no handle."""
+        history = self._load_match_history(event_folder) or {}
+        names = {}
+        for player in history.get("players") or []:
+            if not isinstance(player, dict):
+                continue
+            deck_id = player.get("deck_id") or ""
+            name = (player.get("display_name") or "").strip()
+            if deck_id and name and name != "Unknown":
+                names.setdefault(deck_id, name)
+        return names
 
     def get_event_match_history(self, event_folder: str) -> dict | None:
         """Get match history for an event, keyed by the deck ID each player ran.

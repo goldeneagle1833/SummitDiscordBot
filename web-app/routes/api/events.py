@@ -13,7 +13,7 @@ import uuid
 
 from flask import Blueprint, jsonify, request, session
 
-from repositories.events import EventRepository, EVENT_FORMATS
+from repositories.events import EventRepository, EVENT_FORMATS, usable_username
 from utils.auth import is_admin, require_admin, require_auth
 from utils.formatting import format_event_name
 from webapp_config import EVENT_TAGS
@@ -1054,6 +1054,14 @@ def _import_event(title, event_url, on_progress, curiosa=None, discovery=None, e
             "error": "No decks could be fetched. They may be private.",
             "fetch_errors": errors,
         }
+
+    # A deck owner with no sorcerytcg.com handle comes back blank (or as
+    # "Discord"); use the name they registered for the event instead.
+    name_by_deck = {p["deck_id"]: p.get("name") or "" for p in players}
+    for deck in decks:
+        name = name_by_deck.get(deck.get("id", ""), "")
+        if not usable_username(deck.get("username")) and name and name != "Unknown":
+            deck["username"] = name
 
     # Step 3: Re-sort fetched decks by standing order
     # Build deck_id -> standing index from the discovery order

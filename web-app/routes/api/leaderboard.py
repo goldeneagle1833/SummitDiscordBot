@@ -47,7 +47,8 @@ def get_avatar_leaderboards():
     Public, like /leaderboard/event. Query params:
         avatar: only this avatar (case-insensitive)
         limit: cap each avatar's list
-        rank_by: "elo" (default) or "avatar_score" (like the Top Players page)
+        rank_by: "avatar_score" (default, same order as the Top Players by
+            Avatar page) or "elo" (the season rating ladder)
         min_games: entries with fewer games rank after the rest (default 10,
             like the Top Players page; 0 turns it off)
         scope: "season" (default) or "lifetime": the lifetime avatar ELO
@@ -56,7 +57,7 @@ def get_avatar_leaderboards():
     limit = request.args.get("limit", type=int)
     if limit is not None and limit < 1:
         return jsonify({"success": False, "error": "limit must be a positive integer"}), 400
-    rank_by = (request.args.get("rank_by") or "elo").strip().lower()
+    rank_by = (request.args.get("rank_by") or "avatar_score").strip().lower()
     if rank_by not in ("avatar_score", "elo"):
         return jsonify({"success": False, "error": "rank_by must be avatar_score or elo"}), 400
     min_games = request.args.get("min_games", 10, type=int)

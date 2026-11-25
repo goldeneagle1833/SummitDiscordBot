@@ -313,7 +313,7 @@ class LeaderboardService:
         self,
         avatar: str | None = None,
         limit: int | None = None,
-        rank_by: str = "elo",
+        rank_by: str = "avatar_score",
         min_games: int = 10,
         scope: str = "season",
     ) -> dict:
@@ -325,9 +325,9 @@ class LeaderboardService:
         ``avatar`` narrows to one avatar (case-insensitive); ``limit`` caps
         each list.
 
-        ``rank_by`` orders each avatar's list: ``"elo"`` (default) is the season
-        Elo ladder order; ``"avatar_score"`` is the same Avatar Score the Top
-        Players page uses. Either way, entries with at least ``min_games`` games
+        ``rank_by`` orders each avatar's list: ``"avatar_score"`` (default) is
+        the same Avatar Score the Top Players page uses, and what PSO shows as
+        each avatar's top player; ``"elo"`` is the season rating ladder order. Either way, entries with at least ``min_games`` games
         rank ahead of the rest (``0`` turns the minimum off).
 
         ``scope="lifetime"`` gives the lifetime avatar ELO ladders instead (see
@@ -378,7 +378,7 @@ class LeaderboardService:
         self,
         avatar: str | None = None,
         limit: int | None = None,
-        rank_by: str = "elo",
+        rank_by: str = "avatar_score",
         min_games: int = 10,
     ) -> dict:
         """Lifetime avatar ELO split per avatar, shaped like the season version.

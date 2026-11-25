@@ -19,6 +19,7 @@ from repositories.user_profiles import UserProfileRepository
 from repositories.blocked_users_repo import BlockedUsersRepository
 from repositories.voice_only_repo import VoiceOnlyRepository
 from repositories.tag_me_repo import TagMeRepository
+from repositories.skill_match_repo import SkillMatchRepository
 from utils.auth import is_admin, require_auth
 from utils.card_images import attach_images, resolve_card_image
 from services.curiosa import deck_url_source, is_deck_url, normalize_deck_url
@@ -2403,6 +2404,21 @@ def player_api(player_id):
         ranked_rows = [r for r in ranked_rows if _passes_filters(r)]
         casual_rows = [r for r in casual_rows if _passes_filters(r)]
 
+    # Game type filter (ranked includes Omens; casual includes testing)
+    game_type = (request.args.get("game_type") or "").strip().lower()
+    if game_type == "ranked":
+        casual_rows = []
+    elif game_type == "casual":
+        ranked_rows = []
+    else:
+        game_type = ""
+    if game_type:
+        match_filters["game_type"] = game_type
+
+    # combined=1: one Match History list with ranked and casual games together,
+    # newest first, paged with `page`. Without it the old split lists are kept.
+    combined = request.args.get("combined") == "1"
+
     def _record(rows_in):
         wins = sum(1 for r in rows_in if r[0])
         return {"wins": wins, "losses": len(rows_in) - wins}
@@ -2418,13 +2434,18 @@ def player_api(player_id):
     casual_page = max(1, casual_page)
 
     # Calculate ranked pagination
-    total_ranked_matches = len(ranked_rows)
+    if combined:
+        in_list = {id(r) for r in ranked_rows} | {id(r) for r in casual_rows}
+        list_rows = [r for r in sorted_rows if id(r) in in_list]
+    else:
+        list_rows = ranked_rows
+    total_ranked_matches = len(list_rows)
     total_pages = (total_ranked_matches + per_page - 1) // per_page if total_ranked_matches > 0 else 1
     page = min(page, total_pages)  # Ensure page doesn't exceed total pages
 
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
-    paginated_rows = ranked_rows[start_idx:end_idx]
+    paginated_rows = list_rows[start_idx:end_idx]
 
     # Calculate casual pagination
     total_casual_matches = len(casual_rows)
@@ -2433,7 +2454,7 @@ def player_api(player_id):
 
     casual_start_idx = (casual_page - 1) * per_page
     casual_end_idx = casual_start_idx + per_page
-    paginated_casual_rows = casual_rows[casual_start_idx:casual_end_idx]
+    paginated_casual_rows = [] if combined else casual_rows[casual_start_idx:casual_end_idx]
 
     def _clean_match_comment(comment, reporter_id, player_id):
         """Extract the current player's own comment, stripping metadata and opponent's notes."""
@@ -2919,8 +2940,9 @@ def player_api(player_id):
         hidden_avatars = set()
     try:
         hidden_badges = UserProfileRepository().get_hidden_badges(player_id_normalized)
+        shown_badges = UserProfileRepository().get_shown_badges(player_id_normalized)
     except Exception:
-        hidden_badges = []
+        hidden_badges, shown_badges = [], None
     if hidden_avatars:
         if is_owner:
             for perf in avatar_performance:
@@ -3028,6 +3050,8 @@ def player_api(player_id):
             "is_admin": is_admin(),
             # Badge keys the player keeps off their hero card (badges are public anyway)
             "hidden_badges": hidden_badges,
+            # The hero card badges the player picked; None = their best 3
+            "shown_badges": shown_badges,
             "has_custom_display_name": has_custom_display_name,
             "elo_vs_brackets": elo_vs_brackets if _section_visible("elo_brackets") else [],
             "profile_visibility": visibility,
@@ -3237,6 +3261,54 @@ def set_hidden_badges(player_id):
     return jsonify({"success": True, "hidden": repo.get_hidden_badges(player_id_normalized)})
 
 
+@players_bp.route("/profile-badge-prefs", methods=["GET"])
+def get_profile_badge_prefs():
+    """Which badges each player chose for their name (leaderboards show the same).
+
+    Only players who changed the default (their best 3) are listed. The
+    badges themselves are public; this is just each player's pick.
+    """
+    try:
+        prefs = UserProfileRepository().get_all_badge_prefs()
+    except Exception as e:
+        logger.warning("Could not load badge preferences: %s", e)
+        prefs = {}
+    return jsonify({"success": True, "prefs": prefs})
+
+
+@players_bp.route("/player/<player_id>/shown-badges", methods=["PUT"])
+def set_shown_badges(player_id):
+    """Pick the badges on the profile's hero card (owner or admin).
+
+    {"shown": [key, ...]} shows exactly those, in that order;
+    {"shown": null} goes back to the default, the player's best 3.
+    Every badge still shows in the Postseason tab.
+    """
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+    viewer = str(logged_in_user_id).removeprefix("google_")
+    player_id_normalized = str(player_id).removeprefix("google_")
+    if viewer != player_id_normalized and not is_admin():
+        return jsonify({"error": "You can only change your own profile"}), 403
+
+    data = request.get_json(silent=True) or {}
+    if "shown" not in data:
+        return jsonify({"error": "shown is required (a list of badge keys, or null)"}), 400
+    keys = data["shown"]
+    if keys is not None and (
+        not isinstance(keys, list)
+        or len(keys) > 500
+        or not all(isinstance(k, str) and 0 < len(k) <= 300 for k in keys)
+    ):
+        return jsonify({"error": "shown must be a list of badge keys, or null"}), 400
+
+    repo = UserProfileRepository()
+    if not repo.set_shown_badges(player_id_normalized, keys):
+        return jsonify({"error": "Profile not found"}), 404
+    return jsonify({"success": True, "shown": repo.get_shown_badges(player_id_normalized)})
+
+
 # ---------------------------------------------------------------------------
 # Featured deck: a deck the player chose to show on their profile.
 #
@@ -3382,6 +3454,220 @@ def clear_featured_deck(player_id):
         return error
     UserProfileRepository().clear_featured_deck(player_id_normalized)
     return jsonify({"success": True})
+
+
+# The player's own boxes on their profile card. Player-written text is
+# public, so it is short, plain and link-free; admins can edit or clear it
+# from the profile like the owner (logged in the Audit Log).
+SHOWCASE_BIO_MAX = 160
+RIVAL_OPTIONS_MAX = 300
+_LINK_RE = re.compile(
+    r"(https?://|www\.|discord\.gg|\b[a-z0-9-]+\.(com|net|org|gg|io|co|ly|me|tv|xyz|app)\b)",
+    re.IGNORECASE,
+)
+
+
+def _showcase_text(raw, limit, label):
+    """(cleaned text, error) for one player-written field."""
+    from services.article_content import clean_text
+    text = clean_text(str(raw or ""))
+    if len(text) > limit:
+        return None, f"{label} can be at most {limit} characters"
+    if _LINK_RE.search(text):
+        return None, f"{label} can't include links"
+    return text, None
+
+
+def _showcase_card(raw):
+    """({"name", "image"} or None, error). Only cards we serve art for."""
+    from services.article_content import clean_text
+    from repositories.card_catalog import CardCatalogRepository
+    name = clean_text(str(raw or ""))[:80]
+    if not name:
+        return None, None
+    try:
+        names = CardCatalogRepository().get_all_card_names()
+    except Exception:
+        names = []
+    lower = name.lower()
+    match = next((n for n in names if n.lower() == lower), None)
+    image = resolve_card_image(match) if match else None
+    if not image:
+        return None, "Pick a card from the list"
+    return {"name": match, "image": image}, None
+
+
+def _opponent_records(player_id, opponent_id=None):
+    """{opponent id: {"name", "wins", "losses"}} from the player's lifetime bot matches.
+
+    Lifetime = the live match table plus the archive, like the profile's
+    Lifetime period. With opponent_id, only games against that player.
+    """
+    out = {}
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    except sqlite3.OperationalError:
+        return out
+    try:
+        for table in dict.fromkeys([live_matches(), "match_records_archive"]):
+            sql = (
+                f"SELECT winner_id, winner_display_name, losser_id, losser_display_name"
+                f" FROM {table} WHERE (winner_id = ? OR losser_id = ?)"
+            )
+            params = [player_id, player_id]
+            if opponent_id is not None:
+                sql += " AND (winner_id = ? OR losser_id = ?)"
+                params += [opponent_id, opponent_id]
+            try:
+                rows = conn.execute(sql + " ORDER BY timestamp", params).fetchall()
+            except sqlite3.OperationalError:
+                continue
+            for winner_id, winner_name, loser_id, loser_name in rows:
+                won = str(winner_id) == str(player_id)
+                opp_id, opp_name = (loser_id, loser_name) if won else (winner_id, winner_name)
+                if not opp_id or str(opp_id) == str(player_id):
+                    continue
+                rec = out.setdefault(str(opp_id), {"name": opp_name, "wins": 0, "losses": 0})
+                rec["name"] = opp_name or rec["name"]  # newest name wins
+                rec["wins" if won else "losses"] += 1
+    finally:
+        conn.close()
+    return out
+
+
+def _rival_payload(player_id, rival_id):
+    """The rival box: who, their picture, and the head-to-head record. None when hidden."""
+    if not rival_id:
+        return None
+    rival_id = str(rival_id)
+    # A rival who blocked this player is never shown on their profile
+    try:
+        blocked = {
+            str(b.get("blocked_user_id")).removeprefix("google_")
+            for b in BlockedUsersRepository().get_blocked_users(rival_id)
+        }
+        if str(player_id) in blocked:
+            return None
+    except Exception as e:
+        logger.warning("Could not check blocks for rival %s: %s", rival_id, e)
+    record = _opponent_records(player_id, rival_id).get(rival_id, {"name": None, "wins": 0, "losses": 0})
+    repo = UserProfileRepository()
+    name = repo.get_custom_display_names([rival_id]).get(rival_id) or record["name"]
+    profile = None
+    try:
+        profile = repo.get_by_user_id(rival_id)
+    except Exception:
+        pass
+    if not name and profile:
+        name = profile.get("custom_display_name") or profile.get("display_name")
+    return {
+        "id": rival_id,
+        "name": name or "Unknown player",
+        "avatar_url": _profile_picture_url(profile),
+        "wins": record["wins"],
+        "losses": record["losses"],
+    }
+
+
+def _showcase_payload(player_id, showcase):
+    card = showcase.get("favorite_card")
+    if isinstance(card, dict) and card.get("name"):
+        # The image file can change when card art is updated on the server
+        card = {"name": card["name"], "image": resolve_card_image(card["name"]) or card.get("image")}
+    else:
+        card = None
+    return {
+        "bio": showcase.get("bio") or None,
+        "favorite_card": card,
+        "rival": _rival_payload(player_id, showcase.get("rival")),
+    }
+
+
+@players_bp.route("/player/<player_id>/showcase", methods=["GET"])
+def get_showcase(player_id):
+    """The player's short bio, favorite card and rival (each null when not set)."""
+    player_id_normalized = str(player_id).removeprefix("google_")
+    try:
+        showcase = UserProfileRepository().get_showcase(player_id_normalized)
+    except Exception as e:
+        logger.warning("Could not load profile showcase for %s: %s", player_id_normalized, e)
+        showcase = {}
+    return jsonify(_showcase_payload(player_id_normalized, showcase))
+
+
+@players_bp.route("/player/<player_id>/rival-options", methods=["GET"])
+def get_rival_options(player_id):
+    """Players this player has played (most games first), to pick a rival from. Owner or admin."""
+    player_id_normalized, error = _owner_or_admin(player_id)
+    if error:
+        return error
+    records = _opponent_records(player_id_normalized)
+    names = UserProfileRepository().get_custom_display_names(list(records))
+    options = [
+        {
+            "id": opp_id,
+            "name": names.get(opp_id) or rec["name"] or "Unknown player",
+            "wins": rec["wins"],
+            "losses": rec["losses"],
+        }
+        for opp_id, rec in records.items()
+    ]
+    options.sort(key=lambda o: (-(o["wins"] + o["losses"]), o["name"].lower()))
+    return jsonify({"players": options[:RIVAL_OPTIONS_MAX]})
+
+
+@players_bp.route("/player/<player_id>/showcase", methods=["PUT"])
+def set_showcase(player_id):
+    """Change any of bio / favorite_card / rival (owner or admin).
+
+    Body fields are optional; a field that is sent replaces the old value,
+    and an empty value clears it. favorite_card is a card name; rival is
+    the id of a player they have played.
+    """
+    player_id_normalized, error = _owner_or_admin(player_id)
+    if error:
+        return error
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Send the fields to change"}), 400
+
+    repo = UserProfileRepository()
+    before = repo.get_showcase(player_id_normalized)
+    showcase = dict(before)
+
+    if "bio" in data:
+        bio, err = _showcase_text(data["bio"], SHOWCASE_BIO_MAX, "Your description")
+        if err:
+            return jsonify({"error": err}), 400
+        showcase["bio"] = bio
+    if "favorite_card" in data:
+        card, err = _showcase_card(data["favorite_card"])
+        if err:
+            return jsonify({"error": err}), 400
+        showcase["favorite_card"] = card
+    if "rival" in data:
+        rival = str(data["rival"] or "").removeprefix("google_")
+        if rival and rival not in _opponent_records(player_id_normalized, rival):
+            return jsonify({"error": "Pick a player you have played"}), 400
+        showcase["rival"] = rival or None
+
+    if not repo.set_showcase(player_id_normalized, showcase):
+        return jsonify({"error": "Profile not found"}), 404
+
+    viewer = str(session.get("user_id") or "").removeprefix("google_")
+    if viewer != player_id_normalized:
+        try:
+            from repositories.audit import AuditRepository
+            AuditRepository().log_action(
+                viewer, session.get("username") or viewer,
+                "edit_profile_showcase", target_id=player_id_normalized,
+                previous_state=before or None, new_state=showcase or None,
+            )
+        except Exception as e:
+            logger.warning("Could not audit-log showcase edit: %s", e)
+
+    return jsonify({"success": True, **_showcase_payload(
+        player_id_normalized, repo.get_showcase(player_id_normalized))})
 
 
 @players_bp.route("/player/<player_id>/card-stats")
@@ -3559,7 +3845,7 @@ def _queue_settings_key(player_id) -> tuple[str | None, str | None]:
 
 @players_bp.route("/player/<player_id>/queue-settings", methods=["GET"])
 def get_queue_settings(player_id):
-    """A player's Discord queue settings (owner only): voice only, tag me."""
+    """A player's Discord queue settings (owner only): voice only, tag me, skill matching."""
     if session.get("user_id") is None:
         return jsonify({"error": "Authentication required"}), 401
     key, error = _queue_settings_key(player_id)
@@ -3568,17 +3854,18 @@ def get_queue_settings(player_id):
     return jsonify({
         "voice_only": VoiceOnlyRepository().is_voice_only(key),
         "tag_me": TagMeRepository().wants_tag(key),
+        "skill_match": SkillMatchRepository().wants_skill_match(key),
     })
 
 
-_QUEUE_SETTINGS = ("voice_only", "tag_me")
+_QUEUE_SETTINGS = ("voice_only", "tag_me", "skill_match")
 
 
 @players_bp.route("/player/<player_id>/queue-settings", methods=["POST"])
 def set_queue_settings(player_id):
     """Save a player's Discord queue settings (owner only).
 
-    Send any of voice_only / tag_me; settings left out are unchanged.
+    Send any of voice_only / tag_me / skill_match; settings left out are unchanged.
     """
     if session.get("user_id") is None:
         return jsonify({"error": "Authentication required"}), 401
@@ -3588,7 +3875,7 @@ def set_queue_settings(player_id):
     data = request.get_json(silent=True) or {}
     sent = [name for name in _QUEUE_SETTINGS if name in data]
     if not sent:
-        return jsonify({"error": "Send voice_only or tag_me"}), 400
+        return jsonify({"error": "Send voice_only, tag_me or skill_match"}), 400
     for name in sent:
         if not isinstance(data[name], bool):
             return jsonify({"error": f"{name} must be true or false"}), 400
@@ -3597,6 +3884,8 @@ def set_queue_settings(player_id):
         result["voice_only"] = VoiceOnlyRepository().set_voice_only(key, data["voice_only"])
     if "tag_me" in data:
         result["tag_me"] = TagMeRepository().set_tag_me(key, data["tag_me"])
+    if "skill_match" in data:
+        result["skill_match"] = SkillMatchRepository().set_skill_match(key, data["skill_match"])
     return jsonify(result)
 
 

@@ -5,6 +5,8 @@ import logging
 import sqlite3
 from flask import Blueprint, jsonify, request, session
 
+from utils.auth import require_auth
+
 from services.match_confirmation import MatchConfirmationService
 from repositories.user_profiles import UserProfileRepository
 from repositories.match_confirmation import MatchConfirmationRepository
@@ -276,6 +278,62 @@ def submit_match_report():
         }), 500
 
 
+def pending_confirmations_for_user(current_user_id):
+    """Pending match confirmations where this user is the opponent, with the
+    submitter's name/avatar added and deck URLs removed."""
+    service = MatchConfirmationService()
+    confirmation_repo = MatchConfirmationRepository()
+    user_profile_repo = UserProfileRepository()
+
+    # Get pending confirmations where user is the opponent
+    # IDs are stored as-is (with google_ prefix for Google users), so search with original ID
+    current_user_id_str = str(current_user_id)
+    confirmations = confirmation_repo.get_pending_confirmations(current_user_id_str)
+
+    # Also search with normalized ID in case of mixed storage
+    if current_user_id_str.startswith("google_"):
+        numeric_id = current_user_id_str[7:]
+        confirmations += confirmation_repo.get_pending_confirmations(numeric_id)
+    else:
+        confirmations += confirmation_repo.get_pending_confirmations(f"google_{current_user_id_str}")
+
+    # Deduplicate by confirmation ID
+    seen_ids = set()
+    unique_confirmations = []
+    for c in confirmations:
+        if c["id"] not in seen_ids:
+            seen_ids.add(c["id"])
+            unique_confirmations.append(c)
+    confirmations = unique_confirmations
+
+    # Enrich with submitter display names
+    enriched_confirmations = []
+    for confirmation in confirmations:
+        # Get submitter display name (handles both Discord and Google users)
+        # submitter_discord_id may have google_ prefix for Google users
+        submitter_id_str = str(confirmation["submitter_discord_id"])
+
+        # Use the service's display name resolver which handles all ID formats
+        submitter_display_name = service._get_display_name_for_user(submitter_id_str)
+        submitter_avatar = None
+
+        # Try to get avatar from profile
+        profile = user_profile_repo.get_by_user_id(submitter_id_str)
+        if profile:
+            submitter_avatar = profile.get("avatar")
+
+        # Add submitter info to confirmation
+        confirmation["submitter_display_name"] = submitter_display_name
+        confirmation["submitter_avatar"] = submitter_avatar
+
+        # Remove deck URLs from confirmation response - they should not be visible until after confirmation
+        confirmation.pop("winner_deck_url", None)
+        confirmation.pop("loser_deck_url", None)
+
+        enriched_confirmations.append(confirmation)
+    return enriched_confirmations
+
+
 @match_reporting_bp.route("/pending", methods=["GET"])
 def get_pending_confirmations():
     """
@@ -298,56 +356,7 @@ def get_pending_confirmations():
 
     try:
         current_user_id = session["user_id"]
-        service = MatchConfirmationService()
-        confirmation_repo = MatchConfirmationRepository()
-        user_profile_repo = UserProfileRepository()
-
-        # Get pending confirmations where user is the opponent
-        # IDs are stored as-is (with google_ prefix for Google users), so search with original ID
-        current_user_id_str = str(current_user_id)
-        confirmations = confirmation_repo.get_pending_confirmations(current_user_id_str)
-
-        # Also search with normalized ID in case of mixed storage
-        if current_user_id_str.startswith("google_"):
-            numeric_id = current_user_id_str[7:]
-            confirmations += confirmation_repo.get_pending_confirmations(numeric_id)
-        else:
-            confirmations += confirmation_repo.get_pending_confirmations(f"google_{current_user_id_str}")
-
-        # Deduplicate by confirmation ID
-        seen_ids = set()
-        unique_confirmations = []
-        for c in confirmations:
-            if c["id"] not in seen_ids:
-                seen_ids.add(c["id"])
-                unique_confirmations.append(c)
-        confirmations = unique_confirmations
-
-        # Enrich with submitter display names
-        enriched_confirmations = []
-        for confirmation in confirmations:
-            # Get submitter display name (handles both Discord and Google users)
-            # submitter_discord_id may have google_ prefix for Google users
-            submitter_id_str = str(confirmation["submitter_discord_id"])
-
-            # Use the service's display name resolver which handles all ID formats
-            submitter_display_name = service._get_display_name_for_user(submitter_id_str)
-            submitter_avatar = None
-
-            # Try to get avatar from profile
-            profile = user_profile_repo.get_by_user_id(submitter_id_str)
-            if profile:
-                submitter_avatar = profile.get("avatar")
-
-            # Add submitter info to confirmation
-            confirmation["submitter_display_name"] = submitter_display_name
-            confirmation["submitter_avatar"] = submitter_avatar
-
-            # Remove deck URLs from confirmation response - they should not be visible until after confirmation
-            confirmation.pop("winner_deck_url", None)
-            confirmation.pop("loser_deck_url", None)
-
-            enriched_confirmations.append(confirmation)
+        enriched_confirmations = pending_confirmations_for_user(current_user_id)
 
         logger.info(f"Fetched pending confirmations: user={current_user_id}, count={len(enriched_confirmations)}")
 
@@ -884,3 +893,70 @@ def edit_match_time():
             exc_info=True,
         )
         return jsonify({"success": False, "error": f"Failed to update match time: {e}"}), 500
+
+
+ARCHIVED_MATCH_OFFSET = 1_000_000_000  # player page shows archived bot matches as rowid + this
+CORRECTION_STATUS_CODES = {
+    "sent": 200, "sent_to_channel": 200,
+    "already_pending": 409, "not_found": 404, "not_in_match": 403,
+    "cannot_dm": 422, "bad_request": 400, "error": 502,
+}
+
+
+@match_reporting_bp.route("/request-correction", methods=["POST"])
+@require_auth
+def request_match_correction():
+    """Ask to flip the result of one of your own matches.
+
+    Same as a player typing ``!correct_match <id>``: the bot DMs the other
+    player Confirm / Deny, and only their Confirm flips the match (ratings
+    recalculated). Body: match_id (a current-season bot match).
+    """
+    from routes.api.matchmaking import relay_to_bot
+
+    if "user_id" not in session:
+        return jsonify({"success": False, "error": "Log in first"}), 401
+    if session.get("auth_provider", "discord") != "discord":
+        return jsonify({"success": False, "error": "Log in with Discord to correct a match"}), 403
+    try:
+        match_id = int((request.get_json(silent=True) or {}).get("match_id"))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "match_id is required"}), 400
+    if match_id <= 0 or match_id >= ARCHIVED_MATCH_OFFSET:
+        return jsonify({"success": False, "error": "Only this season's matches can be corrected"}), 400
+
+    import webapp_config
+
+    user_id = str(session["user_id"])
+    conn = sqlite3.connect(str(webapp_config.MATCH_RECORDS_DB_PATH))
+    try:
+        row = conn.execute(
+            f"SELECT CAST(winner_id AS TEXT), CAST(losser_id AS TEXT) FROM {live_matches()} WHERE rowid = ?",
+            (match_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"success": False, "error": "Match not found this season"}), 404
+    if user_id not in row:
+        return jsonify({"success": False, "error": "You weren't in that match"}), 403
+
+    body, status = relay_to_bot(
+        "POST", "/match-correction-request",
+        {"match_id": match_id, "requester_id": user_id,
+         "requester_name": session.get("username") or "A player"},
+        unavailable_body={"status": "unavailable"},
+    )
+    result = body.get("status") if isinstance(body, dict) else None
+    if status >= 500 or result == "unavailable" or result is None:
+        return jsonify({"success": False, "error": "The Summit bot is unavailable right now. Try again in a few minutes."}), 503
+    code = CORRECTION_STATUS_CODES.get(result, 502)
+    if code == 200:
+        other = body.get("other_player_name") or "your opponent"
+        how = "a Discord DM" if result == "sent" else "a message in Discord (their DMs are off)"
+        return jsonify({
+            "success": True, "status": result, "other_player_name": other,
+            "message": f"Sent {other} {how} to confirm. The result switches once they confirm.",
+        }), 200
+    return jsonify({"success": False, "status": result,
+                    "error": body.get("message") or "Could not send the correction request"}), code

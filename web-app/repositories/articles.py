@@ -167,6 +167,10 @@ class ArticleRepository:
                         "header_card", "header_image"):
                 if col not in cols:
                     conn.execute(f"ALTER TABLE articles ADD COLUMN {col} TEXT")
+            # 'md' = Markdown typed in the old text box; 'html' = the visual
+            # editor (body_md then holds the cleaned HTML)
+            if "body_format" not in cols:
+                conn.execute("ALTER TABLE articles ADD COLUMN body_format TEXT NOT NULL DEFAULT 'md'")
             conn.commit()
         finally:
             conn.close()
@@ -193,19 +197,20 @@ class ArticleRepository:
 
     def create(self, *, title, summary, category, tags, body_md, body_html,
                word_count, reading_minutes, author_id, author_name,
-               author_provider=None, author_avatar=None, slug="article") -> int:
+               author_provider=None, author_avatar=None, slug="article",
+               body_format="md") -> int:
         now = _now()
         conn = self._conn()
         try:
             cur = conn.execute(
                 """INSERT INTO articles
                    (slug, title, summary, category, tags, body_md, body_html,
-                    word_count, reading_minutes, author_id, author_name,
-                    author_provider, author_avatar, status,
+                    body_format, word_count, reading_minutes, author_id,
+                    author_name, author_provider, author_avatar, status,
                     created_at, updated_at, submitted_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
                 (slug, title, summary, category, _join_tags(tags), body_md,
-                 body_html, word_count, reading_minutes, str(author_id),
+                 body_html, body_format, word_count, reading_minutes, str(author_id),
                  author_name, author_provider, author_avatar, now, now, now),
             )
             conn.commit()
@@ -215,7 +220,7 @@ class ArticleRepository:
 
     def update_content(self, article_id: int, *, title, summary, category, tags,
                        body_md, body_html, word_count, reading_minutes,
-                       slug) -> None:
+                       slug, body_format="md") -> None:
         """Author edit: content changes and the article goes back to review."""
         now = _now()
         conn = self._conn()
@@ -223,11 +228,12 @@ class ArticleRepository:
             conn.execute(
                 """UPDATE articles SET slug = ?, title = ?, summary = ?,
                        category = ?, tags = ?, body_md = ?, body_html = ?,
-                       word_count = ?, reading_minutes = ?, status = 'pending',
-                       updated_at = ?, submitted_at = ?
+                       body_format = ?, word_count = ?, reading_minutes = ?,
+                       status = 'pending', updated_at = ?, submitted_at = ?
                    WHERE id = ?""",
                 (slug, title, summary, category, _join_tags(tags), body_md,
-                 body_html, word_count, reading_minutes, now, now, article_id),
+                 body_html, body_format, word_count, reading_minutes, now, now,
+                 article_id),
             )
             conn.commit()
         finally:

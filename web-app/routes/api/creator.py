@@ -8,8 +8,6 @@ from utils.match_tables import live_matches
 import json
 import logging
 import sqlite3
-import threading
-import time
 from collections import defaultdict
 from datetime import datetime
 
@@ -18,31 +16,34 @@ from flask import Blueprint, jsonify, request
 from repositories.card_catalog import CardCatalogRepository
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS
 from services.data_release import cutoff_timestamp, released_connection
+from services.shared_stats_cache import SharedStatsCache, StatsBuilding
 from routes.api.cards import _build_card_image_lookup, _find_card_image, _get_event_date_range
 
 logger = logging.getLogger(__name__)
 
 creator_bp = Blueprint("creator", __name__)
 
-# Both endpoints read every reported decklist, so results are cached per worker
-# for a few minutes; the lock keeps a burst of visitors from each starting the
-# same build.
-_CACHE_TTL_SECONDS = 600
-_cache = {}  # key -> (built_at, data)
-_cache_lock = threading.Lock()
+# Both endpoints read every reported decklist, which takes many seconds, so
+# results are saved to a shared cache file (all workers, survives worker
+# restarts) and refreshed in the background while the old copy keeps being
+# served. Keys include the batch release cutoff, so a new batch shows at once.
+_CACHE_TTL_SECONDS = 1800
+_cache = SharedStatsCache("creator-cards", version=1, ttl=_CACHE_TTL_SECONDS)
 
 
 def _cached(key, build):
-    hit = _cache.get(key)
-    if hit and time.time() - hit[0] < _CACHE_TTL_SECONDS:
-        return hit[1]
-    with _cache_lock:
-        hit = _cache.get(key)
-        if hit and time.time() - hit[0] < _CACHE_TTL_SECONDS:
-            return hit[1]
-        data = build()
-        _cache[key] = (time.time(), data)
-        return data
+    return _cache.get(key, build)
+
+
+def warm_popular_cards():
+    """Load or build the default Card Stats list in the background (worker start)."""
+    _cache.warm(("popular", "all", "all", cutoff_timestamp()),
+                lambda: _build_popular_cards("all", "all"))
+
+
+@creator_bp.errorhandler(StatsBuilding)
+def _stats_building(_e):
+    return jsonify({"error": "Card stats are still being prepared, try again shortly."}), 503
 
 
 def _active_event_ids():

@@ -27,7 +27,7 @@ from utils.database import (
     save_pairing_announcement,
 )
 from cogs.lfg.voice import voice_match_tag, voice_match_text
-from repositories.tag_me_repo import pairing_mentions
+from repositories.tag_me_repo import pairing_mentions, tag_me_mentions_for
 
 logger = logging.getLogger("discord_bot")
 
@@ -564,7 +564,8 @@ async def announce_match_id(bot, pairing_id, match_type, match_id):
         message = await channel.fetch_message(ref["message_id"])
         suffix = match_id_suffix(match_id)
         if suffix.strip() not in (message.content or ""):
-            await message.edit(content=f"{message.content}{suffix}")
+            content = f"{message.content}{suffix}"
+            await message.edit(content=content, allowed_mentions=tag_me_mentions_for(content))
     except Exception as e:
         logger.warning(
             "Could not add match id %s to announcement for pairing %s: %s",

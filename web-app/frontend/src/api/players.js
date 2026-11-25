@@ -8,7 +8,9 @@ export const getPlayer = (id, { event, source, page, perPage, casualPage, extern
   if (perPage) params.set('per_page', perPage)
   if (casualPage) params.set('casual_page', casualPage)
   if (externalPage) params.set('external_page', externalPage)
-  for (const key of ['opponent', 'result', 'avatar', 'opponent_avatar', 'play_draw', 'card']) {
+  // One Match History list with ranked and casual games together
+  params.set('combined', '1')
+  for (const key of ['opponent', 'result', 'avatar', 'opponent_avatar', 'play_draw', 'card', 'game_type']) {
     if (filters[key]) params.set(key, filters[key])
   }
   const qs = params.toString()
@@ -45,9 +47,21 @@ export const getPlayerCardStats = (id, { event, queue } = {}) => {
 /** Hide avatars from the player's own profile. Their games are kept. */
 export const setHiddenAvatars = (id, avatars) => put(`/api/player/${id}/hidden-avatars`, { avatars })
 export const setHiddenBadges = (id, hidden) => put(`/api/player/${id}/hidden-badges`, { hidden })
+/** The hero card badges a player picked, in order; null = their best 3 (the default). */
+export const setShownBadges = (id, shown) => put(`/api/player/${id}/shown-badges`, { shown })
 
 /** The deck a player chose to feature on their profile: { deck } (null when none). */
 export const getFeaturedDeck = (id) => get(`/api/player/${id}/featured-deck`)
 export const setFeaturedDeck = (id, url, autoUpdate) =>
   put(`/api/player/${id}/featured-deck`, { url, auto_update: autoUpdate })
 export const clearFeaturedDeck = (id) => del(`/api/player/${id}/featured-deck`)
+
+/** The player's own profile boxes: { bio, favorite_card, rival } (each null when not set). */
+export const getShowcase = (id) => get(`/api/player/${id}/showcase`)
+/** Change any of bio / favorite_card (a card name) / rival (a player id); empty clears. */
+export const setShowcase = (id, fields) => put(`/api/player/${id}/showcase`, fields)
+/** Players this player has played, most games first: { players: [{ id, name, wins, losses }] }. */
+export const getRivalOptions = (id) => get(`/api/player/${id}/rival-options`)
+
+/** Which badges each player chose to show by their name ({ prefs: { id: { shown, hidden } } }). */
+export const getProfileBadgePrefs = () => get('/api/profile-badge-prefs')

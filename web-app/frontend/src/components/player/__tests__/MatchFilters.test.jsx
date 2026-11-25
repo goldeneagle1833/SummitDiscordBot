@@ -64,4 +64,30 @@ describe('MatchFilters', () => {
     await userEvent.clear(screen.getByLabelText('Card played'))
     expect(onChange).toHaveBeenCalledWith({})
   })
+
+  it('shows Lavamancer and Frostmage and the precon record when precon games are added', () => {
+    const withPrecon = {
+      ...data,
+      options: { ...data.options, avatars: ['Lavamancer', 'Pathfinder'], opponent_avatars: ['Frostmage', 'Seer'] },
+      precon: { wins: 2, losses: 1 },
+    }
+    render(<MatchFilters filters={{ avatar: 'Lavamancer' }} data={withPrecon} onChange={() => {}} />)
+    expect(screen.getByRole('option', { name: 'Lavamancer' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Frostmage' })).toBeInTheDocument()
+    expect(screen.getByTestId('filter-record')).toHaveTextContent('Precon: 2W - 1L (66.7%)')
+  })
+})
+
+describe('MatchFilters game type', () => {
+  it('filters to casual games and shows only the casual record', async () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<MatchFilters filters={{}} data={data} onChange={onChange} />)
+    await userEvent.selectOptions(screen.getByLabelText('Type'), 'casual')
+    expect(onChange).toHaveBeenCalledWith({ game_type: 'casual' })
+
+    rerender(<MatchFilters filters={{ game_type: 'casual' }} data={{ ...data, casual: { wins: 2, losses: 0 } }} onChange={onChange} />)
+    const record = screen.getByTestId('filter-record')
+    expect(record).toHaveTextContent('Casual: 2W - 0L (100%)')
+    expect(record).not.toHaveTextContent('Ranked')
+  })
 })

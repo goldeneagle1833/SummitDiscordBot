@@ -184,6 +184,11 @@ def upload_banner_image():
 def active_banners():
     """Get all active, non-expired promo banners (public endpoint)."""
     banners = AnalyticsRepository().get_active_banners()
+    try:
+        from services.meta_report import fill_banner_art
+        fill_banner_art(banners)
+    except Exception:
+        pass  # art is optional; the slide keeps its plain background
     return jsonify({"success": True, "banners": banners})
 
 

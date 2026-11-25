@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
-import { PreconMatchHistory, PreconStandings } from '../PlayerPrecon'
+import { PreconMatchHistory, PreconStandings, filterPreconGames, withPreconFilters } from '../PlayerPrecon'
 
 const DATA = {
   min_ranked_games: 5,
@@ -46,5 +46,51 @@ describe('PlayerPrecon', () => {
   it('renders nothing for a player with no precon games', () => {
     const { container } = renderWithRouter(<PreconMatchHistory data={{ games: [] }} />)
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('adds Lavamancer, Frostmage and precon opponents to the Matches tab filters', () => {
+    const base = {
+      options: { opponents: [{ id: '9', name: 'Bob', games: 3 }], avatars: ['Witch'], opponent_avatars: ['Seer'] },
+      ranked: { wins: 1, losses: 0 }, casual: { wins: 0, losses: 0 },
+    }
+    const out = withPreconFilters(base, DATA, {})
+    expect(out.options.avatars).toEqual(['Frostmage', 'Lavamancer', 'Witch'])
+    expect(out.options.opponent_avatars).toEqual(['Frostmage', 'Seer'])
+    expect(out.options.opponents).toEqual([
+      { id: '9', name: 'Bob', games: 4 },
+      { id: '7', name: 'Cara', games: 1 },
+    ])
+    expect(out.precon).toEqual({ wins: 1, losses: 1 })
+    expect(base.options.opponents[0].games).toBe(3)
+  })
+
+  it('leaves the filters alone for a player with no precon games', () => {
+    const base = { options: { avatars: ['Witch'] } }
+    expect(withPreconFilters(base, { games: [] }, {})).toBe(base)
+  })
+
+  it('filters precon games by avatar, opponent avatar, opponent, result and play/draw', () => {
+    const ids = (f) => filterPreconGames(DATA.games, f).map((g) => g.match_id)
+    expect(ids({})).toEqual([41, 40])
+    expect(ids({ avatar: 'Lavamancer' })).toEqual([41])
+    expect(ids({ opponent_avatar: 'Frostmage', result: 'loss' })).toEqual([40])
+    expect(ids({ opponent: '9' })).toEqual([41])
+    expect(ids({ play_draw: 'draw' })).toEqual([40])
+    expect(ids({ avatar: 'Witch' })).toEqual([])
+    expect(ids({ card: 'Fireball' })).toEqual([])
+  })
+
+  it('says so when no precon games fit the filters', () => {
+    renderWithRouter(<PreconMatchHistory data={DATA} filters={{ avatar: 'Witch' }} />)
+    expect(screen.getByText('No precon games fit these filters.')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+})
+
+describe('filterPreconGames game type', () => {
+  it('hides precon games under Casual and keeps them under Ranked', () => {
+    const games = [{ opponent_id: '1', won: true }]
+    expect(filterPreconGames(games, { game_type: 'casual' })).toEqual([])
+    expect(filterPreconGames(games, { game_type: 'ranked' })).toEqual(games)
   })
 })

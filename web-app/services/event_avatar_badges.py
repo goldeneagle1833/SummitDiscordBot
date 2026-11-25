@@ -22,6 +22,10 @@ Unlike the paper finishes, these are stored when awarded (table
 event_avatar_badges in match_records.db), so they stay as the admin saw them
 in the preview; awarding again replaces the event's badges, and Undo removes
 them.
+
+Events had different prize rules (older ones gave the prize to the whole
+Top 4), so the admin ticks who gets a badge: the best player per avatar
+starts ticked, and the rest of the top cut is listed unticked.
 """
 
 import datetime
@@ -37,6 +41,7 @@ from services import paper_finishes as pf
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
+_lock_migrate = threading.Lock()
 
 
 def _now() -> str:
@@ -62,10 +67,48 @@ def _conn():
                field_size INTEGER,
                awarded_by TEXT,
                awarded_at TEXT NOT NULL,
-               PRIMARY KEY (folder, avatar)
+               PRIMARY KEY (folder, avatar, user_id)
            )"""
     )
+    _widen_key(conn)
     return conn
+
+
+def _widen_key(conn) -> None:
+    """Tables made before extra Top 8 picks keyed on (folder, avatar) only,
+    which allowed one badge per avatar per event. Rebuild them keyed on the
+    player too so several players on one avatar can each hold it."""
+    def keyed_on_player():
+        return any(r["pk"] and r["name"] == "user_id"
+                   for r in conn.execute("PRAGMA table_info(event_avatar_badges)"))
+
+    if keyed_on_player():
+        return
+    with _lock_migrate:
+        if keyed_on_player():
+            return
+        conn.executescript(
+            """ALTER TABLE event_avatar_badges RENAME TO event_avatar_badges_old;
+               CREATE TABLE event_avatar_badges (
+                   folder TEXT NOT NULL,
+                   avatar TEXT NOT NULL,
+                   user_id TEXT NOT NULL,
+                   event_name TEXT,
+                   event_date TEXT,
+                   place INTEGER,
+                   deck_id TEXT,
+                   wins INTEGER,
+                   losses INTEGER,
+                   draws INTEGER,
+                   avatar_players INTEGER,
+                   field_size INTEGER,
+                   awarded_by TEXT,
+                   awarded_at TEXT NOT NULL,
+                   PRIMARY KEY (folder, avatar, user_id)
+               );
+               INSERT INTO event_avatar_badges SELECT * FROM event_avatar_badges_old;
+               DROP TABLE event_avatar_badges_old;"""
+        )
 
 
 def _find_event(repo: EventRepository, folder: str) -> dict | None:
@@ -119,6 +162,7 @@ def _field(repo: EventRepository, folder: str) -> tuple[list[dict], str]:
         reg = registered.get(deck_id)
         rows.append({
             "place": place,
+            "top_cut": True,
             "deck_id": deck_id,
             "avatar": pf._avatar(deck) or avatar_of.get(deck_id, ""),
             "names": names_of(reg, owner),
@@ -136,6 +180,7 @@ def _field(repo: EventRepository, folder: str) -> tuple[list[dict], str]:
     for offset, reg in enumerate(rest, start=len(rows) + 1):
         rows.append({
             "place": offset,
+            "top_cut": False,
             "deck_id": reg["deck_id"],
             "avatar": avatar_of.get(reg["deck_id"], ""),
             "names": names_of(reg, ""),
@@ -167,15 +212,14 @@ def preview(folder: str) -> dict | None:
         if row["avatar"] not in best:  # rows are best finish first
             best[row["avatar"]] = row
 
-    avatars = []
-    for avatar, row in sorted(best.items(), key=lambda kv: (kv[1]["place"], kv[0])):
+    def entry(row):
         match = pf._resolve(
             {"folder": folder, **row}, index, linked, rejected, assignments
         )
         user_id = match["user_id"] if match["status"] in pf.EARNS_BADGE else None
-        entry = players.get(user_id) if user_id else None
-        avatars.append({
-            "avatar": avatar,
+        player = players.get(user_id) if user_id else None
+        return {
+            "avatar": row["avatar"],
             "place": row["place"],
             "finish": pf.finish_label(row["place"]),
             "deck_id": row["deck_id"],
@@ -183,13 +227,19 @@ def preview(folder: str) -> dict | None:
             "wins": row["wins"],
             "losses": row["losses"],
             "draws": row["draws"],
-            "avatar_players": counts[avatar],
+            "avatar_players": counts[row["avatar"]],
             "status": match["status"],
             "player": (
-                {"user_id": user_id, "name": entry["name"] if entry else f"Player {user_id}"}
+                {"user_id": user_id, "name": player["name"] if player else f"Player {user_id}"}
                 if user_id else None
             ),
-        })
+        }
+
+    avatars = [entry(row) for _, row in sorted(best.items(), key=lambda kv: (kv[1]["place"], kv[0]))]
+    # The rest of the top cut, for events whose prize went to e.g. the whole
+    # Top 4 rather than one player per avatar. Never ticked unless chosen.
+    best_ids = {id(r) for r in best.values()}
+    others = [entry(row) for row in rows if row["top_cut"] and row["avatar"] and id(row) not in best_ids]
 
     return {
         "folder": folder,
@@ -198,16 +248,34 @@ def preview(folder: str) -> dict | None:
         "source": source,
         "field_size": len(rows),
         "avatars": avatars,
+        "others": others,
         "awarded": awarded_for_event(folder),
     }
 
 
-def award(folder: str, admin: str) -> dict | None:
-    """Save this event's badges as the preview shows them (replacing earlier ones)."""
+def award(folder: str, admin: str, avatars: list[str] | None = None,
+          picks: list[dict] | None = None) -> dict | None:
+    """Save this event's badges as the preview shows them (replacing earlier ones).
+
+    Events have different prize rules, so the admin ticks who gets one:
+    ``picks`` is a list of {"avatar", "user_id"} from the best-per-avatar rows
+    and the rest of the top cut; ``avatars`` (older form) ticks best-per-avatar
+    rows by avatar. With neither, every best-per-avatar row with a Summit
+    account is awarded.
+    """
     result = preview(folder)
     if result is None:
         return None
     winners = [a for a in result["avatars"] if a["player"]]
+    if picks is not None:
+        chosen = {(str(p.get("avatar")), str(p.get("user_id"))) for p in picks}
+        winners = [
+            a for a in winners + result["others"]
+            if a["player"] and (a["avatar"], str(a["player"]["user_id"])) in chosen
+        ]
+    elif avatars is not None:
+        picked = set(avatars)
+        winners = [a for a in winners if a["avatar"] in picked]
     with _lock:
         conn = _conn()
         try:

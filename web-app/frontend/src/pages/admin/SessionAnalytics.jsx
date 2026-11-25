@@ -322,7 +322,7 @@ export default function SessionAnalytics() {
           {data.total_sessions === 0 && (
             <div className="bg-bg-raised border border-border rounded-lg p-8 text-center">
               <p className="text-text-muted">No completed sessions yet. Data appears after users visit and leave the site.</p>
-              <p className="text-xs text-text-muted mt-2">Sessions are recorded when a user's heartbeat stops for 2+ minutes.</p>
+              <p className="text-xs text-text-muted mt-2">Sessions are recorded once a visitor's tab has been closed, hidden or idle for about 2.5 minutes.</p>
             </div>
           )}
         </>

@@ -5,6 +5,7 @@ import Nav from '@/components/layout/Nav'
 import Footer from '@/components/layout/Footer'
 import AdminGuard from '@/components/layout/AdminGuard'
 import StoreAdminGuard from '@/components/layout/StoreAdminGuard'
+import ModeratorGuard from '@/components/layout/ModeratorGuard'
 import LoginGuard from '@/components/layout/LoginGuard'
 import ExplorerAdminGuard from '@/components/layout/ExplorerAdminGuard'
 import ArticleReviewerGuard from '@/components/layout/ArticleReviewerGuard'
@@ -35,6 +36,7 @@ function lazyPage(load) {
 const Leaderboard = lazyPage(() => import('@/pages/Leaderboard'))
 const LimitedLeaderboard = lazyPage(() => import('@/pages/LimitedLeaderboard'))
 const Player = lazyPage(() => import('@/pages/Player'))
+const MyProfile = lazyPage(() => import('@/pages/MyProfile'))
 const DeckStats = lazyPage(() => import('@/pages/DeckStats'))
 const PlayerAvatar = lazyPage(() => import('@/pages/PlayerAvatar'))
 const Matches = lazyPage(() => import('@/pages/Matches'))
@@ -99,6 +101,8 @@ const ExplorerStandings = lazyPage(() => import('@/pages/ExplorerStandings'))
 const AdminHub = lazyPage(() => import('@/pages/admin/AdminHub'))
 const AuditLog = lazyPage(() => import('@/pages/admin/AuditLog'))
 const StoreAdmin = lazyPage(() => import('@/pages/admin/StoreAdmin'))
+const ModTools = lazyPage(() => import('@/pages/ModTools'))
+const ModPlayer = lazyPage(() => import('@/pages/ModPlayer'))
 const StoreOrderPrint = lazyPage(() => import('@/pages/admin/StoreOrderPrint'))
 const StoreOrderBulkPrint = lazyPage(() => import('@/pages/admin/StoreOrderBulkPrint'))
 const ActiveConnections = lazyPage(() => import('@/pages/admin/ActiveConnections'))
@@ -108,6 +112,7 @@ const ExternalMatchesAdmin = lazyPage(() => import('@/pages/admin/ExternalMatche
 const OmensMatchesAdmin = lazyPage(() => import('@/pages/admin/OmensMatches'))
 const ChartDetail = lazyPage(() => import('@/pages/admin/ChartDetail'))
 const Monitoring = lazyPage(() => import('@/pages/admin/Monitoring'))
+const BotTraffic = lazyPage(() => import('@/pages/admin/BotTraffic'))
 const BracketsAdmin = lazyPage(() => import('@/pages/admin/BracketsAdmin'))
 const UserProfiles = lazyPage(() => import('@/pages/admin/UserProfiles'))
 const ExplorerApplications = lazyPage(() => import('@/pages/admin/ExplorerApplications'))
@@ -128,6 +133,7 @@ const SeasonFeedback = lazyPage(() => import('@/pages/SeasonFeedback'))
 
 // Error pages
 import ErrorPage from '@/pages/ErrorPage'
+import usePolling from '@/hooks/usePolling'
 import NotFound from '@/pages/NotFound'
 
 function LazyPage({ children }) {
@@ -137,26 +143,30 @@ function LazyPage({ children }) {
 const SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36).slice(2)
 const USER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || null
 
+// Heartbeat for the admin "Active Now" / Active Connections / Session
+// Analytics numbers. Once a minute while the tab is visible and in use; it
+// stops while the tab is hidden or nobody has touched it for 15 minutes, and
+// starts again straight away when they come back.
 function useHeartbeat(user) {
   const location = useLocation()
-  useEffect(() => {
-    const send = () => {
-      const payload = { sid: SESSION_ID, path: location.pathname, timezone: USER_TZ }
-      if (user && user.id) {
-        payload.user_id = String(user.id)
-        payload.username = user.username || null
-      }
-      const body = JSON.stringify(payload)
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon('/api/analytics/heartbeat', new Blob([body], { type: 'application/json' }))
-      } else {
-        fetch('/api/analytics/heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
-      }
+  const send = () => {
+    const payload = { sid: SESSION_ID, path: location.pathname, timezone: USER_TZ }
+    if (user && user.id) {
+      payload.user_id = String(user.id)
+      payload.username = user.username || null
     }
-    send()
-    const id = setInterval(send, 30000)
-    return () => clearInterval(id)
-  }, [location.pathname, user])
+    const body = JSON.stringify(payload)
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/analytics/heartbeat', new Blob([body], { type: 'application/json' }))
+    } else {
+      fetch('/api/analytics/heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
+    }
+  }
+  usePolling(send, 60 * 1000, {
+    idleMs: 15 * 60 * 1000,
+    idleIntervalMs: 0,
+    deps: [location.pathname, user],
+  })
 }
 
 function usePageTracking(user) {
@@ -244,6 +254,9 @@ const router = createBrowserRouter([
       { path: '/precon', element: <Navigate to="/?ladder=precon#leaderboard" replace /> },
       { path: '/lmfm', element: <Navigate to="/?ladder=precon#leaderboard" replace /> },
       { path: '/player/:playerId', element: <Player /> },
+      // The logged-in player's own profile, optionally with a panel open (/me/block-list)
+      { path: '/me', element: <MyProfile /> },
+      { path: '/me/:panel', element: <MyProfile /> },
       { path: '/match-history', element: <Matches /> },
       { path: '/deck-stats/:playerId', element: <DeckStats /> },
       { path: '/player/:playerId/avatar/:avatarName', element: <PlayerAvatar /> },
@@ -321,6 +334,8 @@ const router = createBrowserRouter([
       // Storefront applications are closed; old links land on the store
       { path: '/store/apply', element: <Navigate to="/store" replace /> },
       { path: '/admin/store', element: <StoreAdminGuard><StoreAdmin /></StoreAdminGuard> },
+      { path: '/mod-tools', element: <ModeratorGuard><ModTools /></ModeratorGuard> },
+      { path: '/mod-tools/player/:userId', element: <ModeratorGuard><ModPlayer /></ModeratorGuard> },
       { path: '/admin', element: <AdminGuard><AdminHub /></AdminGuard> },
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
       { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },
@@ -330,6 +345,7 @@ const router = createBrowserRouter([
       { path: '/admin/omens-matches', element: <AdminGuard><OmensMatchesAdmin /></AdminGuard> },
       { path: '/admin/chart/:chartType', element: <AdminGuard><ChartDetail /></AdminGuard> },
       { path: '/admin/monitoring', element: <AdminGuard><Monitoring /></AdminGuard> },
+      { path: '/admin/bots', element: <AdminGuard><BotTraffic /></AdminGuard> },
       { path: '/admin/events', element: <AdminGuard><EventsAdmin /></AdminGuard> },
       { path: '/admin/brackets', element: <AdminGuard><BracketsAdmin /></AdminGuard> },
       { path: '/admin/users', element: <AdminGuard><UserProfiles /></AdminGuard> },

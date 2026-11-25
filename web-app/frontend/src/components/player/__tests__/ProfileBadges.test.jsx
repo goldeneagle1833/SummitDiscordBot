@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
-import { EventAvatarBadgeChips, EventAvatarBadgesSection } from '../EventAvatarBadges'
+import { EventAvatarBadgeChips, EventAvatarBadgesSection, resetAvatarFilesCache } from '../EventAvatarBadges'
 import ManageBadgesModal from '../ManageBadgesModal'
-import { profileBadges } from '../profileBadges'
-import { setHiddenBadges } from '@/api/players'
+import { profileBadges, heroBadgeKeys } from '../profileBadges'
+import { setShownBadges } from '@/api/players'
 
 vi.mock('@/api/paperFinishes', () => ({ getEventAvatarBadges: vi.fn() }))
-vi.mock('@/api/players', () => ({ setHiddenBadges: vi.fn() }))
+vi.mock('@/api/players', () => ({ setShownBadges: vi.fn() }))
+vi.mock('@/api/cards', () => ({ getAvatarImageFiles: vi.fn(() => Promise.resolve(['Sparkmage.png'])) }))
 
 const BADGES = [
   {
@@ -24,6 +25,16 @@ describe('Event avatar badges', () => {
     expect(screen.getByRole('link')).toHaveAttribute('href', '/top-8/Avatar%20of%20the%20Realm%202026')
   })
 
+  it("shows the avatar's portrait in the foil ring, or the foil card without one", () => {
+    resetAvatarFilesCache(['Sparkmage.png'])
+    const { container } = renderWithRouter(<EventAvatarBadgeChips badges={BADGES} />)
+    expect(container.querySelector('.foil-ring img')).toHaveAttribute('src', '/avatar-images/Sparkmage.png')
+    resetAvatarFilesCache([])
+    const other = renderWithRouter(<EventAvatarBadgeChips badges={BADGES} />)
+    expect(other.container.querySelector('.foil-ring')).toBeNull()
+    expect(other.container.querySelector('svg')).not.toBeNull()
+  })
+
   it('lists the finish and record in the Postseason tab', () => {
     renderWithRouter(<EventAvatarBadgesSection badges={BADGES} />)
     expect(screen.getByText('Top 16 · 4-2 · best of 7 Sparkmage players')).toBeInTheDocument()
@@ -31,31 +42,62 @@ describe('Event avatar badges', () => {
 })
 
 describe('Profile badges setting', () => {
-  beforeEach(() => vi.mocked(setHiddenBadges).mockReset())
+  beforeEach(() => vi.mocked(setShownBadges).mockReset())
 
   const badges = profileBadges({
-    marks: { best_label: 'Champion' },
+    marks: { best_label: 'Top 8' },
     honours: [{ place: 1, label: 'Top Imposter', season: 'Gothic Season 8' }],
-    paperFinishes: [{ folder: 'LinCon', label: 'Top 8', event: 'LinCon' }],
+    paperFinishes: [{ folder: 'LinCon', label: 'Winner', event: 'LinCon' }, { folder: 'Local', label: 'Top 4', event: 'Local' }],
     eventBadges: BADGES,
   })
 
-  it('builds one entry per hero badge with stable keys', () => {
+  it('orders badges best first with stable keys', () => {
     expect(badges.map((b) => b.key)).toEqual([
-      'postseason', 'avatar_honours', 'event_avatar:Avatar of the Realm 2026:Sparkmage', 'paper:LinCon',
+      'paper:LinCon', 'avatar_honours', 'event_avatar:Avatar of the Realm 2026:Sparkmage', 'paper:Local', 'postseason',
     ])
   })
 
-  it('saves the badges the player switched off', async () => {
-    vi.mocked(setHiddenBadges).mockResolvedValue({ hidden: ['paper:LinCon'] })
+  it("drops a paper result that repeats the player's Summit postseason finish", () => {
+    const marks = { best_label: 'Top 4', entries: [{ label: 'Top 4', name: 'Gothic Season 4 Top Cut' }] }
+    const keys = profileBadges({
+      marks,
+      paperFinishes: [
+        { folder: 'S4', label: 'Top 4', event: 'Summit Gothic Season 4' },
+        { folder: 'S5', label: 'Top 8', event: 'Summit Gothic Season 5' },
+        { folder: 'Ascanrask', label: 'Winner', event: 'Ascanrask III' },
+      ],
+    }).map((b) => b.key)
+    expect(keys).toEqual(['paper:Ascanrask', 'postseason', 'paper:S5'])
+  })
+
+  it('shows the best 3 by default, or exactly what the player picked', () => {
+    expect([...heroBadgeKeys(badges, null)]).toEqual(['paper:LinCon', 'avatar_honours', 'event_avatar:Avatar of the Realm 2026:Sparkmage'])
+    expect([...heroBadgeKeys(badges, ['postseason', 'gone'])]).toEqual(['postseason'])
+    expect(heroBadgeKeys(badges, []).size).toBe(0)
+    expect([...heroBadgeKeys(badges, null, ['paper:LinCon'])]).toEqual([
+      'avatar_honours', 'event_avatar:Avatar of the Realm 2026:Sparkmage', 'paper:Local',
+    ])
+  })
+
+  it('saves the picked badges, best first', async () => {
+    vi.mocked(setShownBadges).mockResolvedValue({ shown: ['paper:LinCon', 'avatar_honours', 'event_avatar:Avatar of the Realm 2026:Sparkmage', 'postseason'] })
     const onSaved = vi.fn()
-    renderWithRouter(
-      <ManageBadgesModal playerId="1" badges={badges} hidden={['stale-key']} onClose={() => {}} onSaved={onSaved} />,
-    )
-    expect(screen.getByText('4 of 4 showing')).toBeInTheDocument()
-    fireEvent.click(screen.getAllByRole('checkbox')[3])
+    renderWithRouter(<ManageBadgesModal playerId="1" badges={badges} shown={null} onClose={() => {}} onSaved={onSaved} />)
+    expect(screen.getByText('3 of 5 showing (your best 3)')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Best postseason finish'))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(['paper:LinCon']))
-    expect(setHiddenBadges).toHaveBeenCalledWith('1', ['paper:LinCon'])
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(setShownBadges).toHaveBeenCalledWith('1', [
+      'paper:LinCon', 'avatar_honours', 'event_avatar:Avatar of the Realm 2026:Sparkmage', 'postseason',
+    ])
+  })
+
+  it('goes back to the best 3', async () => {
+    vi.mocked(setShownBadges).mockResolvedValue({ shown: null })
+    const onSaved = vi.fn()
+    renderWithRouter(<ManageBadgesModal playerId="1" badges={badges} shown={['postseason']} onClose={() => {}} onSaved={onSaved} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Use my best 3' }))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(null))
+    expect(setShownBadges).toHaveBeenCalledWith('1', null)
   })
 })

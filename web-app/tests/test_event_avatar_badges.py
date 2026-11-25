@@ -112,6 +112,67 @@ def test_award_stores_badges_and_undo_removes_them(setup, elo_db):
     assert get_badges_by_player() == {}
 
 
+def test_award_only_ticked_avatars(setup, elo_db):
+    from services.event_avatar_badges import award, get_badges_by_player
+
+    _player(elo_db, "1", "Annabel")
+    _player(elo_db, "3", "Catherine")
+    _realm(setup)
+
+    result = award(EVENT, admin="AdminUser", avatars=["Seer"])
+    assert [b["avatar"] for b in result["awarded"]] == ["Seer"]
+    assert "1" not in get_badges_by_player()
+
+    # Ticking a different set replaces the earlier pick; nothing ticked = none
+    award(EVENT, admin="AdminUser", avatars=["Sparkmage"])
+    assert set(get_badges_by_player()) == {"1"}
+    assert award(EVENT, admin="AdminUser", avatars=[])["awarded"] == []
+
+
+def test_rest_of_top_cut_can_be_picked_on_the_same_avatar(setup, elo_db):
+    """Older events gave the prize to the whole Top 4, often on one avatar."""
+    from services.event_avatar_badges import award, get_badges_by_player, preview
+
+    _player(elo_db, "1", "Annabel")
+    _player(elo_db, "3", "Other3")
+    _player(elo_db, "4", "Other4")
+    _realm(setup)
+
+    result = preview(EVENT)
+    others = result["others"]
+    assert [o["place"] for o in others] == [3, 4, 5, 6, 7, 8]  # outside-cut Seer players not listed
+    assert others[0]["avatar"] == "Sparkmage" and others[0]["player"]["user_id"] == "3"
+
+    picks = [{"avatar": "Sparkmage", "user_id": "1"}, {"avatar": "Sparkmage", "user_id": "3"},
+             {"avatar": "Sparkmage", "user_id": "4"}, {"avatar": "Sparkmage", "user_id": "999"}]
+    done = award(EVENT, admin="AdminUser", picks=picks)
+    assert sorted(b["user_id"] for b in done["awarded"]) == ["1", "3", "4"]
+    badges = get_badges_by_player()
+    assert badges["4"][0]["label"] == "Top Sparkmage" and badges["4"][0]["place"] == 4
+
+
+def test_old_table_is_rebuilt_keyed_on_player(setup, match_db):
+    conn = sqlite3.connect(str(match_db))
+    conn.execute("""CREATE TABLE event_avatar_badges (folder TEXT NOT NULL, avatar TEXT NOT NULL,
+        user_id TEXT NOT NULL, event_name TEXT, event_date TEXT, place INTEGER, deck_id TEXT,
+        wins INTEGER, losses INTEGER, draws INTEGER, avatar_players INTEGER, field_size INTEGER,
+        awarded_by TEXT, awarded_at TEXT NOT NULL, PRIMARY KEY (folder, avatar))""")
+    conn.execute("INSERT INTO event_avatar_badges (folder, avatar, user_id, event_name, awarded_at)"
+                 " VALUES ('E', 'Druid', '1', 'E', 'now')")
+    conn.commit()
+    conn.close()
+
+    from services.event_avatar_badges import get_badges_by_player, _conn
+
+    assert get_badges_by_player()["1"][0]["avatar"] == "Druid"
+    c = _conn()
+    c.execute("INSERT INTO event_avatar_badges (folder, avatar, user_id, event_name, awarded_at)"
+              " VALUES ('E', 'Druid', '2', 'E', 'now')")
+    c.commit()
+    c.close()
+    assert set(get_badges_by_player()) == {"1", "2"}
+
+
 def test_event_without_match_history_uses_top_cut_only(setup, elo_db):
     from services.event_avatar_badges import preview
 
@@ -136,6 +197,11 @@ def test_admin_routes(setup, elo_db, admin_session, monkeypatch):
         pytest.skip("admin session fixture is not an admin in this config")
     assert resp.status_code == 200
     assert resp.get_json()["avatars"]
+    assert admin_session.post(url, json={"avatars": "Sparkmage"}).status_code == 400
+    assert admin_session.post(url, json={"avatars": []}).get_json()["awarded"] == []
+    assert admin_session.post(url, json={"picks": [{"avatar": "Sparkmage"}]}).status_code == 400
+    picked = admin_session.post(url, json={"picks": [{"avatar": "Sparkmage", "user_id": "1"}]}).get_json()
+    assert [b["user_id"] for b in picked["awarded"]] == ["1"]
     assert admin_session.post(url).get_json()["awarded"][0]["avatar"] == "Sparkmage"
     public = admin_session.get("/api/event-avatar-badges").get_json()
     assert public["badges"]["1"][0]["label"] == "Top Sparkmage"
@@ -172,3 +238,55 @@ def test_hidden_badges_owner_only(client, match_db, monkeypatch):
     assert resp.status_code == 200
     assert resp.get_json()["hidden"] == ["avatar_honours", "paper:X"]
     assert UserProfileRepository(match_db).get_hidden_badges("77") == ["avatar_honours", "paper:X"]
+
+
+def test_shown_badges_default_pick_and_reset(client, match_db, monkeypatch):
+    import webapp_config
+    from repositories.user_profiles import UserProfileRepository
+
+    monkeypatch.setattr(webapp_config, "MATCH_RECORDS_DB_PATH", match_db)
+    conn = sqlite3.connect(str(match_db))
+    conn.execute(
+        "INSERT INTO user_profiles (user_id, provider, display_name, first_login_at, last_login_at)"
+        " VALUES ('78', 'discord', 'Ben', 'now', 'now')"
+    )
+    conn.commit()
+    conn.close()
+    repo = UserProfileRepository(match_db)
+    assert repo.get_shown_badges("78") is None  # default: best 3
+
+    assert client.put("/api/player/78/shown-badges", json={"shown": []}).status_code == 401
+    with client.session_transaction() as sess:
+        sess["user_id"] = "79"
+    assert client.put("/api/player/78/shown-badges", json={"shown": []}).status_code == 403
+    with client.session_transaction() as sess:
+        sess["user_id"] = "78"
+    assert client.put("/api/player/78/shown-badges", json={}).status_code == 400
+    resp = client.put("/api/player/78/shown-badges", json={"shown": ["paper:B", "postseason", "paper:B"]})
+    assert resp.get_json()["shown"] == ["paper:B", "postseason"]  # order kept, no repeats
+    assert client.put("/api/player/78/shown-badges", json={"shown": []}).get_json()["shown"] == []
+    assert client.put("/api/player/78/shown-badges", json={"shown": None}).get_json()["shown"] is None
+
+
+def test_badge_prefs_list_only_players_who_chose(client, match_db, monkeypatch):
+    import webapp_config
+    from repositories.user_profiles import UserProfileRepository
+
+    monkeypatch.setattr(webapp_config, "MATCH_RECORDS_DB_PATH", match_db)
+    conn = sqlite3.connect(str(match_db))
+    for uid in ("81", "google_82", "83"):
+        conn.execute(
+            "INSERT INTO user_profiles (user_id, provider, display_name, first_login_at, last_login_at)"
+            " VALUES (?, 'discord', 'X', 'now', 'now')", (uid,)
+        )
+    conn.commit()
+    conn.close()
+    repo = UserProfileRepository(match_db)
+    repo.set_shown_badges("81", ["paper:A"])
+    repo.set_hidden_badges("82", ["avatar_honours"])
+
+    prefs = client.get("/api/profile-badge-prefs").get_json()["prefs"]
+    assert prefs == {
+        "81": {"shown": ["paper:A"], "hidden": []},
+        "82": {"shown": None, "hidden": ["avatar_honours"]},
+    }

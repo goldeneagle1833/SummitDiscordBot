@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { getStreamerBanner } from '@/api/streamers'
+import { getNavChecks } from '@/api/nav'
+import usePolling from '@/hooks/usePolling'
 import { DECK_URL_PLACEHOLDER } from '@/utils/deckLinks'
 import { STORE_LIVE } from '@/utils/store'
 import SocialLinks from '@/components/layout/SocialLinks'
@@ -18,14 +20,17 @@ import WhatsNewBar from '@/components/layout/WhatsNewBar'
 // Always first on the top bar, in this order; links a user adds follow them.
 // Deck Archetypes and Top 8 Decks came off the top bar (Bruce, 2026-11-10);
 // they stay in the menu and can still be added back through Customize.
-const PERMANENT_LINKS = ['Avatars']
+export const PERMANENT_LINKS = ['Avatars', 'Feedback']
+// Locked links that sit at the end of the top bar (just before Store) instead
+// of first. Feedback came back on the top bar for everyone (Bruce, 2026-11-20).
+const TRAILING_LINKS = ['Feedback']
 const DROPPED_FROM_TOP_BAR = ['Deck Archetypes', 'Top 8 Decks']
 // Marks saved prefs made after that change, so the two links are dropped
 // from older saves only once and a person can add them back
 const PREFS_VERSION_MARK = '__v2'
 
 // Same order as the hamburger menu; the top bar shows added links in this order
-const ALL_NAV_OPTIONS = [
+export const ALL_NAV_OPTIONS = [
   { to: '/deck-rec', label: 'Sorcery Deck Rec' },
   { to: '/top-8', label: 'Top 8 Decks' },
   { to: '/deck-builder', label: 'Deck Visualizer' },
@@ -59,7 +64,7 @@ const RENAMED_LABELS = {
   'Community Series': 'Explorer Series',
 }
 
-function normalizeLabels(labels) {
+export function normalizeLabels(labels) {
   let out = labels.map((l) => RENAMED_LABELS[l] || l)
   // Older saves held these because they used to be locked on the top bar
   if (!out.includes(PREFS_VERSION_MARK)) {
@@ -206,41 +211,62 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
   )
 }
 
-function NotificationBell({ user }) {
-  const [count, setCount] = useState(0)
-  const [open, setOpen] = useState(false)
+// One background check for the whole top bar. Logged in: a single
+// /api/nav/checks call brings match reports waiting on you, site
+// notifications and the "someone is live" dot (it used to be three separate
+// polls). Logged out: just the live dot, less often. Both only run while the
+// tab is visible, and slow right down when nobody has touched the page for
+// 10 minutes. Coming back to the tab refreshes straight away.
+export const NAV_CHECK_MS = 60 * 1000
+export const BANNER_CHECK_MS = 3 * 60 * 1000
+
+function useNavChecks(user, loading) {
+  const [streamer, setStreamer] = useState(null)
   const [confirmations, setConfirmations] = useState([])
   const [storeNotifs, setStoreNotifs] = useState([])
+  const userId = (user && (user.user_id || user.id)) || null
+
+  const refresh = () => {
+    if (userId) {
+      return getNavChecks()
+        .then((d) => {
+          setConfirmations(d.pending_confirmations || [])
+          setStoreNotifs(d.notifications || [])
+          setStreamer(d.streamer || null)
+        })
+        .catch(() => {})
+    }
+    return getStreamerBanner()
+      .then((data) => setStreamer(data.is_live ? data.streamer : null))
+      .catch(() => setStreamer(null))
+  }
+
+  useEffect(() => {
+    if (!userId) { setConfirmations([]); setStoreNotifs([]) }
+  }, [userId])
+
+  usePolling(refresh, userId ? NAV_CHECK_MS : BANNER_CHECK_MS, {
+    enabled: !loading,
+    idleMs: 10 * 60 * 1000,
+    idleIntervalMs: 10 * 60 * 1000,
+    deps: [userId],
+  })
+
+  return { streamer, confirmations, storeNotifs, setStoreNotifs, refresh }
+}
+
+function NotificationBell({ user, checks }) {
+  const [count, setCount] = useState(0)
+  const [open, setOpen] = useState(false)
+  const { confirmations, storeNotifs, setStoreNotifs, refresh: fetchPending } = checks
   const [acting, setActing] = useState({})
   const [feedback, setFeedback] = useState({})
   const [confirmModal, setConfirmModal] = useState(null)
   const ref = useRef(null)
 
-  const fetchPending = () => {
-    fetch('/api/match-report/pending', { credentials: 'include' })
-      .then((r) => r.ok ? r.json() : { pending_confirmations: [] })
-      .then((d) => {
-        const pending = d.pending_confirmations || []
-        setConfirmations(pending)
-      })
-      .catch(() => {})
-
-    fetch('/api/store/notifications', { credentials: 'include' })
-      .then((r) => r.ok ? r.json() : { notifications: [] })
-      .then((d) => setStoreNotifs(d.notifications || []))
-      .catch(() => {})
-  }
-
   useEffect(() => {
     setCount(confirmations.length + storeNotifs.length)
   }, [confirmations, storeNotifs])
-
-  useEffect(() => {
-    if (!user) return
-    fetchPending()
-    const interval = setInterval(fetchPending, 60000)
-    return () => clearInterval(interval)
-  }, [user])
 
   useEffect(() => {
     if (!open) return
@@ -511,20 +537,7 @@ function NavCustomizeModal({ activeLabels, onSave, onClose }) {
   )
 }
 
-function LiveIndicator() {
-  const [streamer, setStreamer] = useState(null)
-
-  useEffect(() => {
-    const fetch_ = () => {
-      getStreamerBanner()
-        .then((data) => setStreamer(data.is_live ? data.streamer : null))
-        .catch(() => setStreamer(null))
-    }
-    fetch_()
-    const interval = setInterval(fetch_, 120000)
-    return () => clearInterval(interval)
-  }, [])
-
+function LiveIndicator({ streamer }) {
   if (!streamer) return null
 
   return (
@@ -550,6 +563,7 @@ export default function Nav() {
   const [navLabels, setNavLabels] = useState(() => getNavPrefs() || DEFAULT_NAV_LABELS)
   const { user, loading } = useAuth()
   const location = useLocation()
+  const navChecks = useNavChecks(user, loading)
   // New-content dots: pages with something this person hasn't opened yet
   const newKeys = useNewContent(user, location.pathname)
   const isNew = (to) => newKeys.has(pageKeyForPath(to))
@@ -581,11 +595,13 @@ export default function Nav() {
   }, [user])
 
   // Permanent links always come first, even if missing from saved prefs
+  const findLink = (label) => ALL_NAV_OPTIONS.find((opt) => opt.label === label)
   const activeNavLinks = [
-    ...PERMANENT_LINKS.map((label) => ALL_NAV_OPTIONS.find((opt) => opt.label === label)),
+    ...PERMANENT_LINKS.filter((label) => !TRAILING_LINKS.includes(label)).map(findLink),
     ...ALL_NAV_OPTIONS.filter((opt) =>
       navLabels.includes(opt.label) && !PERMANENT_LINKS.includes(opt.label)
     ),
+    ...TRAILING_LINKS.map(findLink),
   ]
 
   const handleSavePrefs = (picked) => {
@@ -637,7 +653,7 @@ export default function Nav() {
 
           {/* Right */}
           <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
-            <LiveIndicator />
+            <LiveIndicator streamer={navChecks.streamer} />
 
             {/* Nav links - visible on desktop, with a light divider between each */}
             {activeNavLinks.map(({ to, href, label }, i) => [
@@ -698,7 +714,7 @@ export default function Nav() {
             )}
 
             {/* Notification bell - single instance, always visible */}
-            <NotificationBell user={user} />
+            <NotificationBell user={user} checks={navChecks} />
 
             {/* Mobile life counter */}
             <Link
@@ -721,7 +737,7 @@ export default function Nav() {
                   <UserMenu user={user} />
                 ) : (
                   <Link
-                    to={`/login?next=${encodeURIComponent(window.location.href)}`}
+                    to={loginLink()}
                     className="text-sm bg-brand-blue text-white hover:bg-brand-blue-light px-4 py-1.5 rounded-soft transition-colors"
                   >
                     Login
@@ -783,7 +799,7 @@ export default function Nav() {
               </>
             ) : (
               <Link
-                to={`/login?next=${encodeURIComponent(window.location.href)}`}
+                to={loginLink()}
                 className="block mx-4 my-3 text-center bg-brand-blue text-white hover:bg-brand-blue-light px-3 py-2 rounded-soft transition-colors font-medium"
                 onClick={close}
               >
@@ -794,7 +810,7 @@ export default function Nav() {
         </div>
 
         {/* Staff tools */}
-        {(user?.is_admin || user?.is_explorer_admin || user?.is_store_admin || user?.is_store_staff || user?.is_article_reviewer) && (
+        {(user?.is_admin || user?.is_moderator || user?.is_explorer_admin || user?.is_store_admin || user?.is_store_staff || user?.is_article_reviewer) && (
           <div className="border-b border-border">
             {user?.is_admin && (
               <Link
@@ -821,6 +837,9 @@ export default function Nav() {
             )}
             {(user?.is_article_reviewer || user?.is_admin) && (
               <SidebarLink to="/admin/articles" label="Article Review" location={location} onClick={close} />
+            )}
+            {(user?.is_moderator || user?.is_admin) && (
+              <SidebarLink to="/mod-tools" label="Mod Tools" location={location} onClick={close} />
             )}
           </div>
         )}
@@ -855,10 +874,12 @@ export default function Nav() {
 
           <SidebarHeading label="Tools" />
           <SidebarLink to="/life-counter" dot={isNew('/life-counter')} label="Life Counter" location={location} onClick={close} />
-          <SidebarLink to="/help" dot={isNew('/help')} label="Help" location={location} onClick={close} match={['/help', '/about', '/summit-format', '/feedback']} />
+          <SidebarLink to="/help" dot={isNew('/help')} label="Help" location={location} onClick={close} match={['/help', '/about', '/summit-format']} />
 
           <SidebarHeading label="Community" />
           <SidebarLink to="/community" dot={isNew('/community')} label="Community Links" location={location} onClick={close} />
+          {/* Own link again (lost when it was folded into Help on 2026-10-15) */}
+          <SidebarLink to="/feedback" dot={isNew('/feedback')} label="Feedback" location={location} onClick={close} />
           {/* Phones only: from md up Store is on the top bar */}
           {(STORE_LIVE || user?.is_store_admin) && (
             <div className="md:hidden">
@@ -937,6 +958,11 @@ function UserMenu({ user }) {
               Store Admin
             </Link>
           )}
+          {(user.is_moderator || user.is_admin) && (
+            <Link role="menuitem" to="/mod-tools" className={itemCls} onClick={close}>
+              Mod Tools
+            </Link>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -1003,4 +1029,10 @@ function SidebarExternal({ href, label }) {
       {label}
     </a>
   )
+}
+
+// On the login page itself, keep its own next= instead of wrapping it again.
+function loginLink() {
+  if (window.location.pathname === '/login') return `/login${window.location.search}`
+  return `/login?next=${encodeURIComponent(window.location.href)}`
 }

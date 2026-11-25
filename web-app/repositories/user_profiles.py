@@ -68,6 +68,7 @@ class UserProfileRepository:
             'nav_preferences': 'TEXT',
             'hidden_avatars': 'TEXT',
             'hidden_badges': 'TEXT',
+            'shown_badges': 'TEXT',
             'profile_reset_at': 'TEXT',
             'manually_added_by': 'TEXT',
             'manually_added_at': 'TEXT',
@@ -76,6 +77,7 @@ class UserProfileRepository:
             'featured_deck_auto_update': 'INTEGER',
             'featured_deck_checked_at': 'TEXT',
             'featured_deck_source': 'TEXT',
+            'profile_showcase': 'TEXT',
         }
 
         # Add missing columns
@@ -634,6 +636,33 @@ class UserProfileRepository:
         conn.close()
         return updated
 
+    def all_nav_preferences(self) -> tuple[list[list[str]], int]:
+        """Every saved top bar pick list (no user ids) and the number of profiles.
+
+        Only people who pressed Save in Customize have a row with
+        nav_preferences set, so the lists are active choices, not defaults.
+        """
+        conn = self._get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT nav_preferences FROM user_profiles WHERE nav_preferences IS NOT NULL AND nav_preferences != ''")
+            raw = [r[0] for r in cur.fetchall()]
+            cur.execute("SELECT COUNT(*) FROM user_profiles")
+            total = cur.fetchone()[0]
+        except sqlite3.OperationalError:
+            return [], 0  # table or column not created yet
+        finally:
+            conn.close()
+        saves = []
+        for value in raw:
+            try:
+                labels = json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(labels, list):
+                saves.append([str(l) for l in labels])
+        return saves, total
+
     @staticmethod
     def _both_ids(user_id) -> tuple[str, str]:
         """A player id as stored for Discord and for Google sign-ins."""
@@ -699,6 +728,67 @@ class UserProfileRepository:
         updated = cur.rowcount > 0
         conn.close()
         return updated
+
+    def get_shown_badges(self, user_id: str) -> list[str] | None:
+        """Badge keys the player picked for their hero card, or None for the default (their best 3)."""
+        conn = self._get_connection()
+        row = conn.execute(
+            "SELECT shown_badges FROM user_profiles"
+            " WHERE user_id IN (?, ?) AND shown_badges IS NOT NULL LIMIT 1",
+            self._both_ids(user_id),
+        ).fetchone()
+        conn.close()
+        if row and row[0]:
+            try:
+                value = json.loads(row[0])
+                return [str(v) for v in value] if isinstance(value, list) else None
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return None
+
+    def set_shown_badges(self, user_id: str, keys: list[str] | None) -> bool:
+        """Save the hero card badges a player picked, in order; None goes back to the default."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        value = None
+        if keys is not None:
+            value = json.dumps(list(dict.fromkeys(keys)))
+        cur.execute(
+            "UPDATE user_profiles SET shown_badges = ? WHERE user_id IN (?, ?)",
+            (value, *self._both_ids(user_id)),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return updated
+
+    def get_all_badge_prefs(self) -> dict:
+        """{bare id: {"shown": [...] | None, "hidden": [...]}} for players who set either."""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT user_id, shown_badges, hidden_badges FROM user_profiles"
+                " WHERE shown_badges IS NOT NULL OR (hidden_badges IS NOT NULL AND hidden_badges != '[]')"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        finally:
+            conn.close()
+
+        def as_list(raw):
+            try:
+                value = json.loads(raw) if raw else None
+            except (json.JSONDecodeError, TypeError):
+                return None
+            return [str(v) for v in value] if isinstance(value, list) else None
+
+        out = {}
+        for user_id, shown, hidden in rows:
+            out[str(user_id).removeprefix("google_")] = {
+                "shown": as_list(shown),
+                "hidden": as_list(hidden) or [],
+            }
+        return out
 
     def get_featured_deck(self, user_id: str) -> dict | None:
         """The player's featured deck settings, or None if never touched.
@@ -788,6 +878,39 @@ class UserProfileRepository:
             " featured_deck_source = NULL"
             " WHERE user_id IN (?, ?)",
             self._both_ids(user_id),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return updated
+
+    def get_showcase(self, user_id: str) -> dict:
+        """The player's own profile boxes: {"bio", "favorite_card", "home_store"}; {} when unset."""
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT profile_showcase FROM user_profiles"
+                " WHERE user_id IN (?, ?) AND profile_showcase IS NOT NULL LIMIT 1",
+                self._both_ids(user_id),
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row or not row[0]:
+            return {}
+        try:
+            value = json.loads(row[0])
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def set_showcase(self, user_id: str, showcase: dict) -> bool:
+        """Save the player's profile boxes; empty fields are dropped."""
+        clean = {k: v for k, v in (showcase or {}).items() if v}
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_profiles SET profile_showcase = ? WHERE user_id IN (?, ?)",
+            (json.dumps(clean) if clean else None, *self._both_ids(user_id)),
         )
         conn.commit()
         updated = cur.rowcount > 0

@@ -202,3 +202,30 @@ def test_archive_original_ids(tmp_path):
     conn.close()
     assert archive_original_ids(db, "google_100") == {1: 42}
     assert played_cards_by_match(db, "100") == {}  # no callback table yet
+
+
+def test_combined_list_has_ranked_and_casual_newest_first(client, filter_matches):
+    data = client.get("/api/player/100?combined=1").get_json()
+    assert [m["match_type"] for m in data["matches"]] == ["casual", "ranked", "ranked", "ranked", "ranked"]
+    assert data["pagination"]["total_matches"] == 5
+    assert data["casual_matches"] == []
+    assert data["match_filters"]["ranked"] == {"wins": 2, "losses": 2}
+    assert data["match_filters"]["casual"] == {"wins": 0, "losses": 1}
+
+
+def test_game_type_filter(client, filter_matches):
+    data = client.get("/api/player/100?combined=1&game_type=casual").get_json()
+    assert [m["match_type"] for m in data["matches"]] == ["casual"]
+    assert data["match_filters"]["active"] == {"game_type": "casual"}
+    assert data["match_filters"]["ranked"] == {"wins": 0, "losses": 0}
+
+    data = client.get("/api/player/100?combined=1&game_type=ranked&opponent=200").get_json()
+    assert {m["match_type"] for m in data["matches"]} == {"ranked"}
+    assert len(data["matches"]) == 3
+    assert data["match_filters"]["casual"] == {"wins": 0, "losses": 0}
+
+
+def test_without_combined_lists_stay_split(client, filter_matches):
+    data = client.get("/api/player/100").get_json()
+    assert {m["match_type"] for m in data["matches"]} == {"ranked"}
+    assert [m["match_type"] for m in data["casual_matches"]] == ["casual"]

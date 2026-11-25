@@ -89,10 +89,83 @@ function firstLabel(value) {
   return '-'
 }
 
-/** Precon games for the Matches tab (shown above casual games). */
-export function PreconMatchHistory({ data }) {
-  const games = data?.games || []
-  if (!games.length) return null
+function playDraw(value) {
+  const v = String(value || '').toLowerCase()
+  if (v.startsWith('y')) return 'play'
+  if (v.startsWith('n')) return 'draw'
+  return null
+}
+
+const FILTER_KEYS = ['opponent', 'result', 'avatar', 'opponent_avatar', 'play_draw', 'card', 'game_type']
+
+/** The precon games that fit the Matches tab filters (same rules as ranked games). */
+export function filterPreconGames(games = [], filters = {}) {
+  if (!FILTER_KEYS.some((k) => filters[k])) return games
+  // Precon games have no saved card data, so a card filter never matches them
+  if (filters.card) return []
+  // Precon ladder games are rated, so the Casual type hides them
+  if (filters.game_type === 'casual') return []
+  const same = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase()
+  return games.filter((g) => {
+    if (filters.opponent && String(g.opponent_id) !== String(filters.opponent)) return false
+    if (filters.result && filters.result !== (g.won ? 'win' : 'loss')) return false
+    if (filters.avatar && !same(LABEL[g.precon], filters.avatar)) return false
+    if (filters.opponent_avatar && !same(LABEL[g.opponent_precon], filters.opponent_avatar)) return false
+    if (filters.play_draw && playDraw(g.went_first) !== filters.play_draw) return false
+    return true
+  })
+}
+
+/**
+ * The Matches tab filter data with the player's precon games added, so
+ * Lavamancer and Frostmage (and precon-only opponents) show in the dropdowns
+ * and the record line counts precon games too.
+ */
+export function withPreconFilters(base, precon, filters = {}) {
+  const games = precon?.games || []
+  if (!games.length) return base
+  const options = base?.options || {}
+  const opponents = new Map((options.opponents || []).map((o) => [String(o.id), { ...o }]))
+  games.forEach((g) => {
+    if (!g.opponent_id) return
+    const id = String(g.opponent_id)
+    const o = opponents.get(id)
+    if (o) o.games += 1
+    else opponents.set(id, { id, name: g.opponent_name || 'Unknown', games: 1 })
+  })
+  const addLabels = (list, keys) => {
+    const out = new Set(list || [])
+    keys.forEach((k) => { if (LABEL[k]) out.add(LABEL[k]) })
+    return [...out].sort((a, b) => a.localeCompare(b))
+  }
+  const fit = filterPreconGames(games, filters)
+  return {
+    ...base,
+    options: {
+      ...options,
+      opponents: [...opponents.values()].sort(
+        (a, b) => b.games - a.games || String(a.name).toLowerCase().localeCompare(String(b.name).toLowerCase()),
+      ),
+      avatars: addLabels(options.avatars, games.map((g) => g.precon)),
+      opponent_avatars: addLabels(options.opponent_avatars, games.map((g) => g.opponent_precon)),
+    },
+    precon: { wins: fit.filter((g) => g.won).length, losses: fit.filter((g) => !g.won).length },
+  }
+}
+
+/** Precon games for the Matches tab (shown below the match history). */
+export function PreconMatchHistory({ data, filters = {} }) {
+  const allGames = data?.games || []
+  if (!allGames.length) return null
+  const games = filterPreconGames(allGames, filters)
+  if (!games.length) {
+    return (
+      <section>
+        <h3 className="text-lg font-semibold text-text-primary mb-1">Precon (LM/FM) Match History</h3>
+        <p className="text-sm text-text-muted">No precon games fit these filters.</p>
+      </section>
+    )
+  }
   return (
     <section>
       <h3 className="text-lg font-semibold text-text-primary mb-1">Precon (LM/FM) Match History</h3>

@@ -8,6 +8,7 @@ import asyncio
 import sqlite3
 
 import config
+from repositories.tag_me_repo import send_with_tag_me
 from cogs.lfg import state as lfg_state
 from cogs.lfg.state import (
     lfg_queue,
@@ -199,10 +200,8 @@ def _settled_lifetime(rows):
     return [row for row in rows if not provisional.is_provisional(games.get(row[0]))]
 
 
-# Ticket holders still provisional (Glicko-2, under 8 games) listed under the
-# top cut rows on the leaderboard; the rest are summed up in one line so the
-# message stays inside Discord's 4096-character limit.
-TICKET_PENDING_ROWS = 12
+# Line between ranked rows and provisional (unranked) ones on the leaderboard
+PROVISIONAL_SUBHEADING = "*Provisional, not ranked yet (under 8 games):*"
 
 
 class LFGCog(commands.Cog):
@@ -564,6 +563,15 @@ class LFGCog(commands.Cog):
                     return f"{rank}. **{name}**{avatar} — {p['elo']} ({p['games']}g)"
 
                 def section(title, rows, empty):
+                    # Discord carries a numbered list on through "- " rows right
+                    # under it (provisional players showed as 9., 10., ...), so
+                    # a plain line goes before the first provisional row
+                    rows = list(rows)
+                    first = next(
+                        (i for i, r in enumerate(rows) if r.startswith("- ")), None
+                    )
+                    if first is not None:
+                        rows.insert(first, PROVISIONAL_SUBHEADING)
                     return f"**{title}**\n" + ("\n".join(rows) if rows else empty)
 
                 ordered = [p for _, p in ranked(player_data, None)]
@@ -578,29 +586,13 @@ class LFGCog(commands.Cog):
                 from services.avatar_mode import top_cut_eligible, unique_players
 
                 # Glicko-2 seasons: an entry needs enough games to hold a top cut
-                # spot, so the numbered rows are the settled entries only. Ticket
-                # holders still under that count are listed after them as
-                # Provisional (n/8), so a new ticket buyer shows up from their
-                # first game instead of vanishing from the board.
-                ticket_entries = [p for p in ordered if p["has_ticket"]]
-                cut_players = unique_players(
-                    top_cut_eligible(ticket_entries, active_event or {})
+                # spot, so the section is the top TOP_CUT_SIZE settled ticket
+                # holders only. Provisional ticket holders aren't listed here
+                # (or in Free Play) until they reach that many games.
+                ticket_players = unique_players(
+                    top_cut_eligible([p for p in ordered if p["has_ticket"]], active_event or {})
                 )
-                in_cut = {p["user_id"] for p in cut_players}
-                pending_players = unique_players([
-                    p for p in ticket_entries
-                    if p["user_id"] not in in_cut
-                ])
-                ticket_rows = [
-                    format_row(rank, p) for rank, p in ranked(cut_players, TOP_CUT_SIZE)
-                ]
-                pending_rows = [format_row(None, p) for _, p in ranked(pending_players, None)]
-                ticket_text = ticket_rows + pending_rows[:TICKET_PENDING_ROWS]
-                if len(pending_rows) > TICKET_PENDING_ROWS:
-                    ticket_text.append(
-                        f"*+{len(pending_rows) - TICKET_PENDING_ROWS} more ticket holders "
-                        f"still provisional*"
-                    )
+                ticket_text = [format_row(rank, p) for rank, p in ranked(ticket_players, TOP_CUT_SIZE)]
 
                 # Free Play section (top 8 from non-ticket holders)
                 free_players = unique_players([p for p in ordered if not p["has_ticket"]])
@@ -772,6 +764,11 @@ class LFGCog(commands.Cog):
             await release_voice_holds(self.bot)
         except Exception as e:
             logger.error(f"Error releasing voice holds: {e}", exc_info=True)
+        try:
+            from cogs.lfg.skill_match import release_skill_waits
+            await release_skill_waits(self.bot)
+        except Exception as e:
+            logger.error(f"Error pairing Skill matching players: {e}", exc_info=True)
 
     @release_voice_holds.before_loop
     async def before_release_voice_holds(self):
@@ -1348,7 +1345,8 @@ class LFGCog(commands.Cog):
         return "ranked"
 
     def check_if_someone_is_lfg(
-        self, ctx, queue_type="ranked", voice=DEFAULT_VOICE, voice_flexible=False, voice_hold=True
+        self, ctx, queue_type="ranked", voice=DEFAULT_VOICE, voice_flexible=False, voice_hold=True,
+        joiner_avatar=None, joiner_since=None,
     ):
         """Find a player in queue compatible with the given queue_type.
         All queue types use FIFO order (oldest first) with anti-rematch for ranked/limited.
@@ -1358,12 +1356,23 @@ class LFGCog(commands.Cog):
         that makes a voice match comes first. A no-voice match is never made for a
         voice-first, no-voice-OK player inside their voice hold: the joiner holds
         unless ``voice_hold`` is False (the hold sweep re-joining them).
+        Ranked only: if either player turned on Skill matching, their ratings
+        must be within a gap that widens the longer they wait
+        (cogs/lfg/skill_match.py). ``joiner_avatar`` / ``joiner_since`` give
+        the joiner's avatar and first join time for that check.
         Returns user_id if a valid match is found, None otherwise.
         """
         now = datetime.datetime.now()
         best_match = None
         best_key = None
+        best_skill = None
         joiner_holding = voice_hold and holding_for_voice(voice, voice_flexible, now, now)
+        from cogs.lfg.skill_match import build_gate
+
+        skill_gate = build_gate(
+            lfg_queue, ctx.author.id, queue_type, now,
+            joiner_avatar=joiner_avatar, joiner_since=joiner_since,
+        )
 
         # Casual (testing), rumble, limited, and omens (points) have no pairing restrictions
         is_casual = queue_type in ("testing", "rumble", "limited", "points", "precon")
@@ -1429,12 +1438,30 @@ class LFGCog(commands.Cog):
                 )
                 continue
 
+            skill = None
+            if skill_gate is not None:
+                ok, gap, allowed = skill_gate.check(user_id, entry)
+                if not ok:
+                    logger.info(
+                        f"Skipping {user_id} - Skill matching: rating gap {gap} > {allowed} "
+                        f"with {ctx.author.id}"
+                    )
+                    continue
+                if gap is not None:
+                    skill = (gap, allowed)
+
             # Voice matches first, then FIFO - match with oldest player
             key = (not makes_voice_match, timestamp)
             if best_key is None or key < best_key:
                 best_key = key
                 best_match = user_id
+                best_skill = skill
 
+        if best_match is not None and best_skill is not None:
+            logger.info(
+                f"Skill matching pair {ctx.author.id} with {best_match}: "
+                f"rating gap {best_skill[0]} (allowed {best_skill[1]})"
+            )
         return best_match
 
     @staticmethod
@@ -1447,7 +1474,7 @@ class LFGCog(commands.Cog):
     def add_to_lfg_queue(
         self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None, run_id=None,
         origin="discord", voice=DEFAULT_VOICE, avatar=None, alert_avatar=False, deck_avatar=None,
-        voice_flexible=False, precon=None,
+        voice_flexible=False, precon=None, queued_since=None,
     ):
         queue_entry = {
             "timestamp": datetime.datetime.now(),
@@ -1473,6 +1500,9 @@ class LFGCog(commands.Cog):
         if precon:
             # Precon queue: "lavamancer" or "frostmage"
             queue_entry["precon"] = precon
+        if queued_since:
+            # Re-joined by a sweep: when they first joined (Skill matching widens from then)
+            queue_entry["queued_since"] = queued_since
 
         if ctx.author.id not in lfg_queue:
             lfg_queue[ctx.author.id] = {"queues": {}}
@@ -1558,6 +1588,26 @@ class LFGCog(commands.Cog):
             current = await asyncio.to_thread(is_voice_only, ctx.author.id)
         await ctx.send(voice_only_text(current), view=VoiceOnlyToggleView(ctx.author.id, current))
 
+    @commands.command(aliases=["skillmatch"])
+    async def skill_match(self, ctx, setting: str = None):
+        """Opt in to skill-based matching in the Ranked and Casual queues (test).
+
+        Usage: !skill_match (shows your setting), !skill_match on, !skill_match off
+        """
+        from repositories.skill_match_repo import set_skill_match, wants_skill_match
+
+        choice = (setting or "").strip().lower()
+        if choice in ("on", "yes", "true"):
+            current = await asyncio.to_thread(set_skill_match, ctx.author.id, True, "command")
+        elif choice in ("off", "no", "false"):
+            current = await asyncio.to_thread(set_skill_match, ctx.author.id, False, "command")
+        elif choice:
+            await ctx.send("Use `!skill_match on`, `!skill_match off`, or just `!skill_match` to see your setting.")
+            return
+        else:
+            current = await asyncio.to_thread(wants_skill_match, ctx.author.id)
+        await ctx.send(skill_match_text(current))
+
     @commands.command(aliases=["tagme"])
     async def tag_me(self, ctx, setting: str = None):
         """Choose whether the match announcement pings you.
@@ -1610,6 +1660,15 @@ class LFGCog(commands.Cog):
         if is_pairing_banned(opponent.id):
             await ctx.send(
                 f"{opponent.mention} is currently blocked from the pairing service and can't be challenged.",
+                delete_after=30,
+            )
+            return
+        # Player blocks apply to challenges too (either direction). Blocks are
+        # private, so the message doesn't say who blocked whom.
+        if is_blocked_pair(ctx.author.id, opponent.id):
+            logger.info(f"Challenge {ctx.author.id} -> {opponent.id} refused - block list conflict")
+            await ctx.send(
+                f"{ctx.author.mention}, you can't challenge that player.",
                 delete_after=30,
             )
             return
@@ -2117,6 +2176,8 @@ class LFGCog(commands.Cog):
                 "\"want to play a no-voice game?\" DMs\n\n"
                 "`!tag_me on` / `!tag_me off` or `/tag-me` - Choose whether the match "
                 "announcement in the LFG channel pings you (on by default)\n\n"
+                "`!skill_match on` / `!skill_match off` or `/skill-match` - Test skill-based "
+                "matching in Ranked and Casual: only get paired with players near your rating (off by default)\n\n"
                 "**Tip:** Use the **Join Queue** button in the LFG channel to enter your deck URL and join the matchmaking queue!"
             ),
             inline=False,
@@ -4139,12 +4200,7 @@ class LFGCog(commands.Cog):
     @commands.command()
     async def correct_match(self, ctx, match_id: int = None):
         """Correct a match by flipping outcome and cascade-recalculating ELO. Usage: !correct_match <match_id>"""
-        from cogs.lfg.persistent_confirm import (
-            ensure_pending_corrections_table,
-            save_pending_correction,
-            PersistentCorrectionConfirmView,
-        )
-        from utils.database import get_match_players
+        from cogs.lfg.persistent_confirm import send_correction_request
 
         if match_id is None:
             await ctx.send("Please provide a match ID. Usage: `!correct_match <match_id>`")
@@ -4216,80 +4272,13 @@ class LFGCog(commands.Cog):
             return
 
         # Non-admin flow - verify participant and send confirmation to other player
-        try:
-            match_info = get_match_players(match_id)
-        except ValueError as e:
-            await ctx.send(str(e))
-            return
-
-        author_id = ctx.author.id
-        winner_id = match_info["winner_id"]
-        loser_id = match_info["loser_id"]
-
-        # Check if user was part of this match
-        if author_id != winner_id and author_id != loser_id:
-            await ctx.send("You were not a part of that match.")
-            return
-
-        # Determine the other player
-        if author_id == winner_id:
-            other_player_id = loser_id
-            other_player_name = match_info["loser_name"]
-        else:
-            other_player_id = winner_id
-            other_player_name = match_info["winner_name"]
-
-        # Save the pending correction request
-        ensure_pending_corrections_table()
-        correction_id = save_pending_correction({
-            "match_id": match_id,
-            "requester_id": author_id,
-            "requester_name": ctx.author.display_name,
-            "other_player_id": other_player_id,
-            "other_player_name": other_player_name,
-        })
-
-        # Send confirmation request to the other player
-        confirm_embed = discord.Embed(
-            title="Match Correction Request",
-            description=(
-                f"**{ctx.author.display_name}** is requesting to correct Match #{match_id}.\n\n"
-                f"**Current Result:**\n"
-                f"Winner: {match_info['winner_name']}\n"
-                f"Loser: {match_info['loser_name']}\n\n"
-                f"**If corrected, the result will be flipped:**\n"
-                f"Winner: {match_info['loser_name']}\n"
-                f"Loser: {match_info['winner_name']}\n\n"
-                f"Do you confirm this correction?"
-            ),
-            color=discord.Color.orange(),
-        )
-
-        view = PersistentCorrectionConfirmView(correction_id)
-
-        try:
-            other_user = await self.bot.fetch_user(other_player_id)
-            await other_user.send(embed=confirm_embed, view=view)
+        result = await send_correction_request(self.bot, match_id, ctx.author.id, ctx.author.display_name)
+        if result["status"] in ("sent", "sent_to_channel"):
             await ctx.send(
-                f"A correction request for Match #{match_id} has been sent to **{other_player_name}** for confirmation."
+                f"A correction request for Match #{match_id} has been sent to **{result['other_player_name']}** for confirmation."
             )
-        except discord.Forbidden:
-            # If DMs are disabled, send in a channel
-            match_report_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
-            if match_report_channel:
-                await match_report_channel.send(
-                    f"<@{other_player_id}>", embed=confirm_embed, view=view
-                )
-                await ctx.send(
-                    f"A correction request for Match #{match_id} has been sent to **{other_player_name}** for confirmation."
-                )
-            else:
-                await ctx.send(
-                    "Could not send the correction request. The other player has DMs disabled and no fallback channel is configured."
-                )
-        except Exception as e:
-            logger.error(f"Failed to send correction request: {e}")
-            await ctx.send(f"An error occurred while sending the correction request: {e}")
+        else:
+            await ctx.send(result.get("message") or "Could not send the correction request.")
 
     @correct_match.error
     async def correct_match_error(self, ctx, error):
@@ -4485,7 +4474,8 @@ class LFGCog(commands.Cog):
         except discord.Forbidden:
             match_report_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
             if match_report_channel:
-                await match_report_channel.send(
+                await send_with_tag_me(
+                    match_report_channel,
                     f"<@{other_player_id}>", embed=confirm_embed, view=view
                 )
                 await ctx.send(sent_msg)
@@ -5296,6 +5286,20 @@ class LFGCog(commands.Cog):
         except Exception as e:
             await ctx.send("An error occurred while forfeiting your run.")
             logger.error(f"Forfeit command failed for {ctx.author} ({user_id}): {e}")
+
+
+def skill_match_text(on):
+    """What the bot says about a player's "Skill matching" setting."""
+    if on:
+        return (
+            "🎯 Skill matching is **on** (test). In Ranked and Casual you're paired with players near "
+            "your rating: within 120 points at first, widening by 10 every 10 seconds "
+            "you wait, up to 400. Waits may be a little longer. Turn it off with `!skill_match off`."
+        )
+    return (
+        "Skill matching is **off**. In Ranked and Casual you're paired with the next player in the "
+        "queue, whatever their rating. Turn it on with `!skill_match on`."
+    )
 
 
 def tag_me_text(tag_me):

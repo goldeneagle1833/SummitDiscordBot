@@ -12,8 +12,10 @@ import AvatarMatchups from '@/components/player/AvatarMatchups'
 import RecentDecks from '@/components/player/RecentDecks'
 import FeaturedDeck from '@/components/player/FeaturedDeck'
 import FeaturedDeckModal from '@/components/player/FeaturedDeckModal'
+import ShowcaseModal from '@/components/player/ShowcaseModal'
+import { FavoriteCardBox, ProfileBio, RivalBox, useShowcase } from '@/components/player/ProfileShowcase'
 import LimitedArena from '@/components/player/LimitedArena'
-import { PreconMatchHistory, PreconStandings, usePreconPlayer } from '@/components/player/PlayerPrecon'
+import { PreconMatchHistory, PreconStandings, usePreconPlayer, withPreconFilters } from '@/components/player/PlayerPrecon'
 import MatchHistoryTable from '@/components/player/MatchHistoryTable'
 import MatchFilters from '@/components/player/MatchFilters'
 import RecordedGames from '@/components/player/RecordedGames'
@@ -77,14 +79,18 @@ export default function Player() {
   const [showQueueSettingsModal, setShowQueueSettingsModal] = useState(false)
   const [showDataExportModal, setShowDataExportModal] = useState(false)
   const [showBadgesModal, setShowBadgesModal] = useState(false)
-  // Badge keys kept off the hero card; null until the player data says
-  const [hiddenBadges, setHiddenBadgesState] = useState(null)
+  // The hero card badges the player just picked; undefined = use the player data
+  const [shownBadges, setShownBadgesState] = useState(undefined)
   const [showResetModal, setShowResetModal] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [editDeck, setEditDeck] = useState(null)
   const [showFeaturedModal, setShowFeaturedModal] = useState(false)
   const [featuredDeck, setFeaturedDeckState] = useState(null)
   const [featuredKey, setFeaturedKey] = useState(0)
+  // Profile showcase editor: null when closed, else the box it opens on
+  const [showcaseFocus, setShowcaseFocus] = useState(null)
+  const [showcaseKey, setShowcaseKey] = useState(0)
+  const showcase = useShowcase(playerId, showcaseKey)
 
   // Profile tab, kept in the URL so a tab can be linked to
   const [searchParams, setSearchParams] = useSearchParams()
@@ -96,6 +102,15 @@ export default function Player() {
     setSearchParams(next, { replace: true })
   }
   const navigate = useNavigate()
+  // ?open=block-list (from /me/block-list) opens that panel on the owner's page
+  const openPanel = searchParams.get('open')
+  useEffect(() => {
+    if (!openPanel || !data) return
+    if (openPanel === 'block-list' && data.is_owner) setShowBlockListModal(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete('open')
+    setSearchParams(next, { replace: true })
+  }, [openPanel, data]) // eslint-disable-line react-hooks/exhaustive-deps
   const avatarHonours = useAvatarHonours(playerId)
   const paperFinishes = usePaperFinishes(playerId)
   const eventAvatarBadges = useEventAvatarBadges(playerId)
@@ -114,7 +129,7 @@ export default function Player() {
       })
         .then((d) => {
           setData(d)
-          setHiddenBadgesState(null)
+          setShownBadgesState(undefined)
           setError(null)
         })
         .catch((err) => setError(err.message))
@@ -219,6 +234,7 @@ export default function Player() {
 
   const settingsItems = [
     { label: 'Featured deck', onClick: () => setShowFeaturedModal(true) },
+    { label: 'Profile showcase', onClick: () => setShowcaseFocus('bio') },
     { label: 'Privacy settings', onClick: () => setShowPrivacyModal(true) },
     { label: 'Profile badges', onClick: () => setShowBadgesModal(true) },
     { label: 'Block list', onClick: () => setShowBlockListModal(true) },
@@ -266,16 +282,36 @@ export default function Player() {
         onReport={data.is_owner ? () => setShowReportModal(true) : undefined}
         settingsItems={data.is_owner ? settingsItems : []}
         onPostseason={() => setTab('postseason')}
-        hiddenBadges={hiddenBadges ?? data.hidden_badges ?? []}
+        hiddenBadges={data.hidden_badges || []}
+        shownBadges={shownBadges === undefined ? (data.shown_badges ?? null) : shownBadges}
+        bio={showcase && (
+          <ProfileBio bio={showcase.bio} isOwner={Boolean(data.is_owner)} onEdit={() => setShowcaseFocus('bio')} />
+        )}
         featured={(
-          <FeaturedDeck
-            playerId={playerId}
-            isOwner={Boolean(data.is_owner)}
-            onEdit={() => setShowFeaturedModal(true)}
-            recentDecks={data.recent_decks || []}
-            refreshKey={featuredKey}
-            onLoaded={setFeaturedDeckState}
-          />
+          <>
+            <FeaturedDeck
+              playerId={playerId}
+              isOwner={Boolean(data.is_owner)}
+              onEdit={() => setShowFeaturedModal(true)}
+              recentDecks={data.recent_decks || []}
+              refreshKey={featuredKey}
+              onLoaded={setFeaturedDeckState}
+            />
+            {showcase && (
+              <>
+                <FavoriteCardBox
+                  card={showcase.favorite_card}
+                  isOwner={Boolean(data.is_owner)}
+                  onEdit={() => setShowcaseFocus('card')}
+                />
+                <RivalBox
+                  rival={showcase.rival}
+                  isOwner={Boolean(data.is_owner)}
+                  onEdit={() => setShowcaseFocus('rival')}
+                />
+              </>
+            )}
+          </>
         )}
       />
 
@@ -390,12 +426,13 @@ export default function Player() {
 
       {activeTab === 'matches' && (
         <div className="space-y-6">
-          <MatchFilters filters={matchFilters} data={data.match_filters} onChange={changeMatchFilters} />
+          <MatchFilters filters={matchFilters} data={withPreconFilters(data.match_filters, precon, matchFilters)} onChange={changeMatchFilters} />
 
           <MatchHistoryTable
-            title="Ranked Match History"
+            title="Match History"
+            subtitle={data.match_filters?.casual?.wins + data.match_filters?.casual?.losses > 0 ? 'Casual games do not affect ratings.' : undefined}
             matches={data.matches}
-            emptyText={Object.keys(data.match_filters?.active || {}).length ? 'No ranked matches fit these filters.' : undefined}
+            emptyText={Object.keys(data.match_filters?.active || {}).length ? 'No matches fit these filters.' : undefined}
             pagination={data.pagination}
             playerId={playerId}
             isOwner={data.is_owner}
@@ -408,22 +445,7 @@ export default function Player() {
             onMatchUpdate={refreshCurrentPage}
           />
 
-          <PreconMatchHistory data={precon} />
-
-          {data.casual_matches?.length > 0 && (
-            <MatchHistoryTable
-              title="Casual Match History"
-              subtitle="Casual games do not affect ratings."
-              matches={data.casual_matches}
-              pagination={data.casual_pagination}
-              playerId={playerId}
-              isOwner={data.is_owner}
-              profileVisibility={vis}
-              onPageChange={(p) => refetch(undefined, undefined, undefined, p)}
-              onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
-              onMatchUpdate={refreshCurrentPage}
-            />
-          )}
+          <PreconMatchHistory data={precon} filters={matchFilters} />
 
           {data.external_matches?.length > 0 && (
             <ExternalMatches
@@ -477,15 +499,26 @@ export default function Player() {
         />
       )}
 
+      {showcaseFocus && (
+        <ShowcaseModal
+          playerId={playerId}
+          current={showcase}
+          focus={showcaseFocus}
+          onClose={() => setShowcaseFocus(null)}
+          onSaved={() => setShowcaseKey((k) => k + 1)}
+        />
+      )}
+
       {showBadgesModal && (
         <ManageBadgesModal
           playerId={playerId}
           badges={profileBadges({
             marks: bracketMarks, honours: avatarHonours, paperFinishes, eventBadges: eventAvatarBadges,
           })}
-          hidden={hiddenBadges ?? data.hidden_badges ?? []}
+          hidden={data.hidden_badges || []}
+          shown={shownBadges === undefined ? (data.shown_badges ?? null) : shownBadges}
           onClose={() => setShowBadgesModal(false)}
-          onSaved={setHiddenBadgesState}
+          onSaved={setShownBadgesState}
         />
       )}
 

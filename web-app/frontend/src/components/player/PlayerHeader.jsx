@@ -3,7 +3,7 @@ import PostseasonName, { useBracketMarks } from '@/components/player/BracketMark
 import { AvatarHonourBadge, useAvatarHonours } from '@/components/player/AvatarHonours'
 import { PaperFinishChips, usePaperFinishes } from '@/components/player/PaperFinishes'
 import { EventAvatarBadgeChips, useEventAvatarBadges } from '@/components/player/EventAvatarBadges'
-import { eventBadgeKey, paperBadgeKey } from '@/components/player/profileBadges'
+import { eventBadgeKey, heroBadgeKeys, paperBadgeKey, profileBadges } from '@/components/player/profileBadges'
 import { ProvisionalTag } from '@/components/common/Provisional'
 import { provisionalOf } from '@/utils/provisional'
 
@@ -117,21 +117,38 @@ function PostseasonBadge({ label, entries = [], onClick }) {
 /**
  * The profile's hero card: name, avatar ratings, postseason badge, the
  * headline ELO / rank / record, the period picker, the owner's actions and
- * the featured deck tile.
+ * the showcase row (featured deck, favorite card, home store) and bio.
  */
 export default function PlayerHeader({
   data, playerId, headline = {}, avatarEntries = [], eventFilter, pastEvents, onEventChange,
-  canSeeLifetime, onReport, settingsItems = [], onPostseason, featured = null, hiddenBadges = [],
+  canSeeLifetime, onReport, settingsItems = [], onPostseason, featured = null, bio = null, hiddenBadges = [], shownBadges = null,
 }) {
   const marks = useBracketMarks(playerId)
   const honours = useAvatarHonours(playerId)
   const allPaperFinishes = usePaperFinishes(playerId)
   const allEventBadges = useEventAvatarBadges(playerId)
-  // Badges the player switched off in "Profile badges" (still in the Postseason tab)
-  const hidden = new Set(hiddenBadges)
-  const shows = (key) => !hidden.has(key)
+  // The best 3 by default, or the player's own pick ("Profile badges");
+  // the Postseason tab always lists every badge.
+  const allBadges = profileBadges({
+    marks, honours, paperFinishes: allPaperFinishes, eventBadges: allEventBadges,
+  })
+  const visible = heroBadgeKeys(allBadges, shownBadges, hiddenBadges)
+  const shows = (key) => visible.has(key)
+  const moreCount = allBadges.length - visible.size
+  const moreButton = (
+    <button
+      type="button"
+      onClick={onPostseason}
+      className="inline-flex items-center px-3 py-1 rounded-full border border-border text-xs sm:text-sm text-text-muted hover:text-text-primary hover:border-secondary"
+      title="See every badge in the Postseason tab"
+    >
+      +{moreCount} more
+    </button>
+  )
   const paperFinishes = allPaperFinishes.filter((f) => shows(paperBadgeKey(f)))
   const eventBadges = allEventBadges.filter((b) => shows(eventBadgeKey(b)))
+  // The "+N more" button follows the last row of chips
+  const chipRows = eventBadges.length > 0 || paperFinishes.length > 0
   const wins = data.wins ?? 0
   const losses = data.losses ?? 0
 
@@ -167,7 +184,9 @@ export default function PlayerHeader({
               />
             )}
             {shows('avatar_honours') && <AvatarHonourBadge honours={honours} onClick={onPostseason} />}
+            {moreCount > 0 && !chipRows && moreButton}
           </div>
+          {bio}
         </div>
       </div>
 
@@ -181,6 +200,10 @@ export default function PlayerHeader({
         <div className="basis-full -mt-2 lg:order-last">
           <PaperFinishChips finishes={paperFinishes} />
         </div>
+      )}
+
+      {moreCount > 0 && chipRows && (
+        <div className="basis-full -mt-2 lg:order-last">{moreButton}</div>
       )}
 
       {avatarEntries.length > 0 && (
@@ -254,7 +277,13 @@ export default function PlayerHeader({
         )}
       </div>
 
-      {featured}
+      {/* Featured deck, favorite card, home store: only the filled ones for
+          visitors, so the row disappears when a player has none */}
+      {featured && (
+        <div className="basis-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 empty:hidden">
+          {featured}
+        </div>
+      )}
     </section>
   )
 }

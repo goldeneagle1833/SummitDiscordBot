@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import PostseasonName, { PostseasonLegend } from '@/components/player/BracketMarks'
+import NameBadges from '@/components/player/NameBadges'
 import { VoiceGamesCell } from '@/components/leaderboard/VoiceGames'
 import { ProvisionalTag } from '@/components/common/Provisional'
 import { provisionalOf } from '@/utils/provisional'
@@ -55,7 +55,6 @@ export default function LeaderboardTable({
         </select>
       </div>
 
-      <PostseasonLegend className="mb-2 px-1" />
       {columns === 'event' && topCutMinGames > 0 && (
         <p className="text-xs text-text-muted mb-2 px-1" data-testid="top-cut-min-note">
           An entry needs {topCutMinGames} ranked games this season to count for top cut.
@@ -101,14 +100,13 @@ export default function LeaderboardTable({
                 <tr key={entry.entry_id || playerId} className="hover:bg-bg-elevated transition-colors">
                   <td className="px-3 py-2 text-sm text-text-muted">{rankDisplay}</td>
                   <td className="px-3 py-2">
-                    <PostseasonName playerId={playerId}>
-                      <Link
-                        to={`/player/${playerId}`}
-                        className="text-sm font-medium hover:text-primary transition-colors"
-                      >
-                        {entry.name || entry.display_name}
-                      </Link>
-                    </PostseasonName>
+                    <Link
+                      to={`/player/${playerId}`}
+                      className="text-sm font-medium hover:text-primary transition-colors"
+                    >
+                      {entry.name || entry.display_name}
+                    </Link>
+                    <NameBadges playerId={playerId} className="ml-2" />
                   </td>
                   {showAvatar && (
                     <td className="px-3 py-2 text-sm text-text-muted">{entry.avatar}</td>

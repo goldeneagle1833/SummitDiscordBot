@@ -1,5 +1,5 @@
 /**
- * Filters for the Matches tab: opponent, result, my avatar, opponent
+ * Filters for the Matches tab: game type (ranked or casual), opponent, result, my avatar, opponent
  * avatar, play/draw and (when the viewer may see the player's Card Stats) a card
  * the player played, from saved Play Sorcery Online card data. The server applies them before paging and sends back the record
  * for what is left, shown as a one-line summary.
@@ -30,10 +30,11 @@ export default function MatchFilters({ filters = {}, data, onChange }) {
   const oppAvatars = withCurrent((options.opponent_avatars || []).map((a) => ({ value: a, label: a })), filters.opponent_avatar)
 
   const cards = options.cards
-  const active = ['opponent', 'result', 'avatar', 'opponent_avatar', 'play_draw', 'card'].some((k) => filters[k])
+  const active = ['game_type', 'opponent', 'result', 'avatar', 'opponent_avatar', 'play_draw', 'card'].some((k) => filters[k])
   if (!active && !(options.opponents || []).length) return null
   const ranked = data?.ranked || { wins: 0, losses: 0 }
   const casual = data?.casual || { wins: 0, losses: 0 }
+  const precon = data?.precon
   const record = (r) => {
     const total = r.wins + r.losses
     const rate = total ? Math.round((r.wins / total) * 1000) / 10 : 0
@@ -42,7 +43,15 @@ export default function MatchFilters({ filters = {}, data, onChange }) {
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-4 space-y-3">
-      <div className={`grid grid-cols-2 gap-3 ${cards ? 'lg:grid-cols-6' : 'lg:grid-cols-5'}`}>
+      <div className={`grid grid-cols-2 gap-3 ${cards ? 'lg:grid-cols-7' : 'lg:grid-cols-6'}`}>
+        <label className="flex flex-col gap-1 text-xs text-text-muted">
+          Type
+          <select value={filters.game_type || ''} onChange={(e) => set('game_type', e.target.value)} className={SELECT_CLASS}>
+            <option value="">Ranked and casual</option>
+            <option value="ranked">Ranked</option>
+            <option value="casual">Casual</option>
+          </select>
+        </label>
         <label className="flex flex-col gap-1 text-xs text-text-muted">
           Opponent
           <select
@@ -99,9 +108,14 @@ export default function MatchFilters({ filters = {}, data, onChange }) {
       {active && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <p className="text-text-primary" data-testid="filter-record">
-            <span className="text-text-muted">Ranked:</span> {record(ranked)}
-            {casual.wins + casual.losses > 0 && (
-              <><span className="text-text-muted ml-3">Casual:</span> {record(casual)}</>
+            {filters.game_type !== 'casual' && (
+              <><span className="text-text-muted">Ranked:</span> {record(ranked)}</>
+            )}
+            {filters.game_type !== 'ranked' && (filters.game_type === 'casual' || casual.wins + casual.losses > 0) && (
+              <><span className={`text-text-muted ${filters.game_type === 'casual' ? '' : 'ml-3'}`}>Casual:</span> {record(casual)}</>
+            )}
+            {precon && precon.wins + precon.losses > 0 && (
+              <><span className="text-text-muted ml-3">Precon:</span> {record(precon)}</>
             )}
           </p>
           <button

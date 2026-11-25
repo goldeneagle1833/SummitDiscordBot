@@ -1,8 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { editMatchComment, editMatchTime } from '@/api/games'
+import { editMatchComment, editMatchTime, requestMatchCorrection } from '@/api/games'
 import { HiddenChange } from '@/components/common/Provisional'
 import { isHidden, isNum } from '@/utils/provisional'
+
+// Bot matches from this season can be corrected; archived ones show as rowid + this
+const ARCHIVED_MATCH_OFFSET = 1000000000
+const canCorrect = (m) => m.match_source === 'bot' && Number(m.match_id) > 0 && Number(m.match_id) < ARCHIVED_MATCH_OFFSET
 
 const ELEMENT_IMG = '/static/images/elements/'
 const ELEMENT_FILE = {
@@ -36,6 +40,10 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
   const [editingTimeId, setEditingTimeId] = useState(null)
   const [editTimeValue, setEditTimeValue] = useState('')
   const [editTimeSaving, setEditTimeSaving] = useState(false)
+  const [correctModal, setCorrectModal] = useState(null)
+  const [correctSending, setCorrectSending] = useState(false)
+  const [correctError, setCorrectError] = useState(null)
+  const [correctionsSent, setCorrectionsSent] = useState({})
 
   if (!matches?.length) {
     return (
@@ -51,7 +59,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
       <h3 className="text-lg font-semibold text-text-primary mb-1">{title}</h3>
       {subtitle && <p className="text-xs text-text-muted mb-3">{subtitle}</p>}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm" style={{ minWidth: isOwner ? 1060 : 760 }}>
+        <table className="w-full text-sm" style={{ minWidth: isOwner ? 1180 : 760 }}>
           <thead>
             <tr className="border-b border-border text-left">
               <th className="py-2 px-2 text-text-muted font-semibold w-16">ID</th>
@@ -71,6 +79,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
               {showDeckUrls && <th className="py-2 px-3 text-text-muted font-semibold">Deck Link</th>}
               {showSnapshots && <th className="py-2 px-3 text-text-muted font-semibold">Snapshot</th>}
               {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Notes</th>}
+              {isOwner && <th className="py-2 px-3 text-text-muted font-semibold whitespace-nowrap">Change Result</th>}
             </tr>
           </thead>
           <tbody>
@@ -91,6 +100,9 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                   <td className="py-2 px-3">
                     {m.match_type === 'points' ? (
                       <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">Omens</span>
+                    ) : m.match_type === 'casual' || m.match_type === 'testing' ? (
+                      // 'testing' is the bot's internal name for casual games
+                      <span className="text-xs text-text-muted">Casual</span>
                     ) : (
                       <span className="text-xs text-text-muted">Ranked</span>
                     )}
@@ -254,6 +266,23 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                       )}
                     </td>
                   )}
+                  {isOwner && (
+                    <td className="py-2 px-3 whitespace-nowrap">
+                      {correctionsSent[m.match_id] ? (
+                        <span className="text-xs text-text-muted" title="Waiting for your opponent to confirm">Sent</span>
+                      ) : canCorrect(m) ? (
+                        <button
+                          onClick={() => { setCorrectModal(m); setCorrectError(null) }}
+                          className="text-xs px-2 py-0.5 rounded border border-border text-text-muted hover:text-secondary hover:border-secondary/50 bg-transparent cursor-pointer"
+                          title="Ask your opponent to switch who won"
+                        >
+                          Change Result
+                        </button>
+                      ) : (
+                        <span className="text-text-muted">-</span>
+                      )}
+                    </td>
+                  )}
                 </tr>
               )
             })}
@@ -312,6 +341,63 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
           <span className="text-xs text-text-muted ml-2">
             {((pagination.current_page - 1) * pagination.per_page) + 1}-{Math.min(pagination.current_page * pagination.per_page, pagination.total_matches)} of {pagination.total_matches}
           </span>
+        </div>
+      )}
+      {correctModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => !correctSending && setCorrectModal(null)}>
+          <div role="dialog" aria-label="Change result" className="bg-bg-surface border border-border rounded-lg shadow-xl max-w-md w-full mx-4 p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-text-primary">Change Result: Match #{correctModal.match_id}</h4>
+              <button onClick={() => setCorrectModal(null)} disabled={correctSending} className="text-text-muted hover:text-text-primary text-lg leading-none">&times;</button>
+            </div>
+            {correctModal.sentMessage ? (
+              <>
+                <p className="text-sm text-text-secondary">{correctModal.sentMessage}</p>
+                <div className="flex justify-end mt-4">
+                  <button onClick={() => setCorrectModal(null)} className="px-3 py-1 text-xs rounded bg-secondary text-black hover:opacity-90">OK</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-text-secondary">
+                  This is recorded as a <strong>{correctModal.result === 'Win' ? 'win' : 'loss'}</strong> for you against <strong>{correctModal.opponent || 'your opponent'}</strong>.
+                  {' '}Switch it to a <strong>{correctModal.result === 'Win' ? 'loss' : 'win'}</strong>?
+                </p>
+                <p className="text-xs text-text-muted mt-2">
+                  {correctModal.opponent || 'Your opponent'} gets a Discord DM to confirm. Nothing changes until they confirm. Then ratings are recalculated.
+                </p>
+                {correctError && <p className="text-xs text-accent-red mt-2">{correctError}</p>}
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    onClick={() => setCorrectModal(null)}
+                    disabled={correctSending}
+                    className="px-3 py-1 text-xs rounded border border-border text-text-muted hover:text-text-primary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setCorrectSending(true)
+                      setCorrectError(null)
+                      try {
+                        const res = await requestMatchCorrection(correctModal.match_id)
+                        setCorrectionsSent((s) => ({ ...s, [correctModal.match_id]: true }))
+                        setCorrectModal({ ...correctModal, sentMessage: res?.message || 'Sent. The result switches once your opponent confirms.' })
+                      } catch (err) {
+                        setCorrectError(err.message || 'Could not send the request')
+                      } finally {
+                        setCorrectSending(false)
+                      }
+                    }}
+                    disabled={correctSending}
+                    className="px-3 py-1 text-xs rounded bg-secondary text-black hover:opacity-90 disabled:opacity-50"
+                  >
+                    {correctSending ? 'Sending...' : 'Send request'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
       {noteModal && (

@@ -72,6 +72,7 @@ export default function BlockedUsersSection() {
                           userName={e.blocked_name}
                           canModerate={e.can_moderate}
                           moderation={e.moderation}
+                          status={e.status}
                           sourceKind="block"
                           sourceRef={e.blocker_id}
                           playerReason="Blocked by other players"
@@ -98,6 +99,7 @@ export default function BlockedUsersSection() {
                         userName={e.blocked_name}
                         canModerate={e.can_moderate}
                         moderation={e.moderation}
+                        status={e.status}
                         sourceKind="block"
                         sourceRef={e.blocker_id}
                         playerReason="Blocked by other players"

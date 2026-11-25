@@ -1349,6 +1349,11 @@ async def record_match(
     if match_type not in NON_ELO_MATCH_TYPES and event_active:
         conn_elo = sqlite3.connect("elo.db")
         try:
+            # Inactivity decay owed right now first, so the "before" numbers
+            # match what a season rebuild works out for this game
+            if glicko:
+                glicko2_season.apply_decay(conn_elo, active_event, now_iso)
+                conn_elo.commit()
             snapshot = glicko2_season.pre_game_snapshot(
                 conn_elo, active_event, winner_id, loser_id,
                 winner_avatar if avatar_event_id is not None else None,
@@ -1692,6 +1697,13 @@ def end_current_event():
     # Archive standings
     conn_elo = sqlite3.connect("elo.db")
     cur_elo = conn_elo.cursor()
+
+    # Glicko-2 Avatar mode: inactivity decay owed up to this moment comes off
+    # before the final standings are read (decay stops once the season ends)
+    try:
+        glicko2_season.apply_decay(conn_elo, active_event)
+    except sqlite3.Error as e:
+        logger.warning("end_current_event: inactivity decay skipped: %s", e)
 
     # Get event participants from match_records
     from repositories.elo_repo import get_event_participant_ids

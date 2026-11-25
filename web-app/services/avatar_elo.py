@@ -13,6 +13,7 @@ from pathlib import Path
 from webapp_config import ELO_DB_PATH, MATCH_RECORDS_DB_PATH
 from repositories.elo import EloRepository
 from services import provisional
+from services.glicko2_season import decay_status
 
 
 def _resolve_event(elo_repo: EloRepository, event_filter, archive_event_id):
@@ -126,6 +127,19 @@ def get_player_avatar_changes(player_id, match_db_path=None) -> dict:
     return changes
 
 
+def _decay_fields(entry, is_current) -> dict:
+    """Inactivity decay for one avatar entry (Glicko-2 seasons).
+
+    A finished season keeps what was lost by its end, with no countdown.
+    """
+    status = decay_status(entry.get("event_elo"), entry.get("games_played"),
+                          entry.get("last_played_at"), entry.get("decay"))
+    return {
+        "decay": status["decay"],
+        "decay_in_days": status["decay_in_days"] if is_current else None,
+    }
+
+
 def get_player_avatar_elo(
     player_id,
     event_filter="current",
@@ -162,6 +176,7 @@ def get_player_avatar_elo(
                 "games_played": row["games_played"],
                 "provisional": row["provisional"],
                 "provisional_games": row["provisional_games"],
+                **_decay_fields(row, is_current),
             }
             for row in provisional.rank_settled_first(ladder, "event_elo")
             if str(row["user_id"]) == str(player_id)

@@ -4,6 +4,7 @@ import NameBadges from '@/components/player/NameBadges'
 import { VoiceGamesCell } from '@/components/leaderboard/VoiceGames'
 import { ProvisionalTag } from '@/components/common/Provisional'
 import { provisionalOf } from '@/utils/provisional'
+import { DecayTag } from '@/components/common/DecayTag'
 
 const SHOW_OPTIONS = [
   { value: 16, label: 'Top 16' },
@@ -146,7 +147,13 @@ export default function LeaderboardTable({
                           not yet eligible
                         </span>
                       )}
-                      {prov ? <ProvisionalTag games={prov.games} /> : entry.event_elo}
+                      {prov ? <ProvisionalTag games={prov.games} /> : (
+                        // Phones: the decay tag sits under the rating so the rating stays in view
+                        <span className="inline-flex flex-col items-end sm:flex-row-reverse sm:items-center sm:gap-2 align-middle">
+                          <span>{entry.event_elo}</span>
+                          <DecayTag decay={entry.decay} inDays={entry.decay_in_days} className="text-xs" />
+                        </span>
+                      )}
                     </td>
                   )}
                 </tr>

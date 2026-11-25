@@ -3,7 +3,7 @@
 import webapp_config
 from repositories.elo import EloRepository
 from services import provisional
-from services.glicko2_season import is_glicko2
+from services.glicko2_season import decay_status, is_glicko2
 from repositories.matches import MatchRepository
 from repositories.user_profiles import UserProfileRepository
 
@@ -204,6 +204,7 @@ class LeaderboardService:
         records = self._match_repo.get_season_avatar_records(event_start) if event_start else {}
         voice_games = self._match_repo.get_season_voice_games(event_start) if event_start else {}
         rows = []
+        glicko = is_glicko2(active_event)
         for entry in self._elo_repo.get_avatar_standings(active_event["event_id"]):
             user_id = str(entry["user_id"])
             record = records.get((user_id, entry["avatar"]), {"wins": 0, "losses": 0})
@@ -222,6 +223,12 @@ class LeaderboardService:
                     "voice_games": voice_games.get(user_id, 0),
                 }
             )
+            if glicko:
+                # Inactivity decay: points lost since the last game, or the countdown to it
+                status = decay_status(entry["event_elo"], entry["games_played"],
+                                      entry.get("last_played_at"), entry.get("decay"))
+                rows[-1]["decay"] = status["decay"]
+                rows[-1]["decay_in_days"] = status["decay_in_days"]
         return rows
 
     def _season_games(self, active_event, avatar_only=False) -> int:

@@ -5,6 +5,7 @@ import { getWinRateColor } from '@/utils/winRateColor'
 import { setHiddenAvatars } from '@/api/players'
 import { ProvisionalTag } from '@/components/common/Provisional'
 import { provisionalOf } from '@/utils/provisional'
+import { DecayTag } from '@/components/common/DecayTag'
 
 // An avatar's season rating can be provisional (Glicko-2, < 8 games)
 const eventProv = (av) => provisionalOf(av) || provisionalOf(av, 'event')
@@ -175,6 +176,7 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
                     <div className="text-right shrink-0">
                       <div className="text-lg font-bold text-secondary tabular-nums">{av.event_elo}</div>
                       <div className="text-xs text-gray-300">{av.event_rank ? `#${av.event_rank}` : 'Event Rating'}</div>
+                      <DecayTag decay={av.event_decay} inDays={av.event_decay_in_days} className="text-xs block" />
                     </div>
                   )}
                 </div>
@@ -268,6 +270,7 @@ export default function AvatarPerformance({ avatars, playerId, period = 'lifetim
                   {showEventElo && (
                     <td className="py-2.5 px-3 tabular-nums">
                       {eventProv(av) ? <ProvisionalTag games={eventProv(av).games} /> : av.event_elo ?? '-'}
+                      {!eventProv(av) && <DecayTag decay={av.event_decay} inDays={av.event_decay_in_days} className="ml-2 text-xs" />}
                     </td>
                   )}
                   {showEventElo && <td className="py-2.5 px-3 tabular-nums">{av.event_rank && !eventProv(av) ? `#${av.event_rank}` : '-'}</td>}

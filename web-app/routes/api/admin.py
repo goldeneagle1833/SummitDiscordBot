@@ -1947,6 +1947,19 @@ def queue_settings_summary():
     return jsonify({"success": True, "players": len(ids), "settings": settings})
 
 
+def _with_server_zone(stamp):
+    """Naive server-local ISO timestamp -> ISO with the server's UTC offset."""
+    if not stamp:
+        return stamp
+    try:
+        parsed = datetime.fromisoformat(str(stamp))
+    except ValueError:
+        return stamp
+    if parsed.tzinfo is None:
+        parsed = parsed.astimezone()  # naive = server local time
+    return parsed.isoformat()
+
+
 @admin_bp.route("/admin/data-exports", methods=["GET"])
 @require_admin
 def data_exports_summary():
@@ -1988,6 +2001,9 @@ def data_exports_summary():
             "user_id": str(r["user_id"]),  # 18-digit ids lose precision as JSON numbers
             "name": resolve_name(str(r["user_id"]), r["admin_name"]),
             "timestamp": r["timestamp"],
+            # Audit rows store naive server-local time; send it with the
+            # server's offset so every viewer's browser shows its own time.
+            "at": _with_server_zone(r["timestamp"]),
             "ok": r["action"] == "self_data_export",
             "bytes": stats.get("bytes"),
             "matches": stats.get("matches"),

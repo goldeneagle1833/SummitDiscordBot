@@ -4,6 +4,7 @@ import datetime
 import logging
 
 import config
+from repositories.tag_me_repo import send_with_tag_me
 from cogs.lfg.state import lfg_queue
 from cogs.lfg.persistent_confirm import create_match_card_view
 from cogs.lfg.pairing_messages import (
@@ -11,10 +12,13 @@ from cogs.lfg.pairing_messages import (
     announce_pairing,
     send_pairing_messages,
 )
-from utils.database import save_pairing, get_pairing_ban, pairing_ban_message
+from utils.database import save_pairing, get_pairing_ban, pairing_ban_message, is_blocked_pair
 from utils.deck_checker import clean_deck_url
 from services.avatar_mode import check_join_deck, lock_match_avatar, needs_avatar
 from services.ranked_eligibility import ranked_block_message
+
+# Blocks are private, so this never says who blocked whom
+BLOCKED_CHALLENGE_MESSAGE = "This challenge can't be accepted."
 
 
 def _require_deck_in_avatar_mode(deck_input):
@@ -109,7 +113,8 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
 
             # Confirm in channel (find original context channel)
             if self.lfg_channel:
-                await self.lfg_channel.send(
+                await send_with_tag_me(
+                    self.lfg_channel,
                     f"{self.challenger.mention} has challenged {self.opponent.mention} to a match!"
                 )
 
@@ -117,14 +122,16 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
             # If DM fails, create a public thread
             if self.lfg_channel:
                 try:
-                    temp_msg = await self.lfg_channel.send(
+                    temp_msg = await send_with_tag_me(
+                        self.lfg_channel,
                         f"{self.opponent.mention} You have been challenged!"
                     )
                     thread = await temp_msg.create_thread(
                         name=f"Challenge from {self.challenger.display_name}",
                         auto_archive_duration=60,
                     )
-                    await thread.send(
+                    await send_with_tag_me(
+                        thread,
                         f"{self.opponent.mention} {challenger_global} has challenged you to a match!",
                         view=view,
                     )
@@ -184,6 +191,11 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         challenger = await interaction.client.fetch_user(self.challenger_id)
         accepter_global = interaction.user.global_name or interaction.user.display_name
         accepter_deck_url = clean_deck_url(self.deck_url.value.strip()) if self.deck_url.value else None
+
+        # Checked again here: a block may have been added while the modal was open
+        if is_blocked_pair(self.challenger_id, interaction.user.id):
+            await interaction.followup.send(BLOCKED_CHALLENGE_MESSAGE, ephemeral=True)
+            return
 
         # Avatar-mode season: accepting makes the match, so both avatars lock now
         challenger_avatar = accepter_avatar = None
@@ -370,6 +382,10 @@ class ChallengeButtons(discord.ui.View):
         ban = get_pairing_ban(interaction.user.id)
         if ban:
             await interaction.response.send_message(pairing_ban_message(ban), ephemeral=True)
+            return
+        # Player blocks (either direction) rule out a challenge game too
+        if is_blocked_pair(self.challenger_id, interaction.user.id):
+            await interaction.response.send_message(BLOCKED_CHALLENGE_MESSAGE, ephemeral=True)
             return
         # A challenge is a ranked game; brand-new players can't accept one yet
         new_player_message = ranked_block_message(interaction.user.id)

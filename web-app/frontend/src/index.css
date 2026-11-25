@@ -163,6 +163,20 @@ option {
   pointer-events: none;
 }
 
+/* Season avatar honour: avatar portrait in a gold / silver / bronze ring. */
+.honour-ring {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  padding: 2px;
+  background: #94a3b8;
+}
+.honour-ring > img { border-radius: 9999px; }
+.honour-ring-1 { background: linear-gradient(135deg, #fff3a3, #facc15 45%, #b8860b); }
+.honour-ring-2 { background: linear-gradient(135deg, #ffffff, #cbd5e1 45%, #64748b); }
+.honour-ring-3 { background: linear-gradient(135deg, #fcd9a8, #d97706 45%, #7c2d12); }
+
 @media (prefers-reduced-motion: reduce) {
   .foil-ring { animation: none; }
 }

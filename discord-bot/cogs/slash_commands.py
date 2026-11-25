@@ -199,6 +199,27 @@ class SlashCommandsCog(commands.Cog):
 
         await lfg_cog.tag_me(ctx, setting)
 
+    @app_commands.command(
+        name="skill-match",
+        description="Test skill-based matching in the Ranked and Casual queues",
+    )
+    @app_commands.describe(setting="Turn Skill matching on or off (leave empty to see your setting)")
+    @app_commands.choices(setting=[
+        app_commands.Choice(name="🎯 On: pair me with players near my rating", value="on"),
+        app_commands.Choice(name="Off: pair me with the next player in queue", value="off"),
+    ])
+    async def skill_match_slash(self, interaction: discord.Interaction, setting: str = None):
+        """Players with Skill matching on are only paired with players near their rating"""
+        await interaction.response.defer(ephemeral=True)
+        ctx = FakeContext(self.bot, interaction)
+
+        lfg_cog = self.bot.get_cog("LFGCog")
+        if not lfg_cog:
+            await interaction.followup.send("LFG system is not available.", ephemeral=True)
+            return
+
+        await lfg_cog.skill_match(ctx, setting)
+
     # ==================== ADMIN MATCH REPORTS ====================
 
     async def _admin_report_flow(self, interaction, winner, loser, top16_player=None):

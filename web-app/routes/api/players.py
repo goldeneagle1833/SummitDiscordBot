@@ -19,6 +19,7 @@ from repositories.user_profiles import UserProfileRepository
 from repositories.blocked_users_repo import BlockedUsersRepository
 from repositories.voice_only_repo import VoiceOnlyRepository
 from repositories.tag_me_repo import TagMeRepository
+from repositories.skill_match_repo import SkillMatchRepository
 from utils.auth import is_admin, require_auth
 from utils.card_images import attach_images, resolve_card_image
 from services.curiosa import deck_url_source, is_deck_url, normalize_deck_url
@@ -2403,6 +2404,21 @@ def player_api(player_id):
         ranked_rows = [r for r in ranked_rows if _passes_filters(r)]
         casual_rows = [r for r in casual_rows if _passes_filters(r)]
 
+    # Game type filter (ranked includes Omens; casual includes testing)
+    game_type = (request.args.get("game_type") or "").strip().lower()
+    if game_type == "ranked":
+        casual_rows = []
+    elif game_type == "casual":
+        ranked_rows = []
+    else:
+        game_type = ""
+    if game_type:
+        match_filters["game_type"] = game_type
+
+    # combined=1: one Match History list with ranked and casual games together,
+    # newest first, paged with `page`. Without it the old split lists are kept.
+    combined = request.args.get("combined") == "1"
+
     def _record(rows_in):
         wins = sum(1 for r in rows_in if r[0])
         return {"wins": wins, "losses": len(rows_in) - wins}
@@ -2418,13 +2434,18 @@ def player_api(player_id):
     casual_page = max(1, casual_page)
 
     # Calculate ranked pagination
-    total_ranked_matches = len(ranked_rows)
+    if combined:
+        in_list = {id(r) for r in ranked_rows} | {id(r) for r in casual_rows}
+        list_rows = [r for r in sorted_rows if id(r) in in_list]
+    else:
+        list_rows = ranked_rows
+    total_ranked_matches = len(list_rows)
     total_pages = (total_ranked_matches + per_page - 1) // per_page if total_ranked_matches > 0 else 1
     page = min(page, total_pages)  # Ensure page doesn't exceed total pages
 
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
-    paginated_rows = ranked_rows[start_idx:end_idx]
+    paginated_rows = list_rows[start_idx:end_idx]
 
     # Calculate casual pagination
     total_casual_matches = len(casual_rows)
@@ -2433,7 +2454,7 @@ def player_api(player_id):
 
     casual_start_idx = (casual_page - 1) * per_page
     casual_end_idx = casual_start_idx + per_page
-    paginated_casual_rows = casual_rows[casual_start_idx:casual_end_idx]
+    paginated_casual_rows = [] if combined else casual_rows[casual_start_idx:casual_end_idx]
 
     def _clean_match_comment(comment, reporter_id, player_id):
         """Extract the current player's own comment, stripping metadata and opponent's notes."""
@@ -3824,7 +3845,7 @@ def _queue_settings_key(player_id) -> tuple[str | None, str | None]:
 
 @players_bp.route("/player/<player_id>/queue-settings", methods=["GET"])
 def get_queue_settings(player_id):
-    """A player's Discord queue settings (owner only): voice only, tag me."""
+    """A player's Discord queue settings (owner only): voice only, tag me, skill matching."""
     if session.get("user_id") is None:
         return jsonify({"error": "Authentication required"}), 401
     key, error = _queue_settings_key(player_id)
@@ -3833,17 +3854,18 @@ def get_queue_settings(player_id):
     return jsonify({
         "voice_only": VoiceOnlyRepository().is_voice_only(key),
         "tag_me": TagMeRepository().wants_tag(key),
+        "skill_match": SkillMatchRepository().wants_skill_match(key),
     })
 
 
-_QUEUE_SETTINGS = ("voice_only", "tag_me")
+_QUEUE_SETTINGS = ("voice_only", "tag_me", "skill_match")
 
 
 @players_bp.route("/player/<player_id>/queue-settings", methods=["POST"])
 def set_queue_settings(player_id):
     """Save a player's Discord queue settings (owner only).
 
-    Send any of voice_only / tag_me; settings left out are unchanged.
+    Send any of voice_only / tag_me / skill_match; settings left out are unchanged.
     """
     if session.get("user_id") is None:
         return jsonify({"error": "Authentication required"}), 401
@@ -3853,7 +3875,7 @@ def set_queue_settings(player_id):
     data = request.get_json(silent=True) or {}
     sent = [name for name in _QUEUE_SETTINGS if name in data]
     if not sent:
-        return jsonify({"error": "Send voice_only or tag_me"}), 400
+        return jsonify({"error": "Send voice_only, tag_me or skill_match"}), 400
     for name in sent:
         if not isinstance(data[name], bool):
             return jsonify({"error": f"{name} must be true or false"}), 400
@@ -3862,6 +3884,8 @@ def set_queue_settings(player_id):
         result["voice_only"] = VoiceOnlyRepository().set_voice_only(key, data["voice_only"])
     if "tag_me" in data:
         result["tag_me"] = TagMeRepository().set_tag_me(key, data["tag_me"])
+    if "skill_match" in data:
+        result["skill_match"] = SkillMatchRepository().set_skill_match(key, data["skill_match"])
     return jsonify(result)
 
 

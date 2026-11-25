@@ -96,6 +96,35 @@ def ban_user(user_id: str, reason: str | None = None):
     _check(resp, "ban")
 
 
+def remove_timeout(user_id: str, reason: str | None = None):
+    """End a member's timeout early."""
+    if not is_discord_id(user_id):
+        raise ModerationError("Not a Discord account.")
+    url = f"{DISCORD_API}/guilds/{webapp_config.DISCORD_GUILD_ID}/members/{user_id}"
+    try:
+        resp = requests.patch(
+            url, headers=_headers(reason),
+            json={"communication_disabled_until": None}, timeout=REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as e:
+        raise ModerationError(f"Could not reach Discord: {e}") from e
+    _check(resp, "timeout removal")
+
+
+def unban_user(user_id: str, reason: str | None = None):
+    """Lift a server ban."""
+    if not is_discord_id(user_id):
+        raise ModerationError("Not a Discord account.")
+    url = f"{DISCORD_API}/guilds/{webapp_config.DISCORD_GUILD_ID}/bans/{user_id}"
+    try:
+        resp = requests.delete(url, headers=_headers(reason), timeout=REQUEST_TIMEOUT)
+    except requests.RequestException as e:
+        raise ModerationError(f"Could not reach Discord: {e}") from e
+    if resp.status_code == 404:
+        raise ModerationError("They aren't banned from the Summit Discord.")
+    _check(resp, "unban")
+
+
 # ── telling the player ───────────────────────────────────────────────
 
 TIMEOUT_LABELS = {60: "1 hour", 1440: "1 day", 10080: "1 week", 40320: "28 days"}
@@ -124,6 +153,17 @@ def player_dm_embed(action: str, reason: str, minutes: int | None = None) -> dic
     embed["fields"].append({"name": "Reason", "value": (reason or "-")[:1024], "inline": False})
     embed["footer"] = {"text": "If you think this is a mistake, please contact a server admin."}
     return embed
+
+
+def lifted_dm_embed(action: str) -> dict:
+    """DM for a timeout or pairing block ended early by a moderator."""
+    if action == "remove_timeout":
+        title = f"Your timeout in {SERVER_NAME} has been lifted"
+        text = "You can chat, react and join voice again."
+    else:
+        title = "Your pairing block has been lifted"
+        text = "You can join the LFG queue, the website queue and challenges again."
+    return {"title": title, "description": text, "color": 0x2ECC71}
 
 
 def send_dm(user_id: str, embed: dict) -> tuple[str, str] | None:

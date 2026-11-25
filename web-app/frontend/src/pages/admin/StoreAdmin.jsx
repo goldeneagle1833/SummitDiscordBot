@@ -1156,7 +1156,12 @@ function OrderRow({ order, onChanged, showStorefront = false, pairedWith = 0, pr
         )}
         <button onClick={toggle} className="flex-1 flex flex-wrap items-center justify-between gap-2 p-3 text-left">
           <span className="font-mono text-sm">{order.order_number}</span>
-          <span className="text-sm">{order.username}</span>
+          <span className="text-sm flex flex-col items-center leading-tight">
+            <span>{order.username}</span>
+            {order.ship_name && order.ship_name.trim().toLowerCase() !== (order.username || '').trim().toLowerCase() && (
+              <span className="text-xs text-text-muted">{order.ship_name}</span>
+            )}
+          </span>
           {showStorefront && order.storefront_name && (
             <span className="text-xs text-brand-sky">{order.storefront_name}</span>
           )}
@@ -1472,8 +1477,8 @@ function OrdersPanel({ storefrontId, showStorefront }) {
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <input
-          className={`${inputCls} w-48`}
-          placeholder="Search user / order #"
+          className={`${inputCls} w-56`}
+          placeholder="Search name, email, order #"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

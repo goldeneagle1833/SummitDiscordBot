@@ -19,6 +19,7 @@ from repositories.limited_repo import (
 )
 
 import config
+from repositories.tag_me_repo import send_with_tag_me
 
 
 logger = logging.getLogger("discord_bot")
@@ -258,7 +259,7 @@ async def _notify_sorcery_online_match_recorded(
         fallback_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
         if fallback_channel:
             try:
-                await fallback_channel.send(scrub_urls(f"<@{user_id}> {message}"))
+                await send_with_tag_me(fallback_channel, scrub_urls(f"<@{user_id}> {message}"))
             except Exception as exc:
                 logger.error(
                     "Could not send Play Sorcery Online match result fallback for %s: %s",

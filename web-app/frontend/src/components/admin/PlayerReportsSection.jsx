@@ -6,7 +6,7 @@ import ModerationActions from '@/components/admin/ModerationActions'
 const PER_PAGE = 50
 
 // Matches REPORT_REASONS in discord-bot/cogs/lfg/player_report.py
-const REASON_LABELS = {
+export const REASON_LABELS = {
   voice_refused: "Joined voice but didn't want to use voice",
   left_early: 'Left the match early without conceding',
   no_show: 'Never showed up or joined the game',
@@ -86,6 +86,7 @@ export default function PlayerReportsSection() {
                           userName={e.reported_name}
                           canModerate={e.can_moderate}
                           moderation={e.moderation}
+                          status={e.status}
                           sourceKind="report"
                           sourceRef={e.id}
                           playerReason={e.reasons?.length
@@ -129,6 +130,7 @@ export default function PlayerReportsSection() {
                         userName={e.reported_name}
                         canModerate={e.can_moderate}
                         moderation={e.moderation}
+                        status={e.status}
                         sourceKind="report"
                         sourceRef={e.id}
                         playerReason={e.reasons?.length

@@ -8,7 +8,9 @@ export const getPlayer = (id, { event, source, page, perPage, casualPage, extern
   if (perPage) params.set('per_page', perPage)
   if (casualPage) params.set('casual_page', casualPage)
   if (externalPage) params.set('external_page', externalPage)
-  for (const key of ['opponent', 'result', 'avatar', 'opponent_avatar', 'play_draw', 'card']) {
+  // One Match History list with ranked and casual games together
+  params.set('combined', '1')
+  for (const key of ['opponent', 'result', 'avatar', 'opponent_avatar', 'play_draw', 'card', 'game_type']) {
     if (filters[key]) params.set(key, filters[key])
   }
   const qs = params.toString()

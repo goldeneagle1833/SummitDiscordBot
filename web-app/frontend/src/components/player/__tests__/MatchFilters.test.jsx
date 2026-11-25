@@ -77,3 +77,17 @@ describe('MatchFilters', () => {
     expect(screen.getByTestId('filter-record')).toHaveTextContent('Precon: 2W - 1L (66.7%)')
   })
 })
+
+describe('MatchFilters game type', () => {
+  it('filters to casual games and shows only the casual record', async () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<MatchFilters filters={{}} data={data} onChange={onChange} />)
+    await userEvent.selectOptions(screen.getByLabelText('Type'), 'casual')
+    expect(onChange).toHaveBeenCalledWith({ game_type: 'casual' })
+
+    rerender(<MatchFilters filters={{ game_type: 'casual' }} data={{ ...data, casual: { wins: 2, losses: 0 } }} onChange={onChange} />)
+    const record = screen.getByTestId('filter-record')
+    expect(record).toHaveTextContent('Casual: 2W - 0L (100%)')
+    expect(record).not.toHaveTextContent('Ranked')
+  })
+})

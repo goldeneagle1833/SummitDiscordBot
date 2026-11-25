@@ -223,6 +223,45 @@ def require_explorer_admin(f):
     return decorated_function
 
 
+def is_moderator() -> bool:
+    """Check if the current user can use Mod Tools (reports, timeouts, bans).
+
+    Access granted if:
+    - User is a global admin (superset)
+    - User's Discord ID is in the moderators table (added from Mod Tools)
+
+    Moderators get nothing else: every other admin route still checks
+    is_admin().
+    """
+    if is_admin():
+        return True
+
+    user_id = session.get("user_id")
+    if user_id:
+        try:
+            from repositories.moderation_repo import ModeratorsRepository
+            if ModeratorsRepository().is_moderator(str(user_id)):
+                return True
+        except Exception:
+            logger.exception("Moderator lookup failed")
+
+    return False
+
+
+def require_moderator(f):
+    """Decorator requiring Mod Tools access (moderator or admin)."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_moderator():
+            logger.warning(
+                f"Non-moderator access attempt to {request.path} from {request.remote_addr}"
+            )
+            return jsonify({"error": "Moderator access required"}), 403
+        return f(*args, **kwargs)
+    decorated_function._auth_required = True
+    return decorated_function
+
+
 def is_rumble_admin() -> bool:
     """Check if the current user can manage Rumble bones/prizes.
 

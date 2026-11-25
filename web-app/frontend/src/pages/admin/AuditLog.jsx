@@ -9,6 +9,8 @@ import BlockedUsersSection from '@/components/admin/BlockedUsersSection'
 import PlayerReportsSection from '@/components/admin/PlayerReportsSection'
 import PlayerKudosSection from '@/components/admin/PlayerKudosSection'
 import DataExportsSection from '@/components/admin/DataExportsSection'
+import QueueSettingsSection from '@/components/admin/QueueSettingsSection'
+import NavPicksSection from '@/components/admin/NavPicksSection'
 import CardPointsSection from '@/components/admin/CardPointsSection'
 import ReactionRolesSection from '@/components/admin/ReactionRolesSection'
 import AuditLogTable from '@/components/admin/AuditLogTable'
@@ -32,6 +34,9 @@ export default function AuditLog() {
       </AdminCollapsible>
       <AdminCollapsible title="Dashboard" subtitle="Community health and site analytics at a glance" defaultOpen>
         <DashboardSection />
+      </AdminCollapsible>
+      <AdminCollapsible title="Most Pinned Pages" subtitle="Which pages people add to their top bar with Customize">
+        <NavPicksSection />
       </AdminCollapsible>
       <AdminCollapsible title="Matches with Notes" subtitle="All matches where players left a comment">
         <MatchNotesSection />
@@ -69,6 +74,9 @@ export default function AuditLog() {
           <p className="text-xs text-text-muted">Given from the Give Kudos button on Discord match messages or from Play Sorcery Online. Hide one to keep it off the homepage.</p>
           <PlayerKudosSection />
         </div>
+      </AdminCollapsible>
+      <AdminCollapsible title="Queue Settings" subtitle="How many players have Voice-only, Tag me and Skill matching on or off">
+        <QueueSettingsSection />
       </AdminCollapsible>
       <AdminCollapsible title="Data Exports" subtitle="Who downloaded their own data from Export my data, and how much">
         <DataExportsSection />

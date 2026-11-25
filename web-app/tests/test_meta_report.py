@@ -607,3 +607,49 @@ def test_match_days_are_utc():
     expected = datetime.fromisoformat(naive).astimezone(timezone.utc).date().isoformat()
     assert meta_report._utc_day(naive) == expected
     assert meta_report._utc_day("garbage-ish") == "garbage-is"
+
+
+# ---------------------------------------------------------------- home slide art
+
+def _art_dir(tmp_path, monkeypatch, *files):
+    from services import spotlight
+    folder = tmp_path / "avatars"
+    folder.mkdir()
+    for name in files:
+        (folder / name).write_bytes(b"x")
+    monkeypatch.setattr(spotlight, "AVATAR_IMAGES_DIR", folder)
+
+
+def _report_with_top(avatar):
+    archetypes = [{"avatar": avatar, "tier": "S"}, {"avatar": "Sparkmage", "tier": "A"}] if avatar else []
+    return {"slug": "2026-11-a", "payload": {"ranked": {"archetypes": archetypes}}}
+
+
+def test_banner_image_uses_deck_to_beat(tmp_path, monkeypatch):
+    _art_dir(tmp_path, monkeypatch, "Imposter.png", "Sparkmage.png")
+    assert meta_report.deck_to_beat(_report_with_top("Imposter")) == "Imposter"
+    assert meta_report.banner_image(_report_with_top("Imposter")) == "/avatar-images/Imposter.png"
+
+
+def test_banner_image_none_without_art_or_avatar(tmp_path, monkeypatch):
+    _art_dir(tmp_path, monkeypatch, "Sparkmage.png")
+    assert meta_report.banner_image(_report_with_top("Templar")) is None
+    assert meta_report.banner_image(_report_with_top(None)) is None
+    assert meta_report.banner_image(None) is None
+
+
+def test_fill_banner_art_only_touches_meta_slides_without_images(tmp_path, monkeypatch):
+    _art_dir(tmp_path, monkeypatch, "Imposter.png")
+
+    class Repo:
+        def get(self, slug):
+            return _report_with_top("Imposter") if slug == "2026-11-a" else None
+
+    banners = [
+        {"link": "/meta-report/2026-11-a", "images": []},
+        {"link": "/meta-report/2026-11-a", "images": ["/custom.png"]},
+        {"link": "/store", "images": []},
+        {"link": "/meta-report/missing", "images": []},
+    ]
+    meta_report.fill_banner_art(banners, repo=Repo())
+    assert [b["images"] for b in banners] == [["/avatar-images/Imposter.png"], ["/custom.png"], [], []]

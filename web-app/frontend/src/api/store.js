@@ -9,6 +9,9 @@ export const getStorefronts = () => get('/api/store/storefronts')
 export const searchMembers = (q) => get(`/api/store/user-search?q=${encodeURIComponent(q)}`)
 export const getCheckoutPrefill = () => get('/api/store/checkout/prefill')
 export const createCheckout = (payload) => post('/api/store/checkout', payload)
+// What buying this season's ticket now does to the buyer's ratings (late-ticket reset)
+export const previewTicketReset = (productIds) =>
+  post('/api/store/ticket-reset-preview', { product_ids: productIds })
 export const getMyOrders = () => get('/api/store/orders/mine')
 export const continueMyPayment = (orderNumber) =>
   post(`/api/store/orders/${encodeURIComponent(orderNumber)}/pay`)

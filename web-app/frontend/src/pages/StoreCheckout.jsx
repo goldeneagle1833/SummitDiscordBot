@@ -1,11 +1,84 @@
 import { useState, useEffect } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
-import { getProducts, getPrivateProduct, getCheckoutPrefill, createCheckout, formatMoney } from '@/api/store'
+import {
+  getProducts, getPrivateProduct, getCheckoutPrefill, createCheckout, formatMoney, previewTicketReset,
+} from '@/api/store'
 import { DEFAULT_STOREFRONT, loadCart, saveCart, reconcileCart, maxQuantity } from '@/hooks/useStoreCart'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import { DEFAULT_SHIPPING_RULES, cartShipping, shippingLabel } from '@/utils/storeShipping'
+
+// Late-ticket reset: shown before paying when this season's ticket would
+// drop some of the buyer's season ratings to 1500.
+export function TicketResetWarning({ warning, onCancel, onConfirm }) {
+  const [agreed, setAgreed] = useState(false)
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onCancel])
+
+  return (
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 p-4" onClick={onCancel}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ticket-reset-title"
+        className="bg-bg-surface border border-border rounded-lg w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 space-y-4">
+          <h3 id="ticket-reset-title" className="text-lg font-display text-secondary">
+            Heads up: your ratings will reset
+          </h3>
+          <p className="text-sm">
+            We're past the first week of <span className="font-semibold">{warning.event_name}</span>, so
+            buying a ticket now sets your season ratings above {warning.cap} to {warning.cap}:
+          </p>
+          <ul className="rounded-lg border border-border bg-bg-elevated divide-y divide-border text-sm">
+            {warning.entries.map((e) => (
+              <li key={e.avatar || 'season'} className="flex items-center justify-between px-4 py-2">
+                <span className="font-medium">{e.avatar || 'Season rating'}</span>
+                <span>
+                  <span className="text-text-muted line-through mr-2">{e.from}</span>
+                  <span className="text-secondary font-semibold">{e.to}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-sm text-text-muted">
+            Anything at or below {warning.cap} stays where it is. Your games, wins and losses don't change.
+          </p>
+          <label className="flex items-start gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+            />
+            <span>I understand my ratings above {warning.cap} will be set to {warning.cap}.</span>
+          </label>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
+            <button
+              onClick={onCancel}
+              className="px-4 py-2.5 rounded-lg border border-border text-sm hover:border-primary/50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={!agreed}
+              className="px-4 py-2.5 rounded-lg bg-secondary text-black text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Continue anyway
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function CheckoutProgress({ step }) {
   const steps = ['Review', 'Payment', 'Confirmation']
@@ -69,6 +142,7 @@ export default function StoreCheckout() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
+  const [resetWarning, setResetWarning] = useState(null)
 
   const isGoogleUser = user?.auth_provider && user.auth_provider !== 'discord'
 
@@ -140,7 +214,7 @@ export default function StoreCheckout() {
 
   const isValidEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
 
-  const submit = async () => {
+  const submit = async ({ resetAcknowledged = false } = {}) => {
     setError(null)
     const trimmed = email.trim()
     if (trimmed && !isValidEmail(trimmed)) {
@@ -152,6 +226,15 @@ export default function StoreCheckout() {
       return
     }
     setSubmitting(true)
+    if (!resetAcknowledged) {
+      // Late ticket? Show what it does to their ratings before they pay.
+      const preview = await previewTicketReset(items.map((i) => i.product_id)).catch(() => null)
+      if (preview?.will_reset) {
+        setResetWarning(preview)
+        setSubmitting(false)
+        return
+      }
+    }
     try {
       const { checkout_url } = await createCheckout({
         items: items.map(({ product_id, quantity, private_token }) => (
@@ -257,7 +340,7 @@ export default function StoreCheckout() {
 
       {/* CTA */}
       <button
-        onClick={submit}
+        onClick={() => submit()}
         disabled={submitting}
         className="w-full bg-primary hover:bg-primary-dark text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-base"
       >
@@ -284,6 +367,14 @@ export default function StoreCheckout() {
           &larr; {privateToken ? 'Back to the listing' : 'Back to store'}
         </Link>
       </div>
+
+      {resetWarning && (
+        <TicketResetWarning
+          warning={resetWarning}
+          onCancel={() => setResetWarning(null)}
+          onConfirm={() => { setResetWarning(null); submit({ resetAcknowledged: true }) }}
+        />
+      )}
     </div>
   )
 }

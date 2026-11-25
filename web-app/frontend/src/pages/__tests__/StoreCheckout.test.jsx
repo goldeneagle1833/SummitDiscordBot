@@ -10,11 +10,12 @@ vi.mock('@/api/store', async () => {
     getProducts: vi.fn(),
     getCheckoutPrefill: vi.fn(),
     createCheckout: vi.fn(),
+    previewTicketReset: vi.fn(),
   }
 })
 
 import { useAuth } from '@/context/AuthContext'
-import { getProducts, getCheckoutPrefill, createCheckout } from '@/api/store'
+import { getProducts, getCheckoutPrefill, createCheckout, previewTicketReset } from '@/api/store'
 import { CART_KEY, loadCart } from '@/hooks/useStoreCart'
 import StoreCheckout from '../StoreCheckout'
 
@@ -39,6 +40,7 @@ describe('StoreCheckout page', () => {
     useAuth.mockReturnValue({ user: { id: 'buyer', auth_provider: 'discord' }, loading: false })
     getProducts.mockResolvedValue({ products: [TOKEN, RARE] })
     getCheckoutPrefill.mockResolvedValue({ email: null, free_shipping: false })
+    previewTicketReset.mockResolvedValue({ will_reset: false, entries: [] })
   })
 
   it('builds the order from the saved cart with current prices', async () => {
@@ -126,5 +128,54 @@ describe('StoreCheckout page', () => {
     renderCheckout()
     expect(screen.getByText('login page')).toBeInTheDocument()
     expect(loadCart()).toEqual({ 1: 1 })
+  })
+
+  describe('late ticket warning', () => {
+    const TICKET = { id: 3, name: 'Season 9 Ticket', price_cents: 1500, currency: 'USD', product_type: 'discord_role', stock_quantity: 50 }
+    const WARNING = {
+      will_reset: true, event_name: 'Gothic Season 9', cap: 1500,
+      entries: [{ avatar: 'Imposter', from: 1612, to: 1500 }, { avatar: 'Battlemage', from: 1538, to: 1500 }],
+    }
+
+    beforeEach(() => {
+      sessionStorage.setItem(CART_KEY, JSON.stringify({ 3: 1 }))
+      getProducts.mockResolvedValue({ products: [TICKET] })
+      createCheckout.mockReturnValue(new Promise(() => {}))
+    })
+
+    it('shows what will reset and only pays after "I understand"', async () => {
+      previewTicketReset.mockResolvedValue(WARNING)
+      renderCheckout()
+      await userEvent.click(await screen.findByRole('button', { name: /Continue to payment/ }))
+
+      expect(previewTicketReset).toHaveBeenCalledWith([3])
+      const dialog = await screen.findByRole('dialog')
+      expect(dialog).toHaveTextContent('Gothic Season 9')
+      expect(dialog).toHaveTextContent('Imposter')
+      expect(dialog).toHaveTextContent('1612')
+      expect(createCheckout).not.toHaveBeenCalled()
+
+      const go = screen.getByRole('button', { name: 'Continue anyway' })
+      expect(go).toBeDisabled()
+      await userEvent.click(screen.getByRole('checkbox'))
+      await userEvent.click(go)
+      expect(createCheckout).toHaveBeenCalledTimes(1)
+    })
+
+    it('cancel closes the warning without paying', async () => {
+      previewTicketReset.mockResolvedValue(WARNING)
+      renderCheckout()
+      await userEvent.click(await screen.findByRole('button', { name: /Continue to payment/ }))
+      await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(createCheckout).not.toHaveBeenCalled()
+    })
+
+    it('goes straight to payment when nothing would reset', async () => {
+      renderCheckout()
+      await userEvent.click(await screen.findByRole('button', { name: /Continue to payment/ }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(createCheckout).toHaveBeenCalledTimes(1)
+    })
   })
 })

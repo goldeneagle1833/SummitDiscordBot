@@ -947,6 +947,31 @@ def create_checkout():
     return jsonify(result), 201
 
 
+@store_bp.route("/store/ticket-reset-preview", methods=["POST"])
+@require_auth
+def ticket_reset_preview():
+    """What buying this season's ticket now would do to the buyer's ratings.
+
+    Body: {product_ids: [...]}. The checkout page calls this before paying and
+    shows a warning when `will_reset` is true (late-ticket reset, see
+    services/ticket_reset_preview.py).
+    """
+    from services.ticket_reset_preview import is_current_season_ticket, preview_ticket_reset
+
+    data = request.get_json(silent=True) or {}
+    user_id = session.get("user_id")
+    repo = _repo()
+    products = [repo.get_product(int(pid)) for pid in (data.get("product_ids") or [])
+                if str(pid).isdigit()]
+    if not user_id or not any(is_current_season_ticket(p) for p in products):
+        return jsonify({"will_reset": False, "reason": "no_ticket", "entries": []})
+    try:
+        return jsonify(preview_ticket_reset(str(user_id)))
+    except Exception:
+        logger.exception("Ticket reset preview failed")
+        return jsonify({"will_reset": False, "reason": "error", "entries": []})
+
+
 @store_bp.route("/store/orders/mine", methods=["GET"])
 @require_auth
 def my_orders():

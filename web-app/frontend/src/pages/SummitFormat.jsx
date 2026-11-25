@@ -196,7 +196,7 @@ export default function SummitFormat() {
           <dd>
             Buy in the first week of the season and nothing changes. After that, any avatar rated above 1500
             is reset to 1500 when you get your ticket, and anything at or below 1500 stays where it is. If
-            you've played 2 or fewer games this season, nothing is reset.
+            you've played 2 or fewer games this season, nothing is reset. The store shows you exactly what would change before you pay.
           </dd>
         </dl>
       </Section>

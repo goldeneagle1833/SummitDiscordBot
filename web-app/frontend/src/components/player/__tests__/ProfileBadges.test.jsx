@@ -57,6 +57,19 @@ describe('Profile badges setting', () => {
     ])
   })
 
+  it("drops a paper result that repeats the player's Summit postseason finish", () => {
+    const marks = { best_label: 'Top 4', entries: [{ label: 'Top 4', name: 'Gothic Season 4 Top Cut' }] }
+    const keys = profileBadges({
+      marks,
+      paperFinishes: [
+        { folder: 'S4', label: 'Top 4', event: 'Summit Gothic Season 4' },
+        { folder: 'S5', label: 'Top 8', event: 'Summit Gothic Season 5' },
+        { folder: 'Ascanrask', label: 'Winner', event: 'Ascanrask III' },
+      ],
+    }).map((b) => b.key)
+    expect(keys).toEqual(['paper:Ascanrask', 'postseason', 'paper:S5'])
+  })
+
   it('shows the best 3 by default, or exactly what the player picked', () => {
     expect([...heroBadgeKeys(badges, null)]).toEqual(['paper:LinCon', 'avatar_honours', 'event_avatar:Avatar of the Realm 2026:Sparkmage'])
     expect([...heroBadgeKeys(badges, ['postseason', 'gone'])]).toEqual(['postseason'])

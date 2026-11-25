@@ -11,6 +11,7 @@ const DESTRUCTIVE = new Set([
 const MODIFY = new Set([
   'correct_match', 'spot_elo_reset', 'recalculate_event_elo', 'start_event', 'end_event',
   'refresh_streamers', 'web_start_event', 'web_end_event', 'web_reset_elo', 'web_rename_player',
+  'web_flip_matches', 'partner_correct_match',
 ])
 
 function ActionBadge({ action }) {

@@ -87,6 +87,63 @@ def create_moderation_tables():
             CREATE INDEX IF NOT EXISTS idx_moderation_actions_target
             ON moderation_actions (target_id)
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS moderation_group_chats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_id TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                source_kind TEXT,
+                source_ref TEXT,
+                opened_by_id TEXT,
+                opened_by_name TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                closed_at TEXT,
+                closed_by_name TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS moderation_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_id TEXT NOT NULL,
+                note TEXT NOT NULL,
+                by_id TEXT,
+                by_name TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_moderation_notes_target ON moderation_notes (target_id)
+        """)
+        # Website Mod Tools page asks the bot to post a player summary in the mod
+        # channel, and (admins) to flip match results; the bot works the queue.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS moderation_summary_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_id TEXT NOT NULL,
+                requested_by_id TEXT,
+                requested_by_name TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                done_at TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS moderation_match_flips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id INTEGER NOT NULL,
+                target_id TEXT NOT NULL,
+                requested_by_id TEXT,
+                requested_by_name TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                result TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                done_at TEXT
+            )
+        """)
+        for col in ("transcript TEXT", "message_count INTEGER"):
+            try:
+                conn.execute(f"ALTER TABLE moderation_group_chats ADD COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass
         if first_run:
             seeded = 0
             if _table_exists(conn, "blocked_users"):
@@ -275,3 +332,344 @@ def get_history_counts(target_id) -> dict:
                 "SELECT COUNT(*) FROM blocked_users WHERE blocked_user_id = ?", (target_id,)
             ).fetchone()[0]
         return {"reports": reports, "blocks": blocks}
+
+
+# ── group chats (private channel with the player + moderators who join) ──
+
+
+def get_open_group_chat(target_id) -> dict | None:
+    """The player's open group chat, if any. One open chat per player."""
+    with _get_connection() as conn:
+        if not _table_exists(conn, "moderation_group_chats"):
+            return None
+        row = conn.execute(
+            "SELECT * FROM moderation_group_chats WHERE target_id = ? AND closed_at IS NULL "
+            "ORDER BY id DESC LIMIT 1",
+            (str(target_id),),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_group_chat_by_channel(channel_id) -> dict | None:
+    with _get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM moderation_group_chats WHERE channel_id = ? ORDER BY id DESC LIMIT 1",
+            (str(channel_id),),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def save_group_chat(*, target_id, channel_id, source_kind, source_ref, opened_by_id, opened_by_name) -> int:
+    with _get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO moderation_group_chats "
+            "(target_id, channel_id, source_kind, source_ref, opened_by_id, opened_by_name) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (str(target_id), str(channel_id), source_kind, str(source_ref or ""),
+             str(opened_by_id), opened_by_name),
+        )
+        return cur.lastrowid
+
+
+def close_group_chat(channel_id, closed_by_name=None, transcript=None, message_count=None):
+    with _get_connection() as conn:
+        conn.execute(
+            "UPDATE moderation_group_chats SET closed_at = datetime('now'), closed_by_name = ?, "
+            "transcript = COALESCE(?, transcript), message_count = COALESCE(?, message_count) "
+            "WHERE channel_id = ? AND closed_at IS NULL",
+            (closed_by_name, transcript, message_count, str(channel_id)),
+        )
+
+
+def is_site_moderator(user_id) -> bool:
+    """Moderators Bruce adds on the website's Mod Tools page (by Discord ID).
+
+    The table belongs to the web app; until it exists nobody is listed.
+    """
+    with _get_connection() as conn:
+        if not _table_exists(conn, "moderators"):
+            return False
+        return conn.execute(
+            "SELECT 1 FROM moderators WHERE discord_user_id = ?", (str(user_id),)
+        ).fetchone() is not None
+
+
+def get_player_record(target_id, limit: int = 10) -> dict:
+    """A player's reports, blocks and past moderation actions, newest first.
+
+    For the summary posted in the mod channel when a group chat opens.
+    """
+    target_id = str(target_id)
+    record = {"reports": [], "blocks": [], "actions": [], "notes": [], "chats": [],
+              "report_total": 0, "block_total": 0}
+    with _get_connection() as conn:
+        if _table_exists(conn, "player_reports"):
+            record["report_total"] = conn.execute(
+                "SELECT COUNT(*) FROM player_reports WHERE reported_id = ?", (target_id,)
+            ).fetchone()[0]
+            for row in conn.execute(
+                "SELECT id, reporter_id, reporter_name, match_type, reasons, details, created_at "
+                "FROM player_reports WHERE reported_id = ? ORDER BY id DESC LIMIT ?",
+                (target_id, limit),
+            ).fetchall():
+                entry = dict(row)
+                entry["reasons"] = _reasons(row["reasons"])
+                record["reports"].append(entry)
+        if _table_exists(conn, "blocked_users"):
+            record["block_total"] = conn.execute(
+                "SELECT COUNT(*) FROM blocked_users WHERE blocked_user_id = ?", (target_id,)
+            ).fetchone()[0]
+            record["blocks"] = [dict(r) for r in conn.execute(
+                "SELECT user_id, reason, created_at FROM blocked_users "
+                "WHERE blocked_user_id = ? ORDER BY created_at DESC LIMIT ?",
+                (target_id, limit),
+            ).fetchall()]
+        if _table_exists(conn, "moderation_actions"):
+            record["actions"] = [dict(r) for r in conn.execute(
+                "SELECT action, duration_minutes, duration_label, reason, by_name, created_at "
+                "FROM moderation_actions WHERE target_id = ? ORDER BY id DESC LIMIT ?",
+                (target_id, limit),
+            ).fetchall()]
+        if _table_exists(conn, "moderation_notes"):
+            record["notes"] = [dict(r) for r in conn.execute(
+                "SELECT note, by_name, created_at FROM moderation_notes "
+                "WHERE target_id = ? ORDER BY id DESC LIMIT ?",
+                (target_id, limit),
+            ).fetchall()]
+        if _table_exists(conn, "moderation_group_chats"):
+            record["chats"] = [dict(r) for r in conn.execute(
+                "SELECT id, opened_by_name, created_at, closed_at, closed_by_name, message_count "
+                "FROM moderation_group_chats WHERE target_id = ? AND closed_at IS NOT NULL "
+                "ORDER BY id DESC LIMIT ?",
+                (target_id, 5),
+            ).fetchall()]
+    return record
+
+
+# ── mod notes ──
+
+
+def add_moderation_note(target_id, note, by_id, by_name) -> int:
+    with _get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO moderation_notes (target_id, note, by_id, by_name) VALUES (?, ?, ?, ?)",
+            (str(target_id), note, str(by_id), by_name),
+        )
+        return cur.lastrowid
+
+
+# ── repeat-offender flags ──
+
+
+def count_recent_complaints(target_id, days: int) -> int:
+    """Reports plus blocks against the player in the last ``days`` days."""
+    target_id = str(target_id)
+    since = f"-{int(days)} days"
+    total = 0
+    with _get_connection() as conn:
+        if _table_exists(conn, "player_reports"):
+            total += conn.execute(
+                "SELECT COUNT(*) FROM player_reports WHERE reported_id = ? AND created_at >= datetime('now', ?)",
+                (target_id, since),
+            ).fetchone()[0]
+        if _table_exists(conn, "blocked_users"):
+            total += conn.execute(
+                "SELECT COUNT(*) FROM blocked_users WHERE blocked_user_id = ? AND created_at >= datetime('now', ?)",
+                (target_id, since),
+            ).fetchone()[0]
+    return total
+
+
+def recently_flagged(target_id, days: int) -> bool:
+    """Was a repeat-offender heads-up posted for this player in the last ``days`` days?"""
+    with _get_connection() as conn:
+        return conn.execute(
+            "SELECT 1 FROM moderation_alerts WHERE kind = 'repeat' AND ref LIKE ? "
+            "AND alerted_at >= datetime('now', ?)",
+            (f"{target_id}|%", f"-{int(days)} days"),
+        ).fetchone() is not None
+
+
+def mark_flagged(target_id):
+    with _get_connection() as conn:
+        now = conn.execute("SELECT datetime('now')").fetchone()[0]
+        conn.execute(
+            "INSERT OR IGNORE INTO moderation_alerts (kind, ref) VALUES ('repeat', ?)",
+            (f"{target_id}|{now}",),
+        )
+
+
+# ── weekly summary ──
+
+
+def weekly_sent(ref: str) -> bool:
+    with _get_connection() as conn:
+        return conn.execute(
+            "SELECT 1 FROM moderation_alerts WHERE kind = 'weekly' AND ref = ?", (ref,)
+        ).fetchone() is not None
+
+
+def mark_weekly_sent(ref: str):
+    with _get_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO moderation_alerts (kind, ref) VALUES ('weekly', ?)", (ref,))
+
+
+def get_weekly_stats(days: int = 7) -> dict:
+    """Counts for the weekly mod summary (last ``days`` days)."""
+    since = f"-{int(days)} days"
+    stats = {"reports": 0, "blocks": 0, "actions": [], "chats_opened": 0, "chats_closed": 0,
+             "open_chats": [], "top_players": [], "flagged": 0}
+    with _get_connection() as conn:
+        if _table_exists(conn, "player_reports"):
+            stats["reports"] = conn.execute(
+                "SELECT COUNT(*) FROM player_reports WHERE created_at >= datetime('now', ?)", (since,)
+            ).fetchone()[0]
+        if _table_exists(conn, "blocked_users"):
+            stats["blocks"] = conn.execute(
+                "SELECT COUNT(*) FROM blocked_users WHERE created_at >= datetime('now', ?)", (since,)
+            ).fetchone()[0]
+        complaints = []
+        if _table_exists(conn, "player_reports"):
+            complaints.append(
+                "SELECT reported_id AS target_id FROM player_reports WHERE created_at >= datetime('now', :since)"
+            )
+        if _table_exists(conn, "blocked_users"):
+            complaints.append(
+                "SELECT blocked_user_id AS target_id FROM blocked_users WHERE created_at >= datetime('now', :since)"
+            )
+        if complaints:
+            stats["top_players"] = [dict(r) for r in conn.execute(
+                "SELECT target_id, COUNT(*) AS n FROM (" + " UNION ALL ".join(complaints) + ") "
+                "GROUP BY target_id ORDER BY n DESC LIMIT 5",
+                {"since": since},
+            ).fetchall()]
+        stats["actions"] = [dict(r) for r in conn.execute(
+            "SELECT action, COUNT(*) AS n FROM moderation_actions "
+            "WHERE created_at >= datetime('now', ?) GROUP BY action ORDER BY n DESC",
+            (since,),
+        ).fetchall()]
+        stats["chats_opened"] = conn.execute(
+            "SELECT COUNT(*) FROM moderation_group_chats WHERE created_at >= datetime('now', ?)", (since,)
+        ).fetchone()[0]
+        stats["chats_closed"] = conn.execute(
+            "SELECT COUNT(*) FROM moderation_group_chats WHERE closed_at >= datetime('now', ?)", (since,)
+        ).fetchone()[0]
+        stats["open_chats"] = [dict(r) for r in conn.execute(
+            "SELECT target_id, channel_id, created_at FROM moderation_group_chats "
+            "WHERE closed_at IS NULL ORDER BY id"
+        ).fetchall()]
+        stats["flagged"] = conn.execute(
+            "SELECT COUNT(*) FROM moderation_alerts WHERE kind = 'repeat' AND alerted_at >= datetime('now', ?)",
+            (since,),
+        ).fetchone()[0]
+    return stats
+
+
+# ── website requests (summary posts, match flips) ──
+
+
+def get_pending_summary_requests(limit: int = 10) -> list[dict]:
+    with _get_connection() as conn:
+        if not _table_exists(conn, "moderation_summary_requests"):
+            return []
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM moderation_summary_requests WHERE done_at IS NULL ORDER BY id LIMIT ?", (limit,)
+        ).fetchall()]
+
+
+def mark_summary_done(request_id: int):
+    with _get_connection() as conn:
+        conn.execute(
+            "UPDATE moderation_summary_requests SET done_at = datetime('now') WHERE id = ?", (int(request_id),)
+        )
+
+
+def get_pending_match_flips(limit: int = 25) -> list[dict]:
+    """Pending flips, oldest match first (so each replay builds on the last)."""
+    with _get_connection() as conn:
+        if not _table_exists(conn, "moderation_match_flips"):
+            return []
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM moderation_match_flips WHERE status = 'pending' ORDER BY match_id, id LIMIT ?",
+            (limit,),
+        ).fetchall()]
+
+
+def finish_match_flip(flip_id: int, status: str, result: str):
+    with _get_connection() as conn:
+        conn.execute(
+            "UPDATE moderation_match_flips SET status = ?, result = ?, done_at = datetime('now') WHERE id = ?",
+            (status, result, int(flip_id)),
+        )
+
+
+# ── thanking reporters when a player is banned or pairing-blocked ──
+# moderation_alerts rows: kind 'thanks' (report id thanked), 'thanks_action'
+# (moderation_actions id handled), 'thanks_pban' (pairing_bans user|banned_at
+# handled), 'thanks_seeded' (bans before this feature are skipped).
+
+
+def _seed_thanks(conn):
+    if conn.execute("SELECT 1 FROM moderation_alerts WHERE kind = 'thanks_seeded'").fetchone():
+        return
+    conn.execute(
+        "INSERT OR IGNORE INTO moderation_alerts (kind, ref) "
+        "SELECT 'thanks_action', CAST(id AS TEXT) FROM moderation_actions"
+    )
+    if _table_exists(conn, "pairing_bans"):
+        conn.execute(
+            "INSERT OR IGNORE INTO moderation_alerts (kind, ref) "
+            "SELECT 'thanks_pban', user_id || '|' || banned_at FROM pairing_bans"
+        )
+    conn.execute("INSERT OR IGNORE INTO moderation_alerts (kind, ref) VALUES ('thanks_seeded', '1')")
+
+
+def get_new_ban_targets() -> list[tuple[str, str]]:
+    """Players banned or pairing-blocked since last time: [(key, target_id)].
+
+    Covers alert buttons, the website and ``!ban``. Bans from before this
+    feature are skipped. Call ``mark_ban_handled(key)`` after each.
+    """
+    out = []
+    with _get_connection() as conn:
+        _seed_thanks(conn)
+        for row in conn.execute(
+            "SELECT id, target_id FROM moderation_actions a WHERE action IN ('ban', 'pairing_block') "
+            "AND NOT EXISTS (SELECT 1 FROM moderation_alerts m WHERE m.kind = 'thanks_action' "
+            "AND m.ref = CAST(a.id AS TEXT)) ORDER BY id"
+        ).fetchall():
+            out.append((f"thanks_action:{row['id']}", str(row["target_id"])))
+        if _table_exists(conn, "pairing_bans"):
+            for row in conn.execute(
+                "SELECT user_id, banned_at FROM pairing_bans p WHERE NOT EXISTS (SELECT 1 FROM moderation_alerts m "
+                "WHERE m.kind = 'thanks_pban' AND m.ref = p.user_id || '|' || p.banned_at)"
+            ).fetchall():
+                out.append((f"thanks_pban:{row['user_id']}|{row['banned_at']}", str(row["user_id"])))
+    return out
+
+
+def mark_ban_handled(key: str):
+    kind, ref = key.split(":", 1)
+    with _get_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO moderation_alerts (kind, ref) VALUES (?, ?)", (kind, ref))
+
+
+def get_unthanked_reports(target_id) -> list[dict]:
+    """Reports against the player whose reporter hasn't been thanked yet."""
+    with _get_connection() as conn:
+        if not _table_exists(conn, "player_reports"):
+            return []
+        return [dict(r) for r in conn.execute(
+            "SELECT id, reporter_id, reported_name FROM player_reports r WHERE reported_id = ? "
+            "AND NOT EXISTS (SELECT 1 FROM moderation_alerts m WHERE m.kind = 'thanks' "
+            "AND m.ref = CAST(r.id AS TEXT)) ORDER BY id",
+            (str(target_id),),
+        ).fetchall()]
+
+
+def mark_reports_thanked(report_ids):
+    with _get_connection() as conn:
+        conn.executemany(
+            "INSERT OR IGNORE INTO moderation_alerts (kind, ref) VALUES ('thanks', ?)",
+            [(str(i),) for i in report_ids],
+        )

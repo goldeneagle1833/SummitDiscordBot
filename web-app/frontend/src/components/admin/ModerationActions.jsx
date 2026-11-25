@@ -19,12 +19,22 @@ export const PAIRING_CHOICES = [
   { key: 'lifetime', label: 'Lifetime' },
 ]
 
-const TITLES = { timeout: 'Time out', ban: 'Ban', pairing_block: 'Block from pairing' }
-const CONFIRM = { timeout: 'Confirm timeout', ban: 'Confirm ban', pairing_block: 'Confirm pairing block' }
+const TITLES = {
+  timeout: 'Time out', ban: 'Ban', pairing_block: 'Block from pairing',
+  remove_timeout: 'Remove the timeout for', unban: 'Unban', lift_pairing_block: 'Lift the pairing block for',
+}
+const CONFIRM = {
+  timeout: 'Confirm timeout', ban: 'Confirm ban', pairing_block: 'Confirm pairing block',
+  remove_timeout: 'Remove timeout', unban: 'Unban', lift_pairing_block: 'Lift pairing block',
+}
+const UNDO = ['remove_timeout', 'unban', 'lift_pairing_block']
 const BLURBS = {
   timeout: "They can't chat, react or join voice in the Summit Discord until it ends. The bot DMs them the reason.",
   ban: 'This bans them from the Summit Discord. The bot DMs them the reason first.',
   pairing_block: "They can't join the LFG queue, the website queue or challenges until it ends. The bot DMs them the reason.",
+  remove_timeout: 'Their timeout ends now. The bot DMs them that it was lifted.',
+  unban: 'They can rejoin the Summit Discord with an invite link.',
+  lift_pairing_block: 'They can queue again right away. The bot DMs them that it was lifted.',
 }
 
 function durationLabel(minutes) {
@@ -38,13 +48,15 @@ function formatDate(value) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+const UNDONE = { remove_timeout: 'Timeout removed', unban: 'Unbanned', lift_pairing_block: 'Pairing block lifted' }
+
 export function moderationSummary(m) {
   if (!m) return null
-  const what = m.action === 'ban'
+  const what = UNDONE[m.action] ?? (m.action === 'ban'
     ? 'Banned'
     : m.action === 'pairing_block'
       ? `Pairing block ${m.duration_label ?? ''}`.trim()
-      : `Timed out ${durationLabel(m.duration_minutes)}`
+      : `Timed out ${durationLabel(m.duration_minutes)}`)
   const who = m.by_name ? ` by ${m.by_name}` : ''
   const where = m.via === 'discord' ? ' (Discord)' : ''
   return `${what}${who}${where}, ${formatDate(m.created_at)}`
@@ -55,7 +67,8 @@ function ConfirmDialog({ action, userName, userId, defaultReason, onCancel, onCo
   const [duration, setDuration] = useState('24h')
   const [reason, setReason] = useState(defaultReason ?? '')
   const isPairing = action === 'pairing_block'
-  const needsReason = reason.trim().length < 3
+  const isUndo = UNDO.includes(action)
+  const needsReason = !isUndo && reason.trim().length < 3
 
   return (
     <div
@@ -103,7 +116,7 @@ function ConfirmDialog({ action, userName, userId, defaultReason, onCancel, onCo
           </label>
         )}
 
-        <label className="block space-y-1">
+        {!isUndo && <label className="block space-y-1">
           <span className="text-xs text-text-muted">
             {isPairing ? 'Reason (sent to the player)' : 'Reason (sent to the player and kept in the Discord audit log)'}
           </span>
@@ -115,7 +128,7 @@ function ConfirmDialog({ action, userName, userId, defaultReason, onCancel, onCo
             rows={3}
             className="w-full bg-bg-elevated border border-border rounded px-2 py-1.5 text-sm text-text-primary"
           />
-        </label>
+        </label>}
 
         {error && <p className="text-sm text-accent-red">{error}</p>}
 
@@ -131,10 +144,10 @@ function ConfirmDialog({ action, userName, userId, defaultReason, onCancel, onCo
             onClick={() => onConfirm({
               minutes: action === 'timeout' ? minutes : undefined,
               duration: isPairing ? duration : undefined,
-              reason,
+              reason: isUndo ? undefined : reason,
             })}
             disabled={busy || needsReason}
-            className="px-3 py-1.5 text-sm rounded bg-accent-red text-white hover:opacity-90 disabled:opacity-50"
+            className={`px-3 py-1.5 text-sm rounded text-white hover:opacity-90 disabled:opacity-50 ${isUndo ? 'bg-brand-blue' : 'bg-accent-red'}`}
           >
             {busy ? 'Working...' : CONFIRM[action]}
           </button>
@@ -149,7 +162,9 @@ function ConfirmDialog({ action, userName, userId, defaultReason, onCancel, onCo
  * reported player, each with a confirm dialog and a reason box. The reason is
  * DMed to the player, so it starts from ``playerReason``, which never names
  * who reported or blocked them. Shows the last action taken (from the website
- * or the bot's DM).
+ * or the bot's DM). When ``status`` says a timeout, ban or pairing block is
+ * in force, a button to lift it shows too. ``endpoint`` lets Mod Tools post
+ * to its own route (same body).
  */
 export default function ModerationActions({
   userId,
@@ -159,8 +174,11 @@ export default function ModerationActions({
   sourceKind,
   sourceRef,
   playerReason,
+  status,
+  endpoint = '/api/admin/moderation',
 }) {
   const [current, setCurrent] = useState(moderation ?? null)
+  const [live, setLive] = useState(status ?? null)
   const [pending, setPending] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -172,7 +190,7 @@ export default function ModerationActions({
     setBusy(true)
     setError(null)
     setDmNote(null)
-    post('/api/admin/moderation', {
+    post(endpoint, {
       action: pending,
       user_id: userId,
       minutes,
@@ -184,7 +202,8 @@ export default function ModerationActions({
     })
       .then(d => {
         setCurrent(d.moderation ?? { action: pending, duration_minutes: minutes })
-        if (d.dm_sent === true) setDmNote('They were DMed the reason.')
+        if (d.status) setLive(d.status)
+        if (d.dm_sent === true) setDmNote(UNDO.includes(pending) ? 'They were DMed that it was lifted.' : 'They were DMed the reason.')
         else if (d.dm_sent === false) setDmNote("Couldn't DM them (their DMs are closed).")
         setPending(null)
       })
@@ -193,6 +212,7 @@ export default function ModerationActions({
   }
 
   const summary = moderationSummary(current)
+  const undoCls = 'px-2 py-1 text-xs border border-brand-blue/60 text-brand-blue rounded hover:bg-brand-blue/10 whitespace-nowrap'
 
   return (
     <div className="space-y-1.5 min-w-[200px]">
@@ -216,6 +236,15 @@ export default function ModerationActions({
           >
             Pairing Block
           </button>
+          {live?.timed_out_until && (
+            <button onClick={() => setPending('remove_timeout')} className={undoCls}>Remove timeout</button>
+          )}
+          {live?.banned && (
+            <button onClick={() => setPending('unban')} className={undoCls}>Unban</button>
+          )}
+          {live?.pairing_block && (
+            <button onClick={() => setPending('lift_pairing_block')} className={undoCls}>Lift pairing block</button>
+          )}
         </div>
       ) : (
         <span className="text-xs text-text-muted opacity-70">No Discord account</span>

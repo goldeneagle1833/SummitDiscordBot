@@ -63,6 +63,8 @@ Content-Type: application/json
 | `blocked_user_id` | yes      | Discord user ID of the player being blocked                       |
 | `reason`          | yes      | Why they're blocking (max 200 chars, longer is cut). Required, the same as on the Summit profile. Admins can see it; the blocked player never does. |
 
+**Send both IDs as JSON strings** (`"123456789012345678"`), never as numbers. Discord IDs are too long for JavaScript numbers and lose their last digits, which would save the block under the wrong player. A number, or anything that isn't 15-20 digits, gets a `400`.
+
 ### Response
 
 `201 Created` when the block is new:
@@ -183,6 +185,8 @@ not block anyone or change ratings. Admins review it.
 |--------|-------------------------------------------------|----------------------------------------------------------------------|
 | `400`  | Body not JSON                                   | `{"success": false, "error": "Request body must be JSON"}`           |
 | `400`  | Block: `user_id` or `blocked_user_id` missing   | `{"success": false, "error": "user_id and blocked_user_id are required"}` |
+| `400`  | Block: an ID sent as a number                   | `{"success": false, "error": "user_id must be sent as a string (...), not a number: ..."}` |
+| `400`  | Block: an ID that isn't 15-20 digits            | `{"success": false, "error": "blocked_user_id must be a Discord user ID (15-20 digits)"}` |
 | `400`  | Block: player blocking themselves               | `{"success": false, "error": "A player cannot block themselves"}`    |
 | `400`  | Block: no reason                                | `{"success": false, "error": "A reason is required when blocking a user"}` |
 | `400`  | Unblock: ID empty or over 64 characters         | `{"success": false, "error": "Invalid user id"}`                     |

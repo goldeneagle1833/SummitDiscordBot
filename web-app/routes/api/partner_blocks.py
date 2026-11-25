@@ -34,6 +34,24 @@ def _clean_id(value) -> str | None:
     return user_id
 
 
+def _discord_id_problem(field: str, value) -> str | None:
+    """Why ``value`` can't be a Discord user ID, or None when it looks right.
+
+    Discord IDs are 17-20 digits, too big for a JavaScript number: sent as a
+    JSON number the last digits get rounded, the block is saved under an ID
+    nobody has, and matchmaking never sees it. So IDs must be digit strings.
+    """
+    if isinstance(value, bool) or isinstance(value, (int, float)):
+        return (
+            f"{field} must be sent as a string (e.g. \"123456789012345678\"), not a number: "
+            "Discord IDs are too long for JSON numbers and lose their last digits"
+        )
+    text = str(value or "").strip()
+    if not (text.isdigit() and 15 <= len(text) <= 20):
+        return f"{field} must be a Discord user ID (15-20 digits)"
+    return None
+
+
 @partner_blocks_bp.route("/blocks", methods=["POST"])
 @require_integration_api_key
 def add_block():
@@ -51,6 +69,11 @@ def add_block():
     blocked_user_id = _clean_id(data.get("blocked_user_id"))
     if not user_id or not blocked_user_id:
         return jsonify({"success": False, "error": "user_id and blocked_user_id are required"}), 400
+    for field in ("user_id", "blocked_user_id"):
+        problem = _discord_id_problem(field, data.get(field))
+        if problem:
+            logger.warning("Partner block rejected: %s (got %r)", problem, data.get(field))
+            return jsonify({"success": False, "error": problem}), 400
     if BlockedUsersRepository._stripped(user_id) == BlockedUsersRepository._stripped(blocked_user_id):
         return jsonify({"success": False, "error": "A player cannot block themselves"}), 400
 

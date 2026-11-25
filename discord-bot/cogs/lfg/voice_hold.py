@@ -139,6 +139,7 @@ async def release_voice_holds(bot):
                 voice_hold=False,
                 alert_avatar=entry.get("alert_avatar", False),
                 deck_avatar=entry.get("deck_avatar"),
+                queued_since=entry.get("queued_since") or entry["timestamp"],
             )
         except Exception as e:
             logger.error(f"Voice hold: re-join failed for {user_id} in {queue_type}: {e}", exc_info=True)

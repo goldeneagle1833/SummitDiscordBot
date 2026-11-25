@@ -429,9 +429,10 @@ export default function Player() {
           <MatchFilters filters={matchFilters} data={withPreconFilters(data.match_filters, precon, matchFilters)} onChange={changeMatchFilters} />
 
           <MatchHistoryTable
-            title="Ranked Match History"
+            title="Match History"
+            subtitle={data.match_filters?.casual?.wins + data.match_filters?.casual?.losses > 0 ? 'Casual games do not affect ratings.' : undefined}
             matches={data.matches}
-            emptyText={Object.keys(data.match_filters?.active || {}).length ? 'No ranked matches fit these filters.' : undefined}
+            emptyText={Object.keys(data.match_filters?.active || {}).length ? 'No matches fit these filters.' : undefined}
             pagination={data.pagination}
             playerId={playerId}
             isOwner={data.is_owner}
@@ -445,21 +446,6 @@ export default function Player() {
           />
 
           <PreconMatchHistory data={precon} filters={matchFilters} />
-
-          {data.casual_matches?.length > 0 && (
-            <MatchHistoryTable
-              title="Casual Match History"
-              subtitle="Casual games do not affect ratings."
-              matches={data.casual_matches}
-              pagination={data.casual_pagination}
-              playerId={playerId}
-              isOwner={data.is_owner}
-              profileVisibility={vis}
-              onPageChange={(p) => refetch(undefined, undefined, undefined, p)}
-              onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
-              onMatchUpdate={refreshCurrentPage}
-            />
-          )}
 
           {data.external_matches?.length > 0 && (
             <ExternalMatches

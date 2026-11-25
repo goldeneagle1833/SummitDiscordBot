@@ -11,6 +11,7 @@ existing player) behaves as on. The web app writes the same table
 
 import datetime
 import logging
+import re
 import sqlite3
 from contextlib import contextmanager
 
@@ -102,3 +103,30 @@ def pairing_mentions(*user_ids) -> discord.AllowedMentions:
         roles=False,
         users=[discord.Object(id=u) for u in ids if u not in off],
     )
+
+
+_USER_MENTION = re.compile(r"<@!?(\d+)>")
+
+
+def mentioned_ids(text) -> list[int]:
+    """Discord user ids @-mentioned in a message's text, in order, without repeats."""
+    seen = []
+    for match in _USER_MENTION.finditer(text or ""):
+        user_id = int(match.group(1))
+        if user_id not in seen:
+            seen.append(user_id)
+    return seen
+
+
+def tag_me_mentions_for(text) -> discord.AllowedMentions:
+    """Allowed mentions for a message: ping only the mentioned players with "Tag me" on."""
+    return pairing_mentions(*mentioned_ids(text))
+
+
+async def send_with_tag_me(channel, content=None, **kwargs):
+    """``channel.send`` that names everyone it mentions but pings only players with "Tag me" on.
+
+    Used for every post in the backup (DM-disabled) channel and the LFG channel.
+    """
+    kwargs.setdefault("allowed_mentions", tag_me_mentions_for(content))
+    return await channel.send(content, **kwargs)

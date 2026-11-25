@@ -7,6 +7,7 @@ import random
 import sqlite3
 
 import config
+from repositories.tag_me_repo import send_with_tag_me
 from cogs.lfg.state import (
     active_ladder_challenges,
     ladder_challenge_lock,
@@ -21,6 +22,8 @@ from utils.database import (
     delete_ladder_challenge,
     get_user_event_elo,
     create_ladder_challenge_table,
+    is_blocked_pair,
+    is_pairing_banned,
 )
 
 logger = logging.getLogger("discord_bot")
@@ -45,6 +48,13 @@ class LadderChallengeJoinButton(discord.ui.View):
         """Handle a player joining the ladder challenge queue"""
         user_id = interaction.user.id
         user_global = interaction.user.global_name or interaction.user.display_name
+
+        # Pairing bans and player blocks (either direction) keep a player out
+        if is_pairing_banned(user_id) or is_blocked_pair(self.challenger_id, user_id):
+            await interaction.response.send_message(
+                "You can't join this ladder challenge.", ephemeral=True
+            )
+            return
 
         # Can't join your own challenge
         if user_id == self.challenger_id:
@@ -526,7 +536,11 @@ async def _resolve_ladder_challenge(bot, challenger_id):
     if not challenge_data:
         return
 
-    joiners = challenge_data["joiners"]
+    # Drop anyone a block or pairing ban now rules out (it may have landed after they joined)
+    joiners = [
+        j for j in challenge_data["joiners"]
+        if not is_pairing_banned(j["user_id"]) and not is_blocked_pair(challenger_id, j["user_id"])
+    ]
     challenger_global = challenge_data["challenger_global"]
     challenge_id = challenge_data["challenge_id"]
     channel = challenge_data["channel"]
@@ -671,7 +685,8 @@ async def _resolve_ladder_challenge(bot, challenger_id):
     except discord.Forbidden:
         dm_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
         if dm_channel:
-            await dm_channel.send(
+            await send_with_tag_me(
+                dm_channel,
                 scrub_urls(
                     f"<@{challenger_id}> **Ladder Challenge Match!** Your opponent is **{selected_global}**!\n\n"
                     f"{stakes_text}\n\nReport the match result below:"
@@ -693,7 +708,8 @@ async def _resolve_ladder_challenge(bot, challenger_id):
     except discord.Forbidden:
         dm_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
         if dm_channel:
-            await dm_channel.send(
+            await send_with_tag_me(
+                dm_channel,
                 scrub_urls(
                     f"<@{selected_id}> **You've been selected for a Ladder Challenge!**\n\n"
                     f"You're playing against **{challenger_global}** (Top 16)!\n\n"
@@ -706,7 +722,8 @@ async def _resolve_ladder_challenge(bot, challenger_id):
     # Announce in channel
     if channel:
         try:
-            await channel.send(
+            await send_with_tag_me(
+                channel,
                 f"**Ladder Challenge!** <@{challenger_id}> (Top 16) vs <@{selected_id}>! "
                 f"{'Normal stakes.' if winner_mult == 1.0 else 'Special stakes: 2x/0.5x ELO!'}"
             )

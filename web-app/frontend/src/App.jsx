@@ -5,6 +5,7 @@ import Nav from '@/components/layout/Nav'
 import Footer from '@/components/layout/Footer'
 import AdminGuard from '@/components/layout/AdminGuard'
 import StoreAdminGuard from '@/components/layout/StoreAdminGuard'
+import ModeratorGuard from '@/components/layout/ModeratorGuard'
 import LoginGuard from '@/components/layout/LoginGuard'
 import ExplorerAdminGuard from '@/components/layout/ExplorerAdminGuard'
 import ArticleReviewerGuard from '@/components/layout/ArticleReviewerGuard'
@@ -100,6 +101,8 @@ const ExplorerStandings = lazyPage(() => import('@/pages/ExplorerStandings'))
 const AdminHub = lazyPage(() => import('@/pages/admin/AdminHub'))
 const AuditLog = lazyPage(() => import('@/pages/admin/AuditLog'))
 const StoreAdmin = lazyPage(() => import('@/pages/admin/StoreAdmin'))
+const ModTools = lazyPage(() => import('@/pages/ModTools'))
+const ModPlayer = lazyPage(() => import('@/pages/ModPlayer'))
 const StoreOrderPrint = lazyPage(() => import('@/pages/admin/StoreOrderPrint'))
 const StoreOrderBulkPrint = lazyPage(() => import('@/pages/admin/StoreOrderBulkPrint'))
 const ActiveConnections = lazyPage(() => import('@/pages/admin/ActiveConnections'))
@@ -130,6 +133,7 @@ const SeasonFeedback = lazyPage(() => import('@/pages/SeasonFeedback'))
 
 // Error pages
 import ErrorPage from '@/pages/ErrorPage'
+import usePolling from '@/hooks/usePolling'
 import NotFound from '@/pages/NotFound'
 
 function LazyPage({ children }) {
@@ -139,26 +143,30 @@ function LazyPage({ children }) {
 const SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36).slice(2)
 const USER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || null
 
+// Heartbeat for the admin "Active Now" / Active Connections / Session
+// Analytics numbers. Once a minute while the tab is visible and in use; it
+// stops while the tab is hidden or nobody has touched it for 15 minutes, and
+// starts again straight away when they come back.
 function useHeartbeat(user) {
   const location = useLocation()
-  useEffect(() => {
-    const send = () => {
-      const payload = { sid: SESSION_ID, path: location.pathname, timezone: USER_TZ }
-      if (user && user.id) {
-        payload.user_id = String(user.id)
-        payload.username = user.username || null
-      }
-      const body = JSON.stringify(payload)
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon('/api/analytics/heartbeat', new Blob([body], { type: 'application/json' }))
-      } else {
-        fetch('/api/analytics/heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
-      }
+  const send = () => {
+    const payload = { sid: SESSION_ID, path: location.pathname, timezone: USER_TZ }
+    if (user && user.id) {
+      payload.user_id = String(user.id)
+      payload.username = user.username || null
     }
-    send()
-    const id = setInterval(send, 30000)
-    return () => clearInterval(id)
-  }, [location.pathname, user])
+    const body = JSON.stringify(payload)
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/analytics/heartbeat', new Blob([body], { type: 'application/json' }))
+    } else {
+      fetch('/api/analytics/heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
+    }
+  }
+  usePolling(send, 60 * 1000, {
+    idleMs: 15 * 60 * 1000,
+    idleIntervalMs: 0,
+    deps: [location.pathname, user],
+  })
 }
 
 function usePageTracking(user) {
@@ -326,6 +334,8 @@ const router = createBrowserRouter([
       // Storefront applications are closed; old links land on the store
       { path: '/store/apply', element: <Navigate to="/store" replace /> },
       { path: '/admin/store', element: <StoreAdminGuard><StoreAdmin /></StoreAdminGuard> },
+      { path: '/mod-tools', element: <ModeratorGuard><ModTools /></ModeratorGuard> },
+      { path: '/mod-tools/player/:userId', element: <ModeratorGuard><ModPlayer /></ModeratorGuard> },
       { path: '/admin', element: <AdminGuard><AdminHub /></AdminGuard> },
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
       { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },

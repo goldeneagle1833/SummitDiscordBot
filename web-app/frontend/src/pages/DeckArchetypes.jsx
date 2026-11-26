@@ -5,10 +5,12 @@ import usePageTitle from '@/hooks/usePageTitle'
 import { getAvatarImageFiles } from '@/api/cards'
 import RankedMetagameTrends from '@/components/deck/RankedMetagameTrends'
 import { getDeckArchetype, getDeckArchetypes } from '@/api/deckArchetypes'
+import { getArchetypeTags, STRATEGY_COLORS } from '@/config/archetypeTags'
 
 // Archetypes are grouped on the server from the Top 8 page's tournament decks
 // and every deck reported in a ranked match (services/deck_archetypes.py).
 const ELEMENTS = ['Air', 'Earth', 'Fire', 'Water']
+const ELEMENT_ICONS = { Fire: 'fire.png', Water: 'water.png', Earth: 'earth.png', Air: 'wind.png' }
 const SOURCES = [
   { value: 'all', label: 'Tournaments + Ranked' },
   { value: 'tournament', label: 'Tournaments only' },
@@ -144,6 +146,7 @@ function ArchetypeCard({ group, imageFiles, onSelect }) {
   const image = avatarImage(group, imageFiles)
   const winning = group.wins > 0
   const placed = group.top8 > 0 || group.topCut > 0
+  const strategyTags = getArchetypeTags(group.id)
   return (
     <button
       type="button"
@@ -160,7 +163,7 @@ function ArchetypeCard({ group, imageFiles, onSelect }) {
         />
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-bg-base via-bg-base/65 to-bg-base/25" aria-hidden="true" />
-      <div className="relative flex flex-col justify-between h-full p-3 min-h-[190px]" style={{ textShadow: '0 1px 4px rgba(0,0,0,.75)' }}>
+      <div className="relative flex flex-col justify-between gap-2 h-full p-3 min-h-[190px]" style={{ textShadow: '0 1px 4px rgba(0,0,0,.75)' }}>
         <div>
           <span
             className={`absolute top-3 right-3 text-xl leading-none ${winning ? 'text-yellow-400' : placed ? 'text-gray-300' : 'text-text-muted/70'}`}
@@ -169,9 +172,31 @@ function ArchetypeCard({ group, imageFiles, onSelect }) {
           >
             {winning || placed ? '★' : '☆'}
           </span>
-          <h2 className="font-bold text-lg text-text-primary leading-tight break-words pr-7">{group.name}</h2>
+          <h2 className="font-bold text-lg text-text-primary leading-tight break-words pr-7">
+            {group.avatar}
+            {availableElements(group.elementsLabel).length > 0 && (
+              <span className="inline-flex items-center gap-1 align-middle ml-1.5 whitespace-nowrap">
+                {availableElements(group.elementsLabel).map((element) => (
+                  <img key={element} src={`/avatar-images/${ELEMENT_ICONS[element]}`} alt={element} title={element} width={22} height={22} className="shrink-0 drop-shadow" />
+                ))}
+              </span>
+            )}
+          </h2>
         </div>
         <div>
+          {strategyTags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+              {strategyTags.map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-block rounded-[5px] border border-transparent px-[9px] py-[3px] text-xs font-semibold leading-4 text-white whitespace-nowrap"
+                  style={{ backgroundColor: STRATEGY_COLORS[tag] }}
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
           <p className="text-xs text-text-primary/80 mb-2">
             {group.events} tournament{group.events === 1 ? '' : 's'}
             {group.rankedGames > 0 && <span className="block">{rankedSummary(group)}</span>}
@@ -544,9 +569,9 @@ export default function DeckArchetypes() {
         </p>
         <p className="mt-2 text-[11px] text-text-muted/70">
           Concept by{' '}
-          <a href="https://github.com/j4n7" target="_blank" rel="noopener noreferrer" className="hover:text-secondary hover:underline">Jan</a>
+          <a href="https://github.com/j4n7" target="_blank" rel="noopener noreferrer" className="hover:text-secondary hover:underline">phuture</a>
           {' · Developed by '}
-          <a href="https://github.com/j4n7" target="_blank" rel="noopener noreferrer" className="hover:text-secondary hover:underline">Jan</a>
+          <a href="https://github.com/j4n7" target="_blank" rel="noopener noreferrer" className="hover:text-secondary hover:underline">phuture</a>
           {' & '}
           <a href="https://github.com/goldeneagle1833" target="_blank" rel="noopener noreferrer" className="hover:text-secondary hover:underline">GoldenEagle</a>
         </p>

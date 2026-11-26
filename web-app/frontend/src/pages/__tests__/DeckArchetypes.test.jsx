@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '@/test/test-utils'
 import DeckArchetypes from '../DeckArchetypes'
@@ -61,17 +61,37 @@ describe('DeckArchetypes', () => {
     })
   })
 
-  it('shows ranked stats on archetype cards', async () => {
+  it('shows ranked stats and element icons on archetype cards', async () => {
     renderWithRouter(<DeckArchetypes />)
-    expect(await screen.findByText('Sorcerer · Fire')).toBeInTheDocument()
+    const card = await screen.findByRole('button', { name: /View Sorcerer · Fire,/ })
+    expect(within(card).getByRole('heading')).toHaveTextContent(/^Sorcerer$/)
+    expect(within(card).getByRole('img', { name: 'Fire' })).toHaveAttribute('src', '/avatar-images/fire.png')
     expect(screen.getByText(/40 ranked games · 60% win rate/)).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: 'phuture' })).toHaveLength(2)
+  })
+
+  it('shows both elements and the curated tags on a classified card', async () => {
+    get.mockImplementation((url) => {
+      if (url.startsWith('/api/deck-archetypes?source=all')) {
+        return Promise.resolve({ status: 'ready', meta: META, groups: [{
+          ...GROUP, id: 'sorcerer-air-earth', name: 'Sorcerer · Air / Earth', elementsLabel: 'Air / Earth', elements: [['Air / Earth', 5]],
+        }] })
+      }
+      return Promise.resolve([])
+    })
+    renderWithRouter(<DeckArchetypes />)
+    const card = await screen.findByRole('button', { name: /View Sorcerer · Air \/ Earth/ })
+    expect(within(card).getByRole('img', { name: 'Air' })).toHaveAttribute('src', '/avatar-images/wind.png')
+    expect(within(card).getByRole('img', { name: 'Earth' })).toHaveAttribute('src', '/avatar-images/earth.png')
+    expect(within(card).getByText('Midrange')).toBeInTheDocument()
+    expect(within(card).getByText('Ramp')).toBeInTheDocument()
   })
 
   it('reloads from tournament decks only when that option is picked', async () => {
     renderWithRouter(<DeckArchetypes />)
-    await screen.findByText('Sorcerer · Fire')
+    await screen.findByRole('button', { name: /View Sorcerer · Fire,/ })
     await userEvent.click(screen.getByRole('button', { name: 'Tournaments only' }))
-    expect(await screen.findByText('Sorcerer · Fire (cup)')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /View Sorcerer · Fire \(cup\)/ })).toBeInTheDocument()
     expect(get).toHaveBeenCalledWith('/api/deck-archetypes?source=tournament')
   })
 
@@ -91,7 +111,7 @@ describe('DeckArchetypes', () => {
 
   it('asks the server again when a date range and event size are picked', async () => {
     renderWithRouter(<DeckArchetypes />)
-    await screen.findByText('Sorcerer · Fire')
+    await screen.findByRole('button', { name: /View Sorcerer · Fire,/ })
     fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-01-01' } })
     await userEvent.selectOptions(screen.getByLabelText('Event size'), '32')
     await waitFor(() => expect(get).toHaveBeenCalledWith('/api/deck-archetypes?source=all&from=2026-01-01&min_event_decks=32'))
@@ -125,7 +145,7 @@ describe('DeckArchetypes', () => {
     renderWithRouter(<DeckArchetypes />)
     expect(await screen.findByText('Loading deck archetypes…')).toBeInTheDocument()
     await vi.advanceTimersByTimeAsync(5000)
-    await waitFor(() => expect(screen.getByText('Sorcerer · Fire')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: /View Sorcerer · Fire,/ })).toBeInTheDocument())
     vi.useRealTimers()
   })
 })

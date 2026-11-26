@@ -1,0 +1,13 @@
+name: Debug sorcerytcg probe
+on:
+  push:
+    branches: [debug-event-get-rename]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - run: pip install -r web-app/requirements.txt && python debug/live_check.py

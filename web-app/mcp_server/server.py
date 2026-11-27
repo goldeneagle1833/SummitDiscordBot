@@ -1,7 +1,7 @@
 """Sorcerers Summit MCP server: read-only Summit data for AI apps.
 
 Run:  python -m mcp_server.server        (from web-app/)
-Serves MCP over streamable HTTP at /mcp on 127.0.0.1:8765; nginx forwards
+Serves MCP over streamable HTTP at /mcp on 127.0.0.1:8790; nginx forwards
 https://sorcererssummit.com/mcp here. No login, read-only, no PSO calls.
 """
 
@@ -26,7 +26,7 @@ from .site_client import PUBLIC_URL, SiteClient, SiteError
 logger = logging.getLogger("summit_mcp")
 
 HOST = os.environ.get("SUMMIT_MCP_HOST", "127.0.0.1")
-PORT = int(os.environ.get("SUMMIT_MCP_PORT", "8765"))
+PORT = int(os.environ.get("SUMMIT_MCP_PORT", "8790"))
 RATE_LIMIT_PER_MINUTE = int(os.environ.get("SUMMIT_MCP_RATE_LIMIT", "60"))
 
 INSTRUCTIONS = f"""\

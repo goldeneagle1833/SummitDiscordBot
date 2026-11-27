@@ -7,7 +7,7 @@ custom connector; the Help page has the steps (`/help#ai-apps`).
 ## How it works
 
 ```
-AI app ──HTTPS──> Cloudflare ──> nginx /mcp ──> summit-mcp (127.0.0.1:8765)
+AI app ──HTTPS──> Cloudflare ──> nginx /mcp ──> summit-mcp (127.0.0.1:8790)
                                                      │ cache + 1 request at a time
                                                      ▼
                                     gunicorn /tmp/summit-web.sock (/api/*)
@@ -66,4 +66,4 @@ Settings (env): `SUMMIT_MCP_SITE_SOCKET`, `SUMMIT_MCP_SITE_URL`,
 `SUMMIT_MCP_HOST`, `SUMMIT_MCP_PORT`, `SUMMIT_MCP_CACHE_TTL`,
 `SUMMIT_MCP_RATE_LIMIT`, `SUMMIT_MCP_UPSTREAM_CONCURRENCY`.
 
-Health check: `curl http://127.0.0.1:8765/mcp-health`.
+Health check: `curl http://127.0.0.1:8790/mcp-health`.

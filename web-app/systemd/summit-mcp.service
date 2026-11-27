@@ -1,0 +1,27 @@
+[Unit]
+Description=Sorcerers Summit MCP server (read-only Summit data for AI apps)
+After=network.target summit-web.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/Summit/SummitDiscordBot/web-app
+# Only needs to know how to reach the site; it reads no secrets from .env.
+Environment="SUMMIT_MCP_SITE_SOCKET=/tmp/summit-web.sock"
+Environment="SUMMIT_MCP_HOST=127.0.0.1"
+Environment="SUMMIT_MCP_PORT=8765"
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+ExecStart=/root/Summit/SummitDiscordBot/web-app/mcp_server/venv/bin/python -m mcp_server.server
+Restart=always
+RestartSec=10
+# Small and separate: if it misbehaves it can't starve the site or the bot
+MemoryMax=300M
+CPUQuota=50%
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=summit-mcp
+
+[Install]
+WantedBy=multi-user.target

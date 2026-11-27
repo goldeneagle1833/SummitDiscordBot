@@ -117,8 +117,11 @@ def make_site(calls: list | None = None, overrides: dict | None = None) -> SiteC
             "/api/match-history/recap": {"stats": {"games": 120, "biggest_loser": [1122920529205145712, "Clockwork", -24],
                                                    "broken_streaks": [{"player": "Ann", "player_id": 182857376171294720}]},
                                          "names": {"1122920529205145712": "Clockwork"}, "performers": ["Pete 5-0"]},
-            "/api/deck-archetypes/trends": {"months": [{"month": "2026-10", "matches": 100,
-                                                        "counts": {"Sparkmage · Air / Fire": 30, "Pathfinder · Fire": 20}}]},
+            "/api/deck-archetypes/trends": {
+                "archetypes": [{"id": "sparkmage-air-fire", "name": "Sparkmage · Air / Fire", "elements": "Air / Fire"},
+                               {"id": "pathfinder-fire", "name": "Pathfinder · Fire", "elements": "Fire"}],
+                "months": [{"month": "2026-10", "matches": 100,
+                            "counts": {"sparkmage-air-fire": 30, "pathfinder-fire": 20}}]},
         }
         if path in routes:
             return httpx.Response(200, json=routes[path])
@@ -334,3 +337,10 @@ def test_recap_drops_discord_ids():
     text = json.dumps(result)
     assert "1122920529205145712" not in text and "182857376171294720" not in text
     assert "Clockwork" in text and "Ann" in text
+
+
+def test_meta_trends_names_archetypes_and_counts_elements():
+    result = run(tools.meta_trends(make_site()))
+    assert result["months"][0]["top_archetypes"][0]["archetype"] == "Sparkmage · Air / Fire"
+    shares = result["element_share_by_month_pct"][0]
+    assert shares["Fire"] == 100.0 and shares["Air"] == 60.0 and shares["Water"] == 0.0

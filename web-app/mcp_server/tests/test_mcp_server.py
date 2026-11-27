@@ -68,7 +68,8 @@ REPORT = {"slug": "2026-11-a", "story": ["Fire is up"], "ranked": {
 }, "tournaments": {"events": [{"name": "Cornerstone Ohio", "deckUrl": RANKED_DECK}]}}
 
 CARDS = [{"name": "Fireball", "elements": "Fire"}, {"name": "Lightning Bolt", "elements": "Air"},
-         {"name": "Spark", "elements": "Fire"}]
+         {"name": "Spark", "elements": "Fire"},
+         {"name": "Sparkmage", "type": "Avatar"}, {"name": "Pathfinder", "type": "Avatar"}]
 
 STORE = {"products": [
     {"name": "Island Leviathan Pack", "price_cents": 599, "stock_quantity": 3, "description": "2 tokens",
@@ -318,3 +319,9 @@ def test_port_does_not_clash_with_the_bot_api():
     assert str(server.PORT) != bot_port
     assert f"SUMMIT_MCP_PORT={server.PORT}" in unit
     assert f"127.0.0.1:{server.PORT};" in nginx
+
+
+def test_avatar_names_never_load_the_slow_all_time_page():
+    calls: list = []
+    run(tools.matchup_prep(make_site(calls), "sparkmage", "pathfinder"))
+    assert not any("/api/avatars" in c and "event=all" in c for c in calls)

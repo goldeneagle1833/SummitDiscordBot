@@ -45,8 +45,24 @@ def _pct(wins: int, games: int) -> float | None:
 
 
 async def _avatar_names(site: SiteClient) -> list[str]:
-    rows = await site.get(site.path("avatars", event="all"), ttl=SLOW_TTL)
-    return [r["name"] for r in rows or [] if isinstance(r, dict) and r.get("name")]
+    """Avatar names from the card pool (cached by the Deck Builder) plus this season's list.
+
+    The all-time /api/avatars page takes ~20 s to build, so it is never used
+    just to check a name.
+    """
+    names: set[str] = set()
+    try:
+        cards = await site.get(site.path("deck-builder", "all-cards"), ttl=24 * 60 * 60)
+        names |= {str(c.get("name")) for c in cards or []
+                  if isinstance(c, dict) and str(c.get("type", "")).lower() == "avatar" and c.get("name")}
+    except SiteError:
+        pass
+    try:
+        rows = await site.get(site.path("avatars", event="current"), ttl=SLOW_TTL)
+        names |= {r["name"] for r in rows or [] if isinstance(r, dict) and r.get("name")}
+    except SiteError:
+        pass
+    return sorted(names)
 
 
 async def _resolve_avatar(site: SiteClient, name: str) -> str:
@@ -61,8 +77,8 @@ async def _resolve_avatar(site: SiteClient, name: str) -> str:
     close = [c for c in names if lowered in c.lower() or c.lower() in lowered]
     if len(close) == 1:
         return close[0]
-    if names:
-        raise SiteError(f"No Avatar called '{wanted}'. Avatars with games: {', '.join(sorted(names))}.")
+    if names and not close:
+        raise SiteError(f"No Avatar called '{wanted}'. Known Avatars: {', '.join(names)}.")
     return wanted
 
 

@@ -56,6 +56,13 @@ jobs:
         env:
           FLASK_ENV: testing
 
+      - name: Run MCP server tests
+        run: |
+          cd web-app
+          python -m venv /tmp/mcpvenv
+          /tmp/mcpvenv/bin/pip install -q -r mcp_server/requirements.txt pytest
+          /tmp/mcpvenv/bin/python -m pytest mcp_server/tests -q
+
       - name: Upload backend coverage
         if: always()
         uses: actions/upload-artifact@v4

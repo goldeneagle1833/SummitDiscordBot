@@ -47,6 +47,8 @@ from cogs.lfg.pairing_messages import (
 from cogs.lfg.queue_definitions import enabled_queue_definitions, queue_notes_text
 from cogs.lfg.voice import (
     DEFAULT_VOICE,
+    VOICE,
+    willing_voice_choices,
     count_waiting_for_voice,
     voice_waiting_line,
     entry_voice_flexible,
@@ -1407,6 +1409,9 @@ class LFGCog(commands.Cog):
                 continue
 
             makes_voice_match = False
+            # For a no-voice game, a partner who would also play voice is
+            # picked last so they stay free for a voice game.
+            spares_voice_player = True
             if queue_has_voice_choice(queue_type):
                 their_flexible = entry_voice_flexible(entry)
                 if not voice_preferences_compatible(
@@ -1415,6 +1420,9 @@ class LFGCog(commands.Cog):
                     continue
                 makes_voice_match = resolve_match_voice(
                     voice, entry.get("voice"), voice_flexible, their_flexible
+                )
+                spares_voice_player = makes_voice_match or VOICE not in willing_voice_choices(
+                    entry.get("voice"), their_flexible
                 )
                 if not makes_voice_match and (
                     joiner_holding
@@ -1450,8 +1458,9 @@ class LFGCog(commands.Cog):
                 if gap is not None:
                     skill = (gap, allowed)
 
-            # Voice matches first, then FIFO - match with oldest player
-            key = (not makes_voice_match, timestamp)
+            # Voice matches first; for a no-voice game, no-voice-only partners
+            # before ones who'd also play voice; then FIFO - oldest player
+            key = (not makes_voice_match, not spares_voice_player, timestamp)
             if best_key is None or key < best_key:
                 best_key = key
                 best_match = user_id

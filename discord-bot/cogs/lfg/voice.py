@@ -6,8 +6,11 @@ and can say they are also OK with the other one (``voice_flexible``). Two
 players pair when they share a choice they'd play: strict players only pair
 with the same choice, as before. A match is on voice whenever both players are
 willing to play voice. A player whose first choice is voice but who is also OK
-without voice waits ``VOICE_HOLD_SECONDS`` for another voice player before a
-no-voice game is made for them. There is no "either" option; an old
+without voice pairs straight away (``VOICE_HOLD_SECONDS`` is 0): a voice
+partner is picked first when one is waiting, and a no-voice game is made only
+when nobody waiting would play voice. When a no-voice game has to be made, a
+partner who only plays no voice is picked before one who would also play
+voice, so players willing to play voice stay free for voice games. There is no "either" option; an old
 ``either`` value (e.g. from an outdated client) is read as voice first with no
 voice OK, the same as ticking both boxes. Voice is the
 default when a join path gives no preference. Limited has no voice choice at
@@ -59,9 +62,10 @@ def is_legacy_either(value):
     return isinstance(value, str) and value.strip().lower() == LEGACY_EITHER
 
 
-# A voice-first player who is also OK without voice waits this long for a voice
-# partner before a no-voice game is made for them.
-VOICE_HOLD_SECONDS = 10
+# How long a voice-first player who is also OK without voice waits for a voice
+# partner before a no-voice game is made for them. 0 = no wait (Bruce,
+# 2026-11-27): they pair at once, a voice partner still comes first.
+VOICE_HOLD_SECONDS = 0
 
 
 def normalize_voice_flexible(value):
@@ -114,6 +118,8 @@ def voice_waiting_line(count):
 def holding_for_voice(pref, flexible, joined_at, now=None):
     """A voice-first, no-voice-OK player still waiting out the voice hold."""
     if not flexible or (normalize_voice_preference(pref) or DEFAULT_VOICE) != VOICE:
+        return False
+    if VOICE_HOLD_SECONDS <= 0:
         return False
     now = now or datetime.datetime.now()
     return (now - joined_at).total_seconds() < VOICE_HOLD_SECONDS

@@ -214,3 +214,127 @@ def pick_first_player(players, queue_type="ranked"):
     except Exception as exc:
         logger.warning("Could not pick who goes first: %r", exc)
         return None
+
+
+# --- Turn-order choice (Bruce, 2026-11-27) ---------------------------------
+# The player picked above no longer simply goes first: PSO lets them CHOOSE
+# to go first or second, and reports the choice back with the result. Each
+# pairing's chooser is saved when the table opens, and the choice is filled
+# in when PSO reports. What actually happened (who went first) still comes
+# from winner_went_first on the match record, so the balance above keeps
+# working from real turn order.
+
+CHOICES = ("first", "second")
+
+
+def _choice_connection(db_name=None):
+    conn = sqlite3.connect(db_name or DB_NAME)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS turn_order_choices (
+            pairing_kind TEXT NOT NULL,
+            pairing_id INTEGER NOT NULL,
+            queue_type TEXT,
+            chooser_id INTEGER,
+            choice TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            reported_at TEXT,
+            PRIMARY KEY (pairing_kind, pairing_id)
+        )
+    """)
+    return conn
+
+
+def _kind(queue_type):
+    # Limited pairings have their own id sequence
+    return "limited" if (queue_type or "").lower() == "limited" else "queue"
+
+
+def save_chooser(pairing_id, queue_type, chooser_id, db_name=None):
+    """Remember who was offered the choice for a pairing. Never raises."""
+    try:
+        conn = _choice_connection(db_name)
+        try:
+            conn.execute(
+                """INSERT INTO turn_order_choices (pairing_kind, pairing_id, queue_type, chooser_id)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(pairing_kind, pairing_id) DO UPDATE SET
+                       queue_type = excluded.queue_type, chooser_id = excluded.chooser_id""",
+                (_kind(queue_type), int(pairing_id), queue_type, int(chooser_id)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return True
+    except Exception as exc:
+        logger.warning("Could not save turn-order chooser for pairing %s: %r", pairing_id, exc)
+        return False
+
+
+def save_choice(pairing_id, queue_type, chooser_id, choice, db_name=None):
+    """Record what the chooser picked ('first'/'second'), as PSO reported it."""
+    choice = normalize_choice(choice)
+    if choice is None:
+        return False
+    try:
+        conn = _choice_connection(db_name)
+        try:
+            conn.execute(
+                """INSERT INTO turn_order_choices
+                       (pairing_kind, pairing_id, queue_type, chooser_id, choice, reported_at)
+                   VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                   ON CONFLICT(pairing_kind, pairing_id) DO UPDATE SET
+                       chooser_id = COALESCE(excluded.chooser_id, turn_order_choices.chooser_id),
+                       choice = excluded.choice, reported_at = excluded.reported_at""",
+                (_kind(queue_type), int(pairing_id), queue_type,
+                 int(chooser_id) if chooser_id is not None else None, choice),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return True
+    except Exception as exc:
+        logger.warning("Could not save turn-order choice for pairing %s: %r", pairing_id, exc)
+        return False
+
+
+def get_choice(pairing_id, queue_type, db_name=None):
+    """{'chooser_id', 'choice'} saved for a pairing, or None."""
+    conn = _choice_connection(db_name)
+    try:
+        row = conn.execute(
+            "SELECT chooser_id, choice FROM turn_order_choices WHERE pairing_kind = ? AND pairing_id = ?",
+            (_kind(queue_type), int(pairing_id)),
+        ).fetchone()
+    finally:
+        conn.close()
+    return {"chooser_id": row[0], "choice": row[1]} if row else None
+
+
+def normalize_choice(value):
+    """'first'/'second' (also 'play'/'draw', True/False for "chose first"), else None."""
+    if isinstance(value, bool):
+        return "first" if value else "second"
+    text = str(value or "").strip().lower()
+    if text in ("first", "play", "go_first", "go first"):
+        return "first"
+    if text in ("second", "draw", "go_second", "go second"):
+        return "second"
+    return None
+
+
+def winner_went_first_from_choice(winner_id, loser_id, chooser_id, choice):
+    """True/False for whether the winner went first, from the chooser's pick.
+
+    None when the chooser isn't one of the two players or the choice is unknown.
+    """
+    choice = normalize_choice(choice)
+    if choice is None or chooser_id is None:
+        return None
+    try:
+        chooser, winner, loser = int(chooser_id), int(winner_id), int(loser_id)
+    except (TypeError, ValueError):
+        return None
+    if chooser not in (winner, loser):
+        return None
+    chooser_first = choice == "first"
+    return chooser_first if chooser == winner else not chooser_first

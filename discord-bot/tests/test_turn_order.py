@@ -282,3 +282,60 @@ def test_streak_read_from_the_database():
     assert pick_first_player([{"discord_user_id": 1}, {"discord_user_id": 6}]) == 6
     with patch("repositories.turn_order_repo.random.random", return_value=0.0):
         assert pick_first_player([{"discord_user_id": 1}, {"discord_user_id": 6}]) == 6
+
+
+# --- turn-order choice ------------------------------------------------------
+
+def test_choice_maps_to_who_went_first():
+    from repositories.turn_order_repo import winner_went_first_from_choice as f
+    assert f(1, 2, 1, "first") is True     # winner chose first
+    assert f(1, 2, 1, "second") is False   # winner chose second
+    assert f(1, 2, 2, "first") is False    # loser chose first
+    assert f(1, 2, 2, "second") is True    # loser chose second -> winner first
+    assert f(1, 2, 3, "first") is None     # chooser not in the game
+    assert f(1, 2, 1, "maybe") is None
+    assert f("1", "2", "1", "play") is True
+
+
+def test_chooser_saved_then_choice_filled_in():
+    from repositories.turn_order_repo import get_choice, save_choice, save_chooser
+    assert save_chooser(55, "ranked", 10)
+    assert get_choice(55, "ranked") == {"chooser_id": 10, "choice": None}
+    assert save_choice(55, "ranked", None, "second")
+    assert get_choice(55, "ranked") == {"chooser_id": 10, "choice": "second"}
+    # Limited pairing ids are a separate sequence
+    assert get_choice(55, "limited") is None
+
+
+def test_result_fields_derive_winner_went_first_from_the_choice():
+    from services.matchmaking_api import _result_fields
+    fields = _result_fields({
+        "queue_type": "ranked", "winner_id": "10", "loser_id": "20",
+        "turnOrderChooserDiscordUserId": "20", "turnOrderChoice": "second",
+    })
+    assert fields["winner_went_first"] is True
+    # An explicit winner_went_first wins over a choice that disagrees
+    fields = _result_fields({
+        "queue_type": "ranked", "winner_id": "10", "loser_id": "20", "winner_went_first": False,
+        "turn_order_chooser_id": "10", "turn_order_choice": "first",
+    })
+    assert fields["winner_went_first"] is False
+    with pytest.raises(ValueError):
+        _result_fields({"winner_id": "10", "loser_id": "20", "turn_order_choice": "sideways"})
+
+
+@pytest.mark.asyncio
+async def test_pairing_json_names_the_chooser_and_saves_it(monkeypatch):
+    from repositories.turn_order_repo import get_choice
+    monkeypatch.setenv("DRAFT_SORCERY_API_KEY", "configured-key")
+    _add("match_records", 10, 20, "y", "n")
+    session = _session()
+    with patch("services.sorcery_online_matchmaking.aiohttp.ClientSession", return_value=session):
+        await provision_sorcery_online_match(1, 77, "ranked", [
+            {"discord_user_id": 10, "display_name": "Alice"},
+            {"discord_user_id": 20, "display_name": "Bob"},
+        ])
+    sent = session.post.call_args.kwargs["json"]
+    assert sent["turnOrderChooserDiscordUserId"] == "20"
+    assert sent["firstPlayerDiscordUserId"] == "20"
+    assert get_choice(77, "ranked")["chooser_id"] == 20

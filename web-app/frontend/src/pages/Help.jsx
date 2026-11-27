@@ -56,6 +56,42 @@ export default function Help() {
           </div>
         </div>
       </div>
+
+      <div id="ai-apps" className="bg-bg-surface border border-border rounded-soft p-6 space-y-4">
+        <h2 className="text-lg font-semibold">Use Summit in AI apps</h2>
+        <div className="space-y-3 text-sm">
+          <p className="text-text-muted">
+            Ask Claude, ChatGPT or another AI app about Summit data: matchup prep, deck checks, Avatar and
+            card win rates, the Meta Report, Top 8 decks, the store and the ranked recap. It's free, read-only
+            and needs no login.
+          </p>
+          <div>
+            <p className="font-medium">How to connect</p>
+            <ol className="list-decimal pl-5 text-text-muted space-y-1">
+              <li>In your AI app, open Settings, then Connectors (sometimes called MCP servers).</li>
+              <li>Choose Add custom connector and paste this address:</li>
+            </ol>
+            <code className="mt-2 inline-block break-all rounded bg-bg-elevated px-2 py-1 text-primary">
+              {MCP_URL}
+            </code>
+          </div>
+          <div>
+            <p className="font-medium">Things to ask</p>
+            <ul className="list-disc pl-5 text-text-muted space-y-1">
+              <li>&quot;I&apos;m on Sparkmage against Pathfinder tonight. Prep me.&quot;</li>
+              <li>&quot;Check my deck&quot; with a Curiosa link or a pasted list (it isn&apos;t saved).</li>
+              <li>&quot;Summarize the latest Meta Report in 5 bullets.&quot;</li>
+              <li>&quot;What happened in ranked this week?&quot;</li>
+            </ul>
+          </div>
+          <p className="text-text-muted">
+            Ranked deck lists are never shared. Use of Summit data follows our{' '}
+            <a href="/terms" className="text-primary underline">Terms</a>.
+          </p>
+        </div>
+      </div>
     </div>
   )
 }
+
+const MCP_URL = 'https://sorcererssummit.com/mcp'

@@ -45,6 +45,16 @@ jobs:
             sudo systemctl enable summit-web-priority
             sudo systemctl restart summit-web-priority
 
+            # Summit MCP server: own venv + service (sorcererssummit.com/mcp)
+            cd web-app
+            [ -x mcp_server/venv/bin/python ] || python3 -m venv mcp_server/venv
+            mcp_server/venv/bin/pip install -q -r mcp_server/requirements.txt
+            cd ..
+            sudo cp web-app/systemd/summit-mcp.service /etc/systemd/system/summit-mcp.service
+            sudo systemctl daemon-reload
+            sudo systemctl enable summit-mcp
+            sudo systemctl restart summit-mcp
+
             # Update Nginx config and reload if it changed
             sudo cp web-app/nginx/summit-web-cloudflare.conf /etc/nginx/sites-available/summit-web
             sudo nginx -t && sudo nginx -s reload

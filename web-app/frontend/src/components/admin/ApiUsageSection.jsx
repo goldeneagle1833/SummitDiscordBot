@@ -112,7 +112,7 @@ export default function ApiUsageSection() {
           </div>
 
           <div>
-            <h3 className="text-sm font-semibold mb-2">Sites using the API</h3>
+            <h3 className="text-sm font-semibold mb-2">Sites and people using the API</h3>
             {(data.by_site ?? []).length === 0 ? (
               <p className="text-sm text-text-muted">No calls in this range.</p>
             ) : (
@@ -120,7 +120,11 @@ export default function ApiUsageSection() {
                 {data.by_site.map((st) => (
                   <li key={st.site ?? 'none'} className="bg-bg-raised border border-border rounded-lg p-3 text-sm">
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                      {st.site ? (
+                      {st.site?.startsWith('contact:') ? (
+                        <span className="break-all">
+                          <span className="text-text-muted">Personal · </span>{st.site.slice(8)}
+                        </span>
+                      ) : st.site ? (
                         <a href={st.site} target="_blank" rel="noopener noreferrer nofollow" className="text-secondary hover:underline break-all">
                           {st.site}
                         </a>
@@ -155,7 +159,9 @@ export default function ApiUsageSection() {
                     </div>
                     <div className="text-xs text-text-muted break-words mt-0.5">{c.user_agent || 'No app name sent'}</div>
                     {c.sites?.length > 0 && (
-                      <div className="text-xs break-all mt-0.5">Site: {c.sites.join(', ')}</div>
+                      <div className="text-xs break-all mt-0.5">
+                        {c.sites.map((x) => (x.startsWith('contact:') ? `Personal: ${x.slice(8)}` : `Site: ${x}`)).join(' · ')}
+                      </div>
                     )}
                     <div className="text-xs text-text-muted mt-1">
                       {Object.entries(c.endpoints).map(([k, v]) => `${k} ${fmt(v)}`).join(' · ')}
@@ -169,7 +175,7 @@ export default function ApiUsageSection() {
           </div>
           <p className="text-xs text-text-muted">
             Counts the open APIs only (no login or key): match history, player search and Staples. Match history and
-            search require the caller's site; Staples doesn't (it shipped without it). Each IP can make 60 calls a minute. Usage is kept for {data.retention_days} days.
+            search require the caller's site, or a contact (such as a Discord name) for personal projects; Staples doesn't (it shipped without it). Each IP can make 60 calls a minute. Usage is kept for {data.retention_days} days.
           </p>
         </>
       )}

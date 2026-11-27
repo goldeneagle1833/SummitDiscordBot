@@ -63,6 +63,9 @@ def client_ip() -> str:
 
 SITE_PARAM = "site"
 SITE_HEADER = "X-Summit-Site"
+CONTACT_PARAM = "contact"
+CONTACT_HEADER = "X-Summit-Contact"
+CONTACT_PREFIX = "contact:"
 
 
 def parse_site(value) -> str | None:
@@ -91,6 +94,26 @@ def parse_site(value) -> str | None:
 def request_site() -> str | None:
     """The site the caller named (``?site=`` or the X-Summit-Site header), cleaned up."""
     return parse_site(request.args.get(SITE_PARAM) or request.headers.get(SITE_HEADER))
+
+
+def parse_contact(value) -> str | None:
+    """A personal project's contact (Discord name or ID, or similar): 2-64 printable characters."""
+    text = " ".join((value or "").split())
+    if not 2 <= len(text) <= 64 or not all(ch.isprintable() for ch in text):
+        return None
+    return text
+
+
+def request_caller() -> str | None:
+    """Who is calling: their site (``https://...``) or, for a personal project, ``contact:<name>``.
+
+    A site wins when both are given.
+    """
+    site = request_site()
+    if site:
+        return site
+    contact = parse_contact(request.args.get(CONTACT_PARAM) or request.headers.get(CONTACT_HEADER))
+    return f"{CONTACT_PREFIX}{contact}" if contact else None
 
 
 def outcome_for(status: int) -> str:
@@ -141,7 +164,7 @@ def log_response(response):
     endpoint = request.endpoint or ""
     if endpoint in ENDPOINT_LABELS and request.method == "GET":
         record(endpoint, response.status_code, client_ip(), request.headers.get("User-Agent"),
-               site=request_site())
+               site=request_caller())
     return response
 
 

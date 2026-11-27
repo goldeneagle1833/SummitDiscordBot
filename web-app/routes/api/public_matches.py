@@ -46,8 +46,9 @@ def _error(message, status=400):
 
 
 SITE_MISSING = (
-    "site is required: add ?site=https://your-site.example (or an X-Summit-Site header) naming the "
-    f"website or app that will show this data. See {history.TERMS_URL}"
+    "site is required: add ?site=https://your-site.example naming the website or app that will show "
+    "this data, or for a personal project ?contact=<your Discord name>. "
+    f"See {history.TERMS_URL}"
 )
 
 
@@ -55,7 +56,7 @@ def _gate():
     """Rate limit, then the required site. Returns an error response, or None to carry on."""
     if not ranked_analytics.claim_request(_client_key()):
         return _error("Too many requests. Try again in a minute.", 429)
-    if not api_usage.request_site():
+    if not api_usage.request_caller():
         return _error(SITE_MISSING)
     return None
 
@@ -68,7 +69,7 @@ def get_player_matches(player_id):
         season: "all" (default), "current", or a season id
         page: 1-based page (default 1)
         per_page: 1-100 (default 25)
-    Required: site (or X-Summit-Site header), the website or app showing the data.
+    Required: site (the website or app showing the data) or, for a personal project, contact.
     """
     blocked = _gate()
     if blocked:

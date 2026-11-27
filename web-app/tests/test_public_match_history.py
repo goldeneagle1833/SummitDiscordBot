@@ -246,6 +246,17 @@ def test_site_is_required(client, seeded):
     assert client.get(URL, query_string={"site": "not a url"}).status_code == 400
     assert client.get(URL, query_string={"site": "localhost"}).status_code == 400
     assert client.get(URL, query_string={"site": "mysite.gg"}).status_code == 200
+    # A personal project can name its Discord account instead
+    assert client.get(URL, query_string={"contact": "goldeneagle"}).status_code == 200
+    assert client.get(URL, headers={"X-Summit-Contact": "someone#1234"}).status_code == 200
+    assert client.get(URL, query_string={"contact": "x"}).status_code == 400
+
+
+def test_personal_contact_shows_on_the_admin_page(client, seeded, admin_session):
+    client.environ_base.pop("HTTP_X_SUMMIT_SITE")
+    client.get(URL, query_string={"contact": "  golden   eagle "})
+    sites = [x["site"] for x in admin_session.get("/api/admin/api-usage").get_json()["by_site"]]
+    assert sites == ["contact:golden eagle"]
 
 
 def test_parse_site():

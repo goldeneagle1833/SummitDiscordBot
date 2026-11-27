@@ -61,14 +61,22 @@ TOP_CUT_MIN_GAMES = 8  # an entry needs this many games to count for top cut
 # not shown (they swing a lot while it settles). The rating shows from this
 # game on, and per-game changes from the game after it.
 PROVISIONAL_GAMES = TOP_CUT_MIN_GAMES
-# Inactivity decay (Avatar mode): an avatar entry nobody has played for a week
-# loses DECAY_PER_DAY points for each further day, until it plays again. It
-# stops at DECAY_FLOOR (the start rating), skips provisional entries, and stops
-# when the season ends. Only the season avatar rating decays: the player
-# ladder and lifetime ratings don't.
-DECAY_GRACE_DAYS = 7
+# Inactivity decay (Avatar mode): an avatar entry nobody has played for
+# DECAY_GRACE_DAYS days loses DECAY_PER_DAY points for each further day, until
+# it plays again. It stops at DECAY_FLOOR (the start rating), only applies to
+# entries with DECAY_MIN_GAMES+ games (the bar for a season top-avatar spot,
+# HONOUR_MIN_GAMES in the web app's avatar_honours.py), and stops when the
+# season ends. Only the season avatar rating decays: the player ladder and
+# lifetime ratings don't.
+DECAY_GRACE_DAYS = 10
 DECAY_PER_DAY = 10.0
 DECAY_FLOOR = START_RATING
+DECAY_MIN_GAMES = 10
+
+
+def decays(games) -> bool:
+    """Whether an entry with this many games is subject to inactivity decay."""
+    return (games or 0) >= DECAY_MIN_GAMES
 
 _SCALE = 173.7178
 _NON_RATED_TYPES = ("testing", "rumble", "points")
@@ -111,9 +119,9 @@ def decay_owed(entry: Rating, games, until: str | None) -> float:
 
     Nothing for the first DECAY_GRACE_DAYS full days, then DECAY_PER_DAY for
     each further full day, never taking the rating below DECAY_FLOOR.
-    Provisional entries don't decay.
+    Entries under DECAY_MIN_GAMES games don't decay.
     """
-    if not entry.last_at or not until or is_provisional(games):
+    if not entry.last_at or not until or not decays(games):
         return 0.0
     idle = (_parse(until) - _parse(entry.last_at)).total_seconds() / 86400
     days = max(int(idle) - DECAY_GRACE_DAYS, 0)
@@ -147,7 +155,7 @@ def decay_status(rating, games, last_at, decay, now: str | None = None) -> dict:
     idle = idle_days(last_at, now)
     decay = int(round(decay or 0))
     left = DECAY_GRACE_DAYS + 1 - idle
-    soon = (not decay and 0 < left <= 2 and not is_provisional(games)
+    soon = (not decay and 0 < left <= 2 and decays(games)
             and (rating or 0) > DECAY_FLOOR)
     return {"decay": decay, "idle_days": idle, "decay_in_days": left if soon else None}
 
@@ -668,7 +676,7 @@ def decay_warnings(elo_conn, event, now: str | None = None) -> list[dict]:
     ).fetchall()
     out = []
     for user_id, avatar, elo, games, last_at, warned_for in rows:
-        if not last_at or warned_for == last_at or is_provisional(games) or (elo or 0) <= DECAY_FLOOR:
+        if not last_at or warned_for == _warn_key(last_at) or not decays(games) or (elo or 0) <= DECAY_FLOOR:
             continue
         if idle_days(last_at, now) != DECAY_GRACE_DAYS:
             continue
@@ -678,12 +686,22 @@ def decay_warnings(elo_conn, event, now: str | None = None) -> list[dict]:
     return out
 
 
+def _warn_key(last_at: str) -> str:
+    """What decay_warned_for holds: the idle stretch and the grace period it was warned under.
+
+    Including the grace period means a warning sent under an older rule
+    doesn't count once the rule changes, so the player is told again when
+    decay really starts.
+    """
+    return f"{last_at}#{DECAY_GRACE_DAYS}d"
+
+
 def mark_decay_warned(elo_conn, event, warnings) -> None:
     """Record that these warnings went out (once per idle stretch). Does not commit."""
     elo_conn.executemany(
         "UPDATE event_avatar_standings SET decay_warned_for = ? "
         "WHERE event_id = ? AND user_id = ? AND avatar = ?",
-        [(w["last_played_at"], event["event_id"], w["user_id"], w["avatar"]) for w in warnings],
+        [(_warn_key(w["last_played_at"]), event["event_id"], w["user_id"], w["avatar"]) for w in warnings],
     )
 
 

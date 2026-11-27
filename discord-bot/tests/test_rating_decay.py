@@ -1,7 +1,7 @@
 """Inactivity decay on Glicko-2 Avatar-mode season ratings.
 
-An avatar entry not played for a week loses 10 points a day until it is
-played again; never below 1500; provisional entries don't decay; it stops
+An avatar entry not played for 10 days loses 10 points a day until it is
+played again; never below 1500; entries under 10 games don't decay; it stops
 when the season ends. Uses the real record_match / table layout.
 """
 
@@ -84,8 +84,8 @@ def _rebuild(now=None):
         match_conn.close()
 
 
-async def _settled_seer(games=g2.PROVISIONAL_GAMES):
-    """A on Seer beats B on Witch enough times to be settled (A above 1500, B below)."""
+async def _settled_seer(games=g2.DECAY_MIN_GAMES):
+    """A on Seer beats B on Witch enough times to decay (A above 1500, B below)."""
     start_new_event("Season 9", elo_mode="avatar", rating_system="glicko2")
     for _ in range(games):
         await _record(A, B, "Seer", "Witch")
@@ -99,36 +99,36 @@ def _r(rating, last_at="2026-11-01T12:00:00", decay=0.0):
 
 
 @pytest.mark.parametrize("days, owed", [
-    (0, 0), (6.9, 0), (7, 0), (7.99, 0), (8, 10), (8.5, 10), (10, 30), (20, 130),
+    (0, 0), (9.9, 0), (10, 0), (10.99, 0), (11, 10), (11.5, 10), (13, 30), (23, 130),
 ])
-def test_ten_points_a_day_after_a_week(days, owed):
+def test_ten_points_a_day_after_ten_days(days, owed):
     until = _shift("2026-11-01T12:00:00", -days)
-    assert g2.decay_owed(_r(1800), 8, until) == owed
+    assert g2.decay_owed(_r(1800), 10, until) == owed
 
 
 def test_decay_stops_at_1500():
     until = _shift("2026-11-01T12:00:00", -30)  # 230 owed
-    assert g2.decay_owed(_r(1620), 8, until) == 120
-    assert g2.decay_owed(_r(1480), 8, until) == 0
+    assert g2.decay_owed(_r(1620), 10, until) == 120
+    assert g2.decay_owed(_r(1480), 10, until) == 0
     # The floor counts from the rating before any decay, not the decayed one
-    assert g2.decay_owed(_r(1520, decay=100), 8, until) == 120
+    assert g2.decay_owed(_r(1520, decay=100), 10, until) == 120
 
 
-def test_provisional_entries_do_not_decay():
+def test_entries_under_ten_games_do_not_decay():
     until = _shift("2026-11-01T12:00:00", -30)
-    assert g2.decay_owed(_r(1800), g2.PROVISIONAL_GAMES - 1, until) == 0
+    assert g2.decay_owed(_r(1800), g2.DECAY_MIN_GAMES - 1, until) == 0
 
 
 def test_decay_status_counts_down_then_shows_points():
     last = "2026-11-01T12:00:00"
-    s = g2.decay_status(1700, 8, last, 0, _shift(last, -6))
-    assert s == {"decay": 0, "idle_days": 6, "decay_in_days": 2}
-    assert g2.decay_status(1700, 8, last, 0, _shift(last, -7))["decay_in_days"] == 1
-    assert g2.decay_status(1700, 8, last, 0, _shift(last, -3))["decay_in_days"] is None
-    assert g2.decay_status(1450, 8, last, 0, _shift(last, -6))["decay_in_days"] is None  # at/below floor
-    assert g2.decay_status(1700, 3, last, 0, _shift(last, -6))["decay_in_days"] is None  # provisional
-    assert g2.decay_status(1670, 8, last, 30, _shift(last, -10)) == {
-        "decay": 30, "idle_days": 10, "decay_in_days": None,
+    s = g2.decay_status(1700, 10, last, 0, _shift(last, -9))
+    assert s == {"decay": 0, "idle_days": 9, "decay_in_days": 2}
+    assert g2.decay_status(1700, 10, last, 0, _shift(last, -10))["decay_in_days"] == 1
+    assert g2.decay_status(1700, 10, last, 0, _shift(last, -6))["decay_in_days"] is None
+    assert g2.decay_status(1450, 10, last, 0, _shift(last, -9))["decay_in_days"] is None  # at/below floor
+    assert g2.decay_status(1700, 9, last, 0, _shift(last, -9))["decay_in_days"] is None  # under 10 games
+    assert g2.decay_status(1670, 10, last, 30, _shift(last, -13)) == {
+        "decay": 30, "idle_days": 13, "decay_in_days": None,
     }
 
 
@@ -138,7 +138,7 @@ def test_decay_status_counts_down_then_shows_points():
 @pytest.mark.asyncio
 async def test_job_takes_decay_off_once_and_rebuild_agrees():
     await _settled_seer()
-    _backdate(10)
+    _backdate(13)
     seer = _entry(A, "Seer")
     start = seer["rating"]
     now = datetime.datetime.now().isoformat()
@@ -166,7 +166,7 @@ async def test_job_takes_decay_off_once_and_rebuild_agrees():
 @pytest.mark.asyncio
 async def test_player_ladder_and_lifetime_do_not_decay():
     await _settled_seer()
-    _backdate(20)
+    _backdate(23)
     conn = sqlite3.connect("elo.db")
     before = conn.execute("SELECT user_id, online_event_elo, online_elo FROM overall_standings ORDER BY user_id").fetchall()
     conn.close()
@@ -182,7 +182,7 @@ async def test_player_ladder_and_lifetime_do_not_decay():
 @pytest.mark.asyncio
 async def test_playing_again_stops_decay_and_matches_a_rebuild():
     await _settled_seer()
-    _backdate(10)
+    _backdate(13)
     run_decay()
     decayed = _entry(A, "Seer")["event_elo"]
 
@@ -212,7 +212,7 @@ async def test_playing_again_stops_decay_and_matches_a_rebuild():
 @pytest.mark.asyncio
 async def test_decay_stops_when_the_season_ends():
     await _settled_seer()
-    _backdate(10)
+    _backdate(13)
     end_current_event()
     seer = _entry(A, "Seer")
     assert seer["decay_points"] == 30  # caught up at the end
@@ -245,33 +245,33 @@ def _warnings(now):
 async def test_warning_goes_out_once_a_day_before_decay():
     await _settled_seer()
     last = _entry(A, "Seer")["last_played_at"]
-    assert _warnings(_shift(last, -6.9)) == []          # 6 days idle: too early
-    due = _warnings(_shift(last, -7.1))                # 7 days idle: decay starts in < 24 h
+    assert _warnings(_shift(last, -9.9)) == []          # 9 days idle: too early
+    due = _warnings(_shift(last, -10.1))                # 10 days idle: decay starts in < 24 h
     assert [(w["user_id"], w["avatar"]) for w in due] == [(A, "Seer")]  # Witch is below 1500
-    assert due[0]["starts_at"] == _shift(last, -8)
-    assert _warnings(_shift(last, -7.5)) == []          # only once
+    assert due[0]["starts_at"] == _shift(last, -11)
+    assert _warnings(_shift(last, -10.5)) == []          # only once
 
 
 @pytest.mark.asyncio
 async def test_warning_resets_after_playing_and_survives_a_rebuild():
     await _settled_seer()
     last = _entry(A, "Seer")["last_played_at"]
-    assert _warnings(_shift(last, -7.1))
-    _rebuild(now=_shift(last, -7.2))
-    assert _warnings(_shift(last, -7.3)) == []          # a rebuild doesn't re-send it
+    assert _warnings(_shift(last, -10.1))
+    _rebuild(now=_shift(last, -10.2))
+    assert _warnings(_shift(last, -10.3)) == []          # a rebuild doesn't re-send it
     await _record(A, C, "Seer", "Druid")                # played again: next idle stretch warns again
     new_last = _entry(A, "Seer")["last_played_at"]
-    assert [w["avatar"] for w in _warnings(_shift(new_last, -7.1))] == ["Seer"]
+    assert [w["avatar"] for w in _warnings(_shift(new_last, -10.1))] == ["Seer"]
 
 
 @pytest.mark.asyncio
-async def test_no_warning_when_already_decaying_or_provisional():
-    await _settled_seer(games=g2.PROVISIONAL_GAMES - 1)
+async def test_no_warning_when_already_decaying_or_under_ten_games():
+    await _settled_seer(games=g2.DECAY_MIN_GAMES - 1)
     last = _entry(A, "Seer")["last_played_at"]
-    assert _warnings(_shift(last, -7.1)) == []          # provisional
+    assert _warnings(_shift(last, -10.1)) == []          # under 10 games
     await _record(A, B, "Seer", "Witch")
     last = _entry(A, "Seer")["last_played_at"]
-    assert _warnings(_shift(last, -9)) == []            # bot was down past the start: no late warning
+    assert _warnings(_shift(last, -12)) == []            # bot was down past the start: no late warning
 
 
 def test_warning_text_names_each_avatar():
@@ -283,3 +283,50 @@ def test_warning_text_names_each_avatar():
     assert "Gothic Season 9" in text and "10 points a day" in text
     assert text.index("Witch") < text.index("Seer")  # soonest first
     assert "<t:" in text
+
+
+# ── Switching from the 7-day rule ──
+
+
+def _set_entry(user_id, avatar, **cols):
+    conn = sqlite3.connect("elo.db")
+    try:
+        sets = ", ".join(f"{k} = ?" for k in cols)
+        conn.execute(f"UPDATE event_avatar_standings SET {sets} WHERE user_id = ? AND avatar = ?",
+                     (*cols.values(), user_id, avatar))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@pytest.mark.asyncio
+async def test_points_taken_under_the_old_rule_come_back_down_to_the_new_one():
+    await _settled_seer()
+    _backdate(12)
+    start = _entry(A, "Seer")["rating"]
+    # Taken off by the 7-day rule at 12 days idle: 50 points
+    _set_entry(A, "Seer", rating=start - 50, event_elo=round(start - 50), decay_points=50)
+    run_decay()
+    seer = _entry(A, "Seer")
+    assert seer["decay_points"] == 20          # 12 days idle under the 10-day rule
+    assert seer["rating"] == pytest.approx(start - 20)
+
+
+@pytest.mark.asyncio
+async def test_entries_with_8_or_9_games_get_their_decay_back():
+    await _settled_seer(games=9)
+    _backdate(12)
+    start = _entry(A, "Seer")["rating"]
+    _set_entry(A, "Seer", rating=start - 50, event_elo=round(start - 50), decay_points=50)
+    run_decay()
+    seer = _entry(A, "Seer")
+    assert seer["decay_points"] == 0
+    assert seer["rating"] == pytest.approx(start)
+
+
+@pytest.mark.asyncio
+async def test_a_warning_sent_under_the_7_day_rule_is_sent_again_at_10_days():
+    await _settled_seer()
+    last = _entry(A, "Seer")["last_played_at"]
+    _set_entry(A, "Seer", decay_warned_for=last)  # how the 7-day rule marked it
+    assert [w["avatar"] for w in _warnings(_shift(last, -10.1))] == ["Seer"]

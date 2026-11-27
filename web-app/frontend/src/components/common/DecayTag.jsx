@@ -1,12 +1,12 @@
 /**
- * Inactivity decay on a Glicko-2 avatar rating: an avatar not played for a
- * week loses 10 points a day until it is played again.
+ * Inactivity decay on a Glicko-2 avatar rating: an avatar (10+ games) not
+ * played for 10 days loses 10 points a day until it is played again.
  *
  * `decay` (points lost since the last game) shows "-30 idle" in amber;
  * otherwise `inDays` (1 or 2) shows a muted "decays in 2d" warning.
  * Renders nothing when neither applies.
  */
-export const DECAY_RULE = 'Not played on this avatar for a week: loses 10 points a day until you play it again (never below 1500).'
+export const DECAY_RULE = 'Avatars with 10+ games not played for 10 days lose 10 points a day until played again (never below 1500).'
 
 export function DecayTag({ decay, inDays, className = 'text-xs' }) {
   if (decay > 0) {

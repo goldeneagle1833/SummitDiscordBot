@@ -1,6 +1,6 @@
 """Inactivity decay for Glicko-2 Avatar-mode seasons.
 
-An avatar entry nobody has played for a week loses 10 points for each further
+An avatar entry nobody has played for 10 days loses 10 points for each further
 day until it plays again (rules in services/glicko2_season.py, DECAY_*). This
 job takes what is owed off the live standings every few minutes, so the
 leaderboard, !rank and the site always show the decayed number. Recording a

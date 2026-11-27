@@ -72,7 +72,7 @@ export default function ApiUsageSection() {
         <>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <Tile label="API calls" value={fmt(t.calls)} />
-            <Tile label="Sites" value={fmt(t.sites)} />
+            <Tile label="Sites &amp; people" value={fmt(t.sites)} />
             <Tile label="Callers (IPs)" value={fmt(t.callers)} />
             <Tile label="Rate limited (429)" value={fmt(t.limited)} color={t.limited ? 'text-amber-400' : 'text-secondary'} />
             <Tile label="Errors (500)" value={fmt(t.error)} color={t.error ? 'text-red-400' : 'text-secondary'} />

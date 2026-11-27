@@ -25,6 +25,7 @@ from cogs.lfg.voice import (
     willing_voice_choices,
 )
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
+from repositories.turn_order_repo import normalize_choice, save_choice, winner_went_first_from_choice
 from repositories.limited_repo import get_active_arena_run
 from repositories.pairing_bans_repo import get_pairing_ban, pairing_ban_message
 from repositories.elo_repo import set_pairing_replay
@@ -227,6 +228,20 @@ def _result_fields(payload):
     winner_went_first = _pick(payload, "winner_went_first", "winnerWentFirst")
     if winner_went_first is not None and not isinstance(winner_went_first, bool):
         raise ValueError("winner_went_first must be a boolean")
+    # Turn-order choice: who PSO asked to choose, and what they picked
+    chooser_id = _pick(payload, "turn_order_chooser_id", "turnOrderChooserId", "turnOrderChooserDiscordUserId")
+    raw_choice = _pick(payload, "turn_order_choice", "turnOrderChoice")
+    turn_order_choice = normalize_choice(raw_choice)
+    if raw_choice is not None and turn_order_choice is None:
+        raise ValueError("turn_order_choice must be 'first' or 'second'")
+    derived = winner_went_first_from_choice(winner_id, loser_id, chooser_id, turn_order_choice)
+    if winner_went_first is None:
+        winner_went_first = derived
+    elif derived is not None and derived != winner_went_first:
+        logger.warning(
+            "SO result: turn-order choice (%s chose %s) disagrees with winner_went_first=%s; keeping winner_went_first",
+            chooser_id, turn_order_choice, winner_went_first,
+        )
     if reporter_id is None and outcome == "decided":
         reporter_id = winner_id
     players_key = (
@@ -247,6 +262,13 @@ def _result_fields(payload):
         "winner_went_first": winner_went_first,
         "players": _pick(payload, "players", "played_cards", "playedCards"),
     }
+
+
+def _turn_order_choice(payload):
+    """(chooser_id, 'first'/'second') from a result payload, or (None, None)."""
+    chooser_id = _pick(payload, "turn_order_chooser_id", "turnOrderChooserId", "turnOrderChooserDiscordUserId")
+    choice = normalize_choice(_pick(payload, "turn_order_choice", "turnOrderChoice"))
+    return chooser_id, choice
 
 
 async def start_matchmaking_api(bot):
@@ -394,6 +416,12 @@ async def start_matchmaking_api(bot):
                 except ValueError as exc:
                     return web.json_response({"error": str(exc), "code": "VALIDATION_ERROR"}, status=400)
                 return web.json_response(body)
+        chooser_id, choice = _turn_order_choice(payload)
+        if choice:
+            try:
+                save_choice(int(request.match_info["pairing_id"]), fields["queue_type"], chooser_id, choice)
+            except (TypeError, ValueError) as exc:
+                logger.warning("Could not save turn-order choice: %r", exc)
         # Not sent today, but take a replay link if Play Sorcery Online includes one
         replay_url = _pick(payload, "replay_url", "replayUrl")
         if replay_url and fields["queue_type"] != "limited":

@@ -304,3 +304,17 @@ def test_rate_limit_per_visitor():
     codes = [client.post("/mcp", headers={"X-Real-IP": "1.1.1.1"}).status_code for _ in range(4)]
     assert codes == [200, 200, 200, 429]
     assert client.post("/mcp", headers={"X-Real-IP": "2.2.2.2"}).status_code == 200
+
+
+def test_port_does_not_clash_with_the_bot_api():
+    """The bot's matchmaking API listens on 8765; sharing it broke /mcp on 2026-11-27."""
+    root = pathlib.Path(__file__).resolve().parents[3]
+    bot_api = (root / "discord-bot" / "services" / "matchmaking_api.py").read_text()
+    bot_port = re.search(r'MATCHMAKING_BOT_API_PORT", "(\d+)"', bot_api).group(1)
+    unit = (root / "web-app" / "systemd" / "summit-mcp.service").read_text()
+    nginx = (root / "web-app" / "nginx" / "summit-web-cloudflare.conf").read_text()
+    from mcp_server import server
+
+    assert str(server.PORT) != bot_port
+    assert f"SUMMIT_MCP_PORT={server.PORT}" in unit
+    assert f"127.0.0.1:{server.PORT};" in nginx

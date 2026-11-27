@@ -45,8 +45,24 @@ def _pct(wins: int, games: int) -> float | None:
 
 
 async def _avatar_names(site: SiteClient) -> list[str]:
-    rows = await site.get(site.path("avatars", event="all"), ttl=SLOW_TTL)
-    return [r["name"] for r in rows or [] if isinstance(r, dict) and r.get("name")]
+    """Avatar names from the card pool (cached by the Deck Builder) plus this season's list.
+
+    The all-time /api/avatars page takes ~20 s to build, so it is never used
+    just to check a name.
+    """
+    names: set[str] = set()
+    try:
+        cards = await site.get(site.path("deck-builder", "all-cards"), ttl=24 * 60 * 60)
+        names |= {str(c.get("name")) for c in cards or []
+                  if isinstance(c, dict) and str(c.get("type", "")).lower() == "avatar" and c.get("name")}
+    except SiteError:
+        pass
+    try:
+        rows = await site.get(site.path("avatars", event="current"), ttl=SLOW_TTL)
+        names |= {r["name"] for r in rows or [] if isinstance(r, dict) and r.get("name")}
+    except SiteError:
+        pass
+    return sorted(names)
 
 
 async def _resolve_avatar(site: SiteClient, name: str) -> str:
@@ -61,8 +77,8 @@ async def _resolve_avatar(site: SiteClient, name: str) -> str:
     close = [c for c in names if lowered in c.lower() or c.lower() in lowered]
     if len(close) == 1:
         return close[0]
-    if names:
-        raise SiteError(f"No Avatar called '{wanted}'. Avatars with games: {', '.join(sorted(names))}.")
+    if names and not close:
+        raise SiteError(f"No Avatar called '{wanted}'. Known Avatars: {', '.join(names)}.")
     return wanted
 
 
@@ -248,7 +264,7 @@ async def meta_trends(site: SiteClient) -> dict:
     elements: dict[str, list] = {}
     for m in months:
         for e in ELEMENTS:
-            share = sum(a["share_pct"] or 0 for a in m["top_archetypes"] if e in a["archetype"])
+            share = sum(a["share_pct"] or 0 for a in m["top_archetypes"] if e.lower() in str(a["archetype"]).lower())
             elements.setdefault(e, []).append({"month": m["month"], "share_in_top_archetypes_pct": round(share, 1)})
     return safe({
         "covers": {"from": data.get("start"), "through": data.get("through"), "next_release": data.get("nextRelease")},
@@ -561,9 +577,11 @@ async def deck_check(site: SiteClient, deck_url: str | None = None, deck_list: s
             {"card": r.get("name"), "in_pct_of_decks": round((r.get("rate") or 0) * 100), "avg_copies": r.get("avgCopies")}
             for r in sorted(core, key=lambda r: -(r.get("rate") or 0)) if str(r.get("name", "")).lower() not in mine
         ][:10]
+        def how_common(card):
+            row = popular.get(str(card.get("name", "")).lower())
+            return f"in {round(row['rate'] * 100)}% of these decks" if row and row.get("rate") else "rarely or never played here"
         result["your_unusual_cards"] = [
-            {"card": c.get("name"), "copies": c.get("quantity"),
-             "in_pct_of_decks": round(((popular.get(str(c.get("name", "")).lower()) or {}).get("rate") or 0) * 100)}
+            {"card": c.get("name"), "copies": c.get("quantity"), "how_common": how_common(c)}
             for c in spellbook
             if ((popular.get(str(c.get("name", "")).lower()) or {}).get("rate") or 0) < 0.15
         ][:10]
@@ -610,8 +628,8 @@ async def _deck_type_matchups(site: SiteClient, elements: str, avatar: str | Non
         "report": listing[0].get("label"),
         "games": pick.get("games"),
         "win_rate": pick.get("winRate"),
-        "hardest_matchups": rows[:5],
-        "easiest_matchups": list(reversed(rows[-5:])) if len(rows) > 5 else [],
+        "hardest_matchups": [r for r in rows if (r.get("winRate") or 0) < 50][:5],
+        "easiest_matchups": [r for r in reversed(rows) if (r.get("winRate") or 0) > 50][:5],
     }
 
 
@@ -641,6 +659,18 @@ async def store_products(site: SiteClient) -> dict:
 # ----------------------------------------------------------------------
 
 
+def _drop_discord_ids(value: Any) -> Any:
+    """The recap keeps Discord user IDs next to names; AI apps only need the names."""
+    if isinstance(value, dict):
+        return {k: _drop_discord_ids(v) for k, v in value.items()
+                if k != "names" and not str(k).endswith("_id") and str(k) != "id"}
+    if isinstance(value, list):
+        return [_drop_discord_ids(v) for v in value
+                if not (isinstance(v, int) and not isinstance(v, bool) and v > 10**15)
+                and not (isinstance(v, str) and v.isdigit() and len(v) >= 16)]
+    return value
+
+
 async def ranked_recap(site: SiteClient, kind: str = "daily", day: str | None = None) -> dict:
     kind = "weekly" if (kind or "").strip().lower().startswith("week") else "daily"
     if day:
@@ -655,6 +685,6 @@ async def ranked_recap(site: SiteClient, kind: str = "daily", day: str | None = 
     for d in tries:
         data = await site.get(site.path("match-history", "recap", kind=kind, date=d.isoformat()), allow_404=True)
         if data:
-            return safe({"recap": kind, "date": d.isoformat(), **data,
+            return safe({"recap": kind, "date": d.isoformat(), **_drop_discord_ids(data),
                          "page": _link(f"/match-history?recap={kind}&date={d.isoformat()}")})
     return {"found": False, "message": f"No {kind} recap saved for that date."}

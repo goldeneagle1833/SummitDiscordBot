@@ -41,7 +41,10 @@ PUBLIC_URL = os.environ.get("SUMMIT_MCP_PUBLIC_URL", "https://sorcererssummit.co
 CACHE_TTL_SECONDS = int(os.environ.get("SUMMIT_MCP_CACHE_TTL", "600"))
 ERROR_TTL_SECONDS = 30
 UPSTREAM_CONCURRENCY = max(1, int(os.environ.get("SUMMIT_MCP_UPSTREAM_CONCURRENCY", "1")))
-UPSTREAM_TIMEOUT = float(os.environ.get("SUMMIT_MCP_UPSTREAM_TIMEOUT", "25"))
+# Some all-time pages take ~20 s. Giving up early doesn't spare the site (the
+# web worker keeps going) and only makes the next calls queue behind it, so
+# wait close to gunicorn's own 120 s limit instead.
+UPSTREAM_TIMEOUT = float(os.environ.get("SUMMIT_MCP_UPSTREAM_TIMEOUT", "90"))
 TOKEN_REFRESH_SECONDS = 3 * 60 * 60  # site tokens last 12 h; refresh well before
 MAX_CACHE_ENTRIES = 500
 USER_AGENT = "SummitMCP/1.0 (+https://sorcererssummit.com)"

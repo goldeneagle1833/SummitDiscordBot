@@ -70,7 +70,7 @@ async def _run(coro):
         raise ToolError(str(exc)) from None
 
 
-Season = Annotated[str, Field(description="'current' for this ranked season (default) or 'all' for all time")]
+Season = Annotated[str, Field(description="'current' for this ranked season (default, fast) or 'all' for all time (can take up to a minute)")]
 
 
 # ----------------------------------------------------------------------

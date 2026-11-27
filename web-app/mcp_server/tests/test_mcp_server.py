@@ -68,7 +68,8 @@ REPORT = {"slug": "2026-11-a", "story": ["Fire is up"], "ranked": {
 }, "tournaments": {"events": [{"name": "Cornerstone Ohio", "deckUrl": RANKED_DECK}]}}
 
 CARDS = [{"name": "Fireball", "elements": "Fire"}, {"name": "Lightning Bolt", "elements": "Air"},
-         {"name": "Spark", "elements": "Fire"}]
+         {"name": "Spark", "elements": "Fire"},
+         {"name": "Sparkmage", "type": "Avatar"}, {"name": "Pathfinder", "type": "Avatar"}]
 
 STORE = {"products": [
     {"name": "Island Leviathan Pack", "price_cents": 599, "stock_quantity": 3, "description": "2 tokens",
@@ -113,7 +114,9 @@ def make_site(calls: list | None = None, overrides: dict | None = None) -> SiteC
             "/api/card/Fireball": {"name": "Fireball", "type": "Magic", "element": "Fire", "wins": 30,
                                    "losses": 20, "total_matches": 50, "win_rate": 60.0, "image": "x.png"},
             "/api/staples": {"success": True, "cards": [{"name": "Fireball", "score": 9.1}]},
-            "/api/match-history/recap": {"stats": {"games": 120}, "performers": ["Pete 5-0"]},
+            "/api/match-history/recap": {"stats": {"games": 120, "biggest_loser": [1122920529205145712, "Clockwork", -24],
+                                                   "broken_streaks": [{"player": "Ann", "player_id": 182857376171294720}]},
+                                         "names": {"1122920529205145712": "Clockwork"}, "performers": ["Pete 5-0"]},
             "/api/deck-archetypes/trends": {"months": [{"month": "2026-10", "matches": 100,
                                                         "counts": {"Sparkmage · Air / Fire": 30, "Pathfinder · Fire": 20}}]},
         }
@@ -318,3 +321,16 @@ def test_port_does_not_clash_with_the_bot_api():
     assert str(server.PORT) != bot_port
     assert f"SUMMIT_MCP_PORT={server.PORT}" in unit
     assert f"127.0.0.1:{server.PORT};" in nginx
+
+
+def test_avatar_names_never_load_the_slow_all_time_page():
+    calls: list = []
+    run(tools.matchup_prep(make_site(calls), "sparkmage", "pathfinder"))
+    assert not any("/api/avatars" in c and "event=all" in c for c in calls)
+
+
+def test_recap_drops_discord_ids():
+    result = run(tools.ranked_recap(make_site(), "daily", "2026-11-26"))
+    text = json.dumps(result)
+    assert "1122920529205145712" not in text and "182857376171294720" not in text
+    assert "Clockwork" in text and "Ann" in text

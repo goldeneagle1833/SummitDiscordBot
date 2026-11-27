@@ -15,6 +15,7 @@ from services import public_match_history as history
 
 P1, P2, P3 = "111111111111111111", "222222222222222222", "333333333333333333"
 URL = f"/api/public/players/{P1}/matches"
+SITE = "https://example.com"
 
 
 def _deck(avatar, *elements):
@@ -43,8 +44,10 @@ def _insert(conn, table, winner, loser, ts, **cols):
 
 
 @pytest.fixture()
-def seeded(app, elo_db, match_db, monkeypatch):
+def seeded(app, client, elo_db, match_db, monkeypatch):
     history.clear_cache()
+    # Every call must name the site showing the data
+    client.environ_base["HTTP_X_SUMMIT_SITE"] = SITE
     # Everything up to the end of 2027-01-31 is released
     monkeypatch.setattr(data_release, "cutoff_timestamp", lambda now=None: "2027-02-01T00:00:00")
     elo = sqlite3.connect(str(elo_db))
@@ -169,8 +172,8 @@ def test_rate_limited(client, seeded, monkeypatch):
 def test_open_without_key_or_site_token(app, seeded):
     app.config["SITE_GATE_ENABLED"] = True
     try:
-        assert app.test_client().get(URL).status_code == 200
-        assert app.test_client().get("/api/public/players/search?q=Na").status_code == 200
+        assert app.test_client().get(URL, query_string={"site": SITE}).status_code == 200
+        assert app.test_client().get("/api/public/players/search?q=Na&site=example.com").status_code == 200
     finally:
         app.config["SITE_GATE_ENABLED"] = False
 
@@ -189,7 +192,8 @@ def test_calls_are_logged_for_the_admin_page(client, seeded, admin_session, monk
 
     client.get(URL, headers={"CF-Connecting-IP": "203.0.113.5", "User-Agent": "TestBot/1.0"})
     client.get(URL, headers={"CF-Connecting-IP": "203.0.113.5", "User-Agent": "TestBot/1.0"})
-    client.get("/api/public/players/search?q=Na", headers={"CF-Connecting-IP": "198.51.100.7"})
+    client.get("/api/public/players/search?q=Na&site=https://Stats.Example.org/",
+               headers={"CF-Connecting-IP": "198.51.100.7"})
     client.get(URL, query_string={"per_page": 500}, headers={"CF-Connecting-IP": "198.51.100.7"})
     monkeypatch.setattr(ranked_analytics, "claim_request", lambda key: False)
     client.get(URL, headers={"CF-Connecting-IP": "203.0.113.5"})
@@ -205,6 +209,11 @@ def test_calls_are_logged_for_the_admin_page(client, seeded, admin_session, monk
     assert top["ip"] == "203.0.113.5" and top["calls"] == 3 and top["limited"] == 1
     assert top["user_agent"] == "TestBot/1.0"
     assert len(body["by_day"]) == 7 and body["by_day"][-1]["calls"] == 5
+    assert top["sites"] == [SITE]
+    sites = {x["site"]: x for x in body["by_site"]}
+    assert sites[SITE]["calls"] == 4 and sites[SITE]["callers"] == 2
+    assert sites["https://stats.example.org"]["calls"] == 1  # header overridden by ?site=, cleaned up
+    assert body["totals"]["sites"] == 2
 
 
 def test_usage_is_admin_only(client, user_session):
@@ -227,3 +236,24 @@ def test_old_usage_rows_are_pruned(app):
         conn = api_usage._connect()
         assert conn.execute("SELECT COUNT(*) FROM api_usage_daily").fetchone()[0] == 1
         conn.close()
+
+
+def test_site_is_required(client, seeded):
+    client.environ_base.pop("HTTP_X_SUMMIT_SITE")
+    for path in (URL, "/api/public/players/search?q=Na"):
+        r = client.get(path)
+        assert r.status_code == 400 and "site is required" in r.get_json()["error"]
+    assert client.get(URL, query_string={"site": "not a url"}).status_code == 400
+    assert client.get(URL, query_string={"site": "localhost"}).status_code == 400
+    assert client.get(URL, query_string={"site": "mysite.gg"}).status_code == 200
+
+
+def test_parse_site():
+    from services.api_usage import parse_site
+
+    assert parse_site("https://Example.COM/stats/") == "https://example.com/stats"
+    assert parse_site("example.com") == "https://example.com"
+    assert parse_site("http://example.com:8080?x=1") == "http://example.com:8080"
+    for bad in ("", None, "ftp://example.com", "https://user:pw@example.com", "no spaces.com x",
+                "localhost", "https://exa_mple.com", "x" * 300):
+        assert parse_site(bad) is None

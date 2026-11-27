@@ -12,7 +12,11 @@ players, cache what you fetch).
 
 ## Access
 
-Open to everybody: no login and no API key. Each visitor (by IP) can make 60 calls a
+Open to everybody: no login and no API key, but **every call must name the website or
+app that will show the data**, with `site=https://your-site.example` in the query
+string (or an `X-Summit-Site: https://your-site.example` header). Calls without a
+valid web address get `400`. Use your real address: we visit it to check the terms
+are being followed. Each visitor (by IP) can make 60 calls a
 minute across these endpoints; past that the API answers `429`. Any website can call
 it from the browser (`Access-Control-Allow-Origin: *`). Each player's list is cached
 for a minute, so calling more often than that gets you nothing new.
@@ -24,11 +28,12 @@ before limiting anything.
 ## Find a player's ID
 
 ```
-GET /api/public/players/search?q=golden
+GET /api/public/players/search?q=golden&site=https://your-site.example
 ```
 
 | Parameter | Description |
 |-----------|-------------|
+| `site` | Required. Your website or app's address. |
 | `q` | 2-50 characters of the player's name. |
 | `limit` | 1-20. Default 10. |
 
@@ -46,13 +51,14 @@ The ID is the player's Discord ID, the same number as in their profile link
 ## Match history
 
 ```
-GET /api/public/players/<id>/matches
-GET /api/public/players/<id>/matches?season=current
-GET /api/public/players/<id>/matches?season=8&page=2&per_page=50
+GET /api/public/players/<id>/matches?site=https://your-site.example
+GET /api/public/players/<id>/matches?site=https://your-site.example&season=current
+GET /api/public/players/<id>/matches?site=https://your-site.example&season=8&page=2&per_page=50
 ```
 
 | Parameter | Description |
 |-----------|-------------|
+| `site` | Required. Your website or app's address. |
 | `season` | `all` (default), `current`, or a season id (each match shows its `season_id`). |
 | `page` | Page number, from 1. Default 1. |
 | `per_page` | 1-100. Default 25. |
@@ -121,7 +127,7 @@ Matches come newest first.
 
 | Status | When |
 |--------|------|
-| `400` | Bad parameter (the `error` field says which). |
+| `400` | Missing `site`, or a bad parameter (the `error` field says which). |
 | `404` | No ranked matches for that ID. |
 | `429` | Over 60 calls a minute. Wait a minute. |
 | `500` | Something went wrong on our side. |

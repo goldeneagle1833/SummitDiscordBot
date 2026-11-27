@@ -67,6 +67,11 @@ export default function DataTerms() {
 
         <Section title="4. Use the APIs fairly">
           <ul className="list-disc pl-5 space-y-1">
+            <li>
+              Name your site. Calls must include the real address of the website or app that shows the data (the{' '}
+              <code>site</code> parameter). We may visit it to check that it follows these terms. Don't give a false or
+              someone else's address.
+            </li>
             <li>Stay within the rate limits. Don't spread calls over many IPs or keys to get around them.</li>
             <li>Cache what you fetch. Data changes slowly; there is no need to call for every page view.</li>
             <li>

@@ -45,6 +45,21 @@ def _error(message, status=400):
     return _respond({"success": False, "error": message}, status)
 
 
+SITE_MISSING = (
+    "site is required: add ?site=https://your-site.example (or an X-Summit-Site header) naming the "
+    f"website or app that will show this data. See {history.TERMS_URL}"
+)
+
+
+def _gate():
+    """Rate limit, then the required site. Returns an error response, or None to carry on."""
+    if not ranked_analytics.claim_request(_client_key()):
+        return _error("Too many requests. Try again in a minute.", 429)
+    if not api_usage.request_site():
+        return _error(SITE_MISSING)
+    return None
+
+
 @public_matches_bp.route("/public/players/<player_id>/matches", methods=["GET"])
 def get_player_matches(player_id):
     """One page of a player's ranked match history, newest first.
@@ -53,9 +68,11 @@ def get_player_matches(player_id):
         season: "all" (default), "current", or a season id
         page: 1-based page (default 1)
         per_page: 1-100 (default 25)
+    Required: site (or X-Summit-Site header), the website or app showing the data.
     """
-    if not ranked_analytics.claim_request(_client_key()):
-        return _error("Too many requests. Try again in a minute.", 429)
+    blocked = _gate()
+    if blocked:
+        return blocked
     try:
         pid = history.normalize_player_id(player_id)
     except ValueError as exc:
@@ -81,9 +98,10 @@ def get_player_matches(player_id):
 
 @public_matches_bp.route("/public/players/search", methods=["GET"])
 def search_public_players():
-    """Find a player's id by name. GET /api/public/players/search?q=<name>&limit=10"""
-    if not ranked_analytics.claim_request(_client_key()):
-        return _error("Too many requests. Try again in a minute.", 429)
+    """Find a player's id by name. GET /api/public/players/search?q=<name>&site=<url>&limit=10"""
+    blocked = _gate()
+    if blocked:
+        return blocked
     query = (request.args.get("q") or "").strip()
     if len(query) < 2 or len(query) > 50:
         return _error("q must be 2-50 characters")

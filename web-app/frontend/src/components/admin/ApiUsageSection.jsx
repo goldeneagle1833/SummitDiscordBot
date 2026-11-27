@@ -70,8 +70,9 @@ export default function ApiUsageSection() {
 
       {!loading && !error && data && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <Tile label="API calls" value={fmt(t.calls)} />
+            <Tile label="Sites" value={fmt(t.sites)} />
             <Tile label="Callers (IPs)" value={fmt(t.callers)} />
             <Tile label="Rate limited (429)" value={fmt(t.limited)} color={t.limited ? 'text-amber-400' : 'text-secondary'} />
             <Tile label="Errors (500)" value={fmt(t.error)} color={t.error ? 'text-red-400' : 'text-secondary'} />
@@ -111,6 +112,36 @@ export default function ApiUsageSection() {
           </div>
 
           <div>
+            <h3 className="text-sm font-semibold mb-2">Sites using the API</h3>
+            {(data.by_site ?? []).length === 0 ? (
+              <p className="text-sm text-text-muted">No calls in this range.</p>
+            ) : (
+              <ul className="space-y-2">
+                {data.by_site.map((st) => (
+                  <li key={st.site ?? 'none'} className="bg-bg-raised border border-border rounded-lg p-3 text-sm">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                      {st.site ? (
+                        <a href={st.site} target="_blank" rel="noopener noreferrer nofollow" className="text-secondary hover:underline break-all">
+                          {st.site}
+                        </a>
+                      ) : (
+                        <span className="text-text-muted">No site given (Staples only)</span>
+                      )}
+                      <span className="font-bold text-secondary">{fmt(st.calls)} calls</span>
+                    </div>
+                    <div className="text-xs text-text-muted mt-1">
+                      {Object.entries(st.endpoints).map(([k, v]) => `${k} ${fmt(v)}`).join(' · ')}
+                      {' · '}{fmt(st.callers)} {st.callers === 1 ? 'IP' : 'IPs'}
+                      {st.limited ? <span className="text-amber-400"> · {fmt(st.limited)} rate limited</span> : null}
+                      {' · '}last call {formatWhen(st.last_seen)}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div>
             <h3 className="text-sm font-semibold mb-2">Top callers</h3>
             {data.top_callers.length === 0 ? (
               <p className="text-sm text-text-muted">No calls in this range.</p>
@@ -123,6 +154,9 @@ export default function ApiUsageSection() {
                       <span className="font-bold text-secondary">{fmt(c.calls)} calls</span>
                     </div>
                     <div className="text-xs text-text-muted break-words mt-0.5">{c.user_agent || 'No app name sent'}</div>
+                    {c.sites?.length > 0 && (
+                      <div className="text-xs break-all mt-0.5">Site: {c.sites.join(', ')}</div>
+                    )}
                     <div className="text-xs text-text-muted mt-1">
                       {Object.entries(c.endpoints).map(([k, v]) => `${k} ${fmt(v)}`).join(' · ')}
                       {c.limited ? <span className="text-amber-400"> · {fmt(c.limited)} rate limited</span> : null}
@@ -134,8 +168,8 @@ export default function ApiUsageSection() {
             )}
           </div>
           <p className="text-xs text-text-muted">
-            Counts the open APIs only (no login or key): match history, player search and Staples. Each IP can make
-            60 calls a minute. Usage is kept for {data.retention_days} days.
+            Counts the open APIs only (no login or key): match history, player search and Staples. Match history and
+            search require the caller's site; Staples doesn't (it shipped without it). Each IP can make 60 calls a minute. Usage is kept for {data.retention_days} days.
           </p>
         </>
       )}

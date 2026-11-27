@@ -17,6 +17,10 @@ minute across these endpoints; past that the API answers `429`. Any website can 
 it from the browser (`Access-Control-Allow-Origin: *`). Each player's list is cached
 for a minute, so calling more often than that gets you nothing new.
 
+Please send a `User-Agent` header that names your app and a way to reach you (for
+example `SorceryStatsBot/1.0 (+https://example.com)`), so we know who to talk to
+before limiting anything.
+
 ## Find a player's ID
 
 ```

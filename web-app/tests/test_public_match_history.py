@@ -180,3 +180,50 @@ def test_deck_info_reads_only_avatar_and_elements():
     assert history.deck_info(deck) == ("Pathfinder", ["Air", "Water"])
     assert history.deck_info("not json") == (None, [])
     assert history.deck_info(None) == (None, [])
+
+
+# -- API usage log (admin page "API Usage") --------------------------------
+
+def test_calls_are_logged_for_the_admin_page(client, seeded, admin_session, monkeypatch):
+    from services import ranked_analytics
+
+    client.get(URL, headers={"CF-Connecting-IP": "203.0.113.5", "User-Agent": "TestBot/1.0"})
+    client.get(URL, headers={"CF-Connecting-IP": "203.0.113.5", "User-Agent": "TestBot/1.0"})
+    client.get("/api/public/players/search?q=Na", headers={"CF-Connecting-IP": "198.51.100.7"})
+    client.get(URL, query_string={"per_page": 500}, headers={"CF-Connecting-IP": "198.51.100.7"})
+    monkeypatch.setattr(ranked_analytics, "claim_request", lambda key: False)
+    client.get(URL, headers={"CF-Connecting-IP": "203.0.113.5"})
+
+    r = admin_session.get("/api/admin/api-usage?days=7")
+    assert r.status_code == 200, r.get_json()
+    body = r.get_json()
+    assert body["totals"]["calls"] == 5 and body["totals"]["callers"] == 2
+    assert body["totals"]["ok"] == 3 and body["totals"]["limited"] == 1 and body["totals"]["bad_request"] == 1
+    endpoints = {e["endpoint"]: e["calls"] for e in body["by_endpoint"]}
+    assert endpoints == {"Match history": 4, "Player search": 1, "Staples": 0}
+    top = body["top_callers"][0]
+    assert top["ip"] == "203.0.113.5" and top["calls"] == 3 and top["limited"] == 1
+    assert top["user_agent"] == "TestBot/1.0"
+    assert len(body["by_day"]) == 7 and body["by_day"][-1]["calls"] == 5
+
+
+def test_usage_is_admin_only(client, user_session):
+    assert client.get("/api/admin/api-usage").status_code in (401, 403)
+    assert user_session.get("/api/admin/api-usage").status_code in (401, 403)
+
+
+def test_old_usage_rows_are_pruned(app):
+    from datetime import datetime, timedelta, timezone
+
+    from services import api_usage
+
+    with app.test_request_context():
+        now = datetime.now(timezone.utc)
+        api_usage._last_prune = 0.0
+        api_usage.record("api.staples.get_staples", 200, "1.2.3.4", None, now=now - timedelta(days=200))
+        api_usage._last_prune = 0.0
+        api_usage.record("api.staples.get_staples", 200, "1.2.3.4", None, now=now)
+        assert api_usage.summary(90)["totals"]["calls"] == 1
+        conn = api_usage._connect()
+        assert conn.execute("SELECT COUNT(*) FROM api_usage_daily").fetchone()[0] == 1
+        conn.close()

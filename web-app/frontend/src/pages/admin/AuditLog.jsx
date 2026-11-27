@@ -9,6 +9,7 @@ import BlockedUsersSection from '@/components/admin/BlockedUsersSection'
 import PlayerReportsSection from '@/components/admin/PlayerReportsSection'
 import PlayerKudosSection from '@/components/admin/PlayerKudosSection'
 import DataExportsSection from '@/components/admin/DataExportsSection'
+import ApiUsageSection from '@/components/admin/ApiUsageSection'
 import QueueSettingsSection from '@/components/admin/QueueSettingsSection'
 import NavPicksSection from '@/components/admin/NavPicksSection'
 import CardPointsSection from '@/components/admin/CardPointsSection'
@@ -80,6 +81,9 @@ export default function AuditLog() {
       </AdminCollapsible>
       <AdminCollapsible title="Data Exports" subtitle="Who downloaded their own data from Export my data, and how much">
         <DataExportsSection />
+      </AdminCollapsible>
+      <AdminCollapsible title="API Usage" subtitle="Calls to the open APIs (match history, player search, Staples), top callers and rate limits">
+        <ApiUsageSection />
       </AdminCollapsible>
       <AdminCollapsible title="Audit Log" subtitle="History of administrative actions">
         <AuditLogTable />

@@ -14,12 +14,14 @@ import re
 
 from flask import Blueprint, jsonify, request
 
+from services import api_usage
 from services import public_match_history as history
 from services import ranked_analytics
 
 logger = logging.getLogger(__name__)
 
 public_matches_bp = Blueprint("public_matches", __name__)
+public_matches_bp.after_request(api_usage.log_response)  # admin page "API Usage"
 
 _SEASON_RE = re.compile(r"^(all|current|\d{1,6})$")
 

@@ -12,11 +12,12 @@ import re
 
 from flask import Blueprint, jsonify, request
 
-from services import ranked_analytics, staples
+from services import api_usage, ranked_analytics, staples
 
 logger = logging.getLogger(__name__)
 
 staples_bp = Blueprint("staples", __name__)
+staples_bp.after_request(api_usage.log_response)  # admin page "API Usage"
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _WORD_RE = re.compile(r"^[A-Za-z ]{1,30}$")

@@ -19,6 +19,7 @@ const SECTIONS = [
     tools: [
       { to: '/admin/events', label: 'Events', blurb: 'Start, change and end the LM / FM precon ladder and its queue.' },
       { to: '/admin/brackets', label: 'Manage Top Cut', blurb: 'Create and run the season top cut bracket.' },
+      { to: '/admin/home-promos', label: 'Home Promos', blurb: 'Order the home page carousel and turn slides on or off.' },
       { to: '/admin/meta-reports', label: 'Meta Reports', blurb: 'Build and publish reports.' },
       { to: '/admin/paper-badges', label: 'Paper Tournament Badges', blurb: 'Match Top 8 finishes to player profiles.' },
       { to: '/admin/articles', label: 'Player Articles', blurb: 'Review, comment on and publish blog articles.' },

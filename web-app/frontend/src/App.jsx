@@ -118,6 +118,7 @@ const UserProfiles = lazyPage(() => import('@/pages/admin/UserProfiles'))
 const ExplorerApplications = lazyPage(() => import('@/pages/admin/ExplorerApplications'))
 const ExplorerCalendar = lazyPage(() => import('@/pages/admin/ExplorerCalendar'))
 const MetaReportsAdmin = lazyPage(() => import('@/pages/admin/MetaReports'))
+const HomePromosAdmin = lazyPage(() => import('@/pages/admin/HomePromos'))
 const PaperBadgesAdmin = lazyPage(() => import('@/pages/admin/PaperBadges'))
 const EventsAdmin = lazyPage(() => import('@/pages/admin/EventsAdmin'))
 const MetaReport = lazyPage(() => import('@/pages/MetaReport'))
@@ -350,6 +351,7 @@ const router = createBrowserRouter([
       { path: '/admin/brackets', element: <AdminGuard><BracketsAdmin /></AdminGuard> },
       { path: '/admin/users', element: <AdminGuard><UserProfiles /></AdminGuard> },
       { path: '/admin/meta-reports', element: <AdminGuard><MetaReportsAdmin /></AdminGuard> },
+      { path: '/admin/home-promos', element: <AdminGuard><HomePromosAdmin /></AdminGuard> },
       { path: '/admin/paper-badges', element: <AdminGuard><PaperBadgesAdmin /></AdminGuard> },
       { path: '/admin/explorer-applications', element: <RedirectKeepQuery to={ES_PATHS.applications} /> },
       { path: '/admin/explorer-calendar', element: <RedirectKeepQuery to={ES_PATHS.calendar} /> },

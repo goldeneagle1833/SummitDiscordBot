@@ -883,6 +883,83 @@ class AnalyticsRepository:
         conn.close()
         return deleted
 
+    # --- Home promo carousel layout (order + on/off) ---
+
+    def _ensure_promo_layout_table(self, conn):
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS promo_slide_layout (
+                slot TEXT PRIMARY KEY,
+                position INTEGER NOT NULL,
+                hidden INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+            )
+        """)
+
+    def get_promo_layout(self) -> dict:
+        """Saved carousel order and hidden built-in slots.
+
+        Returns {"order": [slot, ...], "hidden": [slot, ...]}. Slots are
+        strings like "kudos", "new-event" or "promo-12". Banner slots are
+        turned on/off with promo_banners.active instead of "hidden".
+        """
+        conn = self._connect()
+        self._ensure_promo_layout_table(conn)
+        rows = conn.execute(
+            "SELECT slot, hidden FROM promo_slide_layout ORDER BY position, slot"
+        ).fetchall()
+        conn.commit()
+        conn.close()
+        return {
+            "order": [r[0] for r in rows],
+            "hidden": [r[0] for r in rows if r[1]],
+        }
+
+    def save_promo_layout(self, order: list[str], hidden: list[str]) -> None:
+        """Replace the saved carousel order. hidden lists built-in slots kept off the carousel."""
+        hidden_set = set(hidden)
+        conn = self._connect()
+        self._ensure_promo_layout_table(conn)
+        conn.execute("DELETE FROM promo_slide_layout")
+        seen = set()
+        pos = 0
+        for slot in order:
+            if slot in seen:
+                continue
+            seen.add(slot)
+            conn.execute(
+                "INSERT INTO promo_slide_layout (slot, position, hidden) VALUES (?, ?, ?)",
+                (slot, pos, 1 if slot in hidden_set else 0),
+            )
+            pos += 1
+        # Hidden slots missing from the order still need saving
+        for slot in hidden_set - seen:
+            conn.execute(
+                "INSERT INTO promo_slide_layout (slot, position, hidden) VALUES (?, ?, 1)",
+                (slot, pos),
+            )
+            pos += 1
+        conn.commit()
+        conn.close()
+
+    def get_unexpired_banners(self) -> list[dict]:
+        """Every banner that has not expired, on or off (for the promo order tool)."""
+        return [
+            b for b in self.get_all_banners()
+            if b["expires_at"] > time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+        ]
+
+    def set_banner_active(self, banner_id: int, active: bool) -> bool:
+        """Turn a banner on or off. Returns True if the banner exists."""
+        self._ensure_promo_table()
+        conn = self._connect()
+        cur = conn.execute(
+            "UPDATE promo_banners SET active = ? WHERE id = ?", (1 if active else 0, banner_id)
+        )
+        conn.commit()
+        found = cur.rowcount > 0
+        conn.close()
+        return found
+
     def toggle_banner(self, banner_id: int) -> bool | None:
         """Toggle a banner's active state. Returns new state or None if not found."""
         self._ensure_promo_table()

@@ -14,28 +14,15 @@ import usePageTitle from '@/hooks/usePageTitle'
 import { STORE_LIVE } from '@/utils/store'
 import { getProducts, getStorefronts } from '@/api/store'
 import { DEFAULT_STOREFRONT } from '@/hooks/useStoreCart'
-import { articleImage, articlePath, listArticles } from '@/api/articles'
+import { applyPromoLayout, loadPromoSlides } from '@/utils/promoSlides'
+// Kept importable from here for older tests
+export { articleSlide } from '@/utils/promoSlides'
 import { ProvisionalTag } from '@/components/common/Provisional'
 import { isProvisional, provisionalOf } from '@/utils/provisional'
 
 // A player article published this recently gets a slide in the carousel
-const NEW_ARTICLE_DAYS = 14
 
 /** Carousel slide for the newest published player article (or null). */
-export function articleSlide(article) {
-  if (!article) return null
-  return {
-    key: `article-${article.id}`, badge: 'NEW ARTICLE', color: 'blue',
-    title: article.title,
-    subtitle: article.summary,
-    extra: `By ${article.author_name}${article.external_site ? ` on ${article.external_site}` : ''}`,
-    link: articlePath(article),
-    thumbnail: articleImage(article),
-    analyticsType: 'new_article',
-    cta: 'Read article',
-  }
-}
-
 const DISCORD_URL = 'https://discord.gg/ZDqHSK9VGx'
 const HERO_LOGO = '/static/images/summit-logo-hero.png'
 // Anchor for shareable links straight to the leaderboard (e.g. /#leaderboard)
@@ -189,8 +176,6 @@ const BADGE_STYLES = {
   red:    'bg-white/10 text-white/90 border border-white/20',
 }
 
-const isYouTubeLink = (url) => url && /youtu\.?be/i.test(url)
-
 export function PromoCarousel() {
   const [items, setItems] = useState([])
   const [active, setActive] = useState(0)
@@ -198,79 +183,11 @@ export function PromoCarousel() {
   const timerRef = useRef(null)
 
   useEffect(() => {
-    const promises = [
-      get('/api/analytics/banners/active').then(d => d.success ? d.banners || [] : []).catch(() => []),
-      get('/api/spotlight').then(d => d.success && d.spotlight ? d.spotlight : null).catch(() => null),
-      get('/api/event-spotlight').then(d => d.success && d.event_spotlight ? d.event_spotlight : null).catch(() => null),
-      get('/api/recent-event').then(d => d.event || null).catch(() => null),
-      get('/api/deck-rec/staff-pick').then(d => d.success && d.staff_pick ? d.staff_pick : null).catch(() => null),
-      get('/api/kudos-spotlight').then(d => d.success && d.kudos_spotlight ? d.kudos_spotlight : null).catch(() => null),
-      listArticles({ days: NEW_ARTICLE_DAYS }).then(d => d.articles?.[0] || null).catch(() => null),
-    ]
-    Promise.all(promises).then(([banners, spotlight, eventSpotlight, newEvent, staffPick, kudosSpotlight, newArticle]) => {
-      const slides = []
-
-      // Player of the Day from kudos (positive player reports) leads the carousel.
-      if (kudosSpotlight) {
-        slides.push({
-          key: 'kudos-spotlight', badge: kudosSpotlight.badge_text, color: kudosSpotlight.color,
-          title: kudosSpotlight.title, subtitle: kudosSpotlight.subtitle, link: kudosSpotlight.link,
-          thumbnail: kudosSpotlight.image_url || null, analyticsType: 'spotlight_kudos_player_of_the_day',
-          extra: `👏 ${kudosSpotlight.kudos?.credit || 'Kudos from an opponent'}`,
-          cta: 'View profile',
-        })
-      }
-
-      if (newEvent) {
-        slides.push({
-          key: 'new-event', badge: 'NEW', color: 'blue',
-          title: newEvent.name, subtitle: 'New Top 8 decklists added',
-          link: `/top-8/${newEvent.folder}`, thumbnail: null, analyticsType: 'new_event',
-        })
-      }
-
-      const articleItem = articleSlide(newArticle)
-      if (articleItem) slides.push(articleItem)
-
-      for (const b of banners) {
-        const badge = isYouTubeLink(b.link) ? 'VIDEO' : b.badge_text
-        slides.push({
-          key: `promo-${b.id}`, badge, color: b.color,
-          title: b.title, subtitle: b.subtitle, link: b.link,
-          thumbnail: b.images?.[0] || null, analyticsType: `promo_${b.id}`,
-        })
-      }
-
-      if (spotlight) {
-        slides.push({
-          key: 'spotlight', badge: spotlight.badge_text, color: spotlight.color,
-          title: spotlight.title, subtitle: spotlight.subtitle, link: spotlight.link,
-          thumbnail: spotlight.image_url || spotlight.stats?.avatar_bg_image || null,
-          analyticsType: `spotlight_${spotlight.type}`,
-        })
-      }
-
-      if (eventSpotlight) {
-        slides.push({
-          key: 'event-spotlight', badge: eventSpotlight.badge_text, color: eventSpotlight.color,
-          title: eventSpotlight.title, subtitle: eventSpotlight.subtitle, link: eventSpotlight.link,
-          thumbnail: eventSpotlight.image_url || null, analyticsType: 'event_spotlight',
-        })
-      }
-
-      if (staffPick) {
-        const subtitle = staffPick.primer || `${staffPick.avatar_name} deck`
-        const badge = staffPick.is_new ? 'NEW STAFF PICK' : 'STAFF PICK'
-        slides.push({
-          key: 'staff-pick', badge, color: 'gold',
-          title: staffPick.deck_name, subtitle,
-          link: `/deck-rec/${staffPick.deck_id}`,
-          thumbnail: staffPick.avatar_image || null, analyticsType: 'staff_pick',
-        })
-      }
-
-      setItems(slides)
+    let alive = true
+    loadPromoSlides().then(({ slides, layout }) => {
+      if (alive) setItems(applyPromoLayout(slides, layout))
     })
+    return () => { alive = false }
   }, [])
 
   // Auto-advance every 25 seconds

@@ -1960,6 +1960,16 @@ def _with_server_zone(stamp):
     return parsed.isoformat()
 
 
+@admin_bp.route("/admin/api-usage", methods=["GET"])
+@require_admin
+def api_usage_summary():
+    """Open API calls (Staples, match history, player search) over the last ``days`` (admin only)."""
+    from services import api_usage
+
+    days = min(max(1, request.args.get("days", 7, type=int)), api_usage.RETENTION_DAYS)
+    return jsonify(api_usage.summary(days))
+
+
 @admin_bp.route("/admin/data-exports", methods=["GET"])
 @require_admin
 def data_exports_summary():

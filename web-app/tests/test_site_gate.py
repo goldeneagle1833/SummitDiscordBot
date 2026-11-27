@@ -198,6 +198,8 @@ class TestExemptions:
             "api.store.storefront_stripe_webhook",
             "api.monitoring.health",
             "api.staples.get_staples",
+            "api.public_matches.get_player_matches",
+            "api.public_matches.search_public_players",
         }
 
     def test_staples_is_open_without_key_or_token(self, gated, monkeypatch):

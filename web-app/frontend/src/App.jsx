@@ -71,6 +71,7 @@ const SummitFormat = lazyPage(() => import('@/pages/SummitFormat'))
 const Help = lazyPage(() => import('@/pages/Help'))
 const Privacy = lazyPage(() => import('@/pages/Privacy'))
 const Terms = lazyPage(() => import('@/pages/Terms'))
+const DataTerms = lazyPage(() => import('@/pages/DataTerms'))
 const DeckHelp = lazyPage(() => import('@/pages/DeckHelp'))
 const Community = lazyPage(() => import('@/pages/Community'))
 const Articles = lazyPage(() => import('@/pages/Articles'))
@@ -296,6 +297,7 @@ const router = createBrowserRouter([
       { path: '/help', element: <Help /> },
       { path: '/privacy', element: <Privacy /> },
       { path: '/terms', element: <Terms /> },
+      { path: '/data-terms', element: <DataTerms /> },
       { path: '/deck-help', element: <DeckHelp /> },
       { path: '/community', element: <Community /> },
       // Player articles (community blog)

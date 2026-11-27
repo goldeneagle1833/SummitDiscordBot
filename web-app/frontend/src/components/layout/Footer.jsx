@@ -25,6 +25,7 @@ export default function Footer() {
             <div className="flex flex-col gap-1">
               <Link to="/privacy" className="text-text-muted hover:text-text transition-colors">Privacy Policy</Link>
               <Link to="/terms" className="text-text-muted hover:text-text transition-colors">Terms of Service</Link>
+              <Link to="/data-terms" className="text-text-muted hover:text-text transition-colors">API &amp; Data Terms</Link>
             </div>
           </div>
         </div>

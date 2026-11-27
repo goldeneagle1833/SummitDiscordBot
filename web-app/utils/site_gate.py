@@ -29,7 +29,7 @@ always come from an API key.
 
 Exempt endpoints (``EXEMPT_ENDPOINTS``) are the few that must be reachable with
 neither: the token endpoint itself, the Stripe webhook (verified by signature)
-the uptime health check and the open Staples card API.
+the uptime health check, the open Staples card API and the open match history API.
 """
 
 from __future__ import annotations
@@ -58,6 +58,9 @@ EXEMPT_ENDPOINTS = frozenset(
         "api.store.storefront_stripe_webhook",  # signed with the storefront's secret
         "api.monitoring.health",  # uptime monitors; pass/fail only, no data
         "api.staples.get_staples",  # open to everybody (Bruce); aggregate card stats, throttled
+        # open to everybody (Bruce): ranked match history with avatar + elements only, throttled
+        "api.public_matches.get_player_matches",
+        "api.public_matches.search_public_players",
     }
 )
 

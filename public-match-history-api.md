@@ -7,8 +7,9 @@ deck links are never included.
 Base URL: `https://sorcererssummit.com`
 
 Terms of use: https://sorcererssummit.com/data-terms. By calling the API you agree to
-them (short version: credit Sorcerers Summit, non-commercial unless we say yes, respect
-players, cache what you fetch).
+them (short version: credit Sorcerers Summit, non-commercial unless we say yes, build
+something new rather than copying Summit's own pages such as the match history tab,
+respect players, cache what you fetch).
 
 ## Access
 

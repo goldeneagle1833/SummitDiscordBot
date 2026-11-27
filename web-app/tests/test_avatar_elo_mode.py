@@ -312,7 +312,7 @@ def test_event_leaderboard_counts_the_seasons_ranked_games(client, avatar_db):
     assert data["total_games"] == 2
 
 
-def test_avatar_leaderboards_rank_by_elo_with_a_game_minimum(client, avatar_db):
+def test_avatar_leaderboards_rank_by_avatar_score_by_default(client, avatar_db):
     elo_db, match_db = avatar_db
     _seed_entries(elo_db, [
         ("1", "Imposter", "Alice", 1600, 9),
@@ -328,8 +328,8 @@ def test_avatar_leaderboards_rank_by_elo_with_a_game_minimum(client, avatar_db):
         _seed_avatar_match(match_db, "9", "Witch", "3", "Imposter", w_after=1400, l_after=1540)
         _seed_avatar_match(match_db, "9", "Witch", "4", "Imposter", w_after=1400, l_after=1520)
 
-    # Default: Elo order, but Alice (9 games) drops below Cara past the 10-game minimum
-    data = client.get("/api/leaderboard/avatars?avatar=imposter").get_json()
+    # rank_by=elo: Elo order, but Alice (9 games) drops below Cara past the 10-game minimum
+    data = client.get("/api/leaderboard/avatars?avatar=imposter&rank_by=elo").get_json()
     assert data["rank_by"] == "elo" and data["min_games"] == 10
     entries = data["avatars"][0]["entries"]
     assert [(e["rank"], e["overall_rank"], e["user_id"], e["games"]) for e in entries] == [
@@ -337,13 +337,16 @@ def test_avatar_leaderboards_rank_by_elo_with_a_game_minimum(client, avatar_db):
     ]
 
     # min_games=0 is the plain Elo ladder (the site's Top Players page uses it)
-    plain = client.get("/api/leaderboard/avatars?avatar=imposter&min_games=0").get_json()
+    plain = client.get("/api/leaderboard/avatars?avatar=imposter&rank_by=elo&min_games=0").get_json()
     assert [(e["rank"], e["user_id"]) for e in plain["avatars"][0]["entries"]] == [
         (1, "1"), (2, "3"), (3, "4"),
     ]
 
-    score = client.get("/api/leaderboard/avatars?avatar=imposter&rank_by=avatar_score").get_json()
-    assert score["rank_by"] == "avatar_score"
+    # Default (what PSO reads): Avatar Score order, like the Top Players by Avatar page
+    score = client.get("/api/leaderboard/avatars?avatar=imposter").get_json()
+    assert score["rank_by"] == "avatar_score" and score["min_games"] == 10
+    explicit = client.get("/api/leaderboard/avatars?avatar=imposter&rank_by=avatar_score").get_json()
+    assert explicit["avatars"] == score["avatars"]
     scored = score["avatars"][0]["entries"]
     assert [e["user_id"] for e in scored] == ["3", "1", "4"]
     # Alice's 9-0 outscores Cara's 10-2, but only Cara has 10 games

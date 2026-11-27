@@ -8,9 +8,13 @@ import urllib.parse
 import requests
 
 from services.explorer import (
+    PLAYER_SNAPSHOT_PROCEDURE,
     ExplorerService,
+    api_registration_standings,
     check_event_payload,
     event_fetch_error_message,
+    event_from_reply,
+    is_active_player,
     request_event_get,
     trpc_error_detail,
 )
@@ -475,11 +479,8 @@ class CuriosaService:
         top_cut_size = ExplorerService.top_cut_size(event, default=8)
         players_data = event.get("players", [])
 
-        # Filter to players that are not dropped (or have seats = played games)
-        active_players = [
-            p for p in players_data
-            if p.get("status") != "Dropped" or p.get("seats")
-        ]
+        # Filter to players that are not dropped (or played games)
+        active_players = [p for p in players_data if is_active_player(p)]
 
         if not active_players:
             return {
@@ -497,11 +498,18 @@ class CuriosaService:
         # The embedded payload is keyed by registration id; the rendered list
         # is keyed by display name and is only a fallback, because names are
         # not unique (two "Luca M"s finished 2nd and 10th at GC Italy).
-        if on_progress:
-            on_progress("Fetching standings from event page...")
-        page_html = self._fetch_page_html(event_url)
-        registration_standings = ExplorerService._parse_registration_standings(page_html)
-        html_standings = ExplorerService._parse_page_standings(page_html)
+        # Since Nov 2026 play.getEvent sends the standings itself; the page
+        # scrape stays as the fallback.
+        registration_standings = api_registration_standings(event)
+        html_standings = {}
+        if registration_standings:
+            logger.info("Got %d standings from play.getEvent", len(registration_standings))
+        else:
+            if on_progress:
+                on_progress("Fetching standings from event page...")
+            page_html = self._fetch_page_html(event_url)
+            registration_standings = ExplorerService._parse_registration_standings(page_html)
+            html_standings = ExplorerService._parse_page_standings(page_html)
         if registration_standings:
             logger.info("Parsed %d standings from event payload", len(registration_standings))
         elif html_standings:
@@ -541,7 +549,7 @@ class CuriosaService:
         # Step 3: Batch-fetch playerSnapshot for all players
         player_deck_ids = []
         deck_by_registration = {}
-        errors = []
+        errors = [event["pairings_error"]] if event.get("pairings_error") else []
         BATCH_SIZE = 10
 
         if on_progress and with_decks:
@@ -718,21 +726,21 @@ class CuriosaService:
         if resp.status_code != 200:
             detail = trpc_error_detail(resp)
             logger.warning(
-                "event.get for %s returned %s: %s", event_id, resp.status_code, detail
+                "play.getEvent for %s returned %s: %s", event_id, resp.status_code, detail
             )
             raise ValueError(
                 event_fetch_error_message(resp.status_code, event_id, detail)
             )
         try:
-            event = resp.json()[0]["result"]["data"]["json"]["event"]
+            data = resp.json()[0]["result"]["data"]["json"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ValueError(f"Unexpected event response format: {exc}") from exc
-        return check_event_payload(event, event_id)
+        return event_from_reply(data, event_id)
 
     def _fetch_player_snapshots_batch(
         self, event_id: str, players: list[dict]
     ) -> list[dict | None]:
-        """Batch-fetch event.playerSnapshot for a list of players.
+        """Batch-fetch play.getPlayerSnapshot for a list of players.
 
         Returns a list of snapshot dicts (or None for failures), one per player.
         """
@@ -749,7 +757,7 @@ class CuriosaService:
                 }
             }
 
-        path = ",".join(["event.playerSnapshot"] * len(players))
+        path = ",".join([PLAYER_SNAPSHOT_PROCEDURE] * len(players))
         try:
             resp = requests.get(
                 f"{_TRPC_BASE_ROOT}/{path}",
@@ -760,7 +768,8 @@ class CuriosaService:
             logger.warning("Batch snapshot fetch failed: %s", exc)
             return [None] * len(players)
 
-        if resp.status_code != 200:
+        # 207 = mixed batch (e.g. one private decklist); read each item.
+        if resp.status_code not in (200, 207):
             logger.warning(
                 "Batch snapshot fetch returned %s: %s",
                 resp.status_code, trpc_error_detail(resp),

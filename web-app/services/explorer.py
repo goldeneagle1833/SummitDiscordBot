@@ -129,7 +129,12 @@ def trpc_error_detail(resp) -> str:
 
 def event_fetch_error_message(status_code: int, event_id: str, detail: str) -> str:
     """Plain-English error for a failed event lookup, with the site's reason."""
-    if status_code == 404 or "NOT_FOUND" in detail:
+    if "No procedure found" in detail:
+        lead = (
+            "sorcerytcg.com changed how events are loaded, so the importer needs an update "
+            f"(event {event_id} itself is fine)."
+        )
+    elif status_code == 404 or "NOT_FOUND" in detail:
         lead = f"sorcerytcg.com couldn't find event {event_id}. Check the link is right and the event is public."
     elif status_code in (401, 403) or "UNAUTHORIZED" in detail or "FORBIDDEN" in detail:
         lead = f"sorcerytcg.com won't share event {event_id} without a login (it may be private)."
@@ -143,23 +148,127 @@ def event_fetch_error_message(status_code: int, event_id: str, detail: str) -> s
     return f"{lead} Their reply: {detail}" if detail else lead
 
 
-def request_event_get(event_id: str, timeout: int = 15):
-    """GET event.get for one event in compact mode.
+# sorcerytcg.com moved its event calls under "play." on 2026-11-26
+# (event.get -> play.getEvent, event.playerSnapshot -> play.getPlayerSnapshot,
+# event.search -> play.searchEvents, store.get -> play.getStore).
+EVENT_GET_PROCEDURE = "play.getEvent"
+EVENT_ROUND_PROCEDURE = "play.getEventRound"
+PLAYER_SNAPSHOT_PROCEDURE = "play.getPlayerSnapshot"
+EVENT_SEARCH_PROCEDURE = "play.searchEvents"
+STORE_GET_PROCEDURE = "play.getStore"
+ROUND_BATCH_SIZE = 4
 
-    Since Nov 2026 sorcerytcg.com (procedure play.getEvent) refuses every
-    request without ``compact: true`` (400 "compact: Invalid input: expected
-    true"). Compact replies leave out each player's ``seats``; the round
-    results live under phases[].rounds[].pairings instead, and
-    ``attach_seats_from_phases`` puts them back where the importers look.
+
+def request_event_get(event_id: str, timeout: int = 15):
+    """GET play.getEvent for one event in compact mode.
+
+    The reply is {"event": {...}, "standings": [...], "historyRevision": n}.
+    Since Nov 2026 the players carry no ``seats`` and the rounds no
+    ``pairings``; ``event_from_reply`` fetches the rounds and puts the seats
+    back where the importers look. ``compact: true`` is still sent because the
+    old procedure refused big events without it and the new one accepts it.
     """
     return requests.get(
-        f"{SORCERY_TRPC_BASE}/event.get",
+        f"{SORCERY_TRPC_BASE}/{EVENT_GET_PROCEDURE}",
         params={
             "batch": "1",
             "input": json.dumps({"0": {"json": {"id": event_id, "compact": True}}}),
         },
         timeout=timeout,
     )
+
+
+def has_played(player: dict) -> bool:
+    """True when a registration played at least one game (seats or record)."""
+    if player.get("seats"):
+        return True
+    record = player.get("record") or {}
+    return any(record.get(k) for k in ("wins", "losses", "draws"))
+
+
+def is_active_player(player: dict) -> bool:
+    """Counted in the field: still registered, or dropped after playing."""
+    return player.get("status") != "Dropped" or has_played(player)
+
+
+def api_registration_standings(event: dict) -> dict[str, int]:
+    """{registration id: final position} from play.getEvent's standings list."""
+    standings = {}
+    for row in event.get("standings") or []:
+        if isinstance(row, dict) and row.get("id") and isinstance(row.get("position"), int):
+            standings[row["id"]] = row["position"]
+    return standings
+
+
+def fetch_round_pairings(event_id: str, event: dict, revision: int = 0, timeout: int = 30) -> str:
+    """Fill phases[].rounds[].pairings from play.getEventRound.
+
+    Returns "" on success, else a short note of what failed, so imports can
+    still save decks and standings when the round lookups break.
+    """
+    rounds = [
+        rnd for phase in event.get("phases") or [] for rnd in (phase.get("rounds") or [])
+        if isinstance(rnd, dict) and rnd.get("id") and not rnd.get("pairings")
+    ]
+    failed = 0
+    for i in range(0, len(rounds), ROUND_BATCH_SIZE):
+        batch = rounds[i:i + ROUND_BATCH_SIZE]
+        inputs = {
+            str(j): {"json": {"id": event_id, "roundId": rnd["id"], "revision": revision or 0}}
+            for j, rnd in enumerate(batch)
+        }
+        try:
+            resp = requests.get(
+                f"{SORCERY_TRPC_BASE}/" + ",".join([EVENT_ROUND_PROCEDURE] * len(batch)),
+                params={"batch": "1", "input": json.dumps(inputs)},
+                timeout=timeout,
+            )
+            body = resp.json() if resp.status_code in (200, 207) else None
+        except (requests.exceptions.RequestException, ValueError) as exc:
+            logger.warning("Round fetch for %s failed: %s", event_id, exc)
+            body = None
+        if not isinstance(body, list):
+            if body is None:
+                logger.warning("Round fetch for %s returned %s", event_id, getattr(resp, "status_code", "?"))
+            failed += len(batch)
+            continue
+        for j, rnd in enumerate(batch):
+            data = (((body[j] if j < len(body) else {}) or {}).get("result") or {}).get("data") or {}
+            pairings = (data.get("json") or {}).get("pairings") if isinstance(data, dict) else None
+            if isinstance(pairings, list):
+                rnd["pairings"] = pairings
+            else:
+                failed += 1
+    if failed:
+        return f"Couldn't load results for {failed} of {len(rounds)} rounds from sorcerytcg.com"
+    return ""
+
+
+def event_from_reply(data, event_id: str, with_pairings: bool = True) -> dict:
+    """Turn a play.getEvent reply into the event dict the importers read.
+
+    Copies the standings onto the event (``event["standings"]`` and each
+    player's ``record``), fetches round pairings when asked, then rebuilds
+    players[].seats. Raises ValueError when the reply has no usable event.
+    """
+    if not isinstance(data, dict) or not isinstance(data.get("event"), dict):
+        raise ValueError(f"sorcerytcg.com sent no event data for {event_id}.")
+    event = data["event"]
+    standings = data.get("standings")
+    if isinstance(standings, list) and standings:
+        event["standings"] = standings
+        by_registration = {s.get("id"): s for s in standings if isinstance(s, dict)}
+        for player in event.get("players") or []:
+            row = by_registration.get(player.get("id")) if isinstance(player, dict) else None
+            if row:
+                player["record"] = {
+                    k: row.get(k) for k in ("position", "score", "wins", "losses", "draws")
+                }
+    if with_pairings:
+        note = fetch_round_pairings(event_id, event, data.get("historyRevision") or 0)
+        if note:
+            event["pairings_error"] = note
+    return check_event_payload(event, event_id)
 
 
 def attach_seats_from_phases(event: dict) -> dict:
@@ -214,7 +323,7 @@ def attach_seats_from_phases(event: dict) -> dict:
 
 
 def check_event_payload(event, event_id: str) -> dict:
-    """Make sure an event.get payload is usable; say what we got if not."""
+    """Make sure a play.getEvent payload is usable; say what we got if not."""
     if not isinstance(event, dict):
         raise ValueError(f"sorcerytcg.com sent no event data for {event_id}.")
     if not isinstance(event.get("players"), list):
@@ -254,10 +363,14 @@ class ExplorerService:
                 play_format = phase.get("format")
                 break
 
-        # Fetch the page HTML to get the authoritative standings order from Play Network
-        page_html = self._fetch_page_html(url)
-        html_standings = self._parse_page_standings(page_html)
-        registration_standings = self._parse_registration_standings(page_html)
+        # Standings order: play.getEvent's own standings list (keyed by
+        # registration id), else the Play Network page as before.
+        registration_standings = api_registration_standings(event)
+        html_standings = {}
+        if not registration_standings:
+            page_html = self._fetch_page_html(url)
+            html_standings = self._parse_page_standings(page_html)
+            registration_standings = self._parse_registration_standings(page_html)
 
         results = self._build_results(players_data, html_standings, registration_standings)
         unmatched = [r["display_name"] for r in results if not r.pop("_official_rank")]
@@ -280,7 +393,7 @@ class ExplorerService:
             "event_id": event_id,
             "event_name": event.get("title", ""),
             "event_date": event_date or None,
-            "total_players": len([p for p in players_data if p.get("status") != "Dropped" or p.get("seats")]),
+            "total_players": len([p for p in players_data if is_active_player(p)]),
             "venue_name": venue_name,
             "play_format": play_format,
             "top_cut_size": self.top_cut_size(event),
@@ -424,7 +537,7 @@ class ExplorerService:
         if resp.status_code != 200:
             detail = trpc_error_detail(resp)
             logger.warning(
-                "event.get for %s returned %s: %s", event_id, resp.status_code, detail
+                "play.getEvent for %s returned %s: %s", event_id, resp.status_code, detail
             )
             raise ExplorerFetchError(
                 event_fetch_error_message(resp.status_code, event_id, detail)
@@ -432,13 +545,13 @@ class ExplorerService:
 
         try:
             body = resp.json()
-            event = body[0]["result"]["data"]["json"]["event"]
+            data = body[0]["result"]["data"]["json"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ExplorerFetchError(
                 f"Unexpected response format from sorcerytcg.com: {exc}"
             ) from exc
         try:
-            return check_event_payload(event, event_id)
+            return event_from_reply(data, event_id)
         except ValueError as exc:
             raise ExplorerFetchError(str(exc)) from exc
 
@@ -474,10 +587,12 @@ class ExplorerService:
             seats = player.get("seats", [])
 
             # Skip dropped players with no games played
-            if player.get("status") == "Dropped" and not seats:
+            if not is_active_player(player):
                 continue
 
             wins = sum(1 for s in seats if s.get("result", {}).get("result") == "Win")
+            if not seats:
+                wins = (player.get("record") or {}).get("wins") or 0
             swiss_score = sum(
                 s.get("result", {}).get("score", 0) for s in seats
                 if s.get("round", {}).get("phase", {}).get("structure") == "Swiss"
@@ -536,7 +651,7 @@ class ExplorerService:
         # Fetch all past events (paginated)
         all_events = self._fetch_store_events(store_id)
 
-        # Fetch player counts for each event via batched event.get calls
+        # Fetch player counts for each event via batched play.getEvent calls
         events_with_counts = self._fetch_event_player_counts(all_events)
 
         return {
@@ -555,7 +670,7 @@ class ExplorerService:
         }
         try:
             resp = requests.get(
-                f"{SORCERY_TRPC_BASE}/store.get",
+                f"{SORCERY_TRPC_BASE}/{STORE_GET_PROCEDURE}",
                 params=params,
                 timeout=15,
             )
@@ -583,7 +698,9 @@ class ExplorerService:
                     "json": {
                         "scope": "store",
                         "feed": "Past",
-                        "sort": "DateDesc",
+                        # play.searchEvents accepts Date | Proximity | Zipcode
+                        # (Past is newest first); results are re-sorted below.
+                        "sort": "Date",
                         "query": "",
                         "target": store_id,
                         "tiers": [],
@@ -596,7 +713,7 @@ class ExplorerService:
 
             try:
                 resp = requests.get(
-                    f"{SORCERY_TRPC_BASE}/event.search",
+                    f"{SORCERY_TRPC_BASE}/{EVENT_SEARCH_PROCEDURE}",
                     params={"batch": "1", "input": json.dumps(input_data)},
                     timeout=15,
                 )
@@ -623,7 +740,7 @@ class ExplorerService:
         return all_events
 
     def _fetch_event_player_counts(self, events: list[dict]) -> list[dict]:
-        """Fetch player counts for events using batched event.get calls.
+        """Fetch player counts for events using batched play.getEvent calls.
 
         Returns list sorted by date ascending with attendance data.
         """
@@ -639,7 +756,7 @@ class ExplorerService:
             for j, eid in enumerate(event_ids):
                 input_data[str(j)] = {"json": {"id": eid, "compact": True}}
 
-            path = ",".join(["event.get"] * len(event_ids))
+            path = ",".join([EVENT_GET_PROCEDURE] * len(event_ids))
             try:
                 resp = requests.get(
                     f"{SORCERY_TRPC_BASE}/{path}",
@@ -668,11 +785,16 @@ class ExplorerService:
                             # (they need compact mode); fetch them one by one.
                             results.append(self._single_event_summary(ev))
                             continue
-                        detail = attach_seats_from_phases(
-                            body[j].get("result", {}).get("data", {}).get("json", {}).get("event", {}) or {}
-                        )
+                        try:
+                            detail = event_from_reply(
+                                body[j].get("result", {}).get("data", {}).get("json", {}),
+                                ev["id"], with_pairings=False,
+                            )
+                        except ValueError:
+                            results.append(self._event_summary(ev, 0))
+                            continue
                         players = detail.get("players", [])
-                        active = [p for p in players if p.get("status") != "Dropped" or p.get("seats")]
+                        active = [p for p in players if is_active_player(p)]
                         results.append(self._event_summary(ev, len(active)))
                     else:
                         results.append(self._event_summary(ev, 0))
@@ -686,12 +808,14 @@ class ExplorerService:
         return results
 
     def _single_event_summary(self, ev: dict) -> dict:
-        """Player count for one event via event.get (compact if needed)."""
+        """Player count for one event via play.getEvent."""
         try:
             resp = request_event_get(ev["id"], timeout=30)
-            event = attach_seats_from_phases(resp.json()[0]["result"]["data"]["json"]["event"])
+            event = event_from_reply(
+                resp.json()[0]["result"]["data"]["json"], ev["id"], with_pairings=False
+            )
             players = event.get("players") or []
-            active = [p for p in players if p.get("status") != "Dropped" or p.get("seats")]
+            active = [p for p in players if is_active_player(p)]
             return self._event_summary(ev, len(active))
         except Exception as exc:  # best effort, same as the batch path
             logger.warning("Single event fetch for %s failed: %s", ev.get("id"), exc)

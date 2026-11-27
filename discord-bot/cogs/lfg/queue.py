@@ -1108,10 +1108,13 @@ async def _process_queue_join(
         if queue_has_voice_choice(queue_type):
             deck_msg += f"\n**Voice:** {voice_choice_label(voice, voice_flexible)}"
             if voice_flexible and voice == VOICE:
-                deck_msg += (
-                    f"\n-# Waiting {VOICE_HOLD_SECONDS} seconds for a voice player first, "
-                    "then a no-voice player can be paired with you."
-                )
+                if VOICE_HOLD_SECONDS > 0:
+                    deck_msg += (
+                        f"\n-# Waiting {VOICE_HOLD_SECONDS} seconds for a voice player first, "
+                        "then a no-voice player can be paired with you."
+                    )
+                else:
+                    deck_msg += "\n-# A voice player is picked first whenever one is waiting."
         if alert_avatar:
             deck_msg += (
                 "\n**Avatar channel alert:** on" if deck_url

@@ -1,4 +1,8 @@
-"""First voice choice plus "also OK with the other": voice holds and voice-first pairing."""
+"""First voice choice plus "also OK with the other": no voice wait, voice-first pairing.
+
+The voice hold is off (VOICE_HOLD_SECONDS = 0); tests marked with the
+``hold_on`` fixture turn it back on to check the hold still works if wanted.
+"""
 
 import datetime
 import sys
@@ -37,6 +41,16 @@ def entry(queue_type, seconds_ago, voice=VOICE, flexible=False, origin="discord"
     if flexible:
         queue_entry["voice_flexible"] = True
     return {"queues": {queue_type: queue_entry}}
+
+
+HOLD = 10  # hold length used when a test turns the voice hold back on
+
+
+@pytest.fixture
+def hold_on(monkeypatch):
+    import cogs.lfg.voice as voice_module
+
+    monkeypatch.setattr(voice_module, "VOICE_HOLD_SECONDS", HOLD)
 
 
 @pytest.fixture
@@ -87,10 +101,10 @@ class TestFlexibleRules:
         # Someone who only plays without voice makes it a no-voice game
         assert not resolve_match_voice(VOICE, NO_VOICE, True, False)
 
-    def test_only_voice_first_flexible_players_hold(self):
+    def test_only_voice_first_flexible_players_hold(self, hold_on):
         now = datetime.datetime.now()
         just_now = now - datetime.timedelta(seconds=5)
-        long_ago = now - datetime.timedelta(seconds=VOICE_HOLD_SECONDS + 1)
+        long_ago = now - datetime.timedelta(seconds=HOLD + 1)
         assert holding_for_voice(VOICE, True, just_now, now)
         assert not holding_for_voice(VOICE, True, long_ago, now)
         assert not holding_for_voice(VOICE, False, just_now, now)
@@ -113,7 +127,7 @@ class TestFlexibleRules:
 
 
 class TestFlexibleMatching:
-    def test_voice_first_joiner_holds_instead_of_taking_a_no_voice_game(self, lfg_cog, ctx):
+    def test_voice_first_joiner_holds_instead_of_taking_a_no_voice_game(self, lfg_cog, ctx, hold_on):
         lfg_queue[111] = entry("ranked", 60, NO_VOICE)
         assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=VOICE, voice_flexible=True) is None
         # Once the hold is over (the sweep re-joining them) they take it
@@ -126,10 +140,10 @@ class TestFlexibleMatching:
         lfg_queue[222] = entry("ranked", 10, VOICE)
         assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=VOICE, voice_flexible=True) == 222
 
-    def test_no_voice_joiner_waits_out_a_holding_voice_player(self, lfg_cog, ctx):
+    def test_no_voice_joiner_waits_out_a_holding_voice_player(self, lfg_cog, ctx, hold_on):
         lfg_queue[111] = entry("ranked", 5, VOICE, flexible=True)
         assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=NO_VOICE) is None
-        lfg_queue[111] = entry("ranked", VOICE_HOLD_SECONDS + 5, VOICE, flexible=True)
+        lfg_queue[111] = entry("ranked", HOLD + 5, VOICE, flexible=True)
         assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=NO_VOICE) == 111
 
     def test_voice_joiner_pairs_with_a_holding_voice_player(self, lfg_cog, ctx):
@@ -155,9 +169,49 @@ class TestFlexibleMatching:
         assert waiting_voice_players("ranked", 333) == [222]
 
 
+class TestNoVoiceWait:
+    def test_hold_is_off(self):
+        now = datetime.datetime.now()
+        assert VOICE_HOLD_SECONDS == 0
+        assert not holding_for_voice(VOICE, True, now, now)
+
+    def test_voice_first_joiner_takes_a_no_voice_game_at_once(self, lfg_cog, ctx):
+        lfg_queue[111] = entry("ranked", 60, NO_VOICE)
+        assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=VOICE, voice_flexible=True) == 111
+
+    def test_voice_partner_still_comes_first(self, lfg_cog, ctx):
+        # The no-voice player has waited longer, but the voice player wins
+        lfg_queue[111] = entry("ranked", 120, NO_VOICE)
+        lfg_queue[222] = entry("ranked", 5, VOICE)
+        lfg_queue[333] = entry("ranked", 60, VOICE, flexible=True)
+        assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=VOICE, voice_flexible=True) == 333
+
+    def test_no_voice_joiner_pairs_with_a_just_joined_voice_player(self, lfg_cog, ctx):
+        lfg_queue[111] = entry("ranked", 1, VOICE, flexible=True)
+        assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=NO_VOICE) == 111
+
+    def test_no_voice_joiner_leaves_voice_players_for_voice_games(self, lfg_cog, ctx):
+        # The voice-OK player waited longer, but a no-voice-only partner is taken
+        # so the voice-OK player stays free for a voice game
+        lfg_queue[111] = entry("ranked", 120, VOICE, flexible=True)
+        lfg_queue[222] = entry("ranked", 10, NO_VOICE)
+        assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=NO_VOICE) == 222
+
+    def test_no_voice_joiner_still_fifo_among_no_voice_only(self, lfg_cog, ctx):
+        lfg_queue[111] = entry("ranked", 120, NO_VOICE)
+        lfg_queue[222] = entry("ranked", 10, NO_VOICE)
+        assert lfg_cog.check_if_someone_is_lfg(ctx, "ranked", voice=NO_VOICE) == 111
+
+    def test_sweep_does_nothing_without_a_hold(self, lfg_cog):
+        lfg_queue[111] = entry("ranked", 60, VOICE, flexible=True)
+        lfg_queue[333] = entry("ranked", 90, NO_VOICE)
+        assert held_players_ready(lfg_cog) == []
+        assert 111 in lfg_queue and 333 in lfg_queue
+
+
 class TestVoiceHoldSweep:
-    def test_finds_only_players_past_the_hold_with_a_partner(self, lfg_cog):
-        lfg_queue[111] = entry("ranked", VOICE_HOLD_SECONDS + 5, VOICE, flexible=True)
+    def test_finds_only_players_past_the_hold_with_a_partner(self, lfg_cog, hold_on):
+        lfg_queue[111] = entry("ranked", HOLD + 5, VOICE, flexible=True)
         lfg_queue[222] = entry("ranked", 5, VOICE, flexible=True)
         lfg_queue[333] = entry("ranked", 90, NO_VOICE)
         ready = held_players_ready(lfg_cog)
@@ -167,13 +221,13 @@ class TestVoiceHoldSweep:
         assert 333 in lfg_queue and 222 in lfg_queue
 
     def test_nothing_happens_without_a_no_voice_partner(self, lfg_cog):
-        lfg_queue[111] = entry("ranked", VOICE_HOLD_SECONDS + 5, VOICE, flexible=True)
+        lfg_queue[111] = entry("ranked", HOLD + 5, VOICE, flexible=True)
         assert held_players_ready(lfg_cog) == []
         assert 111 in lfg_queue
 
     @pytest.mark.asyncio
-    async def test_rejoins_with_the_hold_over(self, lfg_cog):
-        lfg_queue[111] = entry("ranked", VOICE_HOLD_SECONDS + 5, VOICE, flexible=True, origin="sorcery_online")
+    async def test_rejoins_with_the_hold_over(self, lfg_cog, hold_on):
+        lfg_queue[111] = entry("ranked", HOLD + 5, VOICE, flexible=True, origin="sorcery_online")
         lfg_queue[333] = entry("ranked", 90, NO_VOICE)
         bot = MagicMock()
         bot.get_cog.return_value = lfg_cog
@@ -254,7 +308,7 @@ class TestEitherVoiceAnswer:
         assert not is_legacy_either(VOICE) and not is_legacy_either(NO_VOICE)
         assert not is_legacy_either(None)
 
-    def test_both_boxes_pairs_with_a_waiting_no_voice_player_after_the_hold(self, lfg_cog):
+    def test_both_boxes_pairs_with_a_waiting_no_voice_player_after_the_hold(self, lfg_cog, hold_on):
         # The no-voice player is already waiting when the either player joins
         lfg_queue[333] = entry("ranked", 60, NO_VOICE)
         voice, flexible = voice_choice_from_checkboxes([VOICE, NO_VOICE])
@@ -263,14 +317,14 @@ class TestEitherVoiceAnswer:
                 patch("cogs.lfg.cog.is_pairing_banned", return_value=False):
             # During the voice hold the either player waits for a voice partner
             assert lfg_cog.check_if_someone_is_lfg(joiner, "ranked", voice, flexible) is None
-            lfg_queue[111] = entry("ranked", VOICE_HOLD_SECONDS + 1, voice, flexible=flexible)
+            lfg_queue[111] = entry("ranked", HOLD + 1, voice, flexible=flexible)
             # Once the hold is over the sweep pairs them with the no-voice player
             ready = held_players_ready(lfg_cog)
         assert [(user_id, queue_type) for user_id, queue_type, _ in ready] == [(111, "ranked")]
 
     def test_no_voice_player_joining_after_the_hold_pairs_straight_away(self, lfg_cog):
         voice, flexible = voice_choice_from_checkboxes([VOICE, NO_VOICE])
-        lfg_queue[111] = entry("ranked", VOICE_HOLD_SECONDS + 1, voice, flexible=flexible)
+        lfg_queue[111] = entry("ranked", HOLD + 1, voice, flexible=flexible)
         joiner = Mock(author=Mock(id=333))
         with patch("cogs.lfg.cog.is_blocked_pair", return_value=False), \
                 patch("cogs.lfg.cog.is_pairing_banned", return_value=False):

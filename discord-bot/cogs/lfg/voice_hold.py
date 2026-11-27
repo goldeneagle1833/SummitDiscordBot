@@ -12,6 +12,7 @@ import datetime
 import logging
 
 import config
+from cogs.lfg import voice as voice_settings
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users
 from cogs.lfg.voice import (
     VOICE,
@@ -67,6 +68,9 @@ def held_players_ready(lfg_cog, now=None):
     Takes each such player out of that queue; the caller re-joins them. Call
     with ``lfg_queue_lock`` held.
     """
+    if voice_settings.VOICE_HOLD_SECONDS <= 0:
+        # No voice hold: voice-first players pair as they join, so nobody is held.
+        return []
     now = now or datetime.datetime.now()
     ready = []
     for user_id, user_data in list(lfg_queue.items()):

@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 
@@ -189,7 +190,11 @@ def active_banners():
         fill_banner_art(banners)
     except Exception:
         pass  # art is optional; the slide keeps its plain background
-    return jsonify({"success": True, "banners": banners})
+    try:
+        layout = AnalyticsRepository().get_promo_layout()
+    except Exception:
+        layout = {"order": [], "hidden": []}  # carousel falls back to its default order
+    return jsonify({"success": True, "banners": banners, "layout": layout})
 
 
 @analytics_bp.route("/analytics/banners", methods=["GET"])
@@ -277,3 +282,63 @@ def toggle_banner(banner_id):
     )
 
     return jsonify({"success": True, "active": new_state})
+
+
+# --- Home promo carousel order + on/off (Admin > Home Promos) ---
+
+_SLOT_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+
+
+@analytics_bp.route("/analytics/promo-layout", methods=["GET"])
+@require_admin
+def get_promo_layout():
+    """Saved carousel order plus every unexpired banner, on or off."""
+    repo = AnalyticsRepository()
+    banners = repo.get_unexpired_banners()
+    try:
+        from services.meta_report import fill_banner_art
+        fill_banner_art(banners)
+    except Exception:
+        pass
+    return jsonify({"success": True, "layout": repo.get_promo_layout(), "banners": banners})
+
+
+@analytics_bp.route("/analytics/promo-layout", methods=["POST"])
+@require_admin
+def save_promo_layout():
+    """Save the carousel order and which slides are off.
+
+    Body: {"order": [slot, ...], "off": [slot, ...]}. Banner slots
+    ("promo-<id>") are switched with the banner's own active flag so the
+    Promo Banners list stays in step; every other slot is saved as hidden.
+    """
+    data = request.get_json(silent=True) or {}
+    order = data.get("order")
+    off = data.get("off") or []
+    if not isinstance(order, list) or not isinstance(off, list):
+        return jsonify({"success": False, "error": "order and off must be lists"}), 400
+    slots = [str(s) for s in order] + [str(s) for s in off]
+    if len(slots) > 400 or any(not _SLOT_RE.match(s) for s in slots):
+        return jsonify({"success": False, "error": "Invalid slide name"}), 400
+
+    repo = AnalyticsRepository()
+    off_set = {str(s) for s in off}
+    hidden = []
+    banner_ids = set()
+    for slot in [str(s) for s in order] + sorted(off_set):
+        if slot.startswith("promo-") and slot[6:].isdigit():
+            banner_ids.add(int(slot[6:]))
+        elif slot in off_set:
+            hidden.append(slot)
+    for banner_id in banner_ids:
+        repo.set_banner_active(banner_id, f"promo-{banner_id}" not in off_set)
+    repo.save_promo_layout([str(s) for s in order], hidden)
+
+    admin_name = session.get("username", "API/localhost")
+    AuditRepository().log_action(
+        session.get("user_id", 0), admin_name, "save_promo_layout",
+        new_state={"order": [str(s) for s in order], "off": sorted(off_set)},
+        details=f"Home promos: order {', '.join(str(s) for s in order)}"
+                + (f"; off {', '.join(sorted(off_set))}" if off_set else ""),
+    )
+    return jsonify({"success": True, "layout": repo.get_promo_layout()})

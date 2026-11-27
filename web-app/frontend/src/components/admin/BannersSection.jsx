@@ -13,7 +13,7 @@ const DURATIONS = [
 
 const EMPTY_FORM = { title: '', subtitle: '', link: '', badge: 'NEW', color: 'blue', duration: 48 }
 
-export default function BannersSection() {
+export default function BannersSection({ onChange } = {}) {
   const [banners, setBanners] = useState([])
   const [form, setForm] = useState(EMPTY_FORM)
   const [images, setImages] = useState([])
@@ -22,13 +22,16 @@ export default function BannersSection() {
   const [creating, setCreating] = useState(false)
   const fileRef = useRef(null)
 
-  const loadBanners = useCallback(() => {
+  const fetchBanners = useCallback(() => {
     get('/api/analytics/banners')
       .then(d => { if (d.success) setBanners(d.banners) })
       .catch(console.error)
   }, [])
 
-  useEffect(() => { loadBanners() }, [loadBanners])
+  useEffect(() => { fetchBanners() }, [fetchBanners])
+
+  // After a create, toggle or delete, also tell the page (Home Promos reloads its list)
+  const loadBanners = () => { fetchBanners(); onChange?.() }
 
   const setField = (key, val) => setForm(f => ({ ...f, [key]: val }))
 

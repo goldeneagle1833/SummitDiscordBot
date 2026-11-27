@@ -41,7 +41,7 @@ export default function AuditLog() {
       <AdminCollapsible title="Matches with Notes" subtitle="All matches where players left a comment">
         <MatchNotesSection />
       </AdminCollapsible>
-      <AdminCollapsible title="Promo Banners" subtitle="Manage home page promotional banners">
+      <AdminCollapsible title="Promo Banners" subtitle="Manage home page promotional banners (order and on/off for every slide: Admin > Home Promos)">
         <BannersSection />
       </AdminCollapsible>
       <AdminCollapsible title="Transfer Account History" subtitle="Move all match history, ratings, and data from one account to another">

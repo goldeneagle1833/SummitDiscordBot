@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 
 export default function Terms() {
@@ -27,6 +28,11 @@ export default function Terms() {
         <p className="text-text-muted">
           Be respectful to other players. Harassment, hate speech, and abusive behavior will not be
           tolerated and may result in a ban.
+        </p>
+        <h2 className="text-lg font-semibold pt-2">Using Summit Data</h2>
+        <p className="text-text-muted">
+          Using Summit's open APIs or data taken from the site is also covered by the{' '}
+          <Link to="/data-terms" className="text-secondary hover:underline">API &amp; Data Terms of Use</Link>.
         </p>
         <h2 className="text-lg font-semibold pt-2">Disclaimer</h2>
         <p className="text-text-muted">

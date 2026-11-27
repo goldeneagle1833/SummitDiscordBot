@@ -49,6 +49,10 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # -- Staples card API (open to everybody; aggregate card stats, throttled) --
     "api.staples.get_staples",
 
+    # -- Public match history API (open; avatar + elements only, throttled) --
+    "api.public_matches.get_player_matches",
+    "api.public_matches.search_public_players",
+
     # -- Leaderboards (public read-only) --
     "api.leaderboard.get_leaderboard",
     "api.leaderboard.get_event_leaderboard",

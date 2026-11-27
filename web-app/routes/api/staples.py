@@ -76,7 +76,7 @@ def get_staples():
     except Exception as exc:
         logger.error("Could not build staples: %s", exc, exc_info=True)
         return _error("Could not build staples", 500)
-    response = jsonify({"success": True, **data})
+    response = jsonify({"success": True, **data, "terms_of_use": "https://sorcererssummit.com/data-terms"})
     response.headers["Cache-Control"] = "public, max-age=300"
     response.headers["Access-Control-Allow-Origin"] = "*"
     return response

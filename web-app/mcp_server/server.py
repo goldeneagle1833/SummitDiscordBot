@@ -70,8 +70,8 @@ SCOPE = "summit:read"
 
 ACCOUNT_INSTRUCTIONS = INSTRUCTIONS + """
 This connector is signed in as one Summit player. The my_* tools read that player's
-own data (their newest games and their private Card Stats) to coach them. Never share
-it about anyone else, and still never show ranked deck lists.
+own data (their newest games, private Card Stats and their own ranked deck lists) to
+coach them. Never share it about anyone else, and never show anyone else's ranked decks.
 """
 
 
@@ -318,7 +318,7 @@ async def my_match_review(
     gives (record, form, Avatars, matchups vs everyone in the Meta Report, going first/second,
     game length) including their newest games, plus their private Card Stats: the cards that
     lift or drag their win rate. Use this, not match_history_review, when they ask about
-    themselves. Ranked deck lists are never included and no rating is given."""
+    themselves. No rating is given; for their actual deck lists use my_decks."""
     return await _run(tools.my_match_review(site(), _user_token(), season))
 
 
@@ -331,11 +331,22 @@ async def my_card_stats(
     return await _run(tools.my_card_stats(site(), _user_token(), season))
 
 
+@mcp_account.tool(annotations=_OWN)
+async def my_decks(
+    season: Annotated[str, Field(description="'all' (default): decks from your recent ranked games. "
+                                             "'current': this season only")] = "all",
+) -> dict:
+    """The signed-in player's OWN ranked deck lists (up to 10, newest first), each with its full
+    card list and its record, including results against each opponent Avatar. Use it to give
+    card-by-card advice on decks they actually played. Only for this player; never anyone else's."""
+    return await _run(tools.my_decks(site(), _user_token(), season))
+
+
 @mcp_account.prompt(title="Coach me from my games (signed in)")
 def coach_me() -> str:
     return ("Use the Sorcerers Summit my_match_review tool and coach me: what I'm doing well, my 2 or 3 "
             "biggest leaks (matchups, elements, going second, long games, cards that drag my win rate) and "
-            "one concrete tip for each. Compare me with everyone where the numbers allow and say when a "
+            "one concrete tip for each. Use my_decks to look at the actual lists I played. Compare me with everyone where the numbers allow and say when a "
             "sample is too small. Finish with my profile link.")
 
 

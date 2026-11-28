@@ -993,3 +993,34 @@ async def my_match_review(site: SiteClient, user_token: str, season: str = "all"
             "(private on your profile unless you shared them)."]
     result["signed_in"] = True
     return result
+
+
+async def my_decks(site: SiteClient, user_token: str, season: str = "all") -> dict:
+    """The signed-in player's OWN ranked deck lists with results (Bruce, 2026-11-28).
+
+    The only tool allowed to return ranked deck lists, so it skips ``safe``:
+    the site only ever answers with the token owner's own decks, never an
+    opponent's, and this tool never mixes in anyone else's data.
+    """
+    event = _season(season)
+    data = await site.get(site.path("mcp", "me", "decks", season=event), user_token=user_token)
+    decks = []
+    for d in (data or {}).get("decks") or []:
+        if not isinstance(d, dict):
+            continue
+        decks.append({
+            "avatar": d.get("avatar"),
+            "elements": _elements(d.get("elements")),
+            "games": d.get("games"), "wins": d.get("wins"), "losses": d.get("losses"),
+            "win_rate": d.get("win_rate"),
+            "first_played": str(d.get("first_played") or "")[:10],
+            "last_played": str(d.get("last_played") or "")[:10],
+            "results_against": (d.get("against") or [])[:8],
+            "cards": d.get("cards") or {},
+        })
+    return {
+        "period": "this season" if event == "current" else "recent ranked games",
+        "decks": decks[:10],
+        "note": ("These are the signed-in player's own ranked decks, newest first, grouped by exact list. "
+                 "Only share them with this player."),
+    }

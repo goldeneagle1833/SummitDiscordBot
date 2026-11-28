@@ -258,6 +258,9 @@ def _build(player_id: str, season: str, owner: bool = False) -> dict:
             own_avatar, own_elements, opp_avatar, opp_elements = None, None, None, None
 
         on_play = _on_play(did_win, row["winner_went_first"], row["loser_went_first"], row["first_player"])
+        if owner:
+            # Kept for own_decks() only; get_match_history never returns "_" keys
+            own_deck_raw = own_json
         matches.append({
             "match_id": row["match_id"],
             "date": ts or None,
@@ -276,6 +279,7 @@ def _build(player_id: str, season: str, owner: bool = False) -> dict:
                 "avatar": opp_avatar,
                 "elements": opp_elements,
             },
+            **({"_own_deck": own_deck_raw} if owner else {}),
         })
 
     wins = sum(1 for m in matches if m["result"] == "win")
@@ -293,9 +297,7 @@ def _build(player_id: str, season: str, owner: bool = False) -> dict:
     }
 
 
-def get_match_history(player_id: str, season: str = "all", page: int = 1,
-                      per_page: int = DEFAULT_PER_PAGE, owner: bool = False) -> dict:
-    """One page of the player's ranked history. Raises PlayerNotFound."""
+def _full_history(player_id: str, season: str, owner: bool) -> dict:
     key = (player_id, season, owner)
     now = time.monotonic()
     with _cache_lock:
@@ -312,7 +314,13 @@ def get_match_history(player_id: str, season: str = "all", page: int = 1,
             _cache.move_to_end(key)
             while len(_cache) > _CACHE_MAX:
                 _cache.popitem(last=False)
+    return full
 
+
+def get_match_history(player_id: str, season: str = "all", page: int = 1,
+                      per_page: int = DEFAULT_PER_PAGE, owner: bool = False) -> dict:
+    """One page of the player's ranked history. Raises PlayerNotFound."""
+    full = _full_history(player_id, season, owner)
     total = len(full["matches"])
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(max(1, page), total_pages)
@@ -320,7 +328,8 @@ def get_match_history(player_id: str, season: str = "all", page: int = 1,
     return {
         **{k: v for k, v in full.items() if k != "matches"},
         "terms_of_use": TERMS_URL,
-        "matches": full["matches"][start:start + per_page],
+        "matches": [{k: v for k, v in m.items() if not k.startswith("_")}
+                    for m in full["matches"][start:start + per_page]],
         "pagination": {
             "page": page,
             "per_page": per_page,
@@ -329,3 +338,74 @@ def get_match_history(player_id: str, season: str = "all", page: int = 1,
             "has_next": page < total_pages,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# The player's OWN ranked deck lists (signed-in AI app only)
+# ---------------------------------------------------------------------------
+
+DECK_ZONES = ("avatar", "spellbook", "atlas", "sideboard")
+MAX_OWN_DECKS = 10
+
+
+def _deck_cards(deck: dict) -> dict:
+    zones = {}
+    for zone in DECK_ZONES:
+        cards = []
+        for card in deck.get(zone) or []:
+            if isinstance(card, dict) and card.get("name"):
+                try:
+                    qty = max(1, int(card.get("quantity") or 1))
+                except (TypeError, ValueError):
+                    qty = 1
+                cards.append({"name": str(card["name"]), "quantity": qty})
+        if cards:
+            cards.sort(key=lambda c: c["name"])
+            zones[zone] = cards
+    return zones
+
+
+def own_decks(player_id: str, season: str = "all") -> dict:
+    """The player's own ranked decks, newest first, each with its card list and results.
+
+    Bruce, 2026-11-28: a signed-in player may see their OWN ranked deck lists in
+    their AI app. Only ever called for the token's own player; no opponent decks.
+    """
+    full = _full_history(player_id, season, True)
+    decks: dict[str, dict] = {}
+    for m in full["matches"]:  # newest first
+        raw = m.get("_own_deck")
+        try:
+            deck = json.loads(raw) if raw else None
+        except (TypeError, ValueError):
+            deck = None
+        if not isinstance(deck, dict):
+            continue
+        cards = _deck_cards(deck)
+        if not cards.get("spellbook"):
+            continue
+        signature = json.dumps(cards, sort_keys=True)
+        entry = decks.get(signature)
+        if entry is None:
+            if len(decks) >= MAX_OWN_DECKS:
+                continue
+            avatar, elements = deck_info(raw)
+            entry = decks[signature] = {"avatar": avatar, "elements": elements, "cards": cards,
+                                        "wins": 0, "losses": 0, "last_played": m.get("date"),
+                                        "first_played": m.get("date"), "against": {}}
+        won = m.get("result") == "win"
+        entry["wins" if won else "losses"] += 1
+        entry["first_played"] = m.get("date")
+        opp = (m.get("opponent") or {}).get("avatar")
+        if opp:
+            rec = entry["against"].setdefault(opp, [0, 0])
+            rec[0 if won else 1] += 1
+    out = []
+    for entry in decks.values():
+        games = entry["wins"] + entry["losses"]
+        entry["games"] = games
+        entry["win_rate"] = round(entry["wins"] / games * 100, 1) if games else None
+        entry["against"] = sorted(({"avatar": a, "wins": w, "losses": l} for a, (w, l) in entry["against"].items()),
+                                  key=lambda r: -(r["wins"] + r["losses"]))
+        out.append(entry)
+    return {"player": full.get("player"), "season": season, "decks": out}

@@ -519,56 +519,6 @@ class LeaderboardService:
         leaderboard_data.sort(key=lambda x: x["elo"], reverse=True)
         return self._mark_lifetime(leaderboard_data, ("elo",))
 
-    def get_paper_leaderboard(self) -> list[dict]:
-        """Get paper ELO leaderboard from paper_standings with web match win/loss records."""
-        standings = self._elo_repo.get_paper_standings()
-        leaderboard_data = []
-        for standing in standings:
-            user_id = standing["user_id"]
-            wins = self._match_repo.get_web_wins_count(user_id)
-            losses = self._match_repo.get_web_losses_count(user_id)
-            leaderboard_data.append(
-                {
-                    "id": str(user_id),
-                    "name": self._name(user_id, standing["display_name"]),
-                    "paper_elo": standing["paper_elo"],
-                    "paper_event_elo": standing["paper_event_elo"],
-                    "wins": wins,
-                    "losses": losses,
-                }
-            )
-        return leaderboard_data
-
-    def get_paper_event_leaderboard(self) -> dict:
-        """Get paper event leaderboard with active event info."""
-        active_event = self._elo_repo.get_active_event()
-        standings = self._elo_repo.get_paper_standings()
-
-        # Get paper event participants from web match records
-        paper_participants = set()
-        if active_event:
-            event_start = active_event.get("start_date")
-            if event_start:
-                paper_participants = set(self._match_repo.get_web_season_players(event_start))
-
-        leaderboard_data = []
-        for standing in standings:
-            user_id = standing["user_id"]
-            # Only include players who have played paper matches in the event
-            if str(user_id) in paper_participants or user_id in paper_participants:
-                leaderboard_data.append(
-                    {
-                        "id": str(user_id),
-                        "name": self._name(user_id, standing["display_name"]),
-                        "event_elo": standing["paper_event_elo"],
-                    }
-                )
-
-        # Sort by event ELO descending
-        leaderboard_data.sort(key=lambda x: x["event_elo"], reverse=True)
-
-        return {"event": active_event, "leaderboard": leaderboard_data}
-
     def get_limited_leaderboard(self, view: str = "lifetime") -> list[dict]:
         """Get limited format ELO leaderboard with win/loss records.
 

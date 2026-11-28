@@ -5,7 +5,6 @@ export default function AdminControls({ playerId, playerName, onAction }) {
   const [modal, setModal] = useState(null)
   const [matchId, setMatchId] = useState('')
   const [eloValue, setEloValue] = useState('1500')
-  const [eloSource, setEloSource] = useState('both')
   const [newName, setNewName] = useState(playerName || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -44,7 +43,7 @@ export default function AdminControls({ playerId, playerName, onAction }) {
   const handleResetElo = () => {
     const elo = parseInt(eloValue)
     if (isNaN(elo) || elo < 0 || elo > 5000) { setError('Rating must be 0-5000.'); return }
-    doAction(() => resetElo(playerId, elo, eloSource))
+    doAction(() => resetElo(playerId, elo))
   }
 
   const handleRename = () => {
@@ -64,7 +63,7 @@ export default function AdminControls({ playerId, playerName, onAction }) {
           <button onClick={() => { setMatchId(''); setModal('removeMatch') }} className="px-3 py-1.5 text-xs bg-accent-red/20 text-accent-red border border-accent-red/30 rounded hover:bg-accent-red/30">
             Remove Match
           </button>
-          <button onClick={() => { setEloValue('1500'); setEloSource('both'); setModal('resetElo') }} className="px-3 py-1.5 text-xs bg-bg-raised border border-border rounded text-text-muted hover:text-text-primary">
+          <button onClick={() => { setEloValue('1500'); setModal('resetElo') }} className="px-3 py-1.5 text-xs bg-bg-raised border border-border rounded text-text-muted hover:text-text-primary">
             Set Rating
           </button>
           <button onClick={() => { setNewName(playerName || ''); setModal('rename') }} className="px-3 py-1.5 text-xs bg-bg-raised border border-border rounded text-text-muted hover:text-text-primary">
@@ -104,16 +103,6 @@ export default function AdminControls({ playerId, playerName, onAction }) {
                   className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-3"
                   autoFocus
                 />
-                <label className="text-xs text-text-muted block mb-1">Source</label>
-                <select
-                  value={eloSource}
-                  onChange={(e) => setEloSource(e.target.value)}
-                  className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4"
-                >
-                  <option value="both">Both</option>
-                  <option value="bot">Online (Bot)</option>
-                  <option value="paper">Paper (Web)</option>
-                </select>
               </>
             )}
             {modal === 'rename' && (

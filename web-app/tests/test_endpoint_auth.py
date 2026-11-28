@@ -58,8 +58,6 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.leaderboard.get_event_leaderboard",
     "api.leaderboard.get_avatar_leaderboards",
     "api.leaderboard.get_combined_leaderboard",
-    "api.leaderboard.get_paper_leaderboard",
-    "api.leaderboard.get_paper_event_leaderboard",
     "api.leaderboard.get_elo_distribution",
     "api.leaderboard.get_leaderboard_sources",
     "api.leaderboard.get_source_leaderboard",

@@ -127,6 +127,25 @@ async def test_website_only_player_gets_no_discord_message_or_mention():
     bot.fetch_user.assert_awaited_once_with(DISCORD)
     loser.send.assert_awaited_once()
     fallback.send.assert_not_awaited()
+    assert "on Play Sorcery Online" in loser.send.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_website_ranked_report_dm_says_it_was_played_on_the_website():
+    loser = MagicMock()
+    loser.send = AsyncMock()
+    bot = MagicMock()
+    bot.fetch_user = AsyncMock(return_value=loser)
+
+    await _notify_sorcery_online_match_recorded(
+        bot, match_id=904, match_type="ranked",
+        winner_id=NUMBER, winner_name="Gee", loser_id=DISCORD, loser_name="Dee",
+        played_on="the Summit website",
+    )
+
+    text = loser.send.await_args.args[0]
+    assert "on the Summit website" in text
+    assert "Play Sorcery Online" not in text
 
 
 @pytest.mark.asyncio

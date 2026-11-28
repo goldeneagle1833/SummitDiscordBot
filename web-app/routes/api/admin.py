@@ -134,7 +134,6 @@ def reset_elo(user_id):
     """Reset a player's ELO to a specified value (admin only). Supports both numeric and google_ IDs."""
     data = request.get_json(silent=True)
     new_elo = 1500
-    source = "both"
     if data:
         if data.get("new_elo") is not None:
             try:
@@ -143,22 +142,19 @@ def reset_elo(user_id):
                 return jsonify({"success": False, "error": "new_elo must be a number"}), 400
             if new_elo < 0 or new_elo > 5000:
                 return jsonify({"success": False, "error": "Rating must be between 0 and 5000"}), 400
-        if data.get("source") in ("bot", "paper", "both"):
-            source = data["source"]
 
     service = AdminService()
     current_bot_elo = service._elo_repo.get_user_elo(user_id)
-    current_paper_elo = service._elo_repo.get_user_paper_elo(str(user_id))
-    result = service.reset_player_elo(user_id, new_elo, source)
+    result = service.reset_player_elo(user_id, new_elo)
     if result.get("success"):
         admin_id, admin_name = _get_admin_info()
         audit = AuditRepository()
         audit.log_action(
             admin_id, admin_name, "web_reset_elo",
             target_id=str(user_id),
-            previous_state={"elo": current_bot_elo, "paper_elo": current_paper_elo},
-            new_state={"elo": new_elo, "source": source},
-            details=f"Reset ELO for player {user_id} ({source}): bot {current_bot_elo} -> {new_elo}, paper {current_paper_elo} -> {new_elo}",
+            previous_state={"elo": current_bot_elo},
+            new_state={"elo": new_elo},
+            details=f"Reset ELO for player {user_id}: {current_bot_elo} -> {new_elo}",
         )
     status = 200 if result.get("success") else 404
     return jsonify(result), status

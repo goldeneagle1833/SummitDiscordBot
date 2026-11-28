@@ -209,6 +209,7 @@ async def _notify_sorcery_online_match_recorded(
     winner_name,
     loser_id,
     loser_name,
+    played_on="Play Sorcery Online",
 ):
     """Best-effort Discord delivery for a result reported outside Discord.
 
@@ -233,12 +234,12 @@ async def _notify_sorcery_online_match_recorded(
         (
             winner_id,
             f"✅ **{label} Match Recorded** — You defeated **{loser_name}** on "
-            f"Play Sorcery Online. **Match ID: #{match_id}**{tips}",
+            f"{played_on}. **Match ID: #{match_id}**{tips}",
         ),
         (
             loser_id,
             f"✅ **{label} Match Recorded** — **{winner_name}** defeated you on "
-            f"Play Sorcery Online. **Match ID: #{match_id}**{tips}",
+            f"{played_on}. **Match ID: #{match_id}**{tips}",
         ),
     )
 
@@ -530,8 +531,12 @@ async def record_standalone_result(
     match_time=0,
     match_comment="",
     played_cards=None,
+    played_on="Play Sorcery Online",
 ):
-    """Record a Play Sorcery Online ranked game that had no Summit pairing.
+    """Record a ranked game that had no Summit pairing.
+
+    Play Sorcery Online ranked games and ranked games reported on the
+    website both come here; ``played_on`` names where for the players' DMs.
 
     The website holds these reports for 24 hours so the loser can dispute,
     then hands them here. They are recorded exactly like a queued ranked
@@ -598,5 +603,6 @@ async def record_standalone_result(
         winner_name=data["winner_global"],
         loser_id=loser_id,
         loser_name=data["loser_global"],
+        played_on=played_on,
     )
     return {"recorded": True, "duplicate": False, "match_id": match_id}

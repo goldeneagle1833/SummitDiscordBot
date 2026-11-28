@@ -98,7 +98,7 @@ function renderChart(chartType, data, source) {
             <YAxis {...CHART_STYLE.axis} />
             <Tooltip {...CHART_STYLE.tooltip} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="web" name="Paper" fill="rgba(63,185,80,0.8)" radius={[2, 2, 2, 2]} />
+            <Bar dataKey="web" name="Website" fill="rgba(63,185,80,0.8)" radius={[2, 2, 2, 2]} />
           </BarChart>
         )
       }
@@ -110,7 +110,7 @@ function renderChart(chartType, data, source) {
           <Tooltip {...CHART_STYLE.tooltip} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           <Bar dataKey="bot" name="Online" stackId="a" fill="rgba(77,184,255,0.8)" radius={[0, 0, 2, 2]} />
-          <Bar dataKey="web" name="Paper" stackId="a" fill="rgba(63,185,80,0.8)" radius={[2, 2, 0, 0]} />
+          <Bar dataKey="web" name="Website" stackId="a" fill="rgba(63,185,80,0.8)" radius={[2, 2, 0, 0]} />
         </BarChart>
       )
 
@@ -259,7 +259,7 @@ export default function ChartDetail() {
             {[
               { label: 'All', value: 'all' },
               { label: 'Online', value: 'online' },
-              { label: 'Paper', value: 'paper' },
+              { label: 'Website', value: 'paper' },
             ].map(f => (
               <button
                 key={f.value}

@@ -446,26 +446,38 @@ async def meta_report(site: SiteClient, report: str | None = None) -> dict:
 
 async def meta_trends(site: SiteClient) -> dict:
     data = await site.get(site.path("deck-archetypes", "trends"), ttl=SLOW_TTL)
-    months = []
+    info = {a.get("id"): a for a in (data or {}).get("archetypes") or [] if isinstance(a, dict)}
+
+    def label(key: str) -> str:
+        return (info.get(key) or {}).get("name") or key
+
+    def elements_of(key: str) -> list[str]:
+        raw = (info.get(key) or {}).get("elements") or key.replace("-", " ").title()
+        return [e for e in ELEMENTS if e.lower() in str(raw).lower()]
+
+    months, element_rows = [], []
     for m in (data or {}).get("months") or []:
-        counts = m.get("counts") or {}
-        total = sum(v for v in counts.values() if isinstance(v, (int, float))) or 0
+        counts = {k: v for k, v in (m.get("counts") or {}).items() if isinstance(v, (int, float))}
+        total = sum(counts.values())
+        if not total:
+            continue
         top = sorted(counts.items(), key=lambda kv: -kv[1])[:8]
         months.append({
             "month": m.get("month"),
             "ranked_games": m.get("matches"),
-            "top_archetypes": [{"archetype": k, "share_pct": _pct(v, total)} for k, v in top],
+            "top_archetypes": [{"archetype": label(k), "share_pct": _pct(v, total)} for k, v in top],
         })
-    elements: dict[str, list] = {}
-    for m in months:
+        # Share of classified decks that play each element (a two-element deck counts for both)
+        row = {"month": m.get("month")}
         for e in ELEMENTS:
-            share = sum(a["share_pct"] or 0 for a in m["top_archetypes"] if e.lower() in str(a["archetype"]).lower())
-            elements.setdefault(e, []).append({"month": m["month"], "share_in_top_archetypes_pct": round(share, 1)})
+            row[e] = _pct(sum(v for k, v in counts.items() if e in elements_of(k)), total)
+        element_rows.append(row)
     return safe({
         "covers": {"from": data.get("start"), "through": data.get("through"), "next_release": data.get("nextRelease")},
+        "element_share_by_month_pct": element_rows,
         "months": months,
-        "archetypes": data.get("archetypes"),
-        "note": "Share of classified ranked decks per month. Numbers update with each data release on the 1st and 15th.",
+        "note": ("Shares are of classified ranked decks per month; a two-element deck counts toward both "
+                 "elements. Numbers update with each data release on the 1st and 15th."),
         "page": _link("/deck-archetypes"),
     }, max_list=14)
 

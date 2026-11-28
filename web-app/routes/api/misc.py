@@ -11,7 +11,7 @@ from webapp_config import (
     COMMUNITY_DB_PATH,
     ADMINS,
 )
-from utils.auth import is_admin, is_moderator, is_explorer_admin, is_rumble_admin, is_card_points_admin, require_admin
+from utils.auth import is_admin, is_moderator, is_explorer_admin, is_rumble_admin, is_card_points_admin, require_admin, require_auth
 from utils.store_auth import is_store_admin
 
 misc_bp = Blueprint("misc", __name__)
@@ -39,7 +39,16 @@ def me():
         "is_bracket_organizer": _is_bracket_organizer(),
         "is_article_reviewer": _is_article_reviewer(),
         "is_moderator": is_moderator(),
+        "needs_welcome": bool(session.get("welcome_setup")),
     })
+
+
+@misc_bp.route("/me/welcome-done", methods=["POST"])
+@require_auth
+def welcome_done():
+    """The new player saved or skipped the welcome pop-up: don't show it again."""
+    session.pop("welcome_setup", None)
+    return jsonify({"success": True})
 
 
 def _is_article_reviewer() -> bool:

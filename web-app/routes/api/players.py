@@ -3329,6 +3329,8 @@ def set_display_name(player_id):
             return jsonify({"error": "Profile not found"}), 404
 
         logger.info(f"User {logged_in_id_str} set custom display name to '{new_name}'")
+        # The menu shows the session's name, so keep it in step
+        session["username"] = new_name
 
         # Update display name in leaderboard standings and match records
         # These are cosmetic updates - don't fail if they error

@@ -384,5 +384,7 @@ def email_login_verify():
     session["auth_provider"] = account["provider"]
     session["is_creator"] = False
     session["discord_roles"] = []
+    # A brand-new email account gets the welcome pop-up (pick a name, a favorite card)
+    session["welcome_setup"] = bool(account.get("new"))
     logger.info("User %s signed in with an email code (%s account)", user_id, account["provider"])
     return jsonify({"success": True, "redirect": _get_post_login_redirect()})

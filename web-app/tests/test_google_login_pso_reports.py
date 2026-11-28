@@ -311,3 +311,20 @@ def test_google_login_profile_shows_its_ranked_games(client, match_db):
         resp = client.get(f"/api/player/{player_url}?source=bot")
         assert resp.status_code == 200, (player_url, resp.get_json())
         assert "Dee" in json.dumps(resp.get_json()), player_url
+
+
+def test_real_player_numbers_are_random_16_digit_summit_numbers():
+    drawn = {numbers.random_player_number() for _ in range(200)}
+    assert len(drawn) == 200  # no repeats, no counting up
+    for n in drawn:
+        assert is_summit_player_number(n)
+        assert str(n).startswith("1000") and len(str(n)) == 16
+    assert sorted(drawn) != list(range(min(drawn), min(drawn) + 200))
+
+
+def test_a_taken_random_number_is_skipped(app, match_db, monkeypatch):
+    picks = iter([1_000_123_456_789_012, 1_000_123_456_789_012, 1_000_999_999_999_999])
+    monkeypatch.setattr(numbers, "_pick_number", lambda: next(picks))
+    first = numbers.number_for_google("google_111111111111111111111", create=True)
+    second = numbers.number_for_google("google_222222222222222222222", create=True)
+    assert (first, second) == (1_000_123_456_789_012, 1_000_999_999_999_999)

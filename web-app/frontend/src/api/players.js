@@ -1,4 +1,5 @@
-import { get, post, put, del, getBlob } from './client'
+import { get, post, put, del, getBlob, ApiError } from './client'
+import { ensureSiteSession, refreshSiteSession, isGateRejection } from './siteSession'
 
 export const getPlayer = (id, { event, source, page, perPage, casualPage, externalPage, filters = {} } = {}) => {
   const params = new URLSearchParams()
@@ -60,6 +61,39 @@ export const clearFeaturedDeck = (id) => del(`/api/player/${id}/featured-deck`)
 export const getShowcase = (id) => get(`/api/player/${id}/showcase`)
 /** Change any of bio / favorite_card (a card name) / rival (a player id); empty clears. */
 export const setShowcase = (id, fields) => put(`/api/player/${id}/showcase`, fields)
+/** The player's picture: { kind: 'discord' | 'card' | 'upload', card, url, discord_url }. Owner or staff. */
+export const getProfilePicture = (id) => get(`/api/player/${id}/profile-picture`)
+/** { kind: 'discord' } goes back to the Discord picture; { kind: 'card', card: name } uses card art. */
+export const setProfilePicture = (id, choice) => put(`/api/player/${id}/profile-picture`, choice)
+/** Image URL of the round picture a card would make (nothing is saved). */
+export const cardPicturePreviewUrl = (id, card) =>
+  `${import.meta.env.VITE_API_BASE_URL || ''}/api/player/${id}/profile-picture/card-preview?card=${encodeURIComponent(card)}`
+/** Upload a picture; crop is { x, y, size } in fractions of the image (see the picker). */
+export async function uploadProfilePicture(id, file, crop) {
+  const form = () => {
+    const fd = new FormData()
+    fd.append('image', file, file.name || 'picture.jpg')
+    if (crop) {
+      fd.append('crop_x', String(crop.x))
+      fd.append('crop_y', String(crop.y))
+      fd.append('crop_size', String(crop.size))
+    }
+    return fd
+  }
+  const url = `${import.meta.env.VITE_API_BASE_URL || ''}/api/player/${id}/profile-picture/upload`
+  const send = () => fetch(url, { method: 'POST', credentials: 'include', body: form() })
+  await ensureSiteSession().catch(() => {})
+  let res = await send()
+  let data = await res.json().catch(() => ({}))
+  if (!res.ok && isGateRejection(res, data)) {
+    await refreshSiteSession().catch(() => {})
+    res = await send()
+    data = await res.json().catch(() => ({}))
+  }
+  if (res.status === 413) throw new ApiError(413, 'That picture is too big. Try a smaller one.')
+  if (!res.ok) throw new ApiError(res.status, data.error || res.statusText)
+  return data
+}
 /** Players this player has played, most games first: { players: [{ id, name, wins, losses }] }. */
 export const getRivalOptions = (id) => get(`/api/player/${id}/rival-options`)
 

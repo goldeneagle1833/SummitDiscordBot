@@ -7,7 +7,7 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, session, request
+from flask import Blueprint, Response, jsonify, session, request
 
 import re
 
@@ -20,8 +20,18 @@ from repositories.blocked_users_repo import BlockedUsersRepository
 from repositories.voice_only_repo import VoiceOnlyRepository
 from repositories.tag_me_repo import TagMeRepository
 from repositories.skill_match_repo import SkillMatchRepository
-from utils.auth import is_admin, require_auth
+from utils.auth import is_admin, is_moderator, require_auth
+from utils.profile_pictures import (
+    MAX_UPLOAD_BYTES as MAX_PICTURE_UPLOAD_BYTES,
+    PictureError,
+    delete_file as delete_picture_file,
+    parse as parse_picture,
+    process_card as process_card_picture,
+    process_upload as process_upload_picture,
+    save as save_picture_file,
+)
 from utils.card_images import attach_images, resolve_card_image
+from utils.profile_pictures import picture_url
 from services.curiosa import deck_url_source, is_deck_url, normalize_deck_url
 from services.avatar_elo import (
     get_player_avatar_changes,
@@ -1276,7 +1286,9 @@ def search_players():
             normalized = uid[7:] if uid.startswith("google_") else uid
             seen_ids.add(normalized)
             players.append(
-                {"user_id": uid, "display_name": r["display_name"], "avatar": r.get("avatar"), "provider": r.get("provider", "discord")}
+                {"user_id": uid, "display_name": r["display_name"], "avatar": r.get("avatar"),
+                 "provider": r.get("provider", "discord"),
+                 "picture_url": picture_url(r.get("profile_picture"))}
             )
 
         # Fallback: bot players who have ELO standings but have never logged
@@ -1300,9 +1312,23 @@ def search_players():
         return jsonify({"players": []})
 
 
-def _profile_picture_url(profile):
+def _discord_picture_url(profile):
     """Discord or Google profile picture for a stored profile, else None."""
     if not profile or not profile.get("avatar"):
+        return None
+    if profile.get("provider") == "google":
+        return profile["avatar"]
+    return f"https://cdn.discordapp.com/avatars/{profile['user_id']}/{profile['avatar']}.png?size=256"
+
+
+def _profile_picture_url(profile):
+    """The picture the player chose on the site, else their Discord or Google one."""
+    if not profile:
+        return None
+    own = picture_url(profile.get("profile_picture"))
+    if own:
+        return own
+    if not profile.get("avatar"):
         return None
     if profile.get("provider") == "google":
         return profile["avatar"]
@@ -3129,6 +3155,11 @@ def player_api(player_id):
             "id": player_id_normalized,
             "name": player_name,
             "avatar_url": _profile_picture_url(profile),
+            # "discord" | "card" | "upload", and the card for card art (its credit)
+            "picture_kind": (parse_picture(profile.get("profile_picture")) or {}).get("kind", "discord")
+            if profile else "discord",
+            "picture_card": (parse_picture(profile.get("profile_picture")) or {}).get("card")
+            if profile else None,
             "elo": player_elo if show_lifetime else None,
             # Seasons 1-8 lifetime ELO, frozen when lifetime moved to Glicko-2
             "legacy_elo": legacy_elo if show_lifetime else None,
@@ -3821,6 +3852,146 @@ def set_showcase(player_id):
 
     return jsonify({"success": True, **_showcase_payload(
         player_id_normalized, repo.get_showcase(player_id_normalized))})
+
+
+# The player's own profile picture: their Discord one (the default), a crop
+# of a card's art we already serve, or a picture they upload. Pictures are
+# public, so moderators and admins can put anyone back on Discord's.
+def _picture_state(player_id):
+    repo = UserProfileRepository()
+    profile = repo.get_by_user_id(player_id) or repo.get_by_user_id(f"google_{player_id}")
+    choice = parse_picture(profile.get("profile_picture") if profile else None)
+    return {
+        "kind": choice["kind"] if choice else "discord",
+        "card": choice.get("card") if choice else None,
+        "url": _profile_picture_url(profile),
+        "discord_url": _discord_picture_url(profile),
+    }
+
+
+def _picture_editor(player_id):
+    """(normalized id, None) for the owner, a moderator or an admin, else (None, error)."""
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return None, (jsonify({"error": "Authentication required"}), 401)
+    viewer = str(logged_in_user_id).removeprefix("google_")
+    player_id_normalized = str(player_id).removeprefix("google_")
+    if viewer != player_id_normalized and not is_moderator():
+        return None, (jsonify({"error": "You can only change your own profile"}), 403)
+    return player_id_normalized, None
+
+
+def _save_picture(player_id, value, action):
+    """Store a new choice, drop the old file, and log changes made by staff."""
+    repo = UserProfileRepository()
+    before = repo.get_profile_picture(player_id)
+    if not repo.set_profile_picture(player_id, value):
+        if value:
+            delete_picture_file(value)
+        return jsonify({"error": "Profile not found"}), 404
+    if before and (parse_picture(before) or {}).get("file") != (value or {}).get("file"):
+        delete_picture_file(before)
+
+    viewer = str(session.get("user_id") or "").removeprefix("google_")
+    if viewer != player_id:
+        try:
+            from repositories.audit import AuditRepository
+            AuditRepository().log_action(
+                viewer, session.get("username") or viewer, action, target_id=player_id,
+                previous_state=parse_picture(before), new_state=value,
+            )
+        except Exception as e:
+            logger.warning("Could not audit-log profile picture change: %s", e)
+    return jsonify({"success": True, **_picture_state(player_id)})
+
+
+@players_bp.route("/player/<player_id>/profile-picture", methods=["GET"])
+@require_auth
+def get_profile_picture(player_id):
+    """Which picture the player uses ("discord" | "card" | "upload"), for the picture editor."""
+    player_id_normalized, error = _picture_editor(player_id)
+    if error:
+        return error
+    return jsonify(_picture_state(player_id_normalized))
+
+
+@players_bp.route("/player/<player_id>/profile-picture", methods=["PUT"])
+@require_auth
+def set_profile_picture(player_id):
+    """{"kind": "discord"} goes back to the Discord picture; {"kind": "card", "card": name} uses card art."""
+    player_id_normalized, error = _picture_editor(player_id)
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    kind = data.get("kind")
+    if kind == "discord":
+        viewer = str(session.get("user_id") or "").removeprefix("google_")
+        action = "set_profile_picture" if viewer == player_id_normalized else "reset_profile_picture"
+        return _save_picture(player_id_normalized, None, action)
+    if kind == "card":
+        card, err = _showcase_card(data.get("card"))
+        if err or not card:
+            return jsonify({"error": err or "Pick a card from the list"}), 400
+        try:
+            webp = process_card_picture(card["image"], _is_site(card["name"]))
+        except PictureError as e:
+            return jsonify({"error": str(e)}), 400
+        value = {"kind": "card", "card": card["name"],
+                 "file": save_picture_file(player_id_normalized, webp)}
+        return _save_picture(player_id_normalized, value, "set_profile_picture")
+    return jsonify({"error": "Choose Discord, a card, or upload a picture"}), 400
+
+
+def _is_site(card_name):
+    """Sites are printed sideways, so their art sits in a different place."""
+    try:
+        from repositories.card_catalog import CardCatalogRepository
+        card_type = CardCatalogRepository().get_card_metadata(card_name).get("type") or ""
+    except Exception:
+        card_type = ""
+    return "site" in str(card_type).lower()
+
+
+@players_bp.route("/player/<player_id>/profile-picture/card-preview", methods=["GET"])
+@require_auth
+def preview_card_picture(player_id):
+    """The round picture a card would make (?card=<name>), as an image. Nothing is saved."""
+    _, error = _picture_editor(player_id)
+    if error:
+        return error
+    card, err = _showcase_card(request.args.get("card"))
+    if err or not card:
+        return jsonify({"error": err or "Pick a card from the list"}), 400
+    try:
+        webp = process_card_picture(card["image"], _is_site(card["name"]))
+    except PictureError as e:
+        return jsonify({"error": str(e)}), 400
+    resp = Response(webp, mimetype="image/webp")
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    return resp
+
+
+@players_bp.route("/player/<player_id>/profile-picture/upload", methods=["POST"])
+@require_auth
+def upload_profile_picture(player_id):
+    """Upload a picture (field "image", 5 MB max) with an optional crop box (crop_x, crop_y, crop_size)."""
+    player_id_normalized, error = _picture_editor(player_id)
+    if error:
+        return error
+    file = request.files.get("image")
+    if not file or not file.filename:
+        return jsonify({"error": "Choose a picture to upload."}), 400
+    data = file.read(MAX_PICTURE_UPLOAD_BYTES + 1)
+    crop = None
+    if request.form.get("crop_size"):
+        crop = {"x": request.form.get("crop_x"), "y": request.form.get("crop_y"),
+                "size": request.form.get("crop_size")}
+    try:
+        webp = process_upload_picture(data, crop)
+    except PictureError as e:
+        return jsonify({"error": str(e)}), 400
+    value = {"kind": "upload", "file": save_picture_file(player_id_normalized, webp)}
+    return _save_picture(player_id_normalized, value, "set_profile_picture")
 
 
 @players_bp.route("/player/<player_id>/card-stats")

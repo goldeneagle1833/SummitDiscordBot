@@ -72,6 +72,7 @@ function PlayerSearch() {
   }
 
   const getAvatarUrl = (player) => {
+    if (player.picture_url) return player.picture_url
     if (player.provider === 'discord' && player.avatar)
       return `https://cdn.discordapp.com/avatars/${player.user_id}/${player.avatar}.png?size=32`
     if (player.provider === 'google' && player.avatar) return player.avatar

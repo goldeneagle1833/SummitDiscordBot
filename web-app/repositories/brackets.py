@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime
 
 import webapp_config
+from utils.profile_pictures import picture_url
 
 logger = logging.getLogger(__name__)
 
@@ -205,12 +206,22 @@ class BracketRepository:
             "SELECT name FROM sqlite_master WHERE type='table' AND name='user_profiles'"
         )
         has_profiles = cur.fetchone() is not None
+        has_pictures = has_profiles and any(
+            row[1] == "profile_picture" for row in cur.execute("PRAGMA table_info(user_profiles)")
+        )
 
         if has_profiles:
+            # The picture the player chose on the site, if any
+            picture_sql = (
+                """(SELECT p.profile_picture FROM user_profiles p
+                     WHERE p.user_id IN (e.user_id, 'google_' || e.user_id)
+                       AND p.profile_picture IS NOT NULL LIMIT 1)"""
+                if has_pictures else "NULL"
+            )
             # A player can have both a Discord and a Google profile; prefer Discord.
             cur.execute(
-                """
-                SELECT e.*,
+                f"""
+                SELECT e.*, {picture_sql} AS profile_picture,
                        (SELECT p.avatar FROM user_profiles p
                          WHERE p.user_id = e.user_id
                          ORDER BY CASE WHEN p.provider = 'discord' THEN 0 ELSE 1 END
@@ -233,7 +244,13 @@ class BracketRepository:
 
         rows = cur.fetchall()
         conn.close()
-        return [dict(r) for r in rows]
+        entrants = []
+        for row in rows:
+            entrant = dict(row)
+            if has_profiles:
+                entrant["picture_url"] = picture_url(entrant.pop("profile_picture", None))
+            entrants.append(entrant)
+        return entrants
 
     def update_entrant(self, bracket_id: int, seed: int, fields: dict) -> bool:
         """Change one seat's player without touching the rest of the field."""

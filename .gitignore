@@ -120,3 +120,6 @@ web-app/backups/
 
 # Player article PDFs (web-app/private_uploads)
 web-app/private_uploads/
+
+# Players' profile pictures (uploaded on the live site)
+web-app/static/uploads/profile-pictures/

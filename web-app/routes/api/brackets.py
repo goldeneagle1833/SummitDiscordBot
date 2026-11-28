@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, request, session
 
 from repositories.brackets import BracketRepository
 from repositories.user_profiles import UserProfileRepository
+from utils.profile_pictures import picture_url
 from services.brackets import BracketError, BracketService, is_community
 from services.ticket_holders import TicketHolderError, is_configured, sync_roster
 from utils.auth import is_admin, require_admin, require_api_key, require_auth
@@ -280,6 +281,7 @@ def organizer_search_players():
             "display_name": u.get("display_name"),
             "avatar": u.get("avatar"),
             "provider": u.get("provider"),
+            "picture_url": picture_url(u.get("profile_picture")),
         }
         for u in UserProfileRepository().search_users(q, limit=10)
     ]

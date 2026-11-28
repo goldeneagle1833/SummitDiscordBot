@@ -173,3 +173,17 @@ class TestAskBot:
         cog = _cog(me, client=MagicMock())
         await cog.on_message(msg)
         msg.reply.assert_not_called()
+
+
+class TestWebKeyFallback:
+    def test_falls_back_to_site_api_keys(self, monkeypatch):
+        import config
+        monkeypatch.delattr(config, "WEB_APP_API_KEY", raising=False)
+        monkeypatch.delenv("WEB_APP_API_KEY", raising=False)
+        monkeypatch.setenv("API_KEYS", "first-key, second-key")
+        assert feedback_intake._web_api_key() == "first-key"
+
+    def test_config_wins(self, monkeypatch):
+        import config
+        monkeypatch.setattr(config, "WEB_APP_API_KEY", "from-config", raising=False)
+        assert feedback_intake._web_api_key() == "from-config"

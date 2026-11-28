@@ -31,6 +31,9 @@ EXPLORER_DB_PATH = Path(os.environ.get("EXPLORER_DB_PATH", BASE_DIR / "explorer.
 RUMBLE_DB_PATH = Path(os.environ.get("RUMBLE_DB_PATH", BASE_DIR / "rumble.db"))
 DECK_BUILDER_DB_PATH = Path(os.environ.get("DECK_BUILDER_DB_PATH", BASE_DIR / "deck_builder.db"))
 FEEDBACK_DB_PATH = Path(os.environ.get("FEEDBACK_DB_PATH", BASE_DIR / "feedback.db"))
+# Shared secret the "Feedback auto PR" GitHub Action sends to claim new feedback
+# and report what it did. Empty = the automation endpoints are switched off.
+FEEDBACK_AUTOMATION_KEY = os.environ.get("FEEDBACK_AUTOMATION_KEY", "")
 MONITORING_DB_PATH = Path(os.environ.get("MONITORING_DB_PATH", BASE_DIR / "monitoring.db"))
 META_REPORTS_DB_PATH = Path(os.environ.get("META_REPORTS_DB_PATH", BASE_DIR / "meta_reports.db"))
 CARD_SNAPSHOTS_DB_PATH = Path(os.environ.get("CARD_SNAPSHOTS_DB_PATH", BASE_DIR / "card_snapshots.db"))

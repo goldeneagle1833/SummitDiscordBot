@@ -1,0 +1,254 @@
+# Feedback auto PR
+#
+# Every two hours: claim a few new items from the website Feedback board
+# (site form + Discord), let Claude triage each one, and open a DRAFT PR for
+# the small, clear ones. Nothing is ever merged or pushed to main.
+#
+# Safety layout (the feedback text is written by the public):
+#   claim   - talks to the site with FEEDBACK_AUTOMATION_KEY; no AI.
+#   draft   - Claude runs here with read-only repo access, no git credentials,
+#             no Bash/web tools; only file edits. Tests then run with no secrets.
+#   publish - no AI. Checks the patch (protected files, size, secrets) with
+#             code from main, opens the draft PR, reports back to the site.
+#
+# Setup (repo Settings):
+#   Secrets:   ANTHROPIC_API_KEY, FEEDBACK_AUTOMATION_KEY (same value as the
+#              web app's FEEDBACK_AUTOMATION_KEY in its .env)
+#   Actions > General > Workflow permissions: tick
+#              "Allow GitHub Actions to create and approve pull requests"
+#   Optional variables: FEEDBACK_DAILY_PR_CAP (3), FEEDBACK_OPEN_PR_CAP (8),
+#              FEEDBACK_PER_RUN (2)
+
+name: Feedback auto PR
+
+on:
+  schedule:
+    - cron: '17 */2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: feedback-auto-pr
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  SITE_URL: https://sorcererssummit.com
+  DAILY_PR_CAP: ${{ vars.FEEDBACK_DAILY_PR_CAP || '3' }}
+  OPEN_PR_CAP: ${{ vars.FEEDBACK_OPEN_PR_CAP || '8' }}
+  PER_RUN: ${{ vars.FEEDBACK_PER_RUN || '2' }}
+  CLAUDE_MODEL: claude-opus-5-5
+
+jobs:
+  claim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ids: ${{ steps.claim.outputs.ids }}
+    steps:
+      - name: Claim waiting feedback
+        id: claim
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          FEEDBACK_AUTOMATION_KEY: ${{ secrets.FEEDBACK_AUTOMATION_KEY }}
+          HAS_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: |
+          set -euo pipefail
+          mkdir -p claim
+          echo '[]' > claim/open_prs.json
+          echo '{"items": [], "recent": []}' > claim/claim.json
+          if [ -z "$FEEDBACK_AUTOMATION_KEY" ] || [ "$HAS_ANTHROPIC_KEY" != "true" ]; then
+            echo "::notice::Secrets not set yet; nothing to do."
+            echo 'ids=[]' >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          gh label create auto-feedback -R "$REPO" --color 5319e7 \
+            --description "Drafted automatically from player feedback" 2>/dev/null || true
+          open=$(gh pr list -R "$REPO" --label auto-feedback --state open --json number --jq length)
+          today=$(gh pr list -R "$REPO" --label auto-feedback --state all \
+            --search "created:>=$(date -u +%F)" --json number --jq length)
+          room=$(( PER_RUN ))
+          [ $(( DAILY_PR_CAP - today )) -lt $room ] && room=$(( DAILY_PR_CAP - today ))
+          [ $(( OPEN_PR_CAP - open )) -lt $room ] && room=$(( OPEN_PR_CAP - open ))
+          echo "Open auto PRs: $open, opened today: $today, room this run: $room"
+          if [ "$room" -le 0 ]; then
+            echo "::notice::PR cap reached; feedback waits for the next run."
+            echo 'ids=[]' >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          gh pr list -R "$REPO" --label auto-feedback --state open \
+            --json number,title,url > claim/open_prs.json
+          curl -fsS -X POST "$SITE_URL/api/feedback/automation/claim" \
+            -H "X-Feedback-Automation-Key: $FEEDBACK_AUTOMATION_KEY" \
+            -H 'Content-Type: application/json' \
+            -A 'SummitFeedbackAutoPR/1.0 (GitHub Actions)' \
+            -d "{\"limit\": $room}" > claim/claim.json
+          ids=$(python3 -I -c 'import json,sys; print(json.dumps([int(i["id"]) for i in json.load(open(sys.argv[1]))["items"]]))' claim/claim.json)
+          echo "Claimed: $ids"
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the claim for the next jobs
+        if: steps.claim.outputs.ids != '[]'
+        uses: actions/upload-artifact@v4
+        with:
+          name: claim
+          path: claim/
+          retention-days: 3
+
+  draft:
+    needs: claim
+    if: needs.claim.outputs.ids != '[]' && needs.claim.outputs.ids != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        id: ${{ fromJSON(needs.claim.outputs.ids) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: claim
+          path: ${{ runner.temp }}/claim
+
+      - name: Hand the item to Claude
+        run: python3 -I .github/feedback-auto-pr/prepare.py "$RUNNER_TEMP/claim" "${{ matrix.id }}" .feedback-task
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Triage and draft
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          claude -p "$(cat .github/feedback-auto-pr/prompt.md)" \
+            --model "$CLAUDE_MODEL" \
+            --max-turns 80 \
+            --allowedTools "Read,Glob,Grep,Edit,Write" \
+            --disallowedTools "Bash,WebFetch,WebSearch,Task,NotebookEdit,Edit(.github/**),Write(.github/**),Read(//proc/**),Read(//etc/**),Read(//sys/**),Read(//root/**),Read(//tmp/**)" \
+            --output-format json > "$RUNNER_TEMP/claude.json" \
+            || echo "::warning::Claude exited with an error"
+
+      - name: Collect the change
+        run: |
+          mkdir -p out
+          cp .feedback-task/triage.json out/triage.json 2>/dev/null || true
+          git add -A -- . ':(exclude).feedback-task'
+          git diff --cached --binary > out/change.patch
+          git diff --cached --stat || true
+
+      - name: Run tests on the change (no secrets here)
+        run: |
+          : > out/tests.txt
+          if [ ! -s out/change.patch ]; then echo "No change to test." > out/tests.txt; exit 0; fi
+          files=$(git diff --cached --name-only)
+          run() { echo "\$ $*" >> out/tests.txt; if ( eval "$*" ) >> out/tests.log 2>&1; then echo "PASSED" >> out/tests.txt; else echo "FAILED" >> out/tests.txt; tail -n 40 out/tests.log >> out/tests.txt; fi; }
+          if echo "$files" | grep -q '^discord-bot/'; then
+            run "cd discord-bot && pip install -q -r requirements.txt && cp config.example.py config.py && python -m pytest tests/ -q -p no:cacheprovider"
+          fi
+          if echo "$files" | grep -q '^web-app/' ; then
+            run "cd web-app && pip install -q -r requirements.txt pytest && python -m pytest tests/ -q -p no:cacheprovider"
+          fi
+          if echo "$files" | grep -q '^web-app/frontend/'; then
+            run "cd web-app/frontend && npm ci --silent && npx vitest run && npm run build"
+          fi
+          [ -s out/tests.txt ] || echo "No tests matched the changed files." > out/tests.txt
+          cat out/tests.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: out-${{ matrix.id }}
+          path: |
+            out/triage.json
+            out/change.patch
+            out/tests.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    needs: [claim, draft]
+    if: always() && needs.claim.outputs.ids != '[]' && needs.claim.outputs.ids != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        id: ${{ fromJSON(needs.claim.outputs.ids) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: out-${{ matrix.id }}
+          path: ${{ runner.temp }}/out
+
+      - name: Check the change
+        run: python3 -I .github/feedback-auto-pr/check_patch.py "${{ matrix.id }}" "$RUNNER_TEMP/out"
+
+      - name: Open the draft PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/out/decision.json"
+          if [ "$(jq -r .open_pr "$d")" != "true" ]; then exit 0; fi
+          branch="$(jq -r .branch "$d")"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            branch="$branch-$GITHUB_RUN_ID"
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          if ! git apply --index "$RUNNER_TEMP/out/change.patch"; then
+            jq '.status="failed" | .note="The drafted change no longer applies to main."' "$d" > "$d.tmp" && mv "$d.tmp" "$d"
+            exit 0
+          fi
+          title="$(jq -r .title "$d")"
+          git commit -q -m "$title" -m "Auto-drafted from website feedback by the Feedback auto PR workflow."
+          git push -q origin "$branch"
+          url=$(gh pr create -R "$REPO" --draft --base main --head "$branch" \
+            --title "$title" --body-file "$RUNNER_TEMP/out/pr_body.md" --label auto-feedback)
+          gh pr edit "$url" -R "$REPO" --add-assignee "$REPO_OWNER" 2>/dev/null || true
+          jq --arg url "$url" '.pr_url=$url' "$d" > "$d.tmp" && mv "$d.tmp" "$d"
+          echo "Opened $url"
+        shell: bash
+        continue-on-error: true
+
+      - name: Tell the website what happened
+        if: always()
+        env:
+          FEEDBACK_AUTOMATION_KEY: ${{ secrets.FEEDBACK_AUTOMATION_KEY }}
+        run: |
+          d="$RUNNER_TEMP/out/decision.json"
+          [ -f "$d" ] || echo '{"status":"failed","note":"The auto PR run broke on this item."}' > "$d"
+          if [ "$(jq -r .open_pr "$d")" = "true" ] && [ "$(jq -r '.pr_url // empty' "$d")" = "" ]; then
+            jq '.status="failed" | .note="Opening the draft PR failed; see the Actions log."' "$d" > "$d.tmp" && mv "$d.tmp" "$d"
+          fi
+          jq '{status, note, pr_url}' "$d" > "$RUNNER_TEMP/result.json"
+          cat "$RUNNER_TEMP/result.json"
+          curl -fsS -X POST "$SITE_URL/api/feedback/automation/${{ matrix.id }}/result" \
+            -H "X-Feedback-Automation-Key: $FEEDBACK_AUTOMATION_KEY" \
+            -H 'Content-Type: application/json' \
+            -A 'SummitFeedbackAutoPR/1.0 (GitHub Actions)' \
+            --data-binary @"$RUNNER_TEMP/result.json"

@@ -186,7 +186,18 @@ def _length_bucket(minutes) -> str | None:
     return "30+ min"
 
 
-async def match_history_review(site: SiteClient, player: str, season: str = "current") -> dict:
+async def _latest_report(site: SiteClient) -> tuple[str | None, dict | None]:
+    try:
+        listing = (await site.get(site.path("meta-reports"), ttl=SLOW_TTL)).get("reports") or []
+        if not listing:
+            return None, None
+        report = await site.get(site.path("meta-reports", listing[0]["slug"]), ttl=SLOW_TTL)
+        return listing[0].get("label") or listing[0]["slug"], report
+    except SiteError:
+        return None, None
+
+
+async def match_history_review(site: SiteClient, player: str, season: str = "all") -> dict:
     """Everything an AI needs to coach a player from their ranked games.
 
     Reads the public match history API (avatar + deck elements per game only,
@@ -214,10 +225,11 @@ async def match_history_review(site: SiteClient, player: str, season: str = "cur
         page += 1
     matches = matches[:REVIEW_MAX_GAMES]
     name = chosen.get("display_name")
-    period = "this season" if event == "current" else "all seasons"
+    period = "this season" if event == "current" else f"last {len(matches)} ranked games"
     if not matches:
         return {"found": True, "player": name, "period": period, "games": 0,
-                "message": f"{name} has no ranked games {period} yet."}
+                "message": f"{name} has no ranked games {'this season' if event == 'current' else ''} yet."
+                .replace("  ", " ")}
 
     wins = sum(1 for m in matches if m.get("result") == "win")
     by_avatar, by_elements, vs_avatar, vs_elements = {}, {}, {}, {}
@@ -257,30 +269,29 @@ async def match_history_review(site: SiteClient, player: str, season: str = "cur
     recent = results[:20]
     earlier = results[20:]
 
-    # Compare with how everyone does (current-season site numbers)
-    site_avatar_rate: dict[str, Any] = {}
-    try:
-        for r in await site.get(site.path("avatars", event="current"), ttl=SLOW_TTL) or []:
-            if isinstance(r, dict) and r.get("name"):
-                site_avatar_rate[r["name"]] = r.get("win_rate")
-    except SiteError:
-        pass
+    # Compare with everyone's ranked games in the latest Meta Report: a full two-week release
+    # with minimum sample sizes, so a thin start of season can't show an Avatar at 100%.
+    label, report = await _latest_report(site)
+    ranked = (report or {}).get("ranked") or {}
+    everyone = {r.get("avatar"): r.get("winRate") for r in ranked.get("archetypes") or []
+                if isinstance(r, dict) and r.get("avatar") and not r.get("elements")}
     avatars_played = _table(by_avatar, "avatar", 1)
     for row in avatars_played:
-        row["everyone_win_rate"] = site_avatar_rate.get(row["avatar"])
+        row["everyone_win_rate"] = everyone.get(row["avatar"])
 
     main_matchups = []
     if main_avatar:
-        site_matchups: dict[str, Any] = {}
-        try:
-            data = await site.get(site.path("avatar", main_avatar, "matchups", event="current"), ttl=SLOW_TTL)
-            site_matchups = {m.get("opponent"): m.get("win_rate") for m in (data or {}).get("matchups") or []
-                             if (m.get("total") or 0) >= 5}
-        except SiteError:
-            pass
+        grid = ranked.get("matchups") or {}
+        keys = [a.get("avatar") for a in grid.get("archetypes") or [] if isinstance(a, dict)]
+        cells = grid.get("cells") or []
+        everyone_vs: dict[str, Any] = {}
+        if main_avatar in keys and keys.index(main_avatar) < len(cells):
+            for other, cell in zip(keys, cells[keys.index(main_avatar)] or []):
+                if isinstance(cell, dict) and cell.get("winRate") is not None:
+                    everyone_vs[other] = cell["winRate"]
         main_matchups = _table(main_vs, "against")
         for row in main_matchups:
-            row["everyone_with_this_avatar_win_rate"] = site_matchups.get(row["against"])
+            row["everyone_with_this_avatar_win_rate"] = everyone_vs.get(row["against"])
 
     vs_avatar_rows = _table(vs_avatar, "against")
     by_rate = sorted(vs_avatar_rows, key=lambda r: r["win_rate"] or 0)
@@ -312,6 +323,8 @@ async def match_history_review(site: SiteClient, player: str, season: str = "cur
             "longest_losing_streak": longest_loss,
         },
         "main_avatar": main_avatar,
+        "compared_with": (f"everyone's ranked games in the Meta Report for {label}" if label
+                          else "no Meta Report published yet"),
         "avatars_played": avatars_played,
         "my_deck_elements": _table(by_elements, "elements", 1),
         "main_avatar_matchups": main_matchups,
@@ -323,7 +336,7 @@ async def match_history_review(site: SiteClient, player: str, season: str = "cur
         "recent_games": recent_games,
         "notes": [n for n in [
             f"Groups need at least {REVIEW_MIN_GAMES} games to be listed; small samples swing a lot.",
-            "everyone_win_rate numbers are this season's results for all Summit players.",
+            "everyone_win_rate numbers come from the latest Meta Report; blank means too few games there.",
             (f"{unreleased} of the newest games have no Avatar or elements yet: deck details appear after the "
              f"next Meta Report release (shown through {released_through})." if unreleased else None),
             "Deck lists are never shared for ranked games, so tips can't name specific cards from them. "

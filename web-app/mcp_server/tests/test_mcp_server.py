@@ -62,6 +62,10 @@ PATTERNS = {"status": "ready", "patterns": {"spellbook": [
 REPORTS = {"reports": [{"slug": "2026-11-a", "label": "Nov 1-15, 2026"}]}
 REPORT = {"slug": "2026-11-a", "story": ["Fire is up"], "ranked": {
     "tiers": [{"avatar": "Sparkmage", "tier": "S"}],
+    "archetypes": [{"avatar": "Sparkmage", "elements": "", "games": 80, "winRate": 54.0, "tier": "S"}],
+    "matchups": {"archetypes": [{"avatar": "Sparkmage"}, {"avatar": "Pathfinder"}, {"avatar": "Druid"}],
+                 "cells": [[None, {"games": 30, "winRate": 61.0}, {"games": 4, "winRate": None}],
+                           [{"games": 30, "winRate": 39.0}, None, None], [None, None, None]]},
     "deckTypes": {"picks": {"Air / Fire|Sparkmage": {"games": 40, "winRate": 55.0, "both": [
         {"avatar": "Pathfinder", "elements": "Fire", "games": 12, "winRate": 40.0},
         {"avatar": "Druid", "elements": "Earth / Water", "games": 10, "winRate": 70.0}]}}},
@@ -369,7 +373,10 @@ def test_match_history_review_coaching_numbers():
     assert result["main_avatar"] == "Sparkmage"
     pathfinder = next(r for r in result["main_avatar_matchups"] if r["against"] == "Pathfinder")
     assert (pathfinder["wins"], pathfinder["losses"]) == (1, 3)
-    assert pathfinder["everyone_with_this_avatar_win_rate"] == 58.3
+    assert pathfinder["everyone_with_this_avatar_win_rate"] == 61.0
+    druid = next(r for r in result["main_avatar_matchups"] if r["against"] == "Druid")
+    assert druid["everyone_with_this_avatar_win_rate"] is None  # too few games in the report
+    assert "Nov 1-15, 2026" in result["compared_with"]
     assert result["toughest_opponent_avatars"][0]["against"] == "Pathfinder"
     first = {r["turn_order"]: r for r in result["going_first_vs_second"]}
     assert first["going first"]["wins"] == 4 and first["going second"]["losses"] == 4
@@ -377,7 +384,7 @@ def test_match_history_review_coaching_numbers():
     assert result["form"]["longest_losing_streak"] == 3
     assert any("Meta Report release" in n for n in result["notes"])
     spark = next(r for r in result["avatars_played"] if r["avatar"] == "Sparkmage")
-    assert spark["everyone_win_rate"] == 60.0
+    assert spark["everyone_win_rate"] == 54.0  # latest Meta Report, not a thin season start
     # The public API asks callers to name themselves
     assert any("/api/public/players/1/matches" in c and "site=" in c for c in calls)
 
@@ -394,3 +401,4 @@ def test_match_history_review_no_games():
     site = make_site(overrides={"/api/public/players/1/matches": (200, empty)})
     result = run(tools.match_history_review(site, "Pete"))
     assert result["games"] == 0 and "no ranked games" in result["message"]
+    assert "  " not in result["message"]

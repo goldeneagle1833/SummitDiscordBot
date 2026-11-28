@@ -62,7 +62,8 @@ def normalize_player_id(raw: str) -> str:
     """Bare numeric id (Discord ID, or a Google id with ``google_`` stripped)."""
     value = (raw or "").strip()
     if value.startswith("google_"):
-        value = value[7:]
+        from services.summit_player_numbers import bot_player_id
+        value = bot_player_id(value)
     if not value.isdigit() or len(value) > 30:
         raise ValueError("player_id must be a Discord ID (digits only)")
     return value

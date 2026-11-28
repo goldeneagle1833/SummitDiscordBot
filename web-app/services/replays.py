@@ -8,6 +8,7 @@ both players turned on "Game Replays" in their profile privacy settings.
 from repositories.pso_game_lookups import PsoGameLookupRepository
 from repositories.user_profiles import UserProfileRepository
 from utils.auth import get_current_user, is_admin
+from services.summit_player_numbers import bot_player_id
 
 
 def viewable_replays(matches: list[tuple[str, str]]) -> list[bool]:
@@ -15,7 +16,7 @@ def viewable_replays(matches: list[tuple[str, str]]) -> list[bool]:
     if is_admin():
         return [True] * len(matches)
     user = get_current_user()
-    viewer = str(user["id"]).removeprefix("google_") if user else None
+    viewer = bot_player_id(user["id"]) if user else None
     pairs = [(str(w), str(l)) for w, l in matches]
     public = UserProfileRepository().users_with_public_section(
         {p for pair in pairs for p in pair}, "replays",
@@ -34,7 +35,7 @@ def own_backfilled_replays(match_ids) -> dict[int, str]:
     user = get_current_user()
     if not user:
         return {}
-    viewer = str(user["id"]).removeprefix("google_")
+    viewer = bot_player_id(user["id"])
     out = {}
     for match_id, row in PsoGameLookupRepository().replays_for(match_ids).items():
         if viewer == str(row["winner_id"]) and row["winner_replay_url"]:

@@ -10,6 +10,7 @@ from flask import Blueprint, jsonify, request
 from repositories.pairings import PairingRepository
 from routes.api.matchmaking import relay_to_bot
 from services.external_match import ExternalMatchService
+from services.summit_player_numbers import UnknownPlayer, resolve_reported_player
 from utils.api_auth import require_integration_api_key
 
 logger = logging.getLogger(__name__)
@@ -55,8 +56,17 @@ def report_external_match():
                 "success": False,
             }), 400
 
-        winner_id = str(data["winner_id"]).strip()
-        loser_id = str(data["loser_id"]).strip()
+        # Players may be named by Discord id, Summit player number (Google
+        # logins), google_<id> or verified email; all become bot-table ids.
+        try:
+            winner_id = resolve_reported_player(data["winner_id"])
+            loser_id = resolve_reported_player(data["loser_id"])
+        except UnknownPlayer as e:
+            return jsonify({"error": str(e), "code": "UNKNOWN_PLAYER", "success": False}), 404
+        _resolve_player_entries(data, {
+            str(data["winner_id"]).strip(): winner_id,
+            str(data["loser_id"]).strip(): loser_id,
+        })
 
         if winner_id == loser_id:
             return jsonify({
@@ -170,6 +180,28 @@ def report_external_match():
 
 MAX_MATCH_SECONDS = 24 * 60 * 60
 
+_PLAYER_ID_KEYS = ("player_id", "discord_id", "playerId", "discordId")
+
+
+def _resolve_player_entries(data: dict, resolved: dict):
+    """Point the played-cards entries at the same ids as winner_id/loser_id.
+
+    A report that names a player by email or google_<id> may do the same in
+    its ``players`` list; the cards must land under the id the game is
+    recorded with, or they never show on the player's stats.
+    """
+    for key in ("players", "played_cards", "playedCards"):
+        entries = data.get(key)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            for id_key in _PLAYER_ID_KEYS:
+                raw = entry.get(id_key)
+                if raw is not None and str(raw).strip() in resolved:
+                    entry[id_key] = resolved[str(raw).strip()]
+
 
 def _already_recorded(data: dict, winner_id: str, loser_id: str):
     """The response for a report of a game already in match history, or None."""
@@ -274,9 +306,13 @@ def _notify_pso_match_players(winner_id: str, loser_id: str, result: dict):
         winner_name = result["winner"]["display_name"]
         loser_name = result["loser"]["display_name"]
         confirmation_id = result["confirmation_id"]
+        # A Google login reads its notifications under its google_<id>
+        from services.summit_player_numbers import google_for_number
+        winner_account = google_for_number(winner_id) or winner_id
+        loser_account = google_for_number(loser_id) or loser_id
 
         store_repo.create_web_notification(
-            user_id=winner_id,
+            user_id=winner_account,
             ntype="pso_match_pending",
             title="PSO Ranked Match Reported",
             body=(
@@ -286,7 +322,7 @@ def _notify_pso_match_players(winner_id: str, loser_id: str, result: dict):
         )
 
         store_repo.create_web_notification(
-            user_id=loser_id,
+            user_id=loser_account,
             ntype="pso_match_pending",
             title="PSO Ranked Match Reported",
             body=(

@@ -120,8 +120,10 @@ async def send_milestone_announcement(
             if channel:
                 # Replace placeholders with actual mentions
                 message = generate_milestone_message(milestone)
-                message = message.replace("PLAYER1", f"<@{winner_id}>")
-                message = message.replace("PLAYER2", f"<@{loser_id}>")
+                # Website-only players (Google logins) have nobody to mention
+                from utils.player_ids import player_mention
+                message = message.replace("PLAYER1", player_mention(winner_id, "a Summit website player"))
+                message = message.replace("PLAYER2", player_mention(loser_id, "a Summit website player"))
                 embed = discord.Embed(
                     title=f"Match Milestone: {milestone} Games!",
                     description=message,

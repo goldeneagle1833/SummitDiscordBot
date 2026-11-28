@@ -37,6 +37,7 @@ from repositories.limited_repo import (
 from services.limited_service import limited_winner_report, get_run_summary
 from services import provisional
 from utils.deck_checker import clean_deck_url
+from utils.player_ids import is_summit_player_number
 from cogs.lfg.player_kudos import kudos_button
 from cogs.lfg.player_report import is_player_feedback_item, report_player_button, report_player_only_view
 
@@ -237,7 +238,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     # ── duplicate guard (atomic check-and-set under lock) ──
     # Use pairing_id as key when available for precise dedup; fall back to player pair
     pairing_id = data.get("pairing_id")
-    match_key = (
+    match_key = data.get("dedupe_key") or (
         f"pairing:{data.get('match_type', 'ranked')}:{pairing_id}"
         if pairing_id
         else frozenset({data["winner_id"], data["loser_id"]})
@@ -614,11 +615,17 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     except Exception as e:
         logger.error(f"Failed to send milestone announcement: {e}", exc_info=True)
 
+    # Website-only players (Google logins) have no Discord account, so the
+    # Discord prize drops below can't reach them: skip those for their games.
+    website_only_player = any(
+        is_summit_player_number(pid) for pid in (data["winner_id"], data["loser_id"])
+    )
+
     # ── dust code drop ──
     try:
         event = get_active_event()
         season_name = event["event_name"] if event else "no_season"
-        result = try_dust_drop(
+        result = None if website_only_player else try_dust_drop(
             data["winner_id"], data["winner_global"],
             data["loser_id"], data["loser_global"],
             season_name,
@@ -678,7 +685,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
 
     # ── alter card drop ──
     try:
-        alter_result = try_alter_card_drop(
+        alter_result = None if website_only_player else try_alter_card_drop(
             data["winner_id"], data["winner_global"],
             data["loser_id"], data["loser_global"],
         )

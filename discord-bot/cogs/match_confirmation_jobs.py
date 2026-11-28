@@ -10,8 +10,13 @@ import discord
 from discord.ext import commands, tasks
 import logging
 import sqlite3
+import time
 
 import config
+from utils.player_ids import is_summit_player_number
+
+# How long past its expiry a PSO Ranked report keeps retrying a failed finalize
+PSO_RETRY_SECONDS = 2 * 24 * 60 * 60
 
 logger = logging.getLogger("discord_bot.match_confirmation_jobs")
 
@@ -163,9 +168,10 @@ class MatchConfirmationJobs(commands.Cog):
         """Check if a value is a valid Discord snowflake (numeric string or int)."""
         try:
             int(value)
-            return True
         except (ValueError, TypeError):
             return False
+        # Website-only players (Google logins) have a Summit player number
+        return not is_summit_player_number(value)
 
     async def _send_reminder_dm(self, confirmation: dict):
         """
@@ -353,11 +359,11 @@ class MatchConfirmationJobs(commands.Cog):
         except Exception as e:
             logger.error(f"Error sending expiration notification: {e}", exc_info=True)
 
-    async def _finalize_via_web_api(self, confirmation: dict) -> bool:
+    async def _finalize_via_web_api(self, confirmation: dict) -> dict | None:
         """
         Call the web app API to auto-confirm and apply ELO for an expired confirmation.
 
-        Returns True if the web app successfully processed the match.
+        Returns the web app's answer when it processed the match, else None.
         """
         import aiohttp
 
@@ -377,14 +383,25 @@ class MatchConfirmationJobs(commands.Cog):
                     if resp.status == 200:
                         data = await resp.json()
                         logger.info(f"Web API auto-confirmed {confirmation_id}: {data.get('match_id', 'unknown')}")
-                        return True
+                        return data if isinstance(data, dict) else {}
                     else:
                         body = await resp.text()
                         logger.warning(f"Web API auto-confirm failed for {confirmation_id} (status {resp.status}): {body}")
-                        return False
+                        return None
         except Exception as e:
             logger.error(f"Error calling web API for auto-confirm {confirmation_id}: {e}")
+            return None
+
+    @staticmethod
+    def _retry_pso_report(confirmation: dict) -> bool:
+        """Keep a PSO Ranked report pending after a failed finalize, for up to two days."""
+        if confirmation.get("source") != "PSO Ranked":
             return False
+        try:
+            overdue = time.time() - int(confirmation.get("expires_at") or 0)
+        except (TypeError, ValueError):
+            return False
+        return overdue < PSO_RETRY_SECONDS
 
     @tasks.loop(hours=1)
     async def reminder_job(self):
@@ -450,11 +467,23 @@ class MatchConfirmationJobs(commands.Cog):
                 confirmation_id = confirmation["id"]
 
                 # Try to finalize the match via the web app API (ELO + match record)
-                elo_success = await self._finalize_via_web_api(confirmation)
+                finalized = await self._finalize_via_web_api(confirmation)
+                elo_success = finalized is not None
 
                 if not elo_success:
+                    if self._retry_pso_report(confirmation):
+                        # A Play Sorcery Online game goes on the ranked ladder;
+                        # try again next hour rather than dropping it.
+                        logger.warning(f"Will retry PSO report {confirmation_id} next hour")
+                        continue
                     # Fallback: just mark as auto_confirmed without ELO
                     self._update_confirmation_status(confirmation_id, "auto_confirmed")
+
+                if finalized and finalized.get("pipeline") == "bot":
+                    # Recorded like a queued game: both players already got
+                    # the bot's "Match Recorded" message with the match id.
+                    logger.info(f"Auto-confirmed PSO report {confirmation_id} as match {finalized.get('match_id')}")
+                    continue
 
                 # Send expiration notifications
                 await self._send_expiration_notification(confirmation, "auto_confirmed")

@@ -17,6 +17,7 @@ from flask import Blueprint, jsonify, request
 from services import api_usage
 from services import public_match_history as history
 from services import ranked_analytics
+from services.summit_player_numbers import bot_player_id
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ def search_public_players():
 
         for r in UserProfileRepository().search_users(query, limit=limit):
             uid = str(r["user_id"])
-            uid = uid[7:] if uid.startswith("google_") else uid
+            uid = bot_player_id(uid)
             if uid not in seen:
                 seen.add(uid)
                 players.append({"id": uid, "name": r.get("display_name")})

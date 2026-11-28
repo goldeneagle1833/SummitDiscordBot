@@ -38,7 +38,8 @@ from services.avatar_mode import (
 from services.card_points_service import validate_deck_points
 from services.ranked_eligibility import ranked_block_message
 from services.precon_ladder import precon_choices
-from services.summit_result_reporting import record_sorcery_online_result
+from utils.player_ids import is_summit_player_number
+from services.summit_result_reporting import record_sorcery_online_result, record_standalone_result
 from services import precon_service, precon_test_mode
 from repositories.elo_repo import get_pairing_by_id
 from cogs.lfg.voice import SUMMIT_VOICE_URL
@@ -460,6 +461,55 @@ async def start_matchmaking_api(bot):
             )
         return web.json_response(result)
 
+    async def standalone_result(request):
+        """Record a held Play Sorcery Online ranked game that had no Summit pairing.
+
+        Called by the website once a standalone PSO Ranked report has passed
+        its 24-hour dispute window (or the loser confirmed it).
+        """
+        try:
+            payload = await request.json()
+        except ValueError:
+            raise web.HTTPBadRequest(text="Request body must be JSON")
+        if not isinstance(payload, dict):
+            raise web.HTTPBadRequest(text="Request body must be a JSON object")
+        winner_went_first = payload.get("winner_went_first")
+        if winner_went_first is not None and not isinstance(winner_went_first, bool):
+            return web.json_response(
+                {"error": "winner_went_first must be a boolean", "code": "VALIDATION_ERROR"},
+                status=400,
+            )
+        try:
+            result = await record_standalone_result(
+                bot,
+                report_key=payload["report_key"],
+                winner_id=payload["winner_id"],
+                loser_id=payload["loser_id"],
+                winner_name=payload.get("winner_name"),
+                loser_name=payload.get("loser_name"),
+                winner_deck_url=payload.get("winner_deck_url"),
+                loser_deck_url=payload.get("loser_deck_url"),
+                winner_went_first=winner_went_first,
+                match_time=payload.get("match_time") or 0,
+                match_comment=payload.get("match_comment") or "",
+                played_cards=payload.get("played_cards"),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            return web.json_response(
+                {"error": str(exc) or "Invalid result", "code": "VALIDATION_ERROR"},
+                status=400,
+            )
+        except RuntimeError as exc:
+            logger.error("Could not record standalone PSO result: %s", exc)
+            return web.json_response({"error": str(exc), "code": "RECORDING_FAILED"}, status=409)
+        except Exception as exc:
+            logger.error("Could not record standalone PSO result: %s", exc, exc_info=True)
+            return web.json_response(
+                {"error": "Could not record match result", "code": "INTERNAL_ERROR"},
+                status=500,
+            )
+        return web.json_response(result)
+
     async def voice(request):
         """Which voice channel are these players in, and who is listening?"""
         try:
@@ -516,6 +566,9 @@ async def start_matchmaking_api(bot):
         except (ValueError, TypeError):
             # Not a valid Discord snowflake (e.g. Google OAuth ID) — skip DM
             logger.warning(f"PSO notify: loser_discord_id '{loser_discord_id}' is not a Discord snowflake, skipping DM")
+            return web.json_response({"sent": False, "reason": "not_discord_id"})
+        if is_summit_player_number(loser_id_int):
+            # A website-only player (Google login): they confirm on the website
             return web.json_response({"sent": False, "reason": "not_discord_id"})
 
         try:
@@ -738,6 +791,7 @@ async def start_matchmaking_api(bot):
         "/matches/{guild_id}/{pairing_id}/results",
         report_result,
     )
+    app.router.add_post("/standalone-results", standalone_result)
     app.router.add_get("/voice", voice)
     app.router.add_post("/pso-match-notify", pso_match_notify)
     app.router.add_post("/match-correction-request", match_correction_request)

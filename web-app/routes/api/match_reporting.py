@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request, session
 from utils.auth import require_auth
 
 from services.match_confirmation import MatchConfirmationService
+from services.summit_player_numbers import bot_player_id
 from repositories.user_profiles import UserProfileRepository
 from repositories.match_confirmation import MatchConfirmationRepository
 from webapp_config import MATCH_RECORDS_DB_PATH
@@ -294,6 +295,10 @@ def pending_confirmations_for_user(current_user_id):
     if current_user_id_str.startswith("google_"):
         numeric_id = current_user_id_str[7:]
         confirmations += confirmation_repo.get_pending_confirmations(numeric_id)
+        # Play Sorcery Online reports name a Google login by its Summit player number
+        player_number = bot_player_id(current_user_id_str)
+        if player_number != numeric_id:
+            confirmations += confirmation_repo.get_pending_confirmations(player_number)
     else:
         confirmations += confirmation_repo.get_pending_confirmations(f"google_{current_user_id_str}")
 

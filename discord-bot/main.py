@@ -25,7 +25,7 @@ from cogs.magoo_monitor import MagooMonitorCog
 from cogs.store_notifications import StoreNotificationsCog
 from cogs.feedback_notifications import FeedbackNotificationsCog
 from cogs.feedback_intake import FeedbackIntakeCog
-from cogs.ask_bot import AskBotCog
+from cogs.mention_feedback import MentionFeedbackCog
 from cogs.article_notifications import ArticleNotificationsCog
 from cogs.article_discussions import ArticleDiscussionsCog
 from cogs.card_catalog_sync import CardCatalogSyncCog, ensure_card_catalog_table
@@ -204,7 +204,7 @@ async def setup_cogs():
     await bot.add_cog(StoreNotificationsCog(bot))  # Store order DMs + admin pings
     await bot.add_cog(FeedbackNotificationsCog(bot))  # DM users when feedback resolved
     await bot.add_cog(FeedbackIntakeCog(bot))  # Discord bug/feature channel -> website Feedback board
-    await bot.add_cog(AskBotCog(bot))  # @mention questions answered from the Summit code
+    await bot.add_cog(MentionFeedbackCog(bot))  # "@Summit Bot feedback: ..." -> website Feedback board
     await bot.add_cog(ArticleNotificationsCog(bot))  # Player article review DMs
     await bot.add_cog(ArticleDiscussionsCog(bot))  # Article forum threads + comment sync
     await bot.add_cog(StreamingCog(bot))  # Streaming detection for website banner

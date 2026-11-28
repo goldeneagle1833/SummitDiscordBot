@@ -37,7 +37,7 @@ class FeedbackIntakeCog(commands.Cog):
         return getattr(channel, "name", None) == self.channel_name
 
     def is_feedback_location(self, channel) -> bool:
-        """True for the feedback channel itself or a post inside it (used by ask_bot)."""
+        """True for the feedback channel itself or a post inside it (used by mention_feedback)."""
         if isinstance(channel, discord.Thread):
             return self._is_feedback_channel(channel.parent)
         return self._is_feedback_channel(channel)

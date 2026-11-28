@@ -50,6 +50,7 @@ from routes.api.ranked_analytics import ranked_analytics_bp
 from routes.api.season_badges import season_badges_bp
 from routes.api.staples import staples_bp
 from routes.api.public_matches import public_matches_bp
+from routes.api.mcp_account import mcp_account_bp
 from routes.api.paper_finishes import paper_finishes_bp
 from routes.api.articles import articles_bp
 from routes.api.nav import nav_bp
@@ -100,6 +101,7 @@ api_bp.register_blueprint(ranked_analytics_bp, url_prefix="/ranked-analytics")
 api_bp.register_blueprint(season_badges_bp)
 api_bp.register_blueprint(staples_bp)
 api_bp.register_blueprint(public_matches_bp)
+api_bp.register_blueprint(mcp_account_bp)
 api_bp.register_blueprint(paper_finishes_bp)
 api_bp.register_blueprint(articles_bp, url_prefix="/articles")
 api_bp.register_blueprint(nav_bp)

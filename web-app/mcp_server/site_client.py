@@ -20,6 +20,7 @@ Load protection for the site (it runs only two main web workers):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -52,6 +53,13 @@ USER_AGENT = "SummitMCP/1.0 (+https://sorcererssummit.com)"
 
 class SiteError(Exception):
     """The site could not answer; the message is safe to show to a player."""
+
+
+class SignInExpired(SiteError):
+    """The player's AI-app sign-in is no longer valid."""
+
+
+USER_TOKEN_HEADER = "X-Summit-User-Token"
 
 
 class SiteClient:
@@ -116,29 +124,35 @@ class SiteClient:
         clean = {k: v for k, v in params.items() if v not in (None, "")}
         return f"{url}?{urlencode(clean)}" if clean else url
 
-    async def get(self, path: str, *, ttl: int | None = None, allow_404: bool = False) -> Any:
-        return await self._cached("GET", path, None, ttl, allow_404)
+    async def get(self, path: str, *, ttl: int | None = None, allow_404: bool = False,
+                  user_token: str | None = None) -> Any:
+        """``user_token``: a signed-in player's AI-app token, for their own /api/mcp/me data."""
+        return await self._cached("GET", path, None, ttl, allow_404, user_token)
 
     async def post(self, path: str, body: dict, *, ttl: int | None = None) -> Any:
         return await self._cached("POST", path, body, ttl, False)
 
-    async def _cached(self, method: str, path: str, body: dict | None, ttl: int | None, allow_404: bool) -> Any:
+    async def _cached(self, method: str, path: str, body: dict | None, ttl: int | None, allow_404: bool,
+                      user_token: str | None = None) -> Any:
         key = method + " " + path + (" " + json.dumps(body, sort_keys=True) if body is not None else "")
+        if user_token:
+            # One player's answers are never shared with another player
+            key += " user:" + hashlib.sha256(user_token.encode()).hexdigest()
         now = time.monotonic()
         hit = self._cache.get(key)
         if hit and hit[0] > now:
-            return self._unwrap(hit[1], hit[2], allow_404)
+            return self._unwrap(hit[1], hit[2], allow_404, bool(user_token))
 
         # Identical requests that arrive together share one upstream call
         pending = self._inflight.get(key)
         if pending is not None:
             status, data = await asyncio.shield(pending)
-            return self._unwrap(status, data, allow_404)
+            return self._unwrap(status, data, allow_404, bool(user_token))
 
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         self._inflight[key] = future
         try:
-            status, data = await self._fetch(method, path, body)
+            status, data = await self._fetch(method, path, body, user_token)
             good = (status < 400 and status != 202) or status == 404
             lifetime = (ttl or CACHE_TTL_SECONDS) if good else ERROR_TTL_SECONDS
             if len(self._cache) >= MAX_CACHE_ENTRIES:
@@ -152,7 +166,7 @@ class SiteClient:
             raise
         finally:
             self._inflight.pop(key, None)
-        return self._unwrap(status, data, allow_404)
+        return self._unwrap(status, data, allow_404, bool(user_token))
 
     def _evict(self, now: float) -> None:
         for k in [k for k, v in self._cache.items() if v[0] <= now]:
@@ -161,7 +175,10 @@ class SiteClient:
             self._cache.pop(next(iter(self._cache)))
 
     @staticmethod
-    def _unwrap(status: int, data: Any, allow_404: bool) -> Any:
+    def _unwrap(status: int, data: Any, allow_404: bool, signed_in: bool = False) -> Any:
+        if status == 401 and signed_in:
+            raise SignInExpired("Your Summit sign-in has expired. Disconnect and reconnect the Summit "
+                                "(signed in) connector in your AI app to sign in again.")
         if status == 404 and allow_404:
             return None
         if status == 202:
@@ -175,11 +192,14 @@ class SiteClient:
             raise SiteError("Summit data is unavailable right now. Please try again in a minute.")
         return data
 
-    async def _fetch(self, method: str, path: str, body: dict | None) -> tuple[int, Any]:
+    async def _fetch(self, method: str, path: str, body: dict | None,
+                     user_token: str | None = None) -> tuple[int, Any]:
         async with self._semaphore:
             for attempt in (1, 2):
                 token = await self._site_token(force=attempt == 2)
                 headers = {"X-Site-Token": token, "Sec-Fetch-Site": "same-origin"}
+                if user_token:
+                    headers[USER_TOKEN_HEADER] = user_token
                 try:
                     if method == "POST":
                         response = await self._client.post(path, json=body, headers=headers)

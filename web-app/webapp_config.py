@@ -36,6 +36,8 @@ META_REPORTS_DB_PATH = Path(os.environ.get("META_REPORTS_DB_PATH", BASE_DIR / "m
 CARD_SNAPSHOTS_DB_PATH = Path(os.environ.get("CARD_SNAPSHOTS_DB_PATH", BASE_DIR / "card_snapshots.db"))
 # Player articles (blog): own database; the bot reads its notification queue.
 ARTICLES_DB_PATH = Path(os.environ.get("ARTICLES_DB_PATH", BASE_DIR / "articles.db"))
+# Sign-in for AI apps (OAuth clients, codes and token hashes for the MCP server)
+MCP_AUTH_DB_PATH = Path(os.environ.get("MCP_AUTH_DB_PATH", BASE_DIR / "mcp_auth.db"))
 
 # Upload directories
 STATIC_DIR = BASE_DIR / "static"

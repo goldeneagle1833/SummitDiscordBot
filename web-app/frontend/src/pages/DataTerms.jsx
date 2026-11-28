@@ -36,6 +36,11 @@ export default function DataTerms() {
             putting it behind a paywall, or using it in a paid product) needs our written permission first.
             Ask us on Discord.
           </p>
+          <p>
+            Build something new. Use the data to make something Summit doesn't already offer, like your own stats,
+            charts, tools or analysis. Don't copy Summit's pages or features, such as a player's match history tab,
+            profile, leaderboard or Meta Report, so that your site works as a stand-in for ours.
+          </p>
         </Section>
 
         <Section title="2. Credit Sorcerers Summit">

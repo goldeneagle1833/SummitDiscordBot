@@ -77,17 +77,18 @@ def _move_bare_rows(conn: sqlite3.Connection, bare_id: str, number: int):
     conn.commit()
 
 
-def number_for_google(google_user_id: str, *, create: bool = False, db_path=None) -> int | None:
-    """The Summit player number of a ``google_<id>`` login (made on first use when create)."""
-    google_user_id = str(google_user_id or "").strip()
-    if not google_user_id.startswith(GOOGLE_PREFIX) or len(google_user_id) <= len(GOOGLE_PREFIX):
-        return None
-    if google_user_id in _by_google:
-        return _by_google[google_user_id]
+def _number_for_login(login_id: str, *, create: bool, db_path=None) -> int | None:
+    """The Summit player number of a website-only login (made on first use when create).
+
+    ``login_id`` is ``google_<id>`` for a Google login or ``email:<address>``
+    for an email-code login (the table's google_user_id column holds either).
+    """
+    if login_id in _by_google:
+        return _by_google[login_id]
     conn = _connect(db_path)
     try:
         row = conn.execute(
-            f"SELECT number FROM {TABLE} WHERE google_user_id = ?", (google_user_id,)
+            f"SELECT number FROM {TABLE} WHERE google_user_id = ?", (login_id,)
         ).fetchone()
         # Two first games at once can pick the same next number; the loser of
         # that race is ignored and simply tries the next one.
@@ -97,18 +98,38 @@ def number_for_google(google_user_id: str, *, create: bool = False, db_path=None
             conn.execute(
                 f"""INSERT OR IGNORE INTO {TABLE} (number, google_user_id, created_at)
                     VALUES ((SELECT COALESCE(MAX(number), ?) + 1 FROM {TABLE}), ?, ?)""",
-                (SUMMIT_NUMBER_MIN, google_user_id, int(time.time())),
+                (SUMMIT_NUMBER_MIN, login_id, int(time.time())),
             )
             conn.commit()
             row = conn.execute(
-                f"SELECT number FROM {TABLE} WHERE google_user_id = ?", (google_user_id,)
+                f"SELECT number FROM {TABLE} WHERE google_user_id = ?", (login_id,)
             ).fetchone()
             if row:
-                logger.info("Gave %s Summit player number %s", google_user_id, row[0])
-                _move_bare_rows(conn, google_user_id[len(GOOGLE_PREFIX):], int(row[0]))
+                logger.info("Gave %s Summit player number %s", login_id, row[0])
+                if login_id.startswith(GOOGLE_PREFIX):
+                    _move_bare_rows(conn, login_id[len(GOOGLE_PREFIX):], int(row[0]))
     finally:
         conn.close()
-    return _remember(google_user_id, int(row[0])) if row else None
+    return _remember(login_id, int(row[0])) if row else None
+
+
+def number_for_google(google_user_id: str, *, create: bool = False, db_path=None) -> int | None:
+    """The Summit player number of a ``google_<id>`` login (made on first use when create)."""
+    google_user_id = str(google_user_id or "").strip()
+    if not google_user_id.startswith(GOOGLE_PREFIX) or len(google_user_id) <= len(GOOGLE_PREFIX):
+        return None
+    return _number_for_login(google_user_id, create=create, db_path=db_path)
+
+
+EMAIL_LOGIN_PREFIX = "email:"
+
+
+def number_for_email(email: str, *, create: bool = False, db_path=None) -> int | None:
+    """The Summit player number of an email-code login (it is also its user id)."""
+    email = str(email or "").strip().lower()
+    if "@" not in email:
+        return None
+    return _number_for_login(EMAIL_LOGIN_PREFIX + email, create=create, db_path=db_path)
 
 
 def google_for_number(number, *, db_path=None) -> str | None:
@@ -117,7 +138,8 @@ def google_for_number(number, *, db_path=None) -> str | None:
         return None
     number = int(str(number).strip())
     if number in _by_number:
-        return _by_number[number]
+        found = _by_number[number]
+        return found if found.startswith(GOOGLE_PREFIX) else None
     conn = _connect(db_path)
     try:
         row = conn.execute(
@@ -128,7 +150,25 @@ def google_for_number(number, *, db_path=None) -> str | None:
     if not row:
         return None
     _remember(row[0], number)
-    return row[0]
+    # Email-code logins use the number itself as their user id
+    return row[0] if row[0].startswith(GOOGLE_PREFIX) else None
+
+
+def number_exists(number, *, db_path=None) -> bool:
+    """True for a Summit player number that was handed out (Google or email login)."""
+    if not is_summit_player_number(number):
+        return False
+    number = int(str(number).strip())
+    if number in _by_number:
+        return True
+    conn = _connect(db_path)
+    try:
+        row = conn.execute(f"SELECT google_user_id FROM {TABLE} WHERE number = ?", (number,)).fetchone()
+    finally:
+        conn.close()
+    if row:
+        _remember(row[0], number)
+    return row is not None
 
 
 def bot_player_id(user_id) -> str:
@@ -202,8 +242,13 @@ def lookup_account_by_email(email: str, *, create: bool = True, db_path=None) ->
     if "@" not in email:
         return None
     profiles = _profiles_with_email(email, db_path)
-    discord = [p for p in profiles if p["provider"] != "google" and str(p["user_id"]).isdigit()]
+    discord = [
+        p for p in profiles
+        if p["provider"] not in ("google", "email") and str(p["user_id"]).isdigit()
+        and not is_summit_player_number(p["user_id"])
+    ]
     google = [p for p in profiles if str(p["user_id"]).startswith(GOOGLE_PREFIX)]
+    email_logins = [p for p in profiles if p["provider"] == "email" and is_summit_player_number(p["user_id"])]
     if discord:
         profile, login = discord[0], "discord"
         summit_user_id = str(profile["user_id"])
@@ -213,6 +258,9 @@ def lookup_account_by_email(email: str, *, create: bool = True, db_path=None) ->
         if number is None:
             return None
         summit_user_id = str(number)
+    elif email_logins:
+        profile, login = email_logins[0], "email"
+        summit_user_id = str(profile["user_id"])
     else:
         return None
     return {
@@ -260,7 +308,7 @@ def resolve_reported_player(value, *, db_path=None) -> str:
             raise UnknownPlayer(f"No Summit account has the Google login {text}")
         return str(number_for_google(text, create=True, db_path=db_path))
     if is_summit_player_number(text):
-        if google_for_number(text, db_path=db_path) is None:
+        if not number_exists(text, db_path=db_path):
             raise UnknownPlayer(f"{text} is not a Summit player number")
         return text
     return text
@@ -275,7 +323,10 @@ def all_numbers(*, db_path=None) -> dict[str, int]:
         conn.close()
     for google_user_id, number in rows:
         _remember(google_user_id, int(number))
-    return {google_user_id: int(number) for google_user_id, number in rows}
+    return {
+        google_user_id: int(number) for google_user_id, number in rows
+        if google_user_id.startswith(GOOGLE_PREFIX)
+    }
 
 
 def account_id(user_id) -> str:

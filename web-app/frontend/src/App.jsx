@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef } from 'react'
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
+import WelcomeSetupModal from '@/components/layout/WelcomeSetupModal'
 import Nav from '@/components/layout/Nav'
 import Footer from '@/components/layout/Footer'
 import AdminGuard from '@/components/layout/AdminGuard'
@@ -228,6 +229,7 @@ function Layout() {
       <TrackingProvider>
         <div className="min-h-screen flex flex-col">
           <Nav />
+          <WelcomeSetupModal />
           <main className="flex-1 max-w-content mx-auto w-full px-4 py-6">
             {/* Pages load on demand, so a visit only downloads the page it opens */}
             <Suspense fallback={<Spinner className="py-20" />}>

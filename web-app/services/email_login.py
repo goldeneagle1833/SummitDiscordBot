@@ -187,6 +187,7 @@ def account_for_email(email: str, *, db_path=None) -> dict:
             "provider": existing["provider"],
             "display_name": existing.get("custom_display_name") or existing.get("display_name") or "Player",
             "avatar": profile.get("avatar"),
+            "new": False,
         }
 
     number = number_for_email(email, create=True, db_path=db_path)
@@ -200,4 +201,5 @@ def account_for_email(email: str, *, db_path=None) -> dict:
         email_verified=True,
     )
     logger.info("New email login %s", number)
-    return {"user_id": str(number), "provider": "email", "display_name": display_name, "avatar": None}
+    return {"user_id": str(number), "provider": "email", "display_name": display_name, "avatar": None,
+            "new": True}

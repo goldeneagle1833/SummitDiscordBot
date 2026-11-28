@@ -48,7 +48,7 @@ const PER_PAGE_OPTIONS = [15, 25, 50]
 export default function Player() {
   usePageTitle('Player')
   const { playerId } = useParams()
-  const { user: authUser } = useAuth()
+  const { user: authUser, refreshUser } = useAuth()
   const isAdmin = authUser && authUser.is_admin
   const isOwner = authUser && String(authUser.user_id) === String(playerId)
   const canSeeLifetime = isAdmin || isOwner
@@ -172,6 +172,7 @@ export default function Player() {
 
   const handleNameChange = (newName) => {
     setData((d) => d ? { ...d, name: newName, has_custom_display_name: true } : d)
+    refreshUser?.() // the menu shows the signed-in name too
   }
 
 

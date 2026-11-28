@@ -155,3 +155,36 @@ def test_bad_email_and_switched_off_email(client, match_db):
         resp = _start(client)
     assert resp.status_code == 503
     assert "Discord or Google" in resp.get_json()["error"]
+
+
+def test_new_email_player_gets_the_welcome_popup_once(client, match_db, outbox):
+    _start(client)
+    _verify(client, _code(outbox))
+    assert client.get("/api/me").get_json()["needs_welcome"] is True
+
+    # Picking a name updates the menu's name right away
+    resp = client.post("/api/player/1000000000000001/set-display-name", json={"display_name": "Gee Wiz"})
+    assert resp.status_code == 200, resp.get_json()
+    assert client.post("/api/me/welcome-done").status_code == 200
+    me = client.get("/api/me").get_json()
+    assert me["needs_welcome"] is False
+    assert me["username"] == "Gee Wiz"
+
+    # Signing in again: the chosen name, and no pop-up
+    client.get("/auth/logout")
+    _start(client)
+    _verify(client, _code(outbox))
+    me = client.get("/api/me").get_json()
+    assert me["needs_welcome"] is False
+    assert me["username"] == "Gee Wiz"
+
+
+def test_existing_account_signing_in_by_email_gets_no_popup(client, match_db, outbox):
+    _profile(match_db, "123456789012345678", "discord", "gee@example.com", "Gee")
+    _start(client)
+    _verify(client, _code(outbox))
+    assert client.get("/api/me").get_json()["needs_welcome"] is False
+
+
+def test_welcome_done_needs_a_login(client):
+    assert client.post("/api/me/welcome-done").status_code == 401

@@ -374,3 +374,16 @@ def _lift_bracket_pairing_hold(request, monkeypatch):
     except Exception:
         return
     monkeypatch.setattr(BracketService, "pairings_hidden", lambda self, bracket: False)
+
+
+@pytest.fixture(autouse=True)
+def predictable_player_numbers(monkeypatch):
+    """Hand out Summit player numbers 1000000000000001, 0002, ... in tests.
+
+    Real numbers are random (services/summit_player_numbers.random_player_number);
+    tests that expect a specific number get them in order instead.
+    """
+    from services import summit_player_numbers
+
+    counter = iter(range(1_000_000_000_000_001, 1_000_000_000_001_000))
+    monkeypatch.setattr(summit_player_numbers, "_pick_number", lambda: next(counter))

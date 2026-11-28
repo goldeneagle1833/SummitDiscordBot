@@ -3,8 +3,8 @@
 Ranked games are recorded by the Discord bot, whose tables key players by a
 64-bit INTEGER. A Google login's id (``google_<21-digit Google id>``) fits
 none of them, so the first time a game is reported for a Google login it is
-given a Summit player number: a 16-digit number no Discord account can have
-(see utils/player_ids.py). From then on the bot records the player under
+given a Summit player number: a random 16-digit number no Discord account
+can have (see utils/player_ids.py and random_player_number). From then on the bot records the player under
 that number exactly like a Discord player, and the website maps it back to
 the Google account for names, pictures and "is this me" checks.
 
@@ -15,11 +15,12 @@ Discord id, Summit player number, ``google_<id>`` or verified email
 """
 
 import logging
+import secrets
 import sqlite3
 import time
 
 import webapp_config
-from utils.player_ids import SUMMIT_NUMBER_MIN, is_summit_player_number
+from utils.player_ids import is_summit_player_number
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,24 @@ def _move_bare_rows(conn: sqlite3.Connection, bare_id: str, number: int):
     conn.commit()
 
 
+# New numbers are "1000" then 12 random digits from the operating system's
+# secure random source, so nobody can list players by counting up from one
+# number (a trillion possibilities per prefix; a guess almost never lands on
+# a real player). The prefix keeps every number 16 digits, inside the
+# Summit range and clear of Discord ids. The first few numbers, given out
+# before this, were 1000000000000001, 0002, ... and keep working as they are.
+NUMBER_PREFIX = 1000
+RANDOM_DIGITS = 12
+
+
+def random_player_number() -> int:
+    """A fresh unguessable Summit player number (not yet checked for use)."""
+    return NUMBER_PREFIX * 10**RANDOM_DIGITS + secrets.randbelow(10**RANDOM_DIGITS)
+
+
+_pick_number = random_player_number  # tests swap in a predictable sequence
+
+
 def _number_for_login(login_id: str, *, create: bool, db_path=None) -> int | None:
     """The Summit player number of a website-only login (made on first use when create).
 
@@ -90,15 +109,16 @@ def _number_for_login(login_id: str, *, create: bool, db_path=None) -> int | Non
         row = conn.execute(
             f"SELECT number FROM {TABLE} WHERE google_user_id = ?", (login_id,)
         ).fetchone()
-        # Two first games at once can pick the same next number; the loser of
-        # that race is ignored and simply tries the next one.
-        for _attempt in range(5):
+        # A random number that's already taken is ignored and another is
+        # drawn. Two first games for the same login at once: the UNIQUE login
+        # column ignores the second insert and both read the same number back.
+        for _attempt in range(10):
             if row is not None or not create:
                 break
             conn.execute(
                 f"""INSERT OR IGNORE INTO {TABLE} (number, google_user_id, created_at)
-                    VALUES ((SELECT COALESCE(MAX(number), ?) + 1 FROM {TABLE}), ?, ?)""",
-                (SUMMIT_NUMBER_MIN, login_id, int(time.time())),
+                    VALUES (?, ?, ?)""",
+                (_pick_number(), login_id, int(time.time())),
             )
             conn.commit()
             row = conn.execute(

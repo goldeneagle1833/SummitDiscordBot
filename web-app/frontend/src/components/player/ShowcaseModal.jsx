@@ -5,7 +5,7 @@ import { cardImageUrl, searchArticleCards } from '@/api/articles'
 export const BIO_MAX = 160
 const inputCls = 'w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm focus:border-secondary/70 outline-none'
 
-function CardSearch({ value, onChange }) {
+export function CardSearch({ value, onChange, inputId = 'showcase-card' }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [busy, setBusy] = useState(false)
@@ -44,7 +44,7 @@ function CardSearch({ value, onChange }) {
   return (
     <div className="relative">
       <input
-        id="showcase-card"
+        id={inputId}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         className={inputCls}

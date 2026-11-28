@@ -11,3 +11,4 @@ stripe>=10.0.0
 psutil>=5.9.0
 reportlab>=4.0
 segno>=1.6.0
+Pillow>=10.0

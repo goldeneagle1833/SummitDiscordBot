@@ -78,6 +78,7 @@ class UserProfileRepository:
             'featured_deck_checked_at': 'TEXT',
             'featured_deck_source': 'TEXT',
             'profile_showcase': 'TEXT',
+            'profile_picture': 'TEXT',
         }
 
         # Add missing columns
@@ -268,7 +269,7 @@ class UserProfileRepository:
                    -- everywhere else on the site, so return that, not the
                    -- handle they signed up with.
                    COALESCE(NULLIF(custom_display_name, ''), display_name) AS display_name,
-                   avatar, provider
+                   avatar, provider, profile_picture
             FROM user_profiles
             WHERE LOWER(display_name) LIKE LOWER(?) ESCAPE '\\'
                OR LOWER(custom_display_name) LIKE LOWER(?) ESCAPE '\\'
@@ -382,7 +383,8 @@ class UserProfileRepository:
         if provider:
             cur.execute(
                 """
-                SELECT user_id, display_name, custom_display_name, avatar, provider, profile_reset_at
+                SELECT user_id, display_name, custom_display_name, avatar, provider, profile_reset_at,
+                       profile_picture
                 FROM user_profiles
                 WHERE user_id = ? AND provider = ?
                 LIMIT 1
@@ -393,7 +395,8 @@ class UserProfileRepository:
             # Search across all providers
             cur.execute(
                 """
-                SELECT user_id, display_name, custom_display_name, avatar, provider, profile_reset_at
+                SELECT user_id, display_name, custom_display_name, avatar, provider, profile_reset_at,
+                       profile_picture
                 FROM user_profiles
                 WHERE user_id = ?
                 LIMIT 1
@@ -911,6 +914,32 @@ class UserProfileRepository:
         cur.execute(
             "UPDATE user_profiles SET profile_showcase = ? WHERE user_id IN (?, ?)",
             (json.dumps(clean) if clean else None, *self._both_ids(user_id)),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return updated
+
+    def get_profile_picture(self, user_id: str) -> str | None:
+        """The player's own picture choice (raw JSON), or None for their Discord picture."""
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT profile_picture FROM user_profiles"
+                " WHERE user_id IN (?, ?) AND profile_picture IS NOT NULL LIMIT 1",
+                self._both_ids(user_id),
+            ).fetchone()
+        finally:
+            conn.close()
+        return row[0] if row and row[0] else None
+
+    def set_profile_picture(self, user_id: str, value: dict | None) -> bool:
+        """Save the picture choice; None goes back to the Discord picture."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_profiles SET profile_picture = ? WHERE user_id IN (?, ?)",
+            (json.dumps(value) if value else None, *self._both_ids(user_id)),
         )
         conn.commit()
         updated = cur.rowcount > 0

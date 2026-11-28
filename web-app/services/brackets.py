@@ -1226,6 +1226,7 @@ class BracketService:
                     "display_name": entrant["display_name"],
                     "avatar": entrant.get("avatar"),
                     "provider": entrant.get("provider"),
+                    "picture_url": entrant.get("picture_url"),
                     "eliminated": is_out,
                     "has_deck": bool(deck),
                     "deck_visible": visible,

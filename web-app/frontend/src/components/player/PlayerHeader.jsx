@@ -14,16 +14,42 @@ function initials(name) {
   return text.toUpperCase()
 }
 
-function ProfilePicture({ name, src }) {
+function ProfilePicture({ name, src, card, onEdit, onReset }) {
   const [failed, setFailed] = useState(false)
   useEffect(() => setFailed(false), [src])
   const frame = 'w-20 h-20 sm:w-24 sm:h-24 shrink-0 rounded-full border-[3px] border-secondary bg-bg-raised'
-  if (src && !failed) {
-    return <img src={src} alt="" className={`${frame} object-cover`} onError={() => setFailed(true)} />
-  }
-  return (
+  // Card art is someone's artwork: name the card on hover so the credit is one click away
+  const title = card ? `Card art: ${card}` : undefined
+  const picture = src && !failed ? (
+    <img src={src} alt={title || ''} title={title} className={`${frame} object-cover`} onError={() => setFailed(true)} />
+  ) : (
     <div aria-hidden="true" className={`${frame} flex items-center justify-center font-display text-3xl text-secondary`}>
       {initials(name)}
+    </div>
+  )
+  if (!onEdit && !onReset) return picture
+  return (
+    <div className="relative shrink-0 flex flex-col items-center gap-1">
+      {picture}
+      {onEdit && (
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label="Change profile picture"
+          title="Change profile picture"
+          className="absolute right-0 top-[3.6rem] sm:top-[4.4rem] h-8 w-8 flex items-center justify-center rounded-full border border-border bg-bg-surface text-text-primary shadow hover:border-secondary"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+            <circle cx="12" cy="13" r="4" />
+          </svg>
+        </button>
+      )}
+      {onReset && (
+        <button type="button" onClick={onReset} className="text-[11px] text-accent-red hover:underline">
+          Reset picture
+        </button>
+      )}
     </div>
   )
 }
@@ -123,6 +149,7 @@ function PostseasonBadge({ label, entries = [], onClick }) {
 export default function PlayerHeader({
   data, playerId, headline = {}, avatarEntries = [], eventFilter, pastEvents, onEventChange,
   canSeeLifetime, onReport, settingsItems = [], onPostseason, featured = null, bio = null, hiddenBadges = [], shownBadges = null,
+  onEditPicture, onResetPicture,
 }) {
   const marks = useBracketMarks(playerId)
   const honours = useAvatarHonours(playerId)
@@ -159,7 +186,13 @@ export default function PlayerHeader({
       className="rounded-2xl border border-border bg-bg-surface p-5 sm:p-7 flex flex-wrap gap-6 sm:gap-8 items-center"
     >
       <div className="flex items-center gap-5 flex-[1_1_380px] min-w-0">
-        <ProfilePicture name={data.name} src={data.avatar_url} />
+        <ProfilePicture
+          name={data.name}
+          src={data.avatar_url}
+          card={data.picture_kind === 'card' ? data.picture_card : null}
+          onEdit={onEditPicture}
+          onReset={onResetPicture}
+        />
         <div className="min-w-0 flex flex-col gap-2">
           <h1 className="text-3xl sm:text-4xl font-display text-text-primary leading-tight break-words">
             <PostseasonName playerId={playerId} yurtSize={22}>

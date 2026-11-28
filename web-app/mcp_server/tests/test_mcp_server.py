@@ -520,3 +520,125 @@ def test_public_connector_has_no_deck_list_tool():
     from mcp_server import server
 
     assert "my_decks" not in {t.name for t in run(server.mcp.list_tools())}
+
+
+# ----------------------------------------------------------------------
+# Usage log (admin page "AI Apps (MCP)")
+# ----------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _usage_db(tmp_path, monkeypatch):
+    """Every test logs to its own throwaway file, never web-app/mcp_usage.db."""
+    from mcp_server import usage
+
+    monkeypatch.setattr(usage, "DB_PATH", tmp_path / "mcp_usage.db")
+    return tmp_path / "mcp_usage.db"
+
+
+def _rows(path):
+    import sqlite3
+
+    conn = sqlite3.connect(str(path))
+    try:
+        return conn.execute("SELECT connector, tool, outcome, caller, calls FROM mcp_usage_daily "
+                            "ORDER BY connector, tool, outcome").fetchall()
+    finally:
+        conn.close()
+
+
+def _call_tool(client, path, name, arguments, token=None):
+    headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json",
+               "X-Real-IP": "9.9.9.9"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    body = {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": name, "arguments": arguments}}
+    return client.post(path, json=body, headers=headers)
+
+
+def test_tool_calls_are_counted_by_connector_tool_and_outcome(monkeypatch, _usage_db):
+    import time as _time
+
+    from starlette.testclient import TestClient
+
+    from mcp_server import server, usage
+
+    monkeypatch.setattr(server, "_site", make_site())
+    # A session manager can only run once; another test already ran these
+    monkeypatch.setattr(server.mcp, "_session_manager", None)
+    monkeypatch.setattr(server.mcp_account, "_session_manager", None)
+    with TestClient(server.create_app()) as c:
+        assert _call_tool(c, "/mcp", "avatar_stats", {}).status_code == 200
+        assert _call_tool(c, "/mcp", "avatar_stats", {}).status_code == 200
+        assert _call_tool(c, "/mcp", "avatar_stats", {"avatar": "Nobody"}).status_code == 200
+        assert _call_tool(c, "/mcp/account", "my_account", {}, token="good").status_code == 200
+        assert _call_tool(c, "/mcp/account", "avatar_stats", {}, token="good").status_code == 200
+        for _ in range(50):  # logging runs off the event loop
+            if sum(r[4] for r in _rows(_usage_db)) >= 5:
+                break
+            _time.sleep(0.02)
+
+    rows = _rows(_usage_db)
+    public_ip = usage.caller_key(ip="9.9.9.9")
+    player = usage.caller_key(player_id="1")
+    assert ("public", "avatar_stats", "ok", public_ip, 2) in rows
+    assert ("public", "avatar_stats", "no_result", public_ip, 1) in rows
+    assert ("account", "my_account", "ok", player, 1) in rows
+    assert ("account", "avatar_stats", "ok", player, 1) in rows
+    # Only one-way keys are stored: no IP address or player id
+    assert all("9.9.9.9" not in r[3] and r[3] not in ("1", "p:1") for r in rows)
+
+    s = usage.summary(7)
+    assert s["totals"]["calls"] == 5 and s["totals"]["public"] == 3 and s["totals"]["account"] == 2
+    assert s["totals"]["players"] == 1 and s["totals"]["visitors"] == 1 and s["totals"]["no_result"] == 1
+    top = s["by_tool"][0]
+    assert top["tool"] == "avatar_stats" and top["calls"] == 4 and top["players"] == 1 and top["visitors"] == 1
+
+
+def test_rate_limited_calls_are_counted(_usage_db):
+    import time as _time
+
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    from mcp_server import usage
+    from mcp_server.server import RateLimit
+
+    inner = Starlette(routes=[Route("/mcp", lambda r: PlainTextResponse("ok"), methods=["POST"])])
+    client = TestClient(RateLimit(inner, limit=1))
+    assert [client.post("/mcp", headers={"X-Real-IP": "1.1.1.1"}).status_code for _ in range(3)] == [200, 429, 429]
+    for _ in range(50):
+        if _rows(_usage_db) and _rows(_usage_db)[0][4] >= 2:
+            break
+        _time.sleep(0.02)
+    assert _rows(_usage_db) == [("public", usage.RATE_LIMITED_TOOL, "limited", usage.caller_key(ip="1.1.1.1"), 2)]
+
+
+def test_usage_summary_days_and_pruning(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    from mcp_server import usage
+
+    db = tmp_path / "u.db"
+    now = datetime(2026, 11, 28, 12, tzinfo=timezone.utc)
+    usage._last_prune = 0.0
+    usage.record("public", "meta_report", "ok", "ip:a", 120, now=now - timedelta(days=100), path=db)
+    usage._last_prune = 0.0
+    usage.record("public", "meta_report", "ok", "ip:a", 100, now=now - timedelta(days=2), path=db)
+    usage.record("account", "my_decks", "error", "p:x", 300, now=now, path=db)
+    s = usage.summary(7, now=now, path=db)
+    assert len(s["by_day"]) == 7 and s["totals"]["calls"] == 2 and s["totals"]["error"] == 1
+    assert {t["tool"]: t["avg_ms"] for t in s["by_tool"]} == {"meta_report": 100, "my_decks": 300}
+    assert s["by_day"][-1]["players"] == 1
+    assert usage.summary(1, now=now, path=db)["totals"]["calls"] == 1
+    # The 100-day-old row was pruned
+    assert usage.summary(90, now=now, path=db)["totals"]["calls"] == 2
+
+
+def test_usage_summary_with_no_file_yet(tmp_path):
+    from mcp_server import usage
+
+    s = usage.summary(7, path=tmp_path / "missing.db")
+    assert s["totals"]["calls"] == 0 and len(s["by_day"]) == 7 and s["by_tool"] == []

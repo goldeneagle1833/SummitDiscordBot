@@ -13,6 +13,8 @@ Two connectors, one service:
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import logging
 import os
 import time
@@ -29,7 +31,7 @@ from pydantic import Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from . import tools
+from . import tools, usage
 from .site_client import PUBLIC_URL, SignInExpired, SiteClient, SiteError
 
 logger = logging.getLogger("summit_mcp")
@@ -144,13 +146,46 @@ def site() -> SiteClient:
     return _site
 
 
-async def _run(coro):
+# The visitor's IP for the request being handled (set by RateLimit), for the usage log
+_client_ip: contextvars.ContextVar[str] = contextvars.ContextVar("summit_mcp_client_ip", default="unknown")
+_UNAVAILABLE = "unavailable right now"
+_log_tasks: set = set()
+
+
+def _log_usage(connector: str, tool_name: str, outcome: str, caller: str, ms: int = 0) -> None:
+    """Count a call on the admin page's AI Apps (MCP) section, off the event loop, never failing."""
     try:
-        return await coro
+        task = asyncio.get_running_loop().create_task(
+            asyncio.to_thread(usage.record, connector, tool_name, outcome, caller, ms))
+        _log_tasks.add(task)
+        task.add_done_callback(_log_tasks.discard)
+    except Exception:  # pragma: no cover
+        logger.debug("Could not queue MCP usage", exc_info=True)
+
+
+async def _run(coro):
+    tool_name = getattr(getattr(coro, "cr_code", None), "co_name", "unknown")
+    token = get_access_token()
+    if token is not None:
+        connector, caller = usage.ACCOUNT, usage.caller_key(player_id=token.subject)
+    else:
+        connector, caller = usage.PUBLIC, usage.caller_key(ip=_client_ip.get())
+    started = time.monotonic()
+    outcome = "error"
+    try:
+        result = await coro
+        outcome = "ok"
+        return result
     except SignInExpired as exc:
+        outcome = "signin"
         raise ToolError(str(exc)) from None
     except SiteError as exc:
+        # "Summit data is unavailable right now" is a real failure; anything else is the
+        # tool's friendly "not found / please name a card" answer
+        outcome = "error" if _UNAVAILABLE in str(exc) else "no_result"
         raise ToolError(str(exc)) from None
+    finally:
+        _log_usage(connector, tool_name, outcome, caller, int((time.monotonic() - started) * 1000))
 
 
 Season = Annotated[str, Field(description="'current' for this ranked season (default, fast) or 'all' for all time (can take up to a minute)")]
@@ -423,9 +458,12 @@ class RateLimit:
         return client[0] if client else "unknown"
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            _client_ip.set(self._ip(scope))
         if scope["type"] == "http" and scope.get("method") == "POST":
             now = time.monotonic()
-            window = self.hits[self._ip(scope)]
+            ip = self._ip(scope)
+            window = self.hits[ip]
             while window and now - window[0] > 60:
                 window.popleft()
             if len(window) >= self.limit:
@@ -433,6 +471,8 @@ class RateLimit:
                     {"error": "Too many requests. Please wait a minute and try again."},
                     status_code=429, headers={"Retry-After": "60"},
                 )
+                connector = usage.ACCOUNT if Connectors._is_account(scope.get("path", "")) else usage.PUBLIC
+                _log_usage(connector, usage.RATE_LIMITED_TOOL, "limited", usage.caller_key(ip=ip))
                 await response(scope, receive, send)
                 return
             window.append(now)

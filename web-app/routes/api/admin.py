@@ -1966,6 +1966,16 @@ def api_usage_summary():
     return jsonify(api_usage.summary(days))
 
 
+@admin_bp.route("/admin/mcp-usage", methods=["GET"])
+@require_admin
+def mcp_usage_summary():
+    """AI app (MCP server) tool calls over the last ``days``: per day, per tool, public vs signed in (admin only)."""
+    from mcp_server import usage as mcp_usage
+
+    days = min(max(1, request.args.get("days", 7, type=int)), mcp_usage.RETENTION_DAYS)
+    return jsonify(mcp_usage.summary(days))
+
+
 @admin_bp.route("/admin/data-exports", methods=["GET"])
 @require_admin
 def data_exports_summary():

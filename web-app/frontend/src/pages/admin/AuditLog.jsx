@@ -10,6 +10,7 @@ import PlayerReportsSection from '@/components/admin/PlayerReportsSection'
 import PlayerKudosSection from '@/components/admin/PlayerKudosSection'
 import DataExportsSection from '@/components/admin/DataExportsSection'
 import ApiUsageSection from '@/components/admin/ApiUsageSection'
+import McpUsageSection from '@/components/admin/McpUsageSection'
 import QueueSettingsSection from '@/components/admin/QueueSettingsSection'
 import NavPicksSection from '@/components/admin/NavPicksSection'
 import CardPointsSection from '@/components/admin/CardPointsSection'
@@ -84,6 +85,9 @@ export default function AuditLog() {
       </AdminCollapsible>
       <AdminCollapsible title="API Usage" subtitle="Calls to the open APIs (match history, player search, Staples), top callers and rate limits">
         <ApiUsageSection />
+      </AdminCollapsible>
+      <AdminCollapsible title="AI Apps (MCP)" subtitle="Tool calls from AI apps through the Summit connectors, public vs signed in, players and errors">
+        <McpUsageSection />
       </AdminCollapsible>
       <AdminCollapsible title="Audit Log" subtitle="History of administrative actions">
         <AuditLogTable />

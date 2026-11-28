@@ -44,6 +44,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "auth.discord_callback",
     "auth.logout",
     "auth.google_login",
+    "auth.email_login_start",  # email-code login (#274): public, rate limited
+    "auth.email_login_verify",
     "auth.google_callback",
 
     # -- Staples card API (open to everybody; aggregate card stats, throttled) --

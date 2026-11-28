@@ -133,3 +133,100 @@ def test_works_with_the_production_match_records_layout(tmp_path):
     [m] = repo.find_match("match_records", pairing_id=9)
     assert m["id"] == 1 and m["winner_id"] == WIN and m["loser_id"] == LOSE
     assert repo.find_match("match_records", match_id=1)[0]["pairing_id"] == 9
+
+
+# ── Corrections and repeats sent to /api/report-external-match ──────────
+
+REPORT = "/api/report-external-match"
+
+
+def _add_replay_column(db):
+    conn = sqlite3.connect(str(db))
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(match_records)")}
+    if "replay_url" not in cols:
+        conn.execute("ALTER TABLE match_records ADD COLUMN replay_url TEXT")
+    conn.commit()
+    conn.close()
+
+
+def _set_replay(db, mid, url):
+    _add_replay_column(db)
+    conn = sqlite3.connect(str(db))
+    conn.execute("UPDATE match_records SET replay_url = ? WHERE rowid = ?", (url, mid))
+    conn.commit()
+    conn.close()
+
+
+def _external_rows(db):
+    conn = sqlite3.connect(str(db))
+    try:
+        return conn.execute("SELECT winner_id, loser_id FROM external_matches").fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+
+def _report(**over):
+    body = {"winner_id": LOSE, "loser_id": WIN, "winner_deck_url": "", "loser_deck_url": "",
+            "source": "Sorcery Online"}
+    body.update(over)
+    return body
+
+
+def test_correction_flag_on_the_report_link_corrects_the_recorded_match(client, match_db):
+    _add_replay_column(match_db)
+    mid = _match(match_db, pairing_id=41)
+    r = client.post(REPORT, json=_report(correction=True, pairing_id=41), headers=KEY)
+    assert r.status_code == 202, r.get_json()
+    assert r.get_json()["pipeline"] == "correction" and r.get_json()["match_id"] == mid
+    assert _flips(match_db) == [(mid, LOSE, "sorcery-online", "Play Sorcery Online", "pending")]
+    assert _external_rows(match_db) == []
+
+
+def test_correction_action_without_ids_uses_the_latest_match_between_them(client, match_db):
+    _add_replay_column(match_db)
+    _match(match_db)
+    newest = _match(match_db)
+    r = client.post(REPORT, json={"action": "correct_match", "winner_id": LOSE, "loser_id": WIN}, headers=KEY)
+    assert r.status_code == 202 and r.get_json()["match_id"] == newest
+    assert _external_rows(match_db) == []
+
+
+def test_repeat_report_of_a_recorded_game_is_not_an_external_match(client, match_db):
+    mid = _match(match_db)
+    _set_replay(match_db, mid, "https://playsorceryonline.com/replay/abc")
+    r = client.post(REPORT, json=_report(winner_id=WIN, loser_id=LOSE,
+                                         replay_url="https://playsorceryonline.com/replay/abc"), headers=KEY)
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()["duplicate"] is True and r.get_json()["match_id"] == mid
+    assert _external_rows(match_db) == [] and _flips(match_db) == []
+
+
+def test_report_of_a_recorded_game_with_the_other_winner_corrects_it(client, match_db):
+    mid = _match(match_db)
+    _set_replay(match_db, mid, "https://playsorceryonline.com/replay/xyz")
+    r = client.post(REPORT, json=_report(replay_url="https://playsorceryonline.com/replay/xyz"), headers=KEY)
+    assert r.status_code == 202 and r.get_json()["match_id"] == mid
+    assert _external_rows(match_db) == [] and len(_flips(match_db)) == 1
+
+
+def test_a_new_game_between_the_same_players_is_still_external(client, match_db):
+    from unittest.mock import patch
+    mid = _match(match_db)
+    _set_replay(match_db, mid, "https://playsorceryonline.com/replay/old")
+    with patch("services.external_match.ExternalMatchService.report_match",
+               return_value={"report_id": 1}) as report:
+        r = client.post(REPORT, json=_report(replay_url="https://playsorceryonline.com/replay/new",
+                                             match_time=1795718282), headers=KEY)
+    assert r.status_code == 200 and r.get_json()["pipeline"] == "external"
+    # A timestamp sent as the game length is dropped
+    assert report.call_args.kwargs["match_time"] is None
+    assert _flips(match_db) == []
+
+
+def test_partner_endpoint_accepts_a_replay_link(client, match_db):
+    mid = _match(match_db)
+    _set_replay(match_db, mid, "https://playsorceryonline.com/replay/r1")
+    r = client.post(URL, json={"replay_url": "https://playsorceryonline.com/replay/r1", "winner_id": LOSE}, headers=KEY)
+    assert r.status_code == 202 and r.get_json()["match_id"] == mid

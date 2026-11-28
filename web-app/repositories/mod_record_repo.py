@@ -244,8 +244,11 @@ class ModRequestsRepository:
 
     # ── Partner (Play Sorcery Online) match corrections ──────────────
 
-    def find_match(self, table: str, match_id=None, pairing_id=None) -> list[dict]:
-        """A match by its ID (the rowid) or by the Summit pairing ID it was played for.
+    def find_match(self, table: str, match_id=None, pairing_id=None, replay_url=None,
+                   players=None, since=None) -> list[dict]:
+        """A match by its ID (the rowid), the Summit pairing ID it was played
+        for, its replay link, or (``players`` = two IDs, ``since`` = ISO time)
+        the two players' matches recorded since then. First key given wins.
 
         A pairing can, rarely, have more than one recorded match, so this
         returns every hit, newest first.
@@ -256,7 +259,7 @@ class ModRequestsRepository:
             if not cols:
                 return []
             pairing_col = "pairing_id" if "pairing_id" in cols else "NULL AS pairing_id"
-            opt = ", ".join(c if c in cols else f"NULL AS {c}" for c in ("match_type", "source"))
+            opt = ", ".join(c if c in cols else f"NULL AS {c}" for c in ("match_type", "source", "replay_url"))
             sql = (
                 f"SELECT rowid AS id, timestamp, CAST(winner_id AS TEXT) AS winner_id, winner_display_name, "
                 f"CAST(losser_id AS TEXT) AS loser_id, losser_display_name AS loser_display_name, "
@@ -264,8 +267,20 @@ class ModRequestsRepository:
             )
             if match_id is not None:
                 rows = conn.execute(sql + "rowid = ?", (int(match_id),)).fetchall()
-            elif "pairing_id" in cols:
-                rows = conn.execute(sql + "pairing_id = ? ORDER BY timestamp DESC", (int(pairing_id),)).fetchall()
+            elif pairing_id is not None:
+                rows = (conn.execute(sql + "pairing_id = ? ORDER BY timestamp DESC", (int(pairing_id),)).fetchall()
+                        if "pairing_id" in cols else [])
+            elif replay_url:
+                rows = (conn.execute(sql + "replay_url = ? ORDER BY timestamp DESC", (str(replay_url),)).fetchall()
+                        if "replay_url" in cols else [])
+            elif players and len(players) == 2:
+                a, b = (str(p) for p in players)
+                rows = conn.execute(
+                    sql + "((CAST(winner_id AS TEXT) = ? AND CAST(losser_id AS TEXT) = ?) "
+                          "OR (CAST(winner_id AS TEXT) = ? AND CAST(losser_id AS TEXT) = ?)) "
+                          "AND timestamp >= ? ORDER BY timestamp DESC",
+                    (a, b, b, a, since or ""),
+                ).fetchall()
             else:
                 rows = []
             return [dict(r) for r in rows]

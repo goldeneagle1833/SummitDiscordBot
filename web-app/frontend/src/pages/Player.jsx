@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { getPlayer, resetOwnProfile, undoProfileReset } from '@/api/players'
+import { getPlayer, resetOwnProfile, undoProfileReset, setProfilePicture } from '@/api/players'
 import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -13,6 +13,7 @@ import RecentDecks from '@/components/player/RecentDecks'
 import FeaturedDeck from '@/components/player/FeaturedDeck'
 import FeaturedDeckModal from '@/components/player/FeaturedDeckModal'
 import ShowcaseModal from '@/components/player/ShowcaseModal'
+import ProfilePictureModal from '@/components/player/ProfilePictureModal'
 import { FavoriteCardBox, ProfileBio, RivalBox, useShowcase } from '@/components/player/ProfileShowcase'
 import LimitedArena from '@/components/player/LimitedArena'
 import { PreconMatchHistory, PreconStandings, usePreconPlayer, withPreconFilters } from '@/components/player/PlayerPrecon'
@@ -79,6 +80,7 @@ export default function Player() {
   const [showQueueSettingsModal, setShowQueueSettingsModal] = useState(false)
   const [showDataExportModal, setShowDataExportModal] = useState(false)
   const [showBadgesModal, setShowBadgesModal] = useState(false)
+  const [showPictureModal, setShowPictureModal] = useState(false)
   // The hero card badges the player just picked; undefined = use the player data
   const [shownBadges, setShownBadgesState] = useState(undefined)
   const [showResetModal, setShowResetModal] = useState(false)
@@ -233,6 +235,7 @@ export default function Player() {
   const activeTab = tabs.some((t) => t.id === tab) ? tab : 'matches'
 
   const settingsItems = [
+    { label: 'Profile picture', onClick: () => setShowPictureModal(true) },
     { label: 'Featured deck', onClick: () => setShowFeaturedModal(true) },
     { label: 'Profile showcase', onClick: () => setShowcaseFocus('bio') },
     { label: 'Privacy settings', onClick: () => setShowPrivacyModal(true) },
@@ -244,6 +247,16 @@ export default function Player() {
     // Only the player themselves, not an admin viewing their profile
     isSelf && { label: 'Export my data', onClick: () => setShowDataExportModal(true) },
   ].filter(Boolean)
+
+  // Moderators can put someone's own picture back to their Discord one
+  // (admins do it from the picture editor, like the owner)
+  const canResetPicture = !data.is_owner && authUser?.is_moderator && data.picture_kind && data.picture_kind !== 'discord'
+  const resetPicture = () => {
+    if (!window.confirm(`Put ${data.name}'s picture back to their Discord picture?`)) return
+    setProfilePicture(playerId, { kind: 'discord' })
+      .then((d) => setData((prev) => prev && { ...prev, avatar_url: d.url, picture_kind: d.kind, picture_card: d.card }))
+      .catch((err) => window.alert(err.message || 'Could not reset the picture'))
+  }
 
   const hiddenSections = !data.is_owner && Object.values(vis).some((v) => !v)
 
@@ -281,6 +294,8 @@ export default function Player() {
         canSeeLifetime={canSeeLifetime}
         onReport={data.is_owner ? () => setShowReportModal(true) : undefined}
         settingsItems={data.is_owner ? settingsItems : []}
+        onEditPicture={data.is_owner ? () => setShowPictureModal(true) : undefined}
+        onResetPicture={canResetPicture ? resetPicture : undefined}
         onPostseason={() => setTab('postseason')}
         hiddenBadges={data.hidden_badges || []}
         shownBadges={shownBadges === undefined ? (data.shown_badges ?? null) : shownBadges}
@@ -503,6 +518,14 @@ export default function Player() {
           recentDecks={data.recent_decks || []}
           onClose={() => setShowFeaturedModal(false)}
           onSaved={() => setFeaturedKey((k) => k + 1)}
+        />
+      )}
+
+      {showPictureModal && (
+        <ProfilePictureModal
+          playerId={playerId}
+          onClose={() => setShowPictureModal(false)}
+          onSaved={(d) => setData((prev) => prev && { ...prev, avatar_url: d.url, picture_kind: d.kind, picture_card: d.card })}
         />
       )}
 

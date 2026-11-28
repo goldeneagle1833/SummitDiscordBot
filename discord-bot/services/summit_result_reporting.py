@@ -20,6 +20,7 @@ from repositories.limited_repo import (
 
 import config
 from repositories.tag_me_repo import send_with_tag_me
+from utils.player_ids import is_summit_player_number
 
 
 logger = logging.getLogger("discord_bot")
@@ -208,6 +209,7 @@ async def _notify_sorcery_online_match_recorded(
     winner_name,
     loser_id,
     loser_name,
+    played_on="Play Sorcery Online",
 ):
     """Best-effort Discord delivery for a result reported outside Discord.
 
@@ -232,16 +234,18 @@ async def _notify_sorcery_online_match_recorded(
         (
             winner_id,
             f"✅ **{label} Match Recorded** — You defeated **{loser_name}** on "
-            f"Play Sorcery Online. **Match ID: #{match_id}**{tips}",
+            f"{played_on}. **Match ID: #{match_id}**{tips}",
         ),
         (
             loser_id,
             f"✅ **{label} Match Recorded** — **{winner_name}** defeated you on "
-            f"Play Sorcery Online. **Match ID: #{match_id}**{tips}",
+            f"{played_on}. **Match ID: #{match_id}**{tips}",
         ),
     )
 
     for user_id, message in messages:
+        if is_summit_player_number(user_id):
+            continue  # a website-only player: no Discord account to tell
         try:
             user = await bot.fetch_user(user_id)
             await user.send(message)
@@ -484,3 +488,121 @@ async def record_sorcery_online_result(
             played_cards, players,
         )
         return {"recorded": True, "duplicate": False, "match_id": match_id}
+
+
+def _standalone_match_id(report_key):
+    """The match an earlier delivery of this standalone report created, if any."""
+    try:
+        _ensure_callback_table()
+        conn = sqlite3.connect(_get_match_records_db())
+        try:
+            rows = conn.execute(
+                f"""SELECT match_id FROM {CALLBACK_TABLE}
+                    WHERE guild_id = 0 AND pairing_id = ? AND queue_type = 'ranked'
+                      AND outcome = 'decided' AND match_id IS NOT NULL
+                    ORDER BY id DESC""",
+                (int(report_key),),
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        logger.error("Could not check standalone report %s", report_key, exc_info=True)
+        return None
+    for (match_id,) in rows:
+        # Older rows for web-recorded games carry ids like "web_12"
+        try:
+            return int(match_id)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+async def record_standalone_result(
+    bot,
+    *,
+    report_key,
+    winner_id,
+    loser_id,
+    winner_name,
+    loser_name,
+    winner_deck_url=None,
+    loser_deck_url=None,
+    winner_went_first=None,
+    match_time=0,
+    match_comment="",
+    played_cards=None,
+    played_on="Play Sorcery Online",
+):
+    """Record a ranked game that had no Summit pairing.
+
+    Play Sorcery Online ranked games and ranked games reported on the
+    website both come here; ``played_on`` names where for the players' DMs.
+
+    The website holds these reports for 24 hours so the loser can dispute,
+    then hands them here. They are recorded exactly like a queued ranked
+    game: match history, season and avatar ratings, the leaderboard. The
+    players may be Discord accounts or website-only Summit player numbers.
+
+    ``report_key`` is the website's confirmation id; a repeat delivery of
+    the same key answers with the match it already created.
+    """
+    report_key = int(report_key)
+    winner_id = int(winner_id)
+    loser_id = int(loser_id)
+    if winner_id == loser_id:
+        raise ValueError("winner_id and loser_id must be different")
+
+    async with _result_lock:
+        existing = _standalone_match_id(report_key)
+        if existing is not None:
+            return {"recorded": False, "duplicate": True, "match_id": existing}
+
+        if winner_went_first is None:
+            first_player = None
+        else:
+            first_player = "y" if bool(winner_went_first) else "n"
+        data = {
+            "reporter_id": winner_id,
+            "opponent_id": loser_id,
+            "winner_id": winner_id,
+            "winner_global": winner_name or str(winner_id),
+            "loser_id": loser_id,
+            "loser_global": loser_name or str(loser_id),
+            "reporter_global": winner_name or str(winner_id),
+            "opponent_global": loser_name or str(loser_id),
+            "first_player": first_player,
+            "match_time": int(match_time or 0),
+            "match_comment": match_comment or "Reported by Play Sorcery Online",
+            "winner_deck_url": winner_deck_url,
+            "loser_deck_url": loser_deck_url,
+            "match_type": "ranked",
+            "guild_id": None,
+            "pairing_id": None,
+            "notify_reporter": False,
+            "dedupe_key": f"standalone:{report_key}",
+        }
+        match_id = await _execute_match_confirmation(
+            ApiInteraction(bot), 0, data, interaction_valid=False,
+        )
+        if match_id is None:
+            async with processed_matches_lock:
+                processed_matches.pop(data["dedupe_key"], None)
+            raise RuntimeError("Match result could not be recorded")
+
+        _save_callback(
+            0, report_key, "ranked", "decided",
+            winner_id, winner_id, loser_id, match_id,
+            played_cards, None,
+        )
+
+    await _notify_sorcery_online_match_recorded(
+        bot,
+        match_id=match_id,
+        match_type="ranked",
+        winner_id=winner_id,
+        winner_name=data["winner_global"],
+        loser_id=loser_id,
+        loser_name=data["loser_global"],
+        played_on=played_on,
+    )
+    return {"recorded": True, "duplicate": False, "match_id": match_id}

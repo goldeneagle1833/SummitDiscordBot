@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { get, post } from '@/api/client'
+import { getProfilePicture, setProfilePicture } from '@/api/players'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
 import Spinner from '@/components/ui/Spinner'
@@ -196,6 +197,39 @@ function SendSummaryButton({ userId }) {
   )
 }
 
+// The player's own profile picture (card art or an upload): a moderator can
+// put it back to their Discord picture. Logged in the Audit Log.
+function PictureBox({ userId, name }) {
+  const [pic, setPic] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  useEffect(() => {
+    getProfilePicture(userId).then(setPic).catch(() => setPic(null))
+  }, [userId])
+  if (!pic || pic.kind === 'discord') return null
+  const reset = () => {
+    setBusy(true)
+    setError(null)
+    setProfilePicture(userId, { kind: 'discord' })
+      .then(setPic)
+      .catch(err => setError(err.message))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-t border-border/60 pt-3">
+      <img src={pic.url} alt="" className="w-12 h-12 rounded-full object-cover border border-border" />
+      <div className="text-sm text-text-muted flex-1 min-w-[180px]">
+        {name} uses {pic.kind === 'card' ? <>art from <strong className="text-text-primary">{pic.card}</strong></> : 'a picture they uploaded'} as their profile picture.
+      </div>
+      <button onClick={reset} disabled={busy}
+        className="px-3 py-1.5 text-sm rounded bg-accent-red text-white disabled:opacity-50">
+        {busy ? 'Resetting...' : 'Reset to Discord picture'}
+      </button>
+      {error && <div className="basis-full text-xs text-accent-red">{error}</div>}
+    </div>
+  )
+}
+
 const FLIP_TEXT = { pending: 'Waiting for the bot', done: 'Flipped', error: 'Not changed' }
 
 function MatchesSection({ userId, name }) {
@@ -359,6 +393,7 @@ export default function ModPlayer() {
             </div>
           ))}
         </div>
+        <PictureBox userId={p.user_id} name={p.name} />
         <div className="text-xs text-text-muted">They have filed {data.reports_filed} report{data.reports_filed === 1 ? '' : 's'} themselves.</div>
         <div className="border-t border-border/60 pt-3">
           <ModerationActions userId={p.user_id} userName={p.name} canModerate={p.can_moderate}

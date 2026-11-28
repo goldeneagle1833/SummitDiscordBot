@@ -3,9 +3,11 @@
  *
  * Discord gives us an avatar hash to build a CDN URL from; Google hands back a
  * URL already. Anyone without a stored avatar gets null, and the Avatar
- * component falls back to its placeholder.
+ * component falls back to its placeholder. A picture the player chose on the
+ * site (card art or an upload) comes as ``picture_url`` and wins.
  */
 export function avatarUrl(player, size = 64) {
+  if (player?.picture_url) return player.picture_url
   if (!player?.avatar) return null
   if (player.provider === 'google') return player.avatar
   if (!player.user_id) return null

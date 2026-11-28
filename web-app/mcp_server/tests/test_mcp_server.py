@@ -71,6 +71,29 @@ CARDS = [{"name": "Fireball", "elements": "Fire"}, {"name": "Lightning Bolt", "e
          {"name": "Spark", "elements": "Fire"},
          {"name": "Sparkmage", "type": "Avatar"}, {"name": "Pathfinder", "type": "Avatar"}]
 
+def _pm(result, mine, theirs, mine_el, theirs_el, first, minutes, released=True):
+    return {"match_id": 1, "date": "2026-11-20T10:00:00", "result": result, "rating_change": 12,
+            "rating_change_hidden": False, "on_play": first, "match_time_minutes": minutes,
+            "deck_info_released": released,
+            "player": {"avatar": mine if released else None, "elements": mine_el if released else None},
+            "opponent": {"id": "182857376171294720", "name": "Amy", "avatar": theirs if released else None,
+                         "elements": theirs_el if released else None}}
+
+
+PUBLIC_MATCHES = {"player": {"id": "1", "name": "Pete"}, "deck_info_released_through": "2026-11-15",
+                  "record": {"wins": 5, "losses": 5}, "pagination": {"has_next": False}, "matches": [
+    _pm("loss", None, None, None, None, False, 40, released=False),
+    _pm("win", "Sparkmage", "Druid", ["Air", "Fire"], ["Earth", "Water"], True, 12),
+    _pm("loss", "Sparkmage", "Pathfinder", ["Air", "Fire"], ["Fire"], False, 35),
+    _pm("loss", "Sparkmage", "Pathfinder", ["Air", "Fire"], ["Fire"], False, 33),
+    _pm("loss", "Sparkmage", "Pathfinder", ["Air", "Fire"], ["Fire"], True, 31),
+    _pm("win", "Sparkmage", "Druid", ["Air", "Fire"], ["Earth", "Water"], True, 14),
+    _pm("win", "Sparkmage", "Druid", ["Air", "Fire"], ["Earth", "Water"], False, 20),
+    _pm("win", "Pathfinder", "Druid", ["Fire"], ["Earth", "Water"], True, 18),
+    _pm("win", "Sparkmage", "Pathfinder", ["Air", "Fire"], ["Fire"], True, 16),
+    _pm("loss", "Sparkmage", "Druid", ["Air", "Fire"], ["Earth", "Water"], False, 45),
+]}
+
 STORE = {"products": [
     {"name": "Island Leviathan Pack", "price_cents": 599, "stock_quantity": 3, "description": "2 tokens",
      "product_line": "Tokens", "images": ["https://x/img.png"], "sku": "ISL"},
@@ -95,6 +118,7 @@ def make_site(calls: list | None = None, overrides: dict | None = None) -> SiteC
         routes = {
             "/api/players/search": {"players": [{"user_id": "1", "display_name": "Pete"}]},
             "/api/player/1": PLAYER,
+            "/api/public/players/1/matches": PUBLIC_MATCHES,
             "/api/avatars": AVATARS,
             "/api/avatar/Sparkmage": {"total_matches": 50, "win_rate": 60.0, "play_stats": {"win_rate": 62.0},
                                       "draw_stats": {"win_rate": 58.0}, "wins_matches": [{"deck_url": RANKED_DECK}]},
@@ -164,6 +188,7 @@ def test_compact_cuts_lists_and_drops_images():
 
 @pytest.mark.parametrize("call", [
     lambda s: tools.player_lookup(s, "Pete"),
+    lambda s: tools.match_history_review(s, "Pete"),
     lambda s: tools.avatar_stats(s),
     lambda s: tools.avatar_stats(s, "sparkmage"),
     lambda s: tools.card_stats(s, "Fireball"),
@@ -292,9 +317,9 @@ def test_server_registers_tools_and_prompts():
     names = {t.name for t in run(server.mcp.list_tools())}
     assert {"player_lookup", "avatar_stats", "card_stats", "top_staples", "meta_report", "meta_trends",
             "top8_events", "top8_event_decks", "top8_card_search", "matchup_prep", "deck_check",
-            "store_products", "ranked_recap"} == names
+            "store_products", "ranked_recap", "match_history_review"} == names
     assert "leaderboard" not in " ".join(names)
-    assert len(run(server.mcp.list_prompts())) == 5
+    assert len(run(server.mcp.list_prompts())) == 6
 
 
 def test_rate_limit_per_visitor():
@@ -344,3 +369,38 @@ def test_meta_trends_names_archetypes_and_counts_elements():
     assert result["months"][0]["top_archetypes"][0]["archetype"] == "Sparkmage · Air / Fire"
     shares = result["element_share_by_month_pct"][0]
     assert shares["Fire"] == 100.0 and shares["Air"] == 60.0 and shares["Water"] == 0.0
+
+
+def test_match_history_review_coaching_numbers():
+    calls: list = []
+    result = run(tools.match_history_review(make_site(calls), "Pete"))
+    assert result["games_reviewed"] == 10
+    assert result["record"] == {"wins": 5, "losses": 5, "win_rate": 50.0}
+    assert result["main_avatar"] == "Sparkmage"
+    pathfinder = next(r for r in result["main_avatar_matchups"] if r["against"] == "Pathfinder")
+    assert (pathfinder["wins"], pathfinder["losses"]) == (1, 3)
+    assert pathfinder["everyone_with_this_avatar_win_rate"] == 58.3
+    assert result["toughest_opponent_avatars"][0]["against"] == "Pathfinder"
+    first = {r["turn_order"]: r for r in result["going_first_vs_second"]}
+    assert first["going first"]["wins"] == 4 and first["going second"]["losses"] == 4
+    assert result["form"]["current_streak"] == "1 loss"
+    assert result["form"]["longest_losing_streak"] == 3
+    assert any("Meta Report release" in n for n in result["notes"])
+    spark = next(r for r in result["avatars_played"] if r["avatar"] == "Sparkmage")
+    assert spark["everyone_win_rate"] == 60.0
+    # The public API asks callers to name themselves
+    assert any("/api/public/players/1/matches" in c and "site=" in c for c in calls)
+
+
+def test_match_history_review_has_no_rating_ids_or_opponent_names():
+    text = json.dumps(run(tools.match_history_review(make_site(), "Pete")))
+    assert "rating" not in text
+    assert "Amy" not in text
+    assert "182857376171294720" not in text
+
+
+def test_match_history_review_no_games():
+    empty = {"player": {"id": "1"}, "matches": [], "pagination": {"has_next": False}}
+    site = make_site(overrides={"/api/public/players/1/matches": (200, empty)})
+    result = run(tools.match_history_review(site, "Pete"))
+    assert result["games"] == 0 and "no ranked games" in result["message"]

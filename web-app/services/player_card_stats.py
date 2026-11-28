@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 
 def _bare(player_id) -> str:
-    text = str(player_id)
-    return text[7:] if text.startswith("google_") else text
+    from services.summit_player_numbers import bot_player_id
+    return bot_player_id(player_id)
 
 
 QUEUE_FILTERS = ("all", "ranked", "casual")

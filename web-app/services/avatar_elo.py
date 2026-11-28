@@ -245,7 +245,8 @@ def get_player_lifetime_avatar_elo(player_id, elo_db_path: Path | str | None = N
     is the place among settled entries on that avatar. ``avatar`` narrows to
     one avatar (case-insensitive).
     """
-    player_id = str(player_id).removeprefix("google_")
+    from services.summit_player_numbers import bot_player_id
+    player_id = bot_player_id(player_id)
     wanted = avatar.casefold() if avatar else None
     entries = []
     for name, ladder in lifetime_avatar_ladders(elo_db_path).items():

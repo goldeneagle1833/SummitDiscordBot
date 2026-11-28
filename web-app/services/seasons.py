@@ -335,28 +335,12 @@ class SeasonsService:
             max_num = 0
         match_id = f"web_{max_num + 1}"
 
-        # Update paper ELO (unless repeat matchup)
+        # The website record carries no rating change (Paper ELO is gone);
+        # update_season_elos below moves the season rating.
         winner_elo_change = 0
         loser_elo_change = 0
         if is_repeat:
-            logger.info(
-                "Repeat matchup: %s vs %s — paper ELO skipped", winner_id, loser_id
-            )
-        else:
-            from services.paper_elo import update_paper_elo
-            (
-                _winner_new_elo, _winner_change,
-                _winner_new_event_elo, winner_event_elo_change,
-                event_active,
-            ) = update_paper_elo(winner_id, winner_name, did_win=True, opponent_id=loser_id)
-            (
-                _loser_new_elo, _loser_change,
-                _loser_new_event_elo, loser_event_elo_change,
-                _,
-            ) = update_paper_elo(loser_id, loser_name, did_win=False, opponent_id=winner_id)
-            if event_active:
-                winner_elo_change = winner_event_elo_change
-                loser_elo_change = loser_event_elo_change
+            logger.info("Repeat matchup: %s vs %s", winner_id, loser_id)
 
         # Insert match record into match_reports_web
         now = datetime.utcnow().isoformat()

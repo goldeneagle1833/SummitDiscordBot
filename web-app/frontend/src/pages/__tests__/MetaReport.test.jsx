@@ -97,7 +97,7 @@ describe('MetaReport', () => {
       { slug: '2026-09-a', label: 'Sep 1–15, 2026', publishLabel: 'Oct 1, 2026' },
     ] })
     getMetaReport.mockResolvedValue(REPORT)
-    getMe.mockRejectedValue(new Error('not logged in'))
+    getMe.mockRejectedValue(Object.assign(new Error('not logged in'), { status: 401 }))
   })
 
   it('opens the newest report and shows each section', async () => {

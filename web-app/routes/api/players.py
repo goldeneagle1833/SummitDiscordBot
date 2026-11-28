@@ -7,7 +7,7 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, session, request
+from flask import Blueprint, Response, jsonify, session, request
 
 import re
 
@@ -20,8 +20,18 @@ from repositories.blocked_users_repo import BlockedUsersRepository
 from repositories.voice_only_repo import VoiceOnlyRepository
 from repositories.tag_me_repo import TagMeRepository
 from repositories.skill_match_repo import SkillMatchRepository
-from utils.auth import is_admin, require_auth
+from utils.auth import is_admin, is_moderator, require_auth
+from utils.profile_pictures import (
+    MAX_UPLOAD_BYTES as MAX_PICTURE_UPLOAD_BYTES,
+    PictureError,
+    delete_file as delete_picture_file,
+    parse as parse_picture,
+    process_card as process_card_picture,
+    process_upload as process_upload_picture,
+    save as save_picture_file,
+)
 from utils.card_images import attach_images, resolve_card_image
+from utils.profile_pictures import picture_url
 from services.curiosa import deck_url_source, is_deck_url, normalize_deck_url
 from services.avatar_elo import (
     get_player_avatar_changes,
@@ -30,6 +40,7 @@ from services.avatar_elo import (
 )
 from services import provisional
 from services.elo_gap import current_ratings, pre_match_select, ratings_then
+from services.summit_player_numbers import account_id, bot_player_id
 
 logger = logging.getLogger(__name__)
 
@@ -288,14 +299,14 @@ def deck_snapshot(match_id, player_id):
     # Normalize player_id (strip 'google_' prefix for Google OAuth users)
     player_id_str = str(player_id)
     if player_id_str.startswith("google_"):
-        player_id = player_id_str[7:]  # Remove 'google_' prefix
+        player_id = bot_player_id(player_id_str)  # bot-table id (Summit player number for a Google login that has played)
 
     # Normalize logged_in_user_id for comparison
     logged_in_user_id = session.get("user_id")
     if logged_in_user_id is not None:
         logged_in_id_str = str(logged_in_user_id)
         if logged_in_id_str.startswith("google_"):
-            logged_in_id_str = logged_in_id_str[7:]  # Remove 'google_' prefix
+            logged_in_id_str = bot_player_id(logged_in_id_str)  # bot-table id (Summit player number for a Google login that has played)
         is_owner = str(logged_in_id_str) == str(player_id)
     else:
         is_owner = False
@@ -357,7 +368,7 @@ def get_deck_stats(player_id):
     # Normalize player_id
     player_id_str = str(player_id)
     if player_id_str.startswith("google_"):
-        player_id = player_id_str[7:]
+        player_id = bot_player_id(player_id_str)
 
     # Auth: owner or admin only
     logged_in_user_id = session.get("user_id")
@@ -365,7 +376,7 @@ def get_deck_stats(player_id):
     if logged_in_user_id is not None:
         logged_in_id_str = str(logged_in_user_id)
         if logged_in_id_str.startswith("google_"):
-            logged_in_id_str = logged_in_id_str[7:]
+            logged_in_id_str = bot_player_id(logged_in_id_str)
         is_owner = logged_in_id_str == str(player_id)
     api_key = request.headers.get("X-API-Key")
     if api_key and api_key in VALID_API_KEYS:
@@ -604,7 +615,7 @@ def player_avatar_stats(player_id, avatar_name):
     # Normalize player_id
     player_id_str = str(player_id)
     if player_id_str.startswith("google_"):
-        player_id = player_id_str[7:]
+        player_id = bot_player_id(player_id_str)
 
     event_filter = request.args.get("event") or "lifetime"
 
@@ -1273,10 +1284,12 @@ def search_players():
             uid = str(r["user_id"])
             # Normalize for dedupe: google users' match/elo data is keyed
             # on the bare ID (google_ prefix stripped)
-            normalized = uid[7:] if uid.startswith("google_") else uid
+            normalized = bot_player_id(uid)
             seen_ids.add(normalized)
             players.append(
-                {"user_id": uid, "display_name": r["display_name"], "avatar": r.get("avatar"), "provider": r.get("provider", "discord")}
+                {"user_id": uid, "display_name": r["display_name"], "avatar": r.get("avatar"),
+                 "provider": r.get("provider", "discord"),
+                 "picture_url": picture_url(r.get("profile_picture"))}
             )
 
         # Fallback: bot players who have ELO standings but have never logged
@@ -1300,9 +1313,23 @@ def search_players():
         return jsonify({"players": []})
 
 
-def _profile_picture_url(profile):
+def _discord_picture_url(profile):
     """Discord or Google profile picture for a stored profile, else None."""
     if not profile or not profile.get("avatar"):
+        return None
+    if profile.get("provider") == "google":
+        return profile["avatar"]
+    return f"https://cdn.discordapp.com/avatars/{profile['user_id']}/{profile['avatar']}.png?size=256"
+
+
+def _profile_picture_url(profile):
+    """The picture the player chose on the site, else their Discord or Google one."""
+    if not profile:
+        return None
+    own = picture_url(profile.get("profile_picture"))
+    if own:
+        return own
+    if not profile.get("avatar"):
         return None
     if profile.get("provider") == "google":
         return profile["avatar"]
@@ -1337,7 +1364,7 @@ def player_api(player_id):
     - source: ELO source filter. Values: 'web', 'bot', or 'auto' (default)
     """
     # Store original player_id (with google_ prefix if present)
-    original_player_id = str(player_id)
+    original_player_id = account_id(player_id)  # a Summit player number maps back to its google_ login
 
     # Get source parameter (web, bot, or auto)
     # Default to "bot" for now since all matches are in match_records table
@@ -1351,7 +1378,7 @@ def player_api(player_id):
     # Strip 'google_' prefix for these legacy tables
     player_id_normalized = original_player_id
     if original_player_id.startswith("google_"):
-        player_id_normalized = original_player_id[7:]  # Remove 'google_' prefix
+        player_id_normalized = bot_player_id(original_player_id)  # bot-table id (Summit player number for a Google login that has played)
 
     # Keep player_id as string to avoid overflow with large Google OAuth IDs
     # SQLite's type affinity will handle string-to-integer comparison automatically
@@ -2068,7 +2095,7 @@ def player_api(player_id):
         if logged_in_user_id is not None:
             logged_in_id_str = str(logged_in_user_id)
             if logged_in_id_str.startswith("google_"):
-                logged_in_id_str = logged_in_id_str[7:]
+                logged_in_id_str = bot_player_id(logged_in_id_str)
             # If viewing their own profile, use session username
             if logged_in_id_str == str(player_id_normalized):
                 player_name = session.get("username", "Unknown Player")
@@ -2446,7 +2473,7 @@ def player_api(player_id):
     if logged_in_user_id is not None:
         logged_in_id_str = str(logged_in_user_id)
         if logged_in_id_str.startswith("google_"):
-            logged_in_id_str = logged_in_id_str[7:]  # Remove 'google_' prefix
+            logged_in_id_str = bot_player_id(logged_in_id_str)  # bot-table id (Summit player number for a Google login that has played)
         # Compare as strings to avoid overflow with large IDs
         is_owner = logged_in_id_str == str(player_id_normalized)
     else:
@@ -3129,6 +3156,11 @@ def player_api(player_id):
             "id": player_id_normalized,
             "name": player_name,
             "avatar_url": _profile_picture_url(profile),
+            # "discord" | "card" | "upload", and the card for card art (its credit)
+            "picture_kind": (parse_picture(profile.get("profile_picture")) or {}).get("kind", "discord")
+            if profile else "discord",
+            "picture_card": (parse_picture(profile.get("profile_picture")) or {}).get("card")
+            if profile else None,
             "elo": player_elo if show_lifetime else None,
             # Seasons 1-8 lifetime ELO, frozen when lifetime moved to Glicko-2
             "legacy_elo": legacy_elo if show_lifetime else None,
@@ -3261,14 +3293,14 @@ def set_display_name(player_id):
     logger.info(f"set_display_name: logged_in_user_id={logged_in_user_id}, auth_provider={auth_provider}")
 
     # Normalize IDs for comparison
-    original_player_id = str(player_id)
+    original_player_id = account_id(player_id)  # a Summit player number maps back to its google_ login
     logged_in_id_str = str(logged_in_user_id)
     player_id_normalized = original_player_id
     if original_player_id.startswith("google_"):
-        player_id_normalized = original_player_id[7:]
+        player_id_normalized = bot_player_id(original_player_id)
     logged_in_normalized = logged_in_id_str
     if logged_in_id_str.startswith("google_"):
-        logged_in_normalized = logged_in_id_str[7:]
+        logged_in_normalized = bot_player_id(logged_in_id_str)
 
     if logged_in_normalized != player_id_normalized:
         return jsonify({"error": "You can only set your own display name"}), 403
@@ -3344,9 +3376,9 @@ def set_profile_visibility(player_id):
     logged_in_id_str = str(logged_in_user_id)
     player_id_normalized = str(player_id)
     if logged_in_id_str.startswith("google_"):
-        logged_in_id_str = logged_in_id_str[7:]
+        logged_in_id_str = bot_player_id(logged_in_id_str)
     if player_id_normalized.startswith("google_"):
-        player_id_normalized = player_id_normalized[7:]
+        player_id_normalized = bot_player_id(player_id_normalized)
 
     if logged_in_id_str != player_id_normalized and not is_admin():
         return jsonify({"error": "You can only update your own visibility settings"}), 403
@@ -3367,8 +3399,8 @@ def set_hidden_avatars(player_id):
     logged_in_user_id = session.get("user_id")
     if logged_in_user_id is None:
         return jsonify({"error": "Authentication required"}), 401
-    viewer = str(logged_in_user_id).removeprefix("google_")
-    player_id_normalized = str(player_id).removeprefix("google_")
+    viewer = bot_player_id(logged_in_user_id)
+    player_id_normalized = bot_player_id(player_id)
     if viewer != player_id_normalized and not is_admin():
         return jsonify({"error": "You can only change your own profile"}), 403
 
@@ -3394,8 +3426,8 @@ def set_hidden_badges(player_id):
     logged_in_user_id = session.get("user_id")
     if logged_in_user_id is None:
         return jsonify({"error": "Authentication required"}), 401
-    viewer = str(logged_in_user_id).removeprefix("google_")
-    player_id_normalized = str(player_id).removeprefix("google_")
+    viewer = bot_player_id(logged_in_user_id)
+    player_id_normalized = bot_player_id(player_id)
     if viewer != player_id_normalized and not is_admin():
         return jsonify({"error": "You can only change your own profile"}), 403
 
@@ -3440,8 +3472,8 @@ def set_shown_badges(player_id):
     logged_in_user_id = session.get("user_id")
     if logged_in_user_id is None:
         return jsonify({"error": "Authentication required"}), 401
-    viewer = str(logged_in_user_id).removeprefix("google_")
-    player_id_normalized = str(player_id).removeprefix("google_")
+    viewer = bot_player_id(logged_in_user_id)
+    player_id_normalized = bot_player_id(player_id)
     if viewer != player_id_normalized and not is_admin():
         return jsonify({"error": "You can only change your own profile"}), 403
 
@@ -3551,8 +3583,8 @@ def _owner_or_admin(player_id):
     logged_in_user_id = session.get("user_id")
     if logged_in_user_id is None:
         return None, (jsonify({"error": "Authentication required"}), 401)
-    viewer = str(logged_in_user_id).removeprefix("google_")
-    player_id_normalized = str(player_id).removeprefix("google_")
+    viewer = bot_player_id(logged_in_user_id)
+    player_id_normalized = bot_player_id(player_id)
     if viewer != player_id_normalized and not is_admin():
         return None, (jsonify({"error": "You can only change your own profile"}), 403)
     return player_id_normalized, None
@@ -3561,7 +3593,7 @@ def _owner_or_admin(player_id):
 @players_bp.route("/player/<player_id>/featured-deck", methods=["GET"])
 def get_featured_deck(player_id):
     """The deck the player chose to feature, or {"deck": null} when they chose none."""
-    player_id_normalized = str(player_id).removeprefix("google_")
+    player_id_normalized = bot_player_id(player_id)
     featured = UserProfileRepository().get_featured_deck(player_id_normalized)
     if not featured or featured["source"] != "manual" or not featured["url"] or not featured["deck"]:
         return jsonify({"deck": None})
@@ -3696,7 +3728,7 @@ def _rival_payload(player_id, rival_id):
     # A rival who blocked this player is never shown on their profile
     try:
         blocked = {
-            str(b.get("blocked_user_id")).removeprefix("google_")
+            bot_player_id(b.get("blocked_user_id"))
             for b in BlockedUsersRepository().get_blocked_users(rival_id)
         }
         if str(player_id) in blocked:
@@ -3739,7 +3771,7 @@ def _showcase_payload(player_id, showcase):
 @players_bp.route("/player/<player_id>/showcase", methods=["GET"])
 def get_showcase(player_id):
     """The player's short bio, favorite card and rival (each null when not set)."""
-    player_id_normalized = str(player_id).removeprefix("google_")
+    player_id_normalized = bot_player_id(player_id)
     try:
         showcase = UserProfileRepository().get_showcase(player_id_normalized)
     except Exception as e:
@@ -3799,7 +3831,7 @@ def set_showcase(player_id):
             return jsonify({"error": err}), 400
         showcase["favorite_card"] = card
     if "rival" in data:
-        rival = str(data["rival"] or "").removeprefix("google_")
+        rival = bot_player_id(data["rival"] or "")
         if rival and rival not in _opponent_records(player_id_normalized, rival):
             return jsonify({"error": "Pick a player you have played"}), 400
         showcase["rival"] = rival or None
@@ -3807,7 +3839,7 @@ def set_showcase(player_id):
     if not repo.set_showcase(player_id_normalized, showcase):
         return jsonify({"error": "Profile not found"}), 404
 
-    viewer = str(session.get("user_id") or "").removeprefix("google_")
+    viewer = bot_player_id(session.get("user_id") or "")
     if viewer != player_id_normalized:
         try:
             from repositories.audit import AuditRepository
@@ -3821,6 +3853,146 @@ def set_showcase(player_id):
 
     return jsonify({"success": True, **_showcase_payload(
         player_id_normalized, repo.get_showcase(player_id_normalized))})
+
+
+# The player's own profile picture: their Discord one (the default), a crop
+# of a card's art we already serve, or a picture they upload. Pictures are
+# public, so moderators and admins can put anyone back on Discord's.
+def _picture_state(player_id):
+    repo = UserProfileRepository()
+    profile = repo.get_by_user_id(player_id) or repo.get_by_user_id(f"google_{player_id}")
+    choice = parse_picture(profile.get("profile_picture") if profile else None)
+    return {
+        "kind": choice["kind"] if choice else "discord",
+        "card": choice.get("card") if choice else None,
+        "url": _profile_picture_url(profile),
+        "discord_url": _discord_picture_url(profile),
+    }
+
+
+def _picture_editor(player_id):
+    """(normalized id, None) for the owner, a moderator or an admin, else (None, error)."""
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return None, (jsonify({"error": "Authentication required"}), 401)
+    viewer = bot_player_id(logged_in_user_id)
+    player_id_normalized = bot_player_id(player_id)
+    if viewer != player_id_normalized and not is_moderator():
+        return None, (jsonify({"error": "You can only change your own profile"}), 403)
+    return player_id_normalized, None
+
+
+def _save_picture(player_id, value, action):
+    """Store a new choice, drop the old file, and log changes made by staff."""
+    repo = UserProfileRepository()
+    before = repo.get_profile_picture(player_id)
+    if not repo.set_profile_picture(player_id, value):
+        if value:
+            delete_picture_file(value)
+        return jsonify({"error": "Profile not found"}), 404
+    if before and (parse_picture(before) or {}).get("file") != (value or {}).get("file"):
+        delete_picture_file(before)
+
+    viewer = bot_player_id(session.get("user_id") or "")
+    if viewer != player_id:
+        try:
+            from repositories.audit import AuditRepository
+            AuditRepository().log_action(
+                viewer, session.get("username") or viewer, action, target_id=player_id,
+                previous_state=parse_picture(before), new_state=value,
+            )
+        except Exception as e:
+            logger.warning("Could not audit-log profile picture change: %s", e)
+    return jsonify({"success": True, **_picture_state(player_id)})
+
+
+@players_bp.route("/player/<player_id>/profile-picture", methods=["GET"])
+@require_auth
+def get_profile_picture(player_id):
+    """Which picture the player uses ("discord" | "card" | "upload"), for the picture editor."""
+    player_id_normalized, error = _picture_editor(player_id)
+    if error:
+        return error
+    return jsonify(_picture_state(player_id_normalized))
+
+
+@players_bp.route("/player/<player_id>/profile-picture", methods=["PUT"])
+@require_auth
+def set_profile_picture(player_id):
+    """{"kind": "discord"} goes back to the Discord picture; {"kind": "card", "card": name} uses card art."""
+    player_id_normalized, error = _picture_editor(player_id)
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    kind = data.get("kind")
+    if kind == "discord":
+        viewer = bot_player_id(session.get("user_id") or "")
+        action = "set_profile_picture" if viewer == player_id_normalized else "reset_profile_picture"
+        return _save_picture(player_id_normalized, None, action)
+    if kind == "card":
+        card, err = _showcase_card(data.get("card"))
+        if err or not card:
+            return jsonify({"error": err or "Pick a card from the list"}), 400
+        try:
+            webp = process_card_picture(card["image"], _is_site(card["name"]))
+        except PictureError as e:
+            return jsonify({"error": str(e)}), 400
+        value = {"kind": "card", "card": card["name"],
+                 "file": save_picture_file(player_id_normalized, webp)}
+        return _save_picture(player_id_normalized, value, "set_profile_picture")
+    return jsonify({"error": "Choose Discord, a card, or upload a picture"}), 400
+
+
+def _is_site(card_name):
+    """Sites are printed sideways, so their art sits in a different place."""
+    try:
+        from repositories.card_catalog import CardCatalogRepository
+        card_type = CardCatalogRepository().get_card_metadata(card_name).get("type") or ""
+    except Exception:
+        card_type = ""
+    return "site" in str(card_type).lower()
+
+
+@players_bp.route("/player/<player_id>/profile-picture/card-preview", methods=["GET"])
+@require_auth
+def preview_card_picture(player_id):
+    """The round picture a card would make (?card=<name>), as an image. Nothing is saved."""
+    _, error = _picture_editor(player_id)
+    if error:
+        return error
+    card, err = _showcase_card(request.args.get("card"))
+    if err or not card:
+        return jsonify({"error": err or "Pick a card from the list"}), 400
+    try:
+        webp = process_card_picture(card["image"], _is_site(card["name"]))
+    except PictureError as e:
+        return jsonify({"error": str(e)}), 400
+    resp = Response(webp, mimetype="image/webp")
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    return resp
+
+
+@players_bp.route("/player/<player_id>/profile-picture/upload", methods=["POST"])
+@require_auth
+def upload_profile_picture(player_id):
+    """Upload a picture (field "image", 5 MB max) with an optional crop box (crop_x, crop_y, crop_size)."""
+    player_id_normalized, error = _picture_editor(player_id)
+    if error:
+        return error
+    file = request.files.get("image")
+    if not file or not file.filename:
+        return jsonify({"error": "Choose a picture to upload."}), 400
+    data = file.read(MAX_PICTURE_UPLOAD_BYTES + 1)
+    crop = None
+    if request.form.get("crop_size"):
+        crop = {"x": request.form.get("crop_x"), "y": request.form.get("crop_y"),
+                "size": request.form.get("crop_size")}
+    try:
+        webp = process_upload_picture(data, crop)
+    except PictureError as e:
+        return jsonify({"error": str(e)}), 400
+    value = {"kind": "upload", "file": save_picture_file(player_id_normalized, webp)}
+    return _save_picture(player_id_normalized, value, "set_profile_picture")
 
 
 @players_bp.route("/player/<player_id>/card-stats")
@@ -3839,7 +4011,7 @@ def player_card_stats(player_id):
 
     player_id_normalized = str(player_id)
     if player_id_normalized.startswith("google_"):
-        player_id_normalized = player_id_normalized[7:]
+        player_id_normalized = bot_player_id(player_id_normalized)
 
     viewer = session.get("user_id")
     viewer = str(viewer)[7:] if viewer is not None and str(viewer).startswith("google_") else viewer
@@ -3884,7 +4056,7 @@ def player_card_stats(player_id):
 def _stripped_id(pid) -> str:
     """Strip the google_ prefix for identity comparison across ID forms."""
     s = str(pid)
-    return s[7:] if s.startswith("google_") else s
+    return bot_player_id(s)
 
 
 def _block_list_key(player_id) -> str | None:
@@ -4080,9 +4252,9 @@ def reset_own_profile(player_id):
     logged_in_id_str = str(logged_in_user_id)
     player_id_normalized = str(player_id)
     if logged_in_id_str.startswith("google_"):
-        logged_in_id_str = logged_in_id_str[7:]
+        logged_in_id_str = bot_player_id(logged_in_id_str)
     if player_id_normalized.startswith("google_"):
-        player_id_normalized = player_id_normalized[7:]
+        player_id_normalized = bot_player_id(player_id_normalized)
 
     if logged_in_id_str != player_id_normalized:
         return jsonify({"error": "You can only reset your own profile"}), 403
@@ -4119,9 +4291,9 @@ def undo_profile_reset(player_id):
     logged_in_id_str = str(logged_in_user_id)
     player_id_normalized = str(player_id)
     if logged_in_id_str.startswith("google_"):
-        logged_in_id_str = logged_in_id_str[7:]
+        logged_in_id_str = bot_player_id(logged_in_id_str)
     if player_id_normalized.startswith("google_"):
-        player_id_normalized = player_id_normalized[7:]
+        player_id_normalized = bot_player_id(player_id_normalized)
 
     if logged_in_id_str != player_id_normalized:
         return jsonify({"error": "You can only undo your own profile reset"}), 403
@@ -4157,9 +4329,9 @@ def delete_own_account(player_id):
     logged_in_id_str = str(logged_in_user_id)
     player_id_normalized = str(player_id)
     if logged_in_id_str.startswith("google_"):
-        logged_in_id_str = logged_in_id_str[7:]
+        logged_in_id_str = bot_player_id(logged_in_id_str)
     if player_id_normalized.startswith("google_"):
-        player_id_normalized = player_id_normalized[7:]
+        player_id_normalized = bot_player_id(player_id_normalized)
 
     if logged_in_id_str != player_id_normalized:
         return jsonify({"error": "You can only delete your own account"}), 403
@@ -4199,9 +4371,9 @@ def export_own_data(player_id):
     logged_in_id_str = str(logged_in_user_id)
     player_id_normalized = str(player_id)
     if logged_in_id_str.startswith("google_"):
-        logged_in_id_str = logged_in_id_str[7:]
+        logged_in_id_str = bot_player_id(logged_in_id_str)
     if player_id_normalized.startswith("google_"):
-        player_id_normalized = player_id_normalized[7:]
+        player_id_normalized = bot_player_id(player_id_normalized)
     if logged_in_id_str != player_id_normalized:
         return jsonify({"error": "You can only export your own data"}), 403
 

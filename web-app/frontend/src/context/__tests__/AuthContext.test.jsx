@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
-import { AuthProvider, useAuth } from '../AuthContext'
+import { AuthProvider, useAuth, loadMe } from '../AuthContext'
 
 vi.mock('@/api/auth', () => ({
   getMe: vi.fn(),
@@ -34,11 +34,33 @@ describe('AuthContext', () => {
   })
 
   it('sets user to false on auth failure', async () => {
-    getMe.mockRejectedValue(new Error('Unauthorized'))
+    getMe.mockRejectedValue(Object.assign(new Error('Unauthorized'), { status: 401 }))
     const { result } = renderHook(() => useAuth(), { wrapper })
 
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.user).toBe(false)
+  })
+
+  it('does not retry a 401 (really logged out)', async () => {
+    getMe.mockRejectedValue(Object.assign(new Error('Unauthorized'), { status: 401 }))
+    await expect(loadMe([0, 0])).rejects.toThrow('Unauthorized')
+    expect(getMe).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a network or server error and keeps the player signed in', async () => {
+    const mockUser = { user_id: '123', username: 'TestUser' }
+    getMe
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(Object.assign(new Error('Bad Gateway'), { status: 502 }))
+      .mockResolvedValue(mockUser)
+    await expect(loadMe([0, 0])).resolves.toEqual(mockUser)
+    expect(getMe).toHaveBeenCalledTimes(3)
+  })
+
+  it('gives up after the last retry', async () => {
+    getMe.mockRejectedValue(Object.assign(new Error('Server error'), { status: 500 }))
+    await expect(loadMe([0, 0])).rejects.toThrow('Server error')
+    expect(getMe).toHaveBeenCalledTimes(3)
   })
 
   it('throws when used outside AuthProvider', () => {

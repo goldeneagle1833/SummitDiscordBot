@@ -109,6 +109,121 @@ def _save_played_cards_callback(confirmation: dict, match_id: str):
         )
 
 
+def _same_player(a, b) -> bool:
+    """True when two ids name the same player (a Google login may appear
+    as google_<id> or as its Summit player number)."""
+    if str(a) == str(b):
+        return True
+    from services.summit_player_numbers import same_player
+    return same_player(a, b)
+
+
+# Play Sorcery Online ranked games reported without a Summit queue pairing.
+# They are held 24 hours so the loser can dispute, then the Discord bot
+# records them like a queued ranked game (match history, season and avatar
+# ratings, leaderboard) instead of the Paper ELO track.
+PSO_RANKED_SOURCE = "PSO Ranked"
+
+
+def goes_to_ranked_ladder(confirmation: dict) -> bool:
+    """True for a report the bot records on the ranked ladder.
+
+    Every ranked report does: PSO Ranked games and ranked games reported
+    with the website's "Report a Game" button, for Discord, Google and email
+    logins alike (Paper ELO is gone). Casual games and community-season
+    games stay website records with no ladder rating.
+    """
+    confirmation = confirmation or {}
+    if confirmation.get("source") == PSO_RANKED_SOURCE:
+        return True
+    return (
+        (confirmation.get("match_type") or "ranked") == "ranked"
+        and not confirmation.get("season_id")
+    )
+
+
+def _ladder_id(user_id) -> str:
+    """A confirmation's player id as the bot's tables key it."""
+    text = str(user_id)
+    if text.startswith("google_"):
+        from services.summit_player_numbers import number_for_google
+        number = number_for_google(text, create=True)
+        if number is not None:
+            return str(number)
+    return text
+
+
+def record_on_ranked_ladder(confirmation: dict, display_name) -> dict:
+    """Hand a held PSO Ranked report to the bot to record.
+
+    Returns {"match_id", "pipeline": "bot", "duplicate"}; raises
+    RuntimeError when the bot can't record it (the report stays pending
+    and is retried).
+    """
+    import json
+    import os
+    from routes.api.matchmaking import relay_to_bot
+
+    from_pso = confirmation.get("source") == PSO_RANKED_SOURCE
+    winner_id = _ladder_id(confirmation["winner_discord_id"])
+    loser_id = _ladder_id(confirmation["loser_discord_id"])
+    submitter_won = _same_player(confirmation["submitter_discord_id"], confirmation["winner_discord_id"])
+    went_first = confirmation.get("went_first")
+    if went_first == "submitter":
+        winner_went_first = submitter_won
+    elif went_first == "opponent":
+        winner_went_first = not submitter_won
+    else:
+        winner_went_first = None
+    played_cards = None
+    if confirmation.get("played_cards"):
+        try:
+            played_cards = json.loads(confirmation["played_cards"])
+        except (TypeError, ValueError):
+            played_cards = None
+    if played_cards:
+        # Cards are keyed by the id the report used; key them as recorded
+        played_cards = {_ladder_id(k): v for k, v in played_cards.items()}
+
+    payload = {
+        "report_key": int(confirmation["id"]),
+        "winner_id": winner_id,
+        "loser_id": loser_id,
+        "winner_name": display_name(winner_id),
+        "loser_name": display_name(loser_id),
+        "winner_deck_url": confirmation.get("winner_deck_url"),
+        "loser_deck_url": confirmation.get("loser_deck_url"),
+        "winner_went_first": winner_went_first,
+        "match_comment": confirmation.get("match_comment") or (
+            "Reported by Play Sorcery Online" if from_pso else "Reported on the Summit website"
+        ),
+        "played_cards": played_cards,
+        "played_on": "Play Sorcery Online" if from_pso else "the Summit website",
+    }
+    body, status = relay_to_bot(
+        "POST",
+        "/standalone-results",
+        payload,
+        unavailable_body={"error": "Summit bot is unavailable; retry later"},
+        timeout=float(os.getenv("MATCH_REPORT_BOT_API_TIMEOUT", "30")),
+    )
+    if status >= 400 or not body.get("match_id"):
+        raise RuntimeError(
+            f"Bot could not record ranked report {confirmation['id']}: "
+            f"{body.get('error') or status}"
+        )
+    logger.info(
+        "Ranked report %s recorded on the ranked ladder as match %s (duplicate=%s)",
+        confirmation["id"], body["match_id"], bool(body.get("duplicate")),
+    )
+    return {
+        "match_id": body["match_id"],
+        "pipeline": "bot",
+        "duplicate": bool(body.get("duplicate")),
+        "elo_changes": None,
+    }
+
+
 class MatchConfirmationService:
     """Business logic for match confirmations."""
 
@@ -218,8 +333,10 @@ class MatchConfirmationService:
         Returns:
             dict: {"match_id": str, "elo_changes": dict}
         """
+        if goes_to_ranked_ladder(confirmation):
+            return record_on_ranked_ladder(confirmation, self._get_display_name_for_user)
+
         import time
-        from services.paper_elo import update_paper_elo
         from webapp_config import MATCH_RECORDS_DB_PATH
         from repositories.matches import MatchRepository
         import sqlite3
@@ -285,20 +402,14 @@ class MatchConfirmationService:
 
         is_casual = confirmation.get("match_type") == "casual"
 
-        # Update ELO
-        if is_repeat_matchup or is_casual:
-            winner_new_elo = winner_elo_change = 0
-            winner_new_event_elo = winner_event_elo_change = 0
-            loser_new_elo = loser_elo_change = 0
-            loser_new_event_elo = loser_event_elo_change = 0
-            event_active = False
-        else:
-            (winner_new_elo, winner_elo_change, winner_new_event_elo,
-             winner_event_elo_change, event_active) = update_paper_elo(
-                winner_id, winner_name, did_win=True, opponent_id=loser_id)
-            (loser_new_elo, loser_elo_change, loser_new_event_elo,
-             loser_event_elo_change, _) = update_paper_elo(
-                loser_id, loser_name, did_win=False, opponent_id=winner_id)
+        # Only casual and community-season games get here (ranked ones go to
+        # the ladder above). Paper ELO is gone, so the website record itself
+        # carries no rating change; a season game moves its season rating below.
+        winner_new_elo = winner_elo_change = 0
+        winner_new_event_elo = winner_event_elo_change = 0
+        loser_new_elo = loser_elo_change = 0
+        loser_new_event_elo = loser_event_elo_change = 0
+        event_active = False
 
         # Determine went_first
         went_first_raw = confirmation.get("went_first", "Unknown")
@@ -345,8 +456,8 @@ class MatchConfirmationService:
                     source_label,
                     confirmation.get("match_type", "ranked"),
                     confirmation.get("season_id"),
-                    winner_new_elo if not is_repeat_matchup and not is_casual else None,
-                    loser_new_elo if not is_repeat_matchup and not is_casual else None,
+                    None,  # no lifetime rating on website-only records
+                    None,
                 ),
             )
             conn.commit()
@@ -929,7 +1040,7 @@ class MatchConfirmationService:
 
         # Verify user is the opponent
         # Compare user IDs directly as strings (supports both Discord numeric and google_ prefixed IDs)
-        if str(confirmation["opponent_discord_id"]) != str(opponent_user_id):
+        if not _same_player(confirmation["opponent_discord_id"], opponent_user_id):
             raise PermissionError(
                 "You are not authorized to confirm this match report"
             )
@@ -941,7 +1052,7 @@ class MatchConfirmationService:
                 raise ValueError(INVALID_DECK_URL_MESSAGE)
 
             # Determine if opponent is winner or loser (direct string comparison - no normalization)
-            is_winner = str(confirmation["winner_discord_id"]) == str(opponent_user_id)
+            is_winner = _same_player(confirmation["winner_discord_id"], opponent_user_id)
             deck_field = "winner_deck_url" if is_winner else "loser_deck_url"
 
             # Update the deck URL in the database
@@ -962,8 +1073,20 @@ class MatchConfirmationService:
                 f"field={deck_field}, url={opponent_deck_url}"
             )
 
+        if goes_to_ranked_ladder(confirmation):
+            result = record_on_ranked_ladder(confirmation, self._get_display_name_for_user)
+            self.repo.update_confirmation_status(
+                confirmation_id=confirmation_id,
+                status="confirmed",
+                confirmed_at=int(time.time()),
+            )
+            return {
+                "success": True,
+                "message": "Match confirmed and recorded on the ranked ladder.",
+                **result,
+            }
+
         # Get player IDs and display names FIRST (before any DB operations)
-        from services.paper_elo import update_paper_elo
         from webapp_config import MATCH_RECORDS_DB_PATH
         from repositories.matches import MatchRepository
         import sqlite3
@@ -1055,40 +1178,18 @@ class MatchConfirmationService:
         # Determine if this is a casual match (no ELO impact)
         is_casual = confirmation.get("match_type") == "casual"
 
-        # Update ELO only if not a repeat matchup and not casual
-        if is_repeat_matchup or is_casual:
-            # Skip ELO updates for repeat matchups
-            winner_new_elo = 1500  # Default values for display
-            winner_elo_change = 0
-            winner_new_event_elo = 1500
-            winner_event_elo_change = 0
-            loser_new_elo = 1500
-            loser_elo_change = 0
-            loser_new_event_elo = 1500
-            loser_event_elo_change = 0
-            event_active = False
-            if is_casual:
-                logger.info("ELO updates skipped due to casual match type")
-            else:
-                logger.info("ELO updates skipped due to repeat matchup")
-        else:
-            # Update winner's ELO (keep IDs as strings with google_ prefix)
-            (
-                winner_new_elo,
-                winner_elo_change,
-                winner_new_event_elo,
-                winner_event_elo_change,
-                event_active,
-            ) = update_paper_elo(winner_id, winner_name, did_win=True, opponent_id=loser_id)
-
-            # Update loser's ELO (keep IDs as strings with google_ prefix)
-            (
-                loser_new_elo,
-                loser_elo_change,
-                loser_new_event_elo,
-                loser_event_elo_change,
-                _,
-            ) = update_paper_elo(loser_id, loser_name, did_win=False, opponent_id=winner_id)
+        # Only casual and community-season games get here (ranked ones go to
+        # the ladder above). Paper ELO is gone, so the website record itself
+        # carries no rating change; a season game moves its season rating below.
+        winner_new_elo = 1500  # Default values for display
+        winner_elo_change = 0
+        winner_new_event_elo = 1500
+        winner_event_elo_change = 0
+        loser_new_elo = 1500
+        loser_elo_change = 0
+        loser_new_event_elo = 1500
+        loser_event_elo_change = 0
+        event_active = False
 
         # Create match record in match_reports_web table (uses TEXT for all IDs - no overflow)
         logger.info(f"Connecting to match_records database at: {MATCH_RECORDS_DB_PATH}")
@@ -1155,8 +1256,8 @@ class MatchConfirmationService:
                     "Web",            # source (mark as web-based)
                     confirmation.get("match_type", "ranked"),  # match_type
                     confirmation.get("season_id"),  # season_id (NULL for non-season matches)
-                    winner_new_elo if not is_repeat_matchup and not is_casual else None,
-                    loser_new_elo if not is_repeat_matchup and not is_casual else None,
+                    None,  # no lifetime rating on website-only records
+                    None,
                 ),
             )
 
@@ -1250,7 +1351,7 @@ class MatchConfirmationService:
                 "Repeat games do not affect your rating - you must play someone else to gain rating."
             )
         else:
-            message = "Match confirmed successfully! Ratings have been updated."
+            message = "Match confirmed and recorded!"
 
         return {
             "success": True,
@@ -1328,7 +1429,7 @@ class MatchConfirmationService:
         elif winner_went_first == "n":
             went_first = "opponent"
         else:
-            went_first = "submitter"  # Default
+            went_first = None  # Not reported: unknown, not "winner went first"
 
         # Build comment with match time if provided
         comment_parts = []
@@ -1439,7 +1540,7 @@ class MatchConfirmationService:
 
         # Verify user is the opponent
         # Compare user IDs directly as strings (supports both Discord numeric and google_ prefixed IDs)
-        if str(confirmation["opponent_discord_id"]) != str(opponent_user_id):
+        if not _same_player(confirmation["opponent_discord_id"], opponent_user_id):
             raise PermissionError(
                 "You are not authorized to deny this match report"
             )

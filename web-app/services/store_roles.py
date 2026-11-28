@@ -40,7 +40,10 @@ def _role_items(order: dict) -> list[dict]:
 
 
 def _enabled(order: dict) -> bool:
-    return not str(order["user_id"]).startswith("google_")
+    # Google and email logins have no Discord account to give a role to
+    from utils.player_ids import is_summit_player_number
+    user_id = str(order["user_id"])
+    return not user_id.startswith("google_") and not is_summit_player_number(user_id)
 
 
 def queue_role_grants(repo: StoreRepository, order: dict) -> int:

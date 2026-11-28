@@ -10,6 +10,7 @@ from flask import Blueprint, jsonify, request
 from repositories.pairings import PairingRepository
 from routes.api.matchmaking import relay_to_bot
 from services.external_match import ExternalMatchService
+from services.summit_player_numbers import UnknownPlayer, resolve_reported_player
 from utils.api_auth import require_integration_api_key
 
 logger = logging.getLogger(__name__)
@@ -35,8 +36,16 @@ def report_external_match():
     """
     try:
         data = request.get_json(silent=True)
-        if not data:
+        if not data or not isinstance(data, dict):
             return jsonify({"error": "Request body must be JSON", "success": False}), 400
+
+        # A correction of a result Summit already recorded, sent here instead
+        # of /api/partner/correct-match: correct the recorded match (same as
+        # !correct_match), never file it as a new external match.
+        from routes.api.partner_match_corrections import is_correction_request, queue_partner_correction
+        if is_correction_request(data):
+            body, status = queue_partner_correction(data, allow_recent_fallback=True)
+            return jsonify(body), status
 
         # Validate required fields
         required = ["winner_id", "loser_id", "winner_deck_url", "loser_deck_url", "source"]
@@ -47,8 +56,17 @@ def report_external_match():
                 "success": False,
             }), 400
 
-        winner_id = str(data["winner_id"]).strip()
-        loser_id = str(data["loser_id"]).strip()
+        # Players may be named by Discord id, Summit player number (Google
+        # logins), google_<id> or verified email; all become bot-table ids.
+        try:
+            winner_id = resolve_reported_player(data["winner_id"])
+            loser_id = resolve_reported_player(data["loser_id"])
+        except UnknownPlayer as e:
+            return jsonify({"error": str(e), "code": "UNKNOWN_PLAYER", "success": False}), 404
+        _resolve_player_entries(data, {
+            str(data["winner_id"]).strip(): winner_id,
+            str(data["loser_id"]).strip(): loser_id,
+        })
 
         if winner_id == loser_id:
             return jsonify({
@@ -80,6 +98,10 @@ def report_external_match():
         match_time = None
         if data.get("match_time") is not None:
             match_time = int(data["match_time"])
+            # Game length in seconds; anything over a day (e.g. a timestamp
+            # sent by mistake) is dropped rather than shown as 29928638m.
+            if match_time < 0 or match_time > MAX_MATCH_SECONDS:
+                match_time = None
 
         # Bracket (top cut) games never move ELO and must never reach a
         # ranked pipeline. They are recognised by the pairing id we gave the
@@ -106,6 +128,14 @@ def report_external_match():
                 "error": "Summit pairing was not found or does not match these players",
                 "success": False,
             }), 400
+
+        # A report of a game Summit already recorded (same replay link) is a
+        # repeat: answer with the recorded match instead of filing it again as
+        # an external match. If it names the other player as winner, it is a
+        # correction of that match.
+        repeat = _already_recorded(data, winner_id, loser_id)
+        if repeat is not None:
+            return repeat
 
         # Standalone PSO Ranked games always go through the ranked pipeline as
         # pending confirmations (24h auto-confirm with ELO).
@@ -146,6 +176,61 @@ def report_external_match():
     except Exception as e:
         logger.error(f"Error recording external match: {e}", exc_info=True)
         return jsonify({"error": "Internal server error", "success": False}), 500
+
+
+MAX_MATCH_SECONDS = 24 * 60 * 60
+
+_PLAYER_ID_KEYS = ("player_id", "discord_id", "playerId", "discordId")
+
+
+def _resolve_player_entries(data: dict, resolved: dict):
+    """Point the played-cards entries at the same ids as winner_id/loser_id.
+
+    A report that names a player by email or google_<id> may do the same in
+    its ``players`` list; the cards must land under the id the game is
+    recorded with, or they never show on the player's stats.
+    """
+    for key in ("players", "played_cards", "playedCards"):
+        entries = data.get(key)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            for id_key in _PLAYER_ID_KEYS:
+                raw = entry.get(id_key)
+                if raw is not None and str(raw).strip() in resolved:
+                    entry[id_key] = resolved[str(raw).strip()]
+
+
+def _already_recorded(data: dict, winner_id: str, loser_id: str):
+    """The response for a report of a game already in match history, or None."""
+    from repositories.mod_record_repo import ModRequestsRepository
+    from routes.api.partner_match_corrections import queue_partner_correction
+    from utils.match_tables import live_matches
+
+    replay_url = str(data.get("replay_url") or data.get("replayUrl") or "").strip()
+    if not replay_url:
+        return None
+    found = [
+        m for m in ModRequestsRepository().find_match(live_matches(), replay_url=replay_url)
+        if {m["winner_id"], m["loser_id"]} == {winner_id, loser_id}
+    ]
+    if not found:
+        return None
+    match = found[0]
+    if match["winner_id"] != winner_id:
+        logger.info("Report for recorded match #%s names the other winner; treating it as a correction", match["id"])
+        body, status = queue_partner_correction({**data, "match_id": match["id"], "pairing_id": None})
+        return jsonify(body), status
+    logger.info("Report for already-recorded match #%s ignored (same result)", match["id"])
+    return jsonify({
+        "success": True,
+        "duplicate": True,
+        "pipeline": "bot",
+        "match_id": match["id"],
+        "message": "Match already recorded",
+    }), 200
 
 
 def _record_pso_ranked(
@@ -221,9 +306,13 @@ def _notify_pso_match_players(winner_id: str, loser_id: str, result: dict):
         winner_name = result["winner"]["display_name"]
         loser_name = result["loser"]["display_name"]
         confirmation_id = result["confirmation_id"]
+        # A Google login reads its notifications under its google_<id>
+        from services.summit_player_numbers import google_for_number
+        winner_account = google_for_number(winner_id) or winner_id
+        loser_account = google_for_number(loser_id) or loser_id
 
         store_repo.create_web_notification(
-            user_id=winner_id,
+            user_id=winner_account,
             ntype="pso_match_pending",
             title="PSO Ranked Match Reported",
             body=(
@@ -233,7 +322,7 @@ def _notify_pso_match_players(winner_id: str, loser_id: str, result: dict):
         )
 
         store_repo.create_web_notification(
-            user_id=loser_id,
+            user_id=loser_account,
             ntype="pso_match_pending",
             title="PSO Ranked Match Reported",
             body=(

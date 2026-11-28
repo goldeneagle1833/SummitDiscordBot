@@ -4,7 +4,7 @@ import { getMatchesWithNotes } from '@/api/admin'
 
 const SOURCE_LABEL = {
   online: 'Online',
-  paper: 'Paper',
+  paper: 'Website',
   archive: 'Archive',
 }
 

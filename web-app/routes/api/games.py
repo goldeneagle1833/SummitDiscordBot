@@ -9,6 +9,7 @@ from flask import Blueprint, jsonify, request, session
 from webapp_config import MATCH_RECORDS_DB_PATH
 from services.curiosa import CuriosaService, is_deck_url, normalize_deck_url
 from utils.auth import require_auth
+from services.summit_player_numbers import bot_player_id
 
 # Player history shows past-season (archived) bot games as rowid + this offset
 ARCHIVE_ID_OFFSET = 1_000_000_000
@@ -189,7 +190,7 @@ def update_match_deck():
     # Normalize user_id (strip 'google_' prefix for bot match lookups)
     user_id_normalized = original_user_id
     if original_user_id.startswith("google_"):
-        user_id_normalized = original_user_id[7:]
+        user_id_normalized = bot_player_id(original_user_id)
 
     try:
         data = request.get_json()

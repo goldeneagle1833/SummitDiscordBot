@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 
 import aiohttp
@@ -12,7 +13,18 @@ import config
 logger = logging.getLogger("discord_bot")
 
 WEB_APP_URL = getattr(config, "WEB_APP_URL", "https://sorcererssummit.com").rstrip("/")
-WEB_APP_API_KEY = getattr(config, "WEB_APP_API_KEY", "") or ""
+
+
+def _web_api_key() -> str:
+    """config.WEB_APP_API_KEY, else WEB_APP_API_KEY or the first of the web
+    app's API_KEYS from .env (the bot and the site share discord-bot/.env)."""
+    key = getattr(config, "WEB_APP_API_KEY", "") or os.getenv("WEB_APP_API_KEY", "")
+    if not key:
+        key = (os.getenv("API_KEYS", "").split(",")[0]).strip()
+    return key
+
+
+WEB_APP_API_KEY = _web_api_key()
 
 _BUG_WORDS = re.compile(r"\b(bug|broken|error|crash|doesn'?t work|not working|wrong|fails?)\b", re.I)
 _FEATURE_WORDS = re.compile(r"\b(feature|idea|suggest\w*|request|would be (nice|cool)|please add|add a)\b", re.I)

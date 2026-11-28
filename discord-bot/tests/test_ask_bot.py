@@ -144,8 +144,46 @@ class TestAskBot:
         assert cog._rate_limited(5) is not None
         assert cog._rate_limited(6) is None
 
-    async def test_no_key_means_questions_are_ignored(self):
+    async def test_no_key_says_so(self):
         msg, me = _message("how does pairing work?")
         cog = _cog(me, client=None)
         await cog.on_message(msg)
+        assert "isn't set up" in msg.reply.await_args.args[0]
+
+    async def test_answers_when_the_bots_role_is_tagged(self):
+        response = SimpleNamespace(
+            stop_reason="end_turn",
+            content=[SimpleNamespace(type="text", text="After 8 games.")],
+        )
+        client = MagicMock()
+        client.beta.messages.create = AsyncMock(return_value=response)
+        msg, me = _message("", mention=False)
+        msg.guild = SimpleNamespace(self_role=SimpleNamespace(id=4242))
+        msg.content = "<@&4242> how does provisional rating work?"
+        cog = _cog(me, client=client)
+        await cog.on_message(msg)
+        sent = client.beta.messages.create.await_args.kwargs["messages"][-1]["content"]
+        assert sent == "how does provisional rating work?"
+        assert msg.reply.await_args.args[0] == "After 8 games."
+
+    async def test_other_role_tags_are_ignored(self):
+        msg, me = _message("", mention=False)
+        msg.guild = SimpleNamespace(self_role=SimpleNamespace(id=4242))
+        msg.content = "<@&1111> hello mods"
+        cog = _cog(me, client=MagicMock())
+        await cog.on_message(msg)
         msg.reply.assert_not_called()
+
+
+class TestWebKeyFallback:
+    def test_falls_back_to_site_api_keys(self, monkeypatch):
+        import config
+        monkeypatch.delattr(config, "WEB_APP_API_KEY", raising=False)
+        monkeypatch.delenv("WEB_APP_API_KEY", raising=False)
+        monkeypatch.setenv("API_KEYS", "first-key, second-key")
+        assert feedback_intake._web_api_key() == "first-key"
+
+    def test_config_wins(self, monkeypatch):
+        import config
+        monkeypatch.setattr(config, "WEB_APP_API_KEY", "from-config", raising=False)
+        assert feedback_intake._web_api_key() == "from-config"

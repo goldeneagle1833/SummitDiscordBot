@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from collections import OrderedDict, deque
@@ -36,7 +37,8 @@ try:
 except ImportError:  # requirement missing: the cog stays quiet
     anthropic = None
 
-ANTHROPIC_API_KEY = getattr(config, "ANTHROPIC_API_KEY", "") or ""
+# config.py may not have the line; fall back to the environment (.env).
+ANTHROPIC_API_KEY = getattr(config, "ANTHROPIC_API_KEY", "") or os.getenv("ANTHROPIC_API_KEY", "")
 MODEL = getattr(config, "ASK_BOT_MODEL", "claude-opus-5-5")
 USER_LIMIT = int(getattr(config, "ASK_BOT_USER_LIMIT", 5))  # questions per user...
 USER_WINDOW = 10 * 60  # ...per 10 minutes
@@ -153,7 +155,12 @@ class AskBotCog(commands.Cog):
         self._answers: OrderedDict[int, list] = OrderedDict()
         self._system = None
         if not self.client:
-            logger.info("AskBotCog: no ANTHROPIC_API_KEY, questions off (feedback still works)")
+            logger.warning(
+                "AskBotCog: questions off (anthropic installed: %s, key set: %s)",
+                anthropic is not None, bool(ANTHROPIC_API_KEY),
+            )
+        else:
+            logger.info("AskBotCog: ready to answer @mention questions (%s)", MODEL)
 
     # ---------------------------------------------------------------- helpers
 
@@ -196,12 +203,26 @@ class AskBotCog(commands.Cog):
         content = message.content or ""
         if f"<@{me.id}>" in content or f"<@!{me.id}>" in content:
             return True
+        # Discord's tag list also offers the bot's own role (same name).
+        own_role = self._own_role(message)
+        if own_role is not None and f"<@&{own_role.id}>" in content:
+            return True
         ref = message.reference
         return bool(ref and ref.message_id in self._answers)
 
-    def _strip_mention(self, content: str) -> str:
+    @staticmethod
+    def _own_role(message: discord.Message):
+        guild = getattr(message, "guild", None)
+        role = getattr(guild, "self_role", None) if guild is not None else None
+        return role if isinstance(getattr(role, "id", None), int) else None
+
+    def _strip_mention(self, content: str, message: discord.Message | None = None) -> str:
         me = self.bot.user
-        return re.sub(rf"<@!?{me.id}>", "", content or "").strip()
+        text = re.sub(rf"<@!?{me.id}>", "", content or "")
+        role = self._own_role(message) if message is not None else None
+        if role is not None:
+            text = text.replace(f"<@&{role.id}>", "")
+        return text.strip()
 
     # --------------------------------------------------------------- listener
 
@@ -216,7 +237,7 @@ class AskBotCog(commands.Cog):
         intake = self.bot.get_cog("FeedbackIntakeCog")
         if intake and intake.is_feedback_location(message.channel):
             return  # posts there already go to the feedback board
-        text = self._strip_mention(message.content)
+        text = self._strip_mention(message.content, message)
 
         feedback = FEEDBACK_PREFIX.match(text)
         if feedback:
@@ -226,6 +247,13 @@ class AskBotCog(commands.Cog):
         if CHANNEL_IDS and message.channel.id not in CHANNEL_IDS:
             return
         if not self.client:
+            logger.warning("AskBotCog: question ignored, ANTHROPIC_API_KEY not loaded or anthropic not installed")
+            await message.reply(
+                "I can't answer questions yet (my AI key isn't set up). "
+                "You can still send feedback with `@Summit Bot feedback: ...`",
+                mention_author=False,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
             return
         if not text:
             await message.reply(

@@ -128,8 +128,9 @@ CONSENT_PAGE = """<!doctype html>
     <ul>
       <li>your ranked match history, including this season's newest games</li>
       <li>your Card Stats, even if they are private on your profile</li>
+      <li>your own ranked deck lists</li>
     </ul>
-    <p>It can't change anything, post for you, see your ranked deck lists or see anyone else's private data.</p>
+    <p>It can't change anything, post for you or see anyone else's decks or private data.</p>
     <form method="post" action="/auth/mcp/authorize">
       {% for name, value in fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
       <input type="hidden" name="csrf" value="{{ csrf }}">

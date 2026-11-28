@@ -139,6 +139,13 @@ def make_site(calls: list | None = None, overrides: dict | None = None) -> SiteC
             if path == "/api/mcp/me/matches":
                 newest = _pm("win", "Sparkmage", "Druid", ["Air", "Fire"], ["Earth", "Water"], True, 12)
                 return httpx.Response(200, json={**PUBLIC_MATCHES, "matches": [newest] + PUBLIC_MATCHES["matches"][1:]})
+            if path == "/api/mcp/me/decks":
+                return httpx.Response(200, json={"decks": [{
+                    "avatar": "Sparkmage", "elements": ["Air", "Fire"], "games": 6, "wins": 4, "losses": 2,
+                    "win_rate": 66.7, "first_played": "2026-11-01T10:00:00", "last_played": "2026-11-20T10:00:00",
+                    "against": [{"avatar": "Druid", "wins": 2, "losses": 0}],
+                    "cards": {"spellbook": [{"name": "Fireball", "quantity": 3}],
+                              "atlas": [{"name": "Volcano", "quantity": 2}]}}] if who[0] == "1" else []})
             if path == "/api/mcp/me/card-stats":
                 return httpx.Response(200, json=MY_CARDS if who[0] == "1" else {"games": 0, "cards": []})
         routes = {
@@ -347,7 +354,7 @@ def test_server_registers_tools_and_prompts():
     assert "leaderboard" not in " ".join(names)
     assert len(run(server.mcp.list_prompts())) == 6
     account = {t.name for t in run(server.mcp_account.list_tools())}
-    assert account == names | {"my_account", "my_match_review", "my_card_stats"}
+    assert account == names | {"my_account", "my_match_review", "my_card_stats", "my_decks"}
     assert len(run(server.mcp_account.list_prompts())) == 7
 
 
@@ -497,3 +504,19 @@ def test_signed_in_connector_asks_for_sign_in_and_public_one_does_not(monkeypatc
         assert c.post("/mcp/account", json=init, headers={**headers, "Authorization": "Bearer nope"}).status_code == 401
         assert c.post("/mcp/account", json=init, headers={**headers, "Authorization": "Bearer good"}).status_code == 200
         assert c.post("/mcp", json=init, headers=headers).status_code == 200
+
+
+def test_my_decks_shows_own_lists_only_to_the_signed_in_player():
+    result = run(tools.my_decks(make_site(), "good"))
+    deck = result["decks"][0]
+    assert deck["cards"]["spellbook"] == [{"name": "Fireball", "quantity": 3}]
+    assert deck["elements"] == "Air / Fire" and deck["win_rate"] == 66.7
+    assert run(tools.my_decks(make_site(), "other"))["decks"] == []
+    with pytest.raises(SiteError):
+        run(tools.my_decks(make_site(), "nope"))
+
+
+def test_public_connector_has_no_deck_list_tool():
+    from mcp_server import server
+
+    assert "my_decks" not in {t.name for t in run(server.mcp.list_tools())}

@@ -1,7 +1,9 @@
 """Hard rules every MCP answer passes through.
 
 1. No ranked deck lists or deck links. Deck links appear only in the Top 8
-   tools, which build them from public tournament data themselves. Every
+   tools, which build them from public tournament data themselves. The one
+   exception is ``my_decks`` on the signed-in connector: a player's OWN ranked
+   lists, shown only to that player (Bruce, 2026-11-28). Every
    other answer goes through ``strip_deck_data``, which removes any field or
    text that could point at a ranked deck. Tests assert this.
 2. Answers stay small: lists are cut and long text trimmed, so a single tool

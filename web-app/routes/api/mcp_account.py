@@ -7,6 +7,7 @@ only ever reads its own player's data; nothing here changes anything.
 GET /api/mcp/me               who signed in
 GET /api/mcp/me/matches       own ranked history, newest games' avatars included
 GET /api/mcp/me/card-stats    own Card Stats (private on the profile by default)
+GET /api/mcp/me/decks         own ranked deck lists (Bruce 2026-11-28: owner only, never others')
 
 Players manage their connected apps with the session-based endpoints:
 GET /api/mcp/connections, DELETE /api/mcp/connections[/<client_id>]
@@ -128,6 +129,20 @@ def mcp_my_card_stats():
         card["element"] = element
     result.update({"queue": queue, "event": event})
     return jsonify(result)
+
+
+@mcp_account_bp.route("/mcp/me/decks", methods=["GET"])
+@require_mcp_user
+def mcp_my_decks():
+    """The token owner's own ranked decks with card lists and results. Never anyone else's."""
+    pid = _player_id()
+    season = (request.args.get("season") or "all").strip().lower()
+    if not _SEASON_RE.match(season):
+        return jsonify({"error": 'season must be "all", "current" or a season id'}), 400
+    try:
+        return jsonify(history.own_decks(pid, season))
+    except (history.PlayerNotFound, ValueError):
+        return jsonify({"player": {"id": pid}, "season": season, "decks": []})
 
 
 # ---------------------------------------------------------------------------

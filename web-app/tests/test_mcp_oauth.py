@@ -250,3 +250,41 @@ def test_my_card_stats(client):
     r = client.get("/api/mcp/me/card-stats", headers={"X-Summit-User-Token": tokens["access_token"]})
     assert r.status_code == 200
     assert r.get_json()["queue"] == "ranked"
+
+
+def test_my_decks_are_own_only(client, match_db):
+    import json
+    import sqlite3
+    from services import public_match_history as history
+
+    history.clear_cache()
+    mine = json.dumps({"avatar": [{"name": "Sparkmage", "type": "Avatar"}],
+                       "spellbook": [{"name": "Spark", "elements": "Fire", "quantity": 4}],
+                       "atlas": [{"name": "Volcano", "quantity": 2}]})
+    theirs = json.dumps({"avatar": [{"name": "Druid", "type": "Avatar"}],
+                         "spellbook": [{"name": "Secret Opponent Card", "elements": "Earth", "quantity": 3}]})
+    conn = sqlite3.connect(str(match_db))
+    for ts, winner, loser, wj, lj in [
+        ("2026-11-01T10:00:00", PLAYER, "222", mine, theirs),
+        ("2026-11-02T10:00:00", "222", PLAYER, theirs, mine),
+    ]:
+        conn.execute(
+            "INSERT INTO match_records (winner_id, winner_display_name, losser_id, losser_display_name, timestamp,"
+            " match_type, json_deck_data_winner, json_deck_data_loser) VALUES (?, 'A', ?, 'B', ?, 'ranked', ?, ?)",
+            (winner, loser, ts, wj, lj))
+    conn.commit()
+    conn.close()
+
+    _, tokens, _, _ = _full_flow(client)
+    data = client.get("/api/mcp/me/decks", headers={"X-Summit-User-Token": tokens["access_token"]}).get_json()
+    assert len(data["decks"]) == 1
+    deck = data["decks"][0]
+    assert deck["avatar"] == "Sparkmage" and deck["games"] == 2 and deck["wins"] == 1
+    assert deck["cards"]["spellbook"] == [{"name": "Spark", "quantity": 4}]
+    assert "Secret Opponent Card" not in json.dumps(data)
+    assert client.get("/api/mcp/me/decks").status_code == 401
+    # The open API never carries deck lists
+    history.clear_cache()
+    public = client.get(f"/api/public/players/{PLAYER}/matches?site=https://x.example").get_json()
+    assert "Spark\"" not in json.dumps(public) and "_own_deck" not in json.dumps(public)
+    history.clear_cache()

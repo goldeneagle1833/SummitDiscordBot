@@ -82,8 +82,9 @@ export default function Help() {
                 <code className="inline-block break-all rounded bg-bg-elevated px-2 py-1 text-primary">{MCP_ACCOUNT_URL}</code>
                 <p className="text-text-muted mt-1">
                   Signed in: everything above plus a deeper review of your own games, including your newest
-                  games and your private Card Stats. Your AI app asks you to sign in with Discord, Google or an
-                  email code, then to allow it. It can&apos;t change anything or see your ranked deck lists.
+                  games, your private Card Stats and your own ranked deck lists. Your AI app asks you to sign in
+                  with Discord, Google or an email code, then to allow it. It can&apos;t change anything or see
+                  anyone else&apos;s decks.
                 </p>
               </div>
             </div>
@@ -101,7 +102,7 @@ export default function Help() {
           </div>
           <ConnectedAiApps />
           <p className="text-text-muted">
-            Ranked deck lists are never shared. Use of Summit data follows our{' '}
+            Other players&apos; ranked deck lists are never shared. Use of Summit data follows our{' '}
             <a href="/terms" className="text-primary underline">Terms</a>.
           </p>
         </div>

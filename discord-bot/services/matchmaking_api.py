@@ -462,10 +462,12 @@ async def start_matchmaking_api(bot):
         return web.json_response(result)
 
     async def standalone_result(request):
-        """Record a held Play Sorcery Online ranked game that had no Summit pairing.
+        """Record a ranked game reported outside the Summit queue.
 
         Called by the website once a standalone PSO Ranked report has passed
-        its 24-hour dispute window (or the loser confirmed it).
+        its 24-hour dispute window (or the loser confirmed it), and when a
+        ranked game reported with the website's "Report a Game" button is
+        confirmed. ``played_on`` names where it was played for the DMs.
         """
         try:
             payload = await request.json()
@@ -493,6 +495,7 @@ async def start_matchmaking_api(bot):
                 match_time=payload.get("match_time") or 0,
                 match_comment=payload.get("match_comment") or "",
                 played_cards=payload.get("played_cards"),
+                played_on=payload.get("played_on") or "Play Sorcery Online",
             )
         except (KeyError, TypeError, ValueError) as exc:
             return web.json_response(

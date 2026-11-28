@@ -168,75 +168,39 @@ class AdminService:
             match_conn.close()
 
     def _remove_web_match(self, match_id: str) -> dict:
-        """Remove a web match (from match_reports_web) and reverse paper ELO."""
+        """Remove a website-only match (match_reports_web).
+
+        These records carry no live rating any more (Paper ELO is gone), so
+        there is nothing to reverse.
+        """
         match = self._match_repo.get_web_match_full_details(match_id)
         if not match:
             return {"success": False, "error": f"Match {match_id} not found in web records"}
 
         winner_id = str(match["winner_id"])
         loser_id = str(match["loser_id"])
-        winner_elo_change = match["winner_elo_change"]
-        loser_elo_change = match["loser_elo_change"]
-
-        # Reverse paper ELO for winner
-        winner_current = self._elo_repo.get_user_paper_elo(winner_id)
-        if winner_current is not None:
-            new_winner_elo = winner_current - winner_elo_change
-            self._elo_repo.upsert_paper_elo(
-                winner_id, match["winner_name"] or f"User#{winner_id}", new_winner_elo
-            )
-
-        # Reverse paper ELO for loser
-        loser_current = self._elo_repo.get_user_paper_elo(loser_id)
-        if loser_current is not None:
-            new_loser_elo = loser_current - loser_elo_change
-            self._elo_repo.upsert_paper_elo(
-                loser_id, match["loser_name"] or f"User#{loser_id}", new_loser_elo
-            )
-
-        deleted = self._match_repo.delete_web_match(match_id)
-        if deleted:
-            logger.info(
-                f"Admin removed web match {match_id}: "
-                f"winner={winner_id} (paper ELO {winner_elo_change:+d} reversed), "
-                f"loser={loser_id} (paper ELO {loser_elo_change:+d} reversed)"
-            )
+        if self._match_repo.delete_web_match(match_id):
+            logger.info(f"Admin removed web match {match_id}: winner={winner_id}, loser={loser_id}")
             return {
                 "success": True,
-                "message": f"Web match {match_id} deleted and paper ELO reversed",
+                "message": f"Web match {match_id} deleted",
                 "winner_id": winner_id,
                 "loser_id": loser_id,
-                "winner_elo_reversed": winner_elo_change,
-                "loser_elo_reversed": loser_elo_change,
             }
         return {"success": False, "error": "Failed to delete web match record"}
 
-    def reset_player_elo(self, user_id: str, new_elo: int = 1500, source: str = "both") -> dict:
-        """Set a player's ELO to a specified value.
+    def reset_player_elo(self, user_id: str, new_elo: int = 1500) -> dict:
+        """Set a player's ranked (bot) rating to a specified value.
 
         Args:
             user_id: Player ID (str to support google_ prefix)
             new_elo: New ELO value
-            source: Which standings to reset - 'bot', 'paper', or 'both'
         """
-        results = []
-
-        if source in ("bot", "both"):
-            current_bot = self._elo_repo.get_user_elo(user_id)
-            if current_bot is not None:
-                if self._elo_repo.reset_player_elo(user_id, new_elo):
-                    results.append(f"online: {current_bot} -> {new_elo}")
-
-        if source in ("paper", "both"):
-            current_paper = self._elo_repo.get_user_paper_elo(str(user_id))
-            if current_paper is not None:
-                if self._elo_repo.reset_paper_elo(str(user_id), new_elo):
-                    results.append(f"paper: {current_paper} -> {new_elo}")
-
-        if not results:
+        current_bot = self._elo_repo.get_user_elo(user_id)
+        if current_bot is None or not self._elo_repo.reset_player_elo(user_id, new_elo):
             return {"success": False, "error": "Player not found in standings"}
 
-        msg = "ELO updated - " + ", ".join(results)
+        msg = f"Rating updated - {current_bot} -> {new_elo}"
         logger.info(f"Admin set ELO for {user_id}: {msg}")
         return {"success": True, "message": msg}
 

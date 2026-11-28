@@ -109,30 +109,6 @@ def get_ticket_holder_leaderboard():
         return jsonify({"success": False, "error": "Could not build leaderboard"}), 500
 
 
-@leaderboard_bp.route("/leaderboard/paper")
-def get_paper_leaderboard():
-    """Get paper ELO leaderboard (web-reported matches only)."""
-    try:
-        service = LeaderboardService()
-        leaderboard_data = service.get_paper_leaderboard()
-        return jsonify(leaderboard_data)
-    except Exception as e:
-        logger.error(f"Error fetching paper leaderboard: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-
-@leaderboard_bp.route("/leaderboard/paper-event")
-def get_paper_event_leaderboard():
-    """Get paper event ELO leaderboard (web-reported matches only)."""
-    try:
-        service = LeaderboardService()
-        event_data = service.get_paper_event_leaderboard()
-        return jsonify(event_data)
-    except Exception as e:
-        logger.error(f"Error fetching paper event leaderboard: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-
 @leaderboard_bp.route("/leaderboard/limited")
 def get_limited_leaderboard():
     """Get limited format ELO leaderboard with stats and trophy runs.

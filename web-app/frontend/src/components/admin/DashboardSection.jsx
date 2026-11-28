@@ -643,7 +643,7 @@ function MatchesTab({ days, stats }) {
       <TileGroup title="Match totals (all time)">
         <StatTile label="Total Matches" value={summary.total_matches?.toLocaleString()} />
         <StatTile label="Online Matches" value={summary.total_bot_matches?.toLocaleString()} />
-        <StatTile label="Paper Matches" value={summary.total_web_matches?.toLocaleString()} />
+        <StatTile label="Website Matches" value={summary.total_web_matches?.toLocaleString()} />
         <StatTile label="Omens Matches" value={(summary.total_points_matches || 0).toLocaleString()} link="/admin/omens-matches" />
         <StatTile label="External Matches" value={(summary.total_external_matches || 0).toLocaleString()} link="/admin/external-matches" />
         <StatTile label="Avg Games/Week (12wk)" value={summary.avg_weekly_games} />
@@ -666,7 +666,7 @@ function MatchesTab({ days, stats }) {
             <Tooltip {...CHART_STYLE.tooltip} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="bot" name="Online" stackId="a" fill="rgba(77,184,255,0.8)" radius={[0, 0, 2, 2]} />
-            <Bar dataKey="web" name="Paper" stackId="a" fill="rgba(63,185,80,0.8)" radius={[2, 2, 0, 0]} />
+            <Bar dataKey="web" name="Website" stackId="a" fill="rgba(63,185,80,0.8)" radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>

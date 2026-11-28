@@ -2999,32 +2999,6 @@ paths:
             application/json:
               schema:
                 type: object
-  /api/leaderboard/paper:
-    get:
-      tags:
-      - leaderboard
-      summary: Get paper ELO leaderboard (web-reported matches only).
-      operationId: leaderboard_get_paper_leaderboard
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                type: object
-  /api/leaderboard/paper-event:
-    get:
-      tags:
-      - leaderboard
-      summary: Get paper event ELO leaderboard (web-reported matches only).
-      operationId: leaderboard_get_paper_event_leaderboard
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                type: object
   /api/leaderboard/source/{source}:
     get:
       tags:

@@ -325,3 +325,64 @@ def google_callback():
     )
 
     return redirect(_get_post_login_redirect())
+
+
+# ── Email code sign-in ────────────────────────────────────────────────────
+
+
+def _client_ip() -> str:
+    # Behind Cloudflare + Nginx the real address is forwarded
+    return (
+        request.headers.get("CF-Connecting-IP")
+        or (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        or request.remote_addr
+        or ""
+    )
+
+
+@auth_bp.route("/email/start", methods=["POST"])
+def email_login_start():
+    """POST /auth/email/start {email, next?}: email a 6-digit login code."""
+    from flask import jsonify
+    from services import email_login
+
+    data = request.get_json(silent=True) or {}
+    try:
+        email = email_login.start(data.get("email"), _client_ip())
+    except email_login.EmailLoginError as e:
+        return jsonify({"success": False, "error": str(e)}), e.status
+    next_url = _safe_redirect_url(data.get("next"))
+    if next_url:
+        session["next_url"] = next_url
+    return jsonify({"success": True, "email": email})
+
+
+@auth_bp.route("/email/verify", methods=["POST"])
+def email_login_verify():
+    """POST /auth/email/verify {email, code}: sign in with the emailed code."""
+    from flask import jsonify
+    from services import email_login
+    from webapp_config import ADMINS
+
+    data = request.get_json(silent=True) or {}
+    try:
+        email = email_login.check_code(data.get("email"), data.get("code"))
+        account = email_login.account_for_email(email)
+    except email_login.EmailLoginError as e:
+        return jsonify({"success": False, "error": str(e)}), e.status
+
+    if account["user_id"] in ADMINS:
+        # Admin accounts keep Discord's own sign-in (and its two-factor)
+        return jsonify({"success": False, "error": "Admins sign in with Discord."}), 403
+
+    session.permanent = True
+    user_id = account["user_id"]
+    is_discord = account["provider"] == "discord"
+    session["user_id"] = int(user_id) if is_discord else user_id
+    session["username"] = account["display_name"]
+    session["avatar"] = account["avatar"]
+    session["auth_provider"] = account["provider"]
+    session["is_creator"] = False
+    session["discord_roles"] = []
+    logger.info("User %s signed in with an email code (%s account)", user_id, account["provider"])
+    return jsonify({"success": True, "redirect": _get_post_login_redirect()})

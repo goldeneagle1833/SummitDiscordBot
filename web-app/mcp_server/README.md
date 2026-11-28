@@ -68,3 +68,26 @@ Settings (env): `SUMMIT_MCP_SITE_SOCKET`, `SUMMIT_MCP_SITE_URL`,
 `SUMMIT_MCP_RATE_LIMIT`, `SUMMIT_MCP_UPSTREAM_CONCURRENCY`.
 
 Health check: `curl http://127.0.0.1:8790/mcp-health`.
+
+## Signed-in connector (/mcp/account)
+
+`https://sorcererssummit.com/mcp/account` serves the same tools plus three for the
+player's own data: `my_account`, `my_match_review` (own games with no release
+hold-back, plus private Card Stats) and `my_card_stats`.
+
+Sign-in is standard MCP OAuth 2.1:
+
+1. `/mcp/account` answers 401 with `WWW-Authenticate: ... resource_metadata=` pointing at
+   `/.well-known/oauth-protected-resource/mcp/account` (served here).
+2. That names the Flask site as the authorization server
+   (`/.well-known/oauth-authorization-server`, `routes/mcp_oauth.py`).
+3. The AI app registers itself, then opens `/auth/mcp/authorize`: a signed-out player goes
+   to the site's own `/login` (Discord, Google or email code), then an Allow screen.
+4. PKCE S256 code -> access token (1 h) + rotating refresh token (30 days). Only hashes are
+   stored (`mcp_auth.db`, `services/mcp_oauth.py`).
+5. This server checks each bearer token by calling `/api/mcp/me` with it
+   (`X-Summit-User-Token`), cached a minute, and passes it on for the player's own data
+   (`routes/api/mcp_account.py`). Answers for one player are cached under their token only.
+
+A token only reads its own player's data and is never an admin. Players see and
+disconnect their apps on the Help page (Use Summit in AI apps).

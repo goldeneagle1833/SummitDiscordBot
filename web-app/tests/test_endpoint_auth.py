@@ -304,6 +304,13 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "og_preview.articles_subpage",
     "og_preview.spa_subpage",
 
+    # -- Sign-in for AI apps (OAuth 2.1; each endpoint checks its own client/code/token) --
+    "mcp_wellknown.authorization_server_metadata",
+    "mcp_oauth.register",
+    "mcp_oauth.authorize",
+    "mcp_oauth.token",
+    "mcp_oauth.revoke",
+
     # -- Feedback (public submission) --
     "api.feedback.submit_feedback",
     # Post-season survey: link is shared in the announcement, no login needed

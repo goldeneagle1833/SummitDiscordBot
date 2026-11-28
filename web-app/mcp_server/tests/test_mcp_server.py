@@ -98,6 +98,15 @@ PUBLIC_MATCHES = {"player": {"id": "1", "name": "Pete"}, "deck_info_released_thr
     _pm("loss", "Sparkmage", "Druid", ["Air", "Fire"], ["Earth", "Water"], False, 45),
 ]}
 
+MY_CARDS = {"games": 40, "win_rate": 55.0, "cards": [
+    {"name": "Fireball", "games": 30, "wins": 20, "losses": 10, "win_rate": 66.7, "win_rate_not_played": 30.0,
+     "effect": 36.7, "element": "Fire"},
+    {"name": "Spark", "games": 12, "wins": 4, "losses": 8, "win_rate": 33.3, "win_rate_not_played": 64.3,
+     "effect": -31.0, "element": "Fire"},
+    {"name": "Rare Thing", "games": 2, "wins": 2, "losses": 0, "win_rate": 100.0, "win_rate_not_played": 52.6,
+     "effect": 47.4},
+]}
+
 STORE = {"products": [
     {"name": "Island Leviathan Pack", "price_cents": 599, "stock_quantity": 3, "description": "2 tokens",
      "product_line": "Tokens", "images": ["https://x/img.png"], "sku": "ISL"},
@@ -119,6 +128,19 @@ def make_site(calls: list | None = None, overrides: dict | None = None) -> SiteC
         if path in overrides:
             status, body = overrides[path]
             return httpx.Response(status, json=body)
+        if path.startswith("/api/mcp/"):
+            # A signed-in player's own data: only with a good player token
+            who = {"good": ("1", "Pete"), "other": ("2", "Amy")}.get(request.headers.get("X-Summit-User-Token"))
+            if not who:
+                return httpx.Response(401, json={"error": "Sign in again from your AI app."})
+            if path == "/api/mcp/me":
+                return httpx.Response(200, json={"player_id": who[0], "name": who[1], "app": "Claude",
+                                                 "profile": f"/player/{who[0]}"})
+            if path == "/api/mcp/me/matches":
+                newest = _pm("win", "Sparkmage", "Druid", ["Air", "Fire"], ["Earth", "Water"], True, 12)
+                return httpx.Response(200, json={**PUBLIC_MATCHES, "matches": [newest] + PUBLIC_MATCHES["matches"][1:]})
+            if path == "/api/mcp/me/card-stats":
+                return httpx.Response(200, json=MY_CARDS if who[0] == "1" else {"games": 0, "cards": []})
         routes = {
             "/api/players/search": {"players": [{"user_id": "1", "display_name": "Pete"}]},
             "/api/player/1": PLAYER,
@@ -324,6 +346,9 @@ def test_server_registers_tools_and_prompts():
             "store_products", "ranked_recap", "match_history_review"} == names
     assert "leaderboard" not in " ".join(names)
     assert len(run(server.mcp.list_prompts())) == 6
+    account = {t.name for t in run(server.mcp_account.list_tools())}
+    assert account == names | {"my_account", "my_match_review", "my_card_stats"}
+    assert len(run(server.mcp_account.list_prompts())) == 7
 
 
 def test_rate_limit_per_visitor():
@@ -412,3 +437,63 @@ def test_match_history_review_no_games():
     result = run(tools.match_history_review(site, "Pete"))
     assert result["games"] == 0 and "no ranked games" in result["message"]
     assert "  " not in result["message"]
+
+
+def test_public_review_offers_the_signed_in_connector():
+    result = run(tools.match_history_review(make_site(), "Pete"))
+    assert "/mcp/account" in result["deeper_review"]
+
+
+def test_my_match_review_uses_own_games_and_card_stats():
+    result = run(tools.my_match_review(make_site(), "good"))
+    assert result["signed_in"] is True and result["player"] == "Pete"
+    assert result["recent_games"][0]["my_avatar"] == "Sparkmage"  # newest game not held back
+    assert not any("Meta Report release" in n for n in result["notes"])
+    cards = result["card_stats"]
+    assert cards["lifts_you_most"][0]["card"] == "Fireball"
+    assert cards["drags_you_down"][0]["card"] == "Spark"
+    assert all(c["card"] != "Rare Thing" for c in cards["most_played"])  # under the minimum games
+    text = json.dumps(result)
+    assert "rating" not in text and "Amy" not in text and "rankedsecretdeck123" not in text
+
+
+def test_player_answers_are_never_shared_between_players():
+    site = make_site()
+    mine = run(tools.my_card_stats(site, "good"))
+    theirs = run(tools.my_card_stats(site, "other"))
+    assert mine["most_played"] and not theirs["most_played"]
+
+
+def test_expired_sign_in_gets_a_clear_message():
+    with pytest.raises(SiteError) as err:
+        run(tools.my_account(make_site(), "expired"))
+    assert "sign-in has expired" in str(err.value)
+
+
+def test_token_verifier_asks_the_site(monkeypatch):
+    from mcp_server import server
+
+    monkeypatch.setattr(server, "_site", make_site())
+    good = run(server.SiteTokenVerifier().verify_token("good"))
+    assert good is not None and good.subject == "1" and "summit:read" in good.scopes
+    assert run(server.SiteTokenVerifier().verify_token("nope")) is None
+
+
+def test_signed_in_connector_asks_for_sign_in_and_public_one_does_not(monkeypatch):
+    from starlette.testclient import TestClient
+
+    from mcp_server import server
+
+    monkeypatch.setattr(server, "_site", make_site())
+    init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}}
+    headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+    with TestClient(server.Connectors(server.mcp.streamable_http_app(), server.mcp_account.streamable_http_app())) as c:
+        r = c.post("/mcp/account", json=init, headers=headers)
+        assert r.status_code == 401
+        assert "oauth-protected-resource/mcp/account" in r.headers["www-authenticate"]
+        meta = c.get("/.well-known/oauth-protected-resource/mcp/account").json()
+        assert meta["resource"].endswith("/mcp/account") and meta["authorization_servers"]
+        assert c.post("/mcp/account", json=init, headers={**headers, "Authorization": "Bearer nope"}).status_code == 401
+        assert c.post("/mcp/account", json=init, headers={**headers, "Authorization": "Bearer good"}).status_code == 200
+        assert c.post("/mcp", json=init, headers=headers).status_code == 200

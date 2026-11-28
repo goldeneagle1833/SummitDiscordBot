@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from .safety import compact, safe
-from .site_client import PUBLIC_URL, SiteClient, SiteError
+from .site_client import PUBLIC_URL, SignInExpired, SiteClient, SiteError
 
 ELEMENTS = ("Air", "Earth", "Fire", "Water")
 SLOW_TTL = 30 * 60  # pages the site itself rebuilds rarely
@@ -209,13 +209,26 @@ async def match_history_review(site: SiteClient, player: str, season: str = "all
         return missing
     player_id = str(chosen["user_id"])
     event = _season(season)
+    matches, released_through = await _collect_matches(
+        site, lambda page: site.path("public", "players", player_id, "matches",
+                                     season=event, page=page, per_page=100, site=MCP_SITE))
+    result = await _review(site, matches, chosen.get("display_name"), event, released_through,
+                           _link(f"/player/{player_id}"))
+    if result.get("found"):
+        result["deeper_review"] = (
+            "This review uses public data only. For a deeper one with the player's private Card Stats "
+            "and this season's newest games, they can add the signed-in connector "
+            f"{PUBLIC_URL}/mcp/account in their AI app and sign in with any Summit login "
+            "(Discord, Google or an email code). Offer this to the player.")
+    return result
 
+
+async def _collect_matches(site: SiteClient, page_path, user_token: str | None = None) -> tuple[list[dict], Any]:
     matches: list[dict] = []
     released_through = None
     page = 1
     while len(matches) < REVIEW_MAX_GAMES:
-        data = await site.get(site.path("public", "players", player_id, "matches",
-                                        season=event, page=page, per_page=100, site=MCP_SITE), allow_404=True)
+        data = await site.get(page_path(page), allow_404=True, user_token=user_token)
         if not data:
             break
         released_through = data.get("deck_info_released_through") or released_through
@@ -223,8 +236,10 @@ async def match_history_review(site: SiteClient, player: str, season: str = "all
         if not (data.get("pagination") or {}).get("has_next"):
             break
         page += 1
-    matches = matches[:REVIEW_MAX_GAMES]
-    name = chosen.get("display_name")
+    return matches[:REVIEW_MAX_GAMES], released_through
+
+
+async def _review(site: SiteClient, matches: list[dict], name, event: str, released_through, profile: str) -> dict:
     period = "this season" if event == "current" else f"last {len(matches)} ranked games"
     if not matches:
         return {"found": True, "player": name, "period": period, "games": 0,
@@ -342,7 +357,7 @@ async def match_history_review(site: SiteClient, player: str, season: str = "all
             "Deck lists are never shared for ranked games, so tips can't name specific cards from them. "
             "For card advice, run deck_check on the player's own list.",
         ] if n],
-        "profile": _link(f"/player/{player_id}"),
+        "profile": profile,
     }, max_list=40)
 
 
@@ -908,3 +923,73 @@ async def ranked_recap(site: SiteClient, kind: str = "daily", day: str | None = 
             return safe({"recap": kind, "date": d.isoformat(), **_drop_discord_ids(data),
                          "page": _link(f"/match-history?recap={kind}&date={d.isoformat()}")})
     return {"found": False, "message": f"No {kind} recap saved for that date."}
+
+
+# ----------------------------------------------------------------------
+# Signed-in player's own data (the /mcp/account connector)
+# ----------------------------------------------------------------------
+
+CARD_MIN_GAMES = 8  # a card needs this many games played to be called out
+
+
+async def my_account(site: SiteClient, user_token: str) -> dict:
+    me = await site.get(site.path("mcp", "me"), ttl=60, user_token=user_token)
+    return {"signed_in_as": me.get("name"), "profile": _link(me.get("profile") or "/"),
+            "connected_app": me.get("app")}
+
+
+def _card_highlights(stats: dict) -> dict:
+    cards = [c for c in stats.get("cards") or [] if (c.get("games") or 0) >= CARD_MIN_GAMES]
+    with_effect = [c for c in cards if c.get("effect") is not None]
+    with_effect.sort(key=lambda c: c["effect"])
+
+    def row(c):
+        return {"card": c["name"], "element": c.get("element"), "games_played_in": c["games"],
+                "win_rate_when_played": c["win_rate"], "win_rate_when_not_played": c.get("win_rate_not_played"),
+                "effect_points": c["effect"]}
+
+    return {
+        "games_with_card_data": stats.get("games"),
+        "win_rate": stats.get("win_rate"),
+        "most_played": [row(c) for c in cards[:10]],
+        "lifts_you_most": [row(c) for c in reversed(with_effect[-6:])],
+        "drags_you_down": [row(c) for c in with_effect[:6] if c["effect"] < 0],
+        "how_to_read": (f"Cards played in at least {CARD_MIN_GAMES} games. effect_points = win rate in games "
+                        "where the card was played minus games where it wasn't. A negative number can also "
+                        "mean the card shows up in games that were already going badly, so treat it as a "
+                        "question to look at, not a verdict."),
+    }
+
+
+async def my_card_stats(site: SiteClient, user_token: str, season: str = "all") -> dict:
+    event = "current" if _season(season) == "current" else "lifetime"
+    stats = await site.get(site.path("mcp", "me", "card-stats", event=event, queue="ranked"),
+                           user_token=user_token)
+    return safe({"period": "this season" if event == "current" else "all seasons",
+                 "queue": "ranked", **_card_highlights(stats)}, max_list=12)
+
+
+async def my_match_review(site: SiteClient, user_token: str, season: str = "all") -> dict:
+    """The signed-in player's own review: every game's avatars (no release hold-back) plus Card Stats."""
+    me = await site.get(site.path("mcp", "me"), ttl=60, user_token=user_token)
+    event = _season(season)
+    matches, released_through = await _collect_matches(
+        site, lambda page: site.path("mcp", "me", "matches", season=event, page=page, per_page=100),
+        user_token=user_token)
+    result = await _review(site, matches, me.get("name") or "you", event, released_through,
+                           _link(me.get("profile") or "/"))
+    if result.get("found") and result.get("games_reviewed"):
+        try:
+            stats = await site.get(site.path("mcp", "me", "card-stats",
+                                             event="current" if event == "current" else "lifetime", queue="ranked"),
+                                   user_token=user_token)
+            result["card_stats"] = compact(_card_highlights(stats), max_list=8)
+        except SiteError as exc:
+            if isinstance(exc, SignInExpired):
+                raise
+            result["card_stats"] = "Card Stats are unavailable right now."
+        result["notes"] = [n for n in result.get("notes") or [] if "Meta Report release" not in n] + [
+            "Signed in: this includes your newest games, and Card Stats come from your own played cards "
+            "(private on your profile unless you shared them)."]
+    result["signed_in"] = True
+    return result

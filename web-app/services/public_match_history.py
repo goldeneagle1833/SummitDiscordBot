@@ -193,8 +193,13 @@ def _load_rows(player_id: str, match_db) -> list[sqlite3.Row]:
     return rows
 
 
-def _build(player_id: str, season: str) -> dict:
-    """Every ranked match of the player in the season, newest first (not paged)."""
+def _build(player_id: str, season: str, owner: bool = False) -> dict:
+    """Every ranked match of the player in the season, newest first (not paged).
+
+    ``owner``: the player is reading their own history (signed-in AI app), so
+    the newest games' avatars and elements are not held back. The profile page
+    already shows them to everyone; only the open API waits for the release.
+    """
     elo_db = webapp_config.ELO_DB_PATH
     match_db = webapp_config.MATCH_RECORDS_DB_PATH
     names, active_id, windows = _seasons(elo_db)
@@ -245,7 +250,7 @@ def _build(player_id: str, season: str) -> dict:
             change = avatar_change[0] if did_win else avatar_change[1]
             hidden = avatar_change[2] if did_win else avatar_change[3]
 
-        released = ts < release_cutoff
+        released = owner or ts < release_cutoff
         if released:
             own_avatar, own_elements = deck_info(own_json)
             opp_avatar, opp_elements = deck_info(opp_json)
@@ -289,9 +294,9 @@ def _build(player_id: str, season: str) -> dict:
 
 
 def get_match_history(player_id: str, season: str = "all", page: int = 1,
-                      per_page: int = DEFAULT_PER_PAGE) -> dict:
+                      per_page: int = DEFAULT_PER_PAGE, owner: bool = False) -> dict:
     """One page of the player's ranked history. Raises PlayerNotFound."""
-    key = (player_id, season)
+    key = (player_id, season, owner)
     now = time.monotonic()
     with _cache_lock:
         hit = _cache.get(key)
@@ -301,7 +306,7 @@ def get_match_history(player_id: str, season: str = "all", page: int = 1,
         else:
             full = None
     if full is None:
-        full = _build(player_id, season)
+        full = _build(player_id, season, owner)
         with _cache_lock:
             _cache[key] = (now, full)
             _cache.move_to_end(key)

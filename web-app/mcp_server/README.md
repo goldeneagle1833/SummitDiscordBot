@@ -38,6 +38,7 @@ AI app ──HTTPS──> Cloudflare ──> nginx /mcp ──> summit-mcp (127.
 | Tool | Uses |
 | --- | --- |
 | player_lookup | /api/players/search, /api/player/&lt;id&gt; (record, Avatars, last 10 games; no rank/rating) |
+| match_history_review | /api/public/players/&lt;id&gt;/matches (up to 300 ranked games: avatar + elements per game, turn order, length; no ratings, no opponent names, no deck lists) plus /api/avatars and the main Avatar's matchups for comparison |
 | avatar_stats | /api/avatars, /api/avatar/&lt;name&gt;, /api/avatar/&lt;name&gt;/matchups |
 | card_stats | /api/card/&lt;name&gt; |
 | top_staples | /api/staples (release windows only) |

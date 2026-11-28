@@ -87,18 +87,25 @@ async def _resolve_avatar(site: SiteClient, name: str) -> str:
 # ----------------------------------------------------------------------
 
 
-async def player_lookup(site: SiteClient, player: str, season: str = "current") -> dict:
+async def _find_player(site: SiteClient, player: str) -> tuple[dict | None, dict | None]:
+    """(chosen search row, None) or (None, a not-found answer to return as is)."""
     query = (player or "").strip()
     if len(query) < 2:
         raise SiteError("Please give at least two letters of the player's name.")
     found = (await site.get(site.path("players", "search", q=query, limit=5))).get("players") or []
     if not found:
-        return {"found": False, "message": f"No Summit player matches '{query}'."}
+        return None, {"found": False, "message": f"No Summit player matches '{query}'."}
     exact = [p for p in found if str(p.get("display_name", "")).lower() == query.lower()]
     if not exact and len(found) > 1:
-        return {"found": False, "message": "Several players match; ask again with one of these names.",
-                "matches": [p.get("display_name") for p in found]}
-    chosen = (exact or found)[0]
+        return None, {"found": False, "message": "Several players match; ask again with one of these names.",
+                      "matches": [p.get("display_name") for p in found]}
+    return (exact or found)[0], None
+
+
+async def player_lookup(site: SiteClient, player: str, season: str = "current") -> dict:
+    chosen, missing = await _find_player(site, player)
+    if missing:
+        return missing
     player_id = str(chosen["user_id"])
     event = "current" if _season(season) == "current" else "lifetime"
     data = await site.get(site.path("player", player_id, event=event))
@@ -136,6 +143,194 @@ async def player_lookup(site: SiteClient, player: str, season: str = "current") 
         "note": "Sections the player keeps private on their profile are left out.",
     }
     return safe(result)
+
+
+# ----------------------------------------------------------------------
+# Match history review
+# ----------------------------------------------------------------------
+
+MCP_SITE = "https://sorcererssummit.com/mcp"  # the public match API asks every caller to name itself
+REVIEW_MAX_GAMES = 300
+REVIEW_MIN_GAMES = 3  # a group needs this many games to be listed
+
+
+def _bucket(rows: dict, key: str | None, won: bool) -> None:
+    if not key:
+        return
+    row = rows.setdefault(key, [0, 0])
+    row[0 if won else 1] += 1
+
+
+def _table(rows: dict, label: str, min_games: int = REVIEW_MIN_GAMES) -> list[dict]:
+    out = [{label: k, "wins": w, "losses": l, "games": w + l, "win_rate": _pct(w, w + l)}
+           for k, (w, l) in rows.items() if w + l >= min_games]
+    out.sort(key=lambda r: (-r["games"], r[label]))
+    return out
+
+
+def _elements(value) -> str | None:
+    return " / ".join(value) if value else None
+
+
+def _length_bucket(minutes) -> str | None:
+    try:
+        minutes = float(minutes)
+    except (TypeError, ValueError):
+        return None
+    if minutes <= 0:
+        return None
+    if minutes < 15:
+        return "under 15 min"
+    if minutes < 30:
+        return "15-30 min"
+    return "30+ min"
+
+
+async def match_history_review(site: SiteClient, player: str, season: str = "current") -> dict:
+    """Everything an AI needs to coach a player from their ranked games.
+
+    Reads the public match history API (avatar + deck elements per game only,
+    never a deck list). Ratings and opponent names are left out: tips are about
+    the player's own play, not about other people or rank.
+    """
+    chosen, missing = await _find_player(site, player)
+    if missing:
+        return missing
+    player_id = str(chosen["user_id"])
+    event = _season(season)
+
+    matches: list[dict] = []
+    released_through = None
+    page = 1
+    while len(matches) < REVIEW_MAX_GAMES:
+        data = await site.get(site.path("public", "players", player_id, "matches",
+                                        season=event, page=page, per_page=100, site=MCP_SITE), allow_404=True)
+        if not data:
+            break
+        released_through = data.get("deck_info_released_through") or released_through
+        matches.extend(m for m in data.get("matches") or [] if isinstance(m, dict))
+        if not (data.get("pagination") or {}).get("has_next"):
+            break
+        page += 1
+    matches = matches[:REVIEW_MAX_GAMES]
+    name = chosen.get("display_name")
+    period = "this season" if event == "current" else "all seasons"
+    if not matches:
+        return {"found": True, "player": name, "period": period, "games": 0,
+                "message": f"{name} has no ranked games {period} yet."}
+
+    wins = sum(1 for m in matches if m.get("result") == "win")
+    by_avatar, by_elements, vs_avatar, vs_elements = {}, {}, {}, {}
+    play, length, main_vs = {}, {}, {}
+    with_deck = [m for m in matches if (m.get("player") or {}).get("avatar")]
+    main_avatar = None
+    if with_deck:
+        counts: dict[str, int] = {}
+        for m in with_deck:
+            counts[m["player"]["avatar"]] = counts.get(m["player"]["avatar"], 0) + 1
+        main_avatar = max(counts, key=counts.get)
+
+    for m in matches:
+        won = m.get("result") == "win"
+        me, opp = m.get("player") or {}, m.get("opponent") or {}
+        _bucket(by_avatar, me.get("avatar"), won)
+        _bucket(by_elements, _elements(me.get("elements")), won)
+        _bucket(vs_avatar, opp.get("avatar"), won)
+        _bucket(vs_elements, _elements(opp.get("elements")), won)
+        if m.get("on_play") is not None:
+            _bucket(play, "going first" if m["on_play"] else "going second", won)
+        _bucket(length, _length_bucket(m.get("match_time_minutes")), won)
+        if main_avatar and me.get("avatar") == main_avatar:
+            _bucket(main_vs, opp.get("avatar"), won)
+
+    # Streaks and form (matches are newest first)
+    results = [m.get("result") == "win" for m in matches]
+    current = 0
+    for r in results:
+        if r != results[0]:
+            break
+        current += 1
+    longest_loss = run = 0
+    for r in results:
+        run = 0 if r else run + 1
+        longest_loss = max(longest_loss, run)
+    recent = results[:20]
+    earlier = results[20:]
+
+    # Compare with how everyone does (current-season site numbers)
+    site_avatar_rate: dict[str, Any] = {}
+    try:
+        for r in await site.get(site.path("avatars", event="current"), ttl=SLOW_TTL) or []:
+            if isinstance(r, dict) and r.get("name"):
+                site_avatar_rate[r["name"]] = r.get("win_rate")
+    except SiteError:
+        pass
+    avatars_played = _table(by_avatar, "avatar", 1)
+    for row in avatars_played:
+        row["everyone_win_rate"] = site_avatar_rate.get(row["avatar"])
+
+    main_matchups = []
+    if main_avatar:
+        site_matchups: dict[str, Any] = {}
+        try:
+            data = await site.get(site.path("avatar", main_avatar, "matchups", event="current"), ttl=SLOW_TTL)
+            site_matchups = {m.get("opponent"): m.get("win_rate") for m in (data or {}).get("matchups") or []
+                             if (m.get("total") or 0) >= 5}
+        except SiteError:
+            pass
+        main_matchups = _table(main_vs, "against")
+        for row in main_matchups:
+            row["everyone_with_this_avatar_win_rate"] = site_matchups.get(row["against"])
+
+    vs_avatar_rows = _table(vs_avatar, "against")
+    by_rate = sorted(vs_avatar_rows, key=lambda r: r["win_rate"] or 0)
+    vs_elements_rows = _table(vs_elements, "against_elements")
+    by_rate_el = sorted(vs_elements_rows, key=lambda r: r["win_rate"] or 0)
+
+    unreleased = sum(1 for m in matches if not m.get("deck_info_released", True))
+    recent_games = [{
+        "date": str(m.get("date") or "")[:10],
+        "result": m.get("result"),
+        "my_avatar": (m.get("player") or {}).get("avatar"),
+        "my_elements": _elements((m.get("player") or {}).get("elements")),
+        "opponent_avatar": (m.get("opponent") or {}).get("avatar"),
+        "opponent_elements": _elements((m.get("opponent") or {}).get("elements")),
+        "went_first": m.get("on_play"),
+        "minutes": m.get("match_time_minutes"),
+    } for m in matches[:15]]
+
+    return safe({
+        "found": True,
+        "player": name,
+        "period": period,
+        "games_reviewed": len(matches),
+        "record": {"wins": wins, "losses": len(matches) - wins, "win_rate": _pct(wins, len(matches))},
+        "form": {
+            "last_20_win_rate": _pct(sum(recent), len(recent)),
+            "before_that_win_rate": _pct(sum(earlier), len(earlier)) if earlier else None,
+            "current_streak": f"{current} {'win' if results[0] else 'loss'}{'' if current == 1 else ('s' if results[0] else 'es')}",
+            "longest_losing_streak": longest_loss,
+        },
+        "main_avatar": main_avatar,
+        "avatars_played": avatars_played,
+        "my_deck_elements": _table(by_elements, "elements", 1),
+        "main_avatar_matchups": main_matchups,
+        "toughest_opponent_avatars": by_rate[:5],
+        "best_opponent_avatars": list(reversed(by_rate[-5:])) if len(by_rate) > 5 else [],
+        "against_deck_elements": by_rate_el,
+        "going_first_vs_second": _table(play, "turn_order", 1),
+        "by_game_length": _table(length, "length", 1),
+        "recent_games": recent_games,
+        "notes": [n for n in [
+            f"Groups need at least {REVIEW_MIN_GAMES} games to be listed; small samples swing a lot.",
+            "everyone_win_rate numbers are this season's results for all Summit players.",
+            (f"{unreleased} of the newest games have no Avatar or elements yet: deck details appear after the "
+             f"next Meta Report release (shown through {released_through})." if unreleased else None),
+            "Deck lists are never shared for ranked games, so tips can't name specific cards from them. "
+            "For card advice, run deck_check on the player's own list.",
+        ] if n],
+        "profile": _link(f"/player/{player_id}"),
+    }, max_list=40)
 
 
 # ----------------------------------------------------------------------

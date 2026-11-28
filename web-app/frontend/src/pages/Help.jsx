@@ -61,7 +61,7 @@ export default function Help() {
         <h2 className="text-lg font-semibold">Use Summit in AI apps</h2>
         <div className="space-y-3 text-sm">
           <p className="text-text-muted">
-            Ask Claude, ChatGPT or another AI app about Summit data: matchup prep, deck checks, Avatar and
+            Ask Claude, ChatGPT or another AI app about Summit data: matchup prep, deck checks, coaching from your match history, Avatar and
             card win rates, the Meta Report, Top 8 decks, the store and the ranked recap. It's free, read-only
             and needs no login.
           </p>
@@ -79,6 +79,7 @@ export default function Help() {
             <p className="font-medium">Things to ask</p>
             <ul className="list-disc pl-5 text-text-muted space-y-1">
               <li>&quot;I&apos;m on Sparkmage against Pathfinder tonight. Prep me.&quot;</li>
+              <li>&quot;Review my match history and give me tips. My name is &hellip;&quot;</li>
               <li>&quot;Check my deck&quot; with a Curiosa link or a pasted list (it isn&apos;t saved).</li>
               <li>&quot;Summarize the latest Meta Report in 5 bullets.&quot;</li>
               <li>&quot;What happened in ranked this week?&quot;</li>

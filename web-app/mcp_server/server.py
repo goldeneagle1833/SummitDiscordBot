@@ -90,6 +90,19 @@ async def player_lookup(
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
+async def match_history_review(
+    player: Annotated[str, Field(description="The player's Summit / Discord display name")],
+    season: Season = "current",
+) -> dict:
+    """Review a player's ranked match history so you can coach them: record and recent form,
+    results by their Avatar and deck elements, toughest and easiest opponent Avatars and elements,
+    their main Avatar's matchups next to how everyone else does with it, going first vs second,
+    and results by game length. Ranked deck lists are never included and no rating is given.
+    Use the numbers to give a few specific, encouraging tips, and say when a sample is small."""
+    return await _run(tools.match_history_review(site(), player, season))
+
+
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
 async def avatar_stats(
     avatar: Annotated[str | None, Field(description="Avatar name, e.g. 'Sparkmage'. Leave empty to list every Avatar")] = None,
     season: Season = "current",
@@ -230,6 +243,15 @@ def pick_an_avatar(playstyle: str) -> str:
     return (f"I like this playstyle in Sorcery: {playstyle}. Use the Sorcerers Summit avatar_stats and "
             "meta_report tools to suggest 2 or 3 Avatars that fit and are doing well, with a sentence on "
             "why each one suits me.")
+
+
+@mcp.prompt(title="Review my match history")
+def review_my_match_history(player_name: str) -> str:
+    return (f"My Sorcerers Summit name is {player_name}. Use the match_history_review tool on my ranked "
+            "games this season and coach me: what I'm doing well, my 2 or 3 biggest leaks (matchups, "
+            "elements, going second, long games) and one concrete tip for each. Compare me with how "
+            "everyone else does where the tool gives those numbers, and tell me when a sample is too small "
+            "to trust. If it helps, suggest matchup_prep for my worst matchup. Finish with my profile link.")
 
 
 @mcp.prompt(title="What changed in ranked this week?")

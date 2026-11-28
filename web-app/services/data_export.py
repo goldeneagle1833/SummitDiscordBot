@@ -129,6 +129,9 @@ def id_variants(user_id: str) -> list[str]:
     raw = str(user_id)
     bare = raw[7:] if raw.startswith("google_") else raw
     out = [raw, bare, f"google_{bare}"]
+    # A Google login that has played ranked is keyed by its Summit player number
+    from services.summit_player_numbers import account_ids
+    out += sorted(account_ids(raw) - set(out))
     return list(dict.fromkeys(out))
 
 

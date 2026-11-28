@@ -5,7 +5,25 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from utils.player_ids import is_summit_player_number
 from webapp_config import MATCH_RECORDS_DB_PATH
+
+
+def _google_form(user_id: str, db_path=None) -> str:
+    """How a bot-table id is stored here for a Google sign-in.
+
+    A bare Google id gets its ``google_`` prefix back; a Summit player
+    number (a Google login that has played ranked) maps to its login.
+    """
+    user_id = str(user_id)
+    if user_id.startswith("google_"):
+        return user_id
+    if is_summit_player_number(user_id):
+        from services.summit_player_numbers import google_for_number
+        found = google_for_number(user_id, db_path=db_path)
+        if found:
+            return found
+    return f"google_{user_id}"
 
 
 class UserProfileRepository:
@@ -408,6 +426,12 @@ class UserProfileRepository:
         profile = dict(row) if row else None
 
         conn.close()
+        if profile is None and is_summit_player_number(user_id):
+            # A Google login's Summit player number (its id in match history)
+            from services.summit_player_numbers import google_for_number
+            google_user_id = google_for_number(user_id, db_path=self._db_path)
+            if google_user_id:
+                return self.get_by_user_id(google_user_id, provider)
         return profile
 
     def get_custom_display_name(self, user_id: str, provider: str = None) -> str | None:
@@ -448,12 +472,16 @@ class UserProfileRepository:
             rows = []
         conn.close()
 
+        from services.summit_player_numbers import all_numbers
+        numbers = all_numbers(db_path=self._db_path)
         names = {}
         for user_id, name in rows:
             user_id = str(user_id)
             names[user_id] = name
             if user_id.startswith("google_"):
                 names.setdefault(user_id[7:], name)
+                if user_id in numbers:
+                    names.setdefault(str(numbers[user_id]), name)
         return names
 
     def get_custom_display_names(self, user_ids) -> dict:
@@ -469,7 +497,7 @@ class UserProfileRepository:
                 continue
             asked = str(user_id)
             wanted.setdefault(asked, asked)
-            wanted.setdefault(f"google_{asked}", asked)
+            wanted.setdefault(_google_form(asked, self._db_path), asked)
 
         if not wanted:
             return {}
@@ -542,7 +570,7 @@ class UserProfileRepository:
         for user_id in user_ids or []:
             if user_id:
                 wanted[str(user_id)] = str(user_id)
-                wanted[f"google_{user_id}"] = str(user_id)
+                wanted[_google_form(str(user_id), self._db_path)] = str(user_id)
         if not wanted or section not in self.VISIBILITY_SECTIONS:
             return set()
 
@@ -670,7 +698,7 @@ class UserProfileRepository:
     def _both_ids(user_id) -> tuple[str, str]:
         """A player id as stored for Discord and for Google sign-ins."""
         bare = str(user_id).removeprefix("google_")
-        return bare, f"google_{bare}"
+        return bare, _google_form(bare)
 
     def get_hidden_avatars(self, user_id: str) -> list[str]:
         """Avatars the player chose to hide from their profile (data is kept)."""

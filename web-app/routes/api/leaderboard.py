@@ -10,6 +10,7 @@ from services.leaderboard import LeaderboardService
 from services.ticket_leaderboard import TicketLeaderboardService
 from utils.api_auth import require_integration_api_key
 from webapp_config import SEASON_FILTERS, MATCH_RECORDS_DB_PATH
+from services.summit_player_numbers import bot_player_id
 
 logger = logging.getLogger(__name__)
 
@@ -291,7 +292,7 @@ def get_player_event_stats(player_id, event_id):
         # Normalize player_id (strip 'google_' prefix for Google OAuth users)
         player_id_str = str(player_id)
         if player_id_str.startswith("google_"):
-            player_id = player_id_str[7:]  # Remove 'google_' prefix
+            player_id = bot_player_id(player_id_str)  # bot-table id (Summit player number for a Google login that has played)
 
         repo = EloRepository()
         # Keep as string to avoid overflow with large Google IDs

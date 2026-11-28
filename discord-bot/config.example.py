@@ -89,5 +89,18 @@ WEB_APP_URL = "https://sorcererssummit.com"
 # Every /api/* call on the web app requires it.
 WEB_APP_API_KEY = os.getenv("WEB_APP_API_KEY", "")
 
+# --- Ask the bot (@mention questions) + Discord feedback --------------------
+# Claude API key for answering "@Summit Bot how does X work?". Empty = the bot
+# ignores questions ("@Summit Bot feedback: ..." still files to the board).
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ASK_BOT_MODEL = "claude-opus-5-5"
+ASK_BOT_USER_LIMIT = 5      # questions per player per 10 minutes
+ASK_BOT_DAILY_LIMIT = 200   # questions for the whole server per day
+ASK_BOT_CHANNEL_IDS = []    # empty = answer in any channel
+# Channel whose posts are copied to the website Feedback board
+# (0 = find the channel by FEEDBACK_CHANNEL_NAME).
+FEEDBACK_CHANNEL_ID = 0
+FEEDBACK_CHANNEL_NAME = "summit-website-or-bot-bug-feature-reports"
+
 # File names
 DECK_DATA_FILE = "deck_data_test.json"

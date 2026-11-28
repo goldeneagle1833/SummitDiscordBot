@@ -200,7 +200,14 @@ class TestExemptions:
             "api.staples.get_staples",
             "api.public_matches.get_player_matches",
             "api.public_matches.search_public_players",
+            "api.feedback.automation_claim",
+            "api.feedback.automation_result",
         }
+
+    def test_feedback_automation_is_off_without_its_key(self, gated, monkeypatch):
+        monkeypatch.setattr(webapp_config, "FEEDBACK_AUTOMATION_KEY", "")
+        # Passes the gate, then the route answers 404 because no key is set.
+        assert gated.post("/api/feedback/automation/claim", json={}).status_code == 404
 
     def test_staples_is_open_without_key_or_token(self, gated, monkeypatch):
         from services import ranked_analytics

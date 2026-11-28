@@ -61,6 +61,10 @@ EXEMPT_ENDPOINTS = frozenset(
         # open to everybody (Bruce): ranked match history with avatar + elements only, throttled
         "api.public_matches.get_player_matches",
         "api.public_matches.search_public_players",
+        # "Feedback auto PR" GitHub Action: checked against its own
+        # FEEDBACK_AUTOMATION_KEY inside (404 when no key is set)
+        "api.feedback.automation_claim",
+        "api.feedback.automation_result",
     }
 )
 

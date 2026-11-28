@@ -49,6 +49,32 @@ def require_api_key(f):
     return decorated_function
 
 
+def require_feedback_automation_key(f):
+    """Require the feedback automation key (X-Feedback-Automation-Key header).
+
+    Used only by the GitHub Action that drafts PRs from player feedback. It is
+    a separate key from the bot's API keys so the Action can't call anything
+    else on the site. With no key configured the endpoints answer 404.
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        import webapp_config
+
+        expected = webapp_config.FEEDBACK_AUTOMATION_KEY or ""
+        if not expected:
+            return jsonify({"error": "Not found"}), 404
+        provided = request.headers.get("X-Feedback-Automation-Key") or ""
+        if not provided or not hmac.compare_digest(provided, expected):
+            logger.warning(
+                f"Bad feedback automation key from {request.remote_addr}"
+            )
+            return jsonify({"error": "Invalid or missing key"}), 401
+        return f(*args, **kwargs)
+
+    decorated_function._auth_required = True
+    return decorated_function
+
+
 def require_auth(f):
     """Decorator requiring either session login OR valid API key.
 

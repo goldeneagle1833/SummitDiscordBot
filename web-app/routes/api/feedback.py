@@ -9,7 +9,7 @@ from flask import Blueprint, Response, jsonify, request, session
 from repositories.feedback import FeedbackRepository
 from repositories.season_feedback import SeasonFeedbackRepository
 from services import season_feedback
-from utils.auth import require_admin, require_api_key
+from utils.auth import require_admin, require_api_key, require_feedback_automation_key
 
 feedback_bp = Blueprint("feedback", __name__)
 
@@ -104,6 +104,107 @@ def mark_feedback_notified(feedback_id):
     """Mark feedback as notified after bot sends DM."""
     repo = FeedbackRepository()
     repo.mark_notified(feedback_id)
+    return jsonify({"success": True})
+
+
+@feedback_bp.route("/feedback/<int:feedback_id>/auto-queue", methods=["POST"])
+@require_admin
+def queue_feedback_for_auto_pr(feedback_id):
+    """Put an item (old, failed or skipped) in line for the auto PR run (admin)."""
+    repo = FeedbackRepository()
+    if not repo.queue_for_automation(feedback_id):
+        return jsonify({"error": "Feedback item not found"}), 404
+    return jsonify({"success": True, "item": repo.get_by_id(feedback_id)})
+
+
+def _clip(value, limit):
+    return (str(value or "").strip())[:limit]
+
+
+@feedback_bp.route("/feedback/intake", methods=["POST"])
+@require_api_key
+def intake_feedback():
+    """Feedback the bot picked up in Discord (feedback channel or @mention).
+
+    source_ref (e.g. the Discord message id) makes repeat posts a no-op.
+    """
+    data = request.get_json(silent=True) or {}
+    title = _clip(data.get("title"), 200)
+    description = _clip(data.get("description"), 2000)
+    if not title or not description:
+        return jsonify({"error": "Title and description are required"}), 400
+    feedback_type = data.get("type") or "general"
+    if feedback_type not in FeedbackRepository.VALID_TYPES:
+        feedback_type = "general"
+    source = data.get("source") or "discord"
+    if source not in FeedbackRepository.VALID_SOURCES:
+        return jsonify({"error": "Invalid source"}), 400
+    source_ref = _clip(data.get("source_ref"), 100) or None
+
+    repo = FeedbackRepository()
+    if source_ref:
+        existing = repo.get_by_source_ref(source, source_ref)
+        if existing:
+            return jsonify({"success": True, "id": existing["id"], "duplicate": True})
+    feedback_id = repo.create(
+        type=feedback_type,
+        title=title,
+        description=description,
+        user_id=_clip(data.get("user_id"), 40) or None,
+        username=_clip(data.get("username"), 100) or None,
+        source=source,
+        source_ref=source_ref,
+    )
+    return jsonify({"success": True, "id": feedback_id}), 201
+
+
+# ---------------------------------------------------------------------------
+# "Feedback auto PR" GitHub Action
+#
+# The Action claims a few waiting items, has Claude triage each one (and
+# draft a change for the clear ones as a draft PR), then reports back. It only
+# ever sees the item text, never who sent it.
+# ---------------------------------------------------------------------------
+
+
+@feedback_bp.route("/automation/claim", methods=["POST"])
+@require_feedback_automation_key
+def automation_claim():
+    data = request.get_json(silent=True) or {}
+    try:
+        limit = int(data.get("limit", 1))
+    except (TypeError, ValueError):
+        limit = 1
+    repo = FeedbackRepository()
+    items = [
+        {
+            "id": item["id"],
+            "type": item["type"],
+            "title": item["title"],
+            "description": item["description"],
+            "source": item["source"],
+        }
+        for item in repo.claim_for_automation(limit)
+    ]
+    claimed = {item["id"] for item in items}
+    recent = [r for r in repo.recent_for_dedupe() if r["id"] not in claimed]
+    return jsonify({"items": items, "recent": recent})
+
+
+@feedback_bp.route("/automation/<int:feedback_id>/result", methods=["POST"])
+@require_feedback_automation_key
+def automation_result(feedback_id):
+    data = request.get_json(silent=True) or {}
+    auto_status = data.get("status")
+    if auto_status not in FeedbackRepository.AUTO_RESULT_STATUSES:
+        return jsonify({"error": "Invalid status"}), 400
+    pr_url = _clip(data.get("pr_url"), 300) or None
+    if pr_url and not pr_url.startswith("https://github.com/"):
+        return jsonify({"error": "pr_url must be a GitHub link"}), 400
+    note = _clip(data.get("note"), 500) or None
+    repo = FeedbackRepository()
+    if not repo.set_auto_result(feedback_id, auto_status, pr_url, note):
+        return jsonify({"error": "Feedback item not found"}), 404
     return jsonify({"success": True})
 
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from collections import OrderedDict, deque
@@ -36,7 +37,8 @@ try:
 except ImportError:  # requirement missing: the cog stays quiet
     anthropic = None
 
-ANTHROPIC_API_KEY = getattr(config, "ANTHROPIC_API_KEY", "") or ""
+# config.py may not have the line; fall back to the environment (.env).
+ANTHROPIC_API_KEY = getattr(config, "ANTHROPIC_API_KEY", "") or os.getenv("ANTHROPIC_API_KEY", "")
 MODEL = getattr(config, "ASK_BOT_MODEL", "claude-opus-5-5")
 USER_LIMIT = int(getattr(config, "ASK_BOT_USER_LIMIT", 5))  # questions per user...
 USER_WINDOW = 10 * 60  # ...per 10 minutes

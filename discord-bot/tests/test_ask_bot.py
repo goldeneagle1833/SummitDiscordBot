@@ -187,3 +187,34 @@ class TestWebKeyFallback:
         import config
         monkeypatch.setattr(config, "WEB_APP_API_KEY", "from-config", raising=False)
         assert feedback_intake._web_api_key() == "from-config"
+
+
+class TestNoCardStats:
+    @pytest.mark.parametrize("question", [
+        "what's the win rate of Sparkmage?",
+        "best cards for fire decks?",
+        "what are the staples right now",
+        "what's the meta looking like",
+        "can you give me deck advice for water",
+    ])
+    async def test_card_stats_questions_are_declined_without_ai(self, question):
+        client = MagicMock()
+        client.beta.messages.create = AsyncMock()
+        msg, me = _message(question)
+        cog = _cog(me, client=client)
+        await cog.on_message(msg)
+        assert "Card Stats" in msg.reply.await_args.args[0]
+        client.beta.messages.create.assert_not_called()
+
+    async def test_summit_questions_still_go_to_the_ai(self):
+        response = SimpleNamespace(stop_reason="end_turn",
+                                   content=[SimpleNamespace(type="text", text="Top 32 make the cut.")])
+        client = MagicMock()
+        client.beta.messages.create = AsyncMock(return_value=response)
+        msg, me = _message("how does the season top cut work?")
+        cog = _cog(me, client=client)
+        await cog.on_message(msg)
+        client.beta.messages.create.assert_awaited()
+
+    def test_prompt_rules_out_card_stats(self):
+        assert "card or deck stats" in ask_bot.SYSTEM_PROMPT

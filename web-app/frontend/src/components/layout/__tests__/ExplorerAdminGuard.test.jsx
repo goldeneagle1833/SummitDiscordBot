@@ -12,7 +12,7 @@ function renderGuarded(mockUser) {
   if (mockUser === null) {
     getMe.mockReturnValue(new Promise(() => {})) // loading forever
   } else if (mockUser === false) {
-    getMe.mockRejectedValue(new Error('Unauthorized'))
+    getMe.mockRejectedValue(Object.assign(new Error('Unauthorized'), { status: 401 }))
   } else {
     getMe.mockResolvedValue(mockUser)
   }
